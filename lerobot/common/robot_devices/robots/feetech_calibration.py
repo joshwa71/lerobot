@@ -503,4 +503,5 @@ def run_arm_manual_calibration(arm: MotorsBus, robot_type: str, arm_name: str, a
         "calib_mode": calib_modes,
         "motor_names": arm.motor_names,
     }
+    print(calib_dict)
     return calib_dict

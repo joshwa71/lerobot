@@ -1,0 +1,2 @@
+leader1 = '/dev/ttyACM1'
+follower1 = '/dev/ttyACM0'
