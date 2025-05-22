@@ -180,7 +180,7 @@ def save_images_from_cameras(
                 dt_s = time.perf_counter() - now
                 busy_wait(1 / fps - dt_s)
 
-            print(f"Frame: {frame_index:04d}\tLatency (ms): {(time.perf_counter() - now) * 1000:.2f}")
+            # print(f"Frame: {frame_index:04d}\tLatency (ms): {(time.perf_counter() - now) * 1000:.2f}")
 
             if time.perf_counter() - start_time > record_time_s:
                 break
@@ -334,10 +334,13 @@ class OpenCVCamera:
 
         if self.fps is not None:
             self.camera.set(cv2.CAP_PROP_FPS, self.fps)
+            time.sleep(1)
         if self.capture_width is not None:
             self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.capture_width)
+            time.sleep(1)
         if self.capture_height is not None:
             self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.capture_height)
+            time.sleep(1)
 
         actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
         actual_width = self.camera.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -361,6 +364,44 @@ class OpenCVCamera:
             raise OSError(
                 f"Can't set {self.capture_height=} for OpenCVCamera({self.camera_index}). Actual value is {actual_height}."
             )
+        
+                # Give settings a moment to apply before reading back
+        time.sleep(1) 
+
+        actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
+        actual_width = self.camera.get(cv2.CAP_PROP_FRAME_WIDTH)
+        actual_height = self.camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
+        self.camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        time.sleep(1)
+
+        # Reading FOURCC can sometimes be unreliable/reset, but let's try
+        try:
+            actual_fourcc_int = int(self.camera.get(cv2.CAP_PROP_FOURCC))
+            actual_fourcc_str = "".join([chr((actual_fourcc_int >> 8 * i) & 0xFF) for i in range(4)])
+        except Exception:
+             actual_fourcc_str = "ErrorReading"
+        
+        print(f"Camera {self.camera_index}: Requested {self.capture_width}x{self.capture_height} @ {self.fps} FPS, MJPG. "
+              f"Actual: {actual_width}x{actual_height} @ {actual_fps} FPS, Format: {actual_fourcc_str}")
+
+        # Check if critical settings match requested values (allowing for float tolerance)
+        if self.fps is not None and not math.isclose(self.fps, actual_fps, rel_tol=0.1): # Increased tolerance for FPS
+            self.camera.release() 
+            raise OSError(
+                f"Failed to confirm FPS setting for OpenCVCamera({self.camera_index}). Requested {self.fps}, Got {actual_fps}."
+            )
+        if self.capture_width is not None and not math.isclose(self.capture_width, actual_width, rel_tol=1e-3):
+            self.camera.release()
+            raise OSError(
+                f"Failed to confirm Width setting for OpenCVCamera({self.camera_index}). Requested {self.capture_width}, Got {actual_width}."
+            )
+        if self.capture_height is not None and not math.isclose(self.capture_height, actual_height, rel_tol=1e-3):
+            self.camera.release()
+            raise OSError(
+                f"Failed to confirm Height setting for OpenCVCamera({self.camera_index}). Requested {self.capture_height}, Got {actual_height}."
+            )
+
 
         self.fps = round(actual_fps)
         self.capture_width = round(actual_width)

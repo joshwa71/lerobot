@@ -35,7 +35,8 @@ OPTIMIZER_PARAM_GROUPS = "optimizer_param_groups.json"
 SCHEDULER_STATE = "scheduler_state.json"
 
 # cache dir
-default_cache_path = Path(HF_HOME) / "lerobot"
+# default_cache_path = Path(HF_HOME) / "lerobot"
+default_cache_path = Path("/home/josh/phddev/lerobot")
 HF_LEROBOT_HOME = Path(os.getenv("HF_LEROBOT_HOME", default_cache_path)).expanduser()
 
 if "LEROBOT_HOME" in os.environ:
