@@ -98,9 +98,11 @@ python lerobot/scripts/control_robot.py \
 ```
 
 **NOTE**: You can use your keyboard to control data recording flow.
-- Tap right arrow key '->' to early exit while recording an episode and go to resseting the environment.
-- Tap right arrow key '->' to early exit while resetting the environment and got to recording the next episode.
-- Tap left arrow key '<-' to early exit and re-record the current episode.
+- Tap up arrow key '↑' to mark the current episode as SUCCESS and proceed to the next episode.
+- Tap down arrow key '↓' to mark the current episode as FAILURE and proceed to the next episode.
+- Tap right arrow key '→' to early exit while recording an episode and go to resetting the environment (without marking success/failure).
+- Tap right arrow key '→' to early exit while resetting the environment and go to recording the next episode.
+- Tap left arrow key '←' to early exit and re-record the current episode.
 - Tap escape key 'esc' to stop the data recording.
 This might require a sudo permission to allow your terminal to monitor keyboard events.
 
@@ -296,6 +298,10 @@ def record(
             break
 
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+        # Reset success/failure flags for the new episode attempt
+        events["mark_success"] = False
+        events["mark_failure"] = False
+
         record_episode(
             robot=robot,
             dataset=dataset,
@@ -307,6 +313,9 @@ def record(
             single_task=cfg.single_task,
         )
 
+        # Determine success status AFTER record_episode finishes
+        episode_success_status: bool | None = None
+
         # Execute a few seconds without recording to give time to manually reset the environment
         # Current code logic doesn't allow to teleoperate during this time.
         # TODO(rcadene): add an option to enable teleoperation during reset
@@ -314,18 +323,32 @@ def record(
         if not events["stop_recording"] and (
             (recorded_episodes < cfg.num_episodes - 1) or events["rerecord_episode"]
         ):
-            log_say("Reset the environment", cfg.play_sounds)
+            if events["mark_success"]:
+                log_say("Episode marked as SUCCESS. Reset the environment", cfg.play_sounds)
+            elif events["mark_failure"]:
+                log_say("Episode marked as FAILURE. Reset the environment", cfg.play_sounds)
+            else:
+                log_say("Reset the environment", cfg.play_sounds)
+            
             reset_environment(robot, events, cfg.reset_time_s, cfg.fps)
 
         if events["rerecord_episode"]:
             log_say("Re-record episode", cfg.play_sounds)
             events["rerecord_episode"] = False
             events["exit_early"] = False
+            # Reset success/failure flags if re-recording
+            events["mark_success"] = False
+            events["mark_failure"] = False
             dataset.clear_episode_buffer()
             continue
 
-        dataset.save_episode()
+        # Pass the success status to save_episode
+        dataset.save_episode(success_status=episode_success_status)
         recorded_episodes += 1
+
+        # Reset flags for the next iteration
+        events["mark_success"] = False
+        events["mark_failure"] = False
 
         if events["stop_recording"]:
             break

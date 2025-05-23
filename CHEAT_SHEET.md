@@ -46,6 +46,7 @@ To test the calibration has worked correctly, it's wise to teleoperate the robot
 ```bash
 python lerobot/scripts/control_robot.py \
   --robot.type=so100 \
+  --robot.cameras='{}' \
   --control.type=teleoperate
 ```
 
@@ -58,13 +59,13 @@ python lerobot/scripts/control_robot.py \
   --control.type=record \
   --control.fps=30 \
   --control.single_task="Grasp a lego block and put it in the bin." \
-  --control.repo_id=outputs/*\
+  --control.repo_id=outputs/test \
   --control.tags='["so100","tutorial"]' \
   --control.warmup_time_s=5 \
   --control.episode_time_s=30 \
   --control.reset_time_s=30 \
-  --control.num_episodes=2 \
-  --control.push_to_hub=true
+  --control.num_episodes=5 \
+  --control.push_to_hub=false
 ```
 Make sure to change the command line arguments to match the desired configuration.
 

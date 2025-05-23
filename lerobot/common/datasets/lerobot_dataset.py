@@ -251,6 +251,7 @@ class LeRobotDatasetMetadata:
         episode_length: int,
         episode_tasks: list[str],
         episode_stats: dict[str, dict],
+        success_status: bool | None = None,
     ) -> None:
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
@@ -271,6 +272,9 @@ class LeRobotDatasetMetadata:
             "tasks": episode_tasks,
             "length": episode_length,
         }
+        if success_status is not None:
+            episode_dict["success"] = success_status
+
         self.episodes[episode_index] = episode_dict
         write_episode(episode_dict, self.root)
 
@@ -832,7 +836,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         self.episode_buffer["size"] += 1
 
-    def save_episode(self, episode_data: dict | None = None) -> None:
+    def save_episode(self, episode_data: dict | None = None, success_status: bool | None = None) -> None:
         """
         This will save to disk the current episode in self.episode_buffer.
 
@@ -840,6 +844,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
             episode_data (dict | None, optional): Dict containing the episode data to save. If None, this will
                 save the current episode in self.episode_buffer, which is filled with 'add_frame'. Defaults to
                 None.
+            success_status (bool | None, optional): Success status for the episode. True for success, False for
+                failure, None for unspecified. Defaults to None.
         """
         if not episode_data:
             episode_buffer = self.episode_buffer
@@ -881,7 +887,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 episode_buffer[key] = video_paths[key]
 
         # `meta.save_episode` be executed after encoding the videos
-        self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
+        self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats, success_status)
 
         ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
         ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}
