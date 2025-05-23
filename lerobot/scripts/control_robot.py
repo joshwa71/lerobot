@@ -325,8 +325,10 @@ def record(
         ):
             if events["mark_success"]:
                 log_say("Episode marked as SUCCESS. Reset the environment", cfg.play_sounds)
+                episode_success_status = True
             elif events["mark_failure"]:
                 log_say("Episode marked as FAILURE. Reset the environment", cfg.play_sounds)
+                episode_success_status = False
             else:
                 log_say("Reset the environment", cfg.play_sounds)
             

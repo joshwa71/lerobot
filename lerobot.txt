@@ -2652,9 +2652,11 @@ python lerobot/scripts/control_robot.py \
 ```
 
 **NOTE**: You can use your keyboard to control data recording flow.
-- Tap right arrow key '->' to early exit while recording an episode and go to resseting the environment.
-- Tap right arrow key '->' to early exit while resetting the environment and got to recording the next episode.
-- Tap left arrow key '<-' to early exit and re-record the current episode.
+- Tap up arrow key '↑' to mark the current episode as SUCCESS and proceed to the next episode.
+- Tap down arrow key '↓' to mark the current episode as FAILURE and proceed to the next episode.
+- Tap right arrow key '→' to early exit while recording an episode and go to resetting the environment (without marking success/failure).
+- Tap right arrow key '→' to early exit while resetting the environment and go to recording the next episode.
+- Tap left arrow key '←' to early exit and re-record the current episode.
 - Tap escape key 'esc' to stop the data recording.
 This might require a sudo permission to allow your terminal to monitor keyboard events.
 
@@ -2850,6 +2852,10 @@ def record(
             break
 
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+        # Reset success/failure flags for the new episode attempt
+        events["mark_success"] = False
+        events["mark_failure"] = False
+
         record_episode(
             robot=robot,
             dataset=dataset,
@@ -2861,6 +2867,9 @@ def record(
             single_task=cfg.single_task,
         )
 
+        # Determine success status AFTER record_episode finishes
+        episode_success_status: bool | None = None
+
         # Execute a few seconds without recording to give time to manually reset the environment
         # Current code logic doesn't allow to teleoperate during this time.
         # TODO(rcadene): add an option to enable teleoperation during reset
@@ -2868,18 +2877,32 @@ def record(
         if not events["stop_recording"] and (
             (recorded_episodes < cfg.num_episodes - 1) or events["rerecord_episode"]
         ):
-            log_say("Reset the environment", cfg.play_sounds)
+            if events["mark_success"]:
+                log_say("Episode marked as SUCCESS. Reset the environment", cfg.play_sounds)
+            elif events["mark_failure"]:
+                log_say("Episode marked as FAILURE. Reset the environment", cfg.play_sounds)
+            else:
+                log_say("Reset the environment", cfg.play_sounds)
+            
             reset_environment(robot, events, cfg.reset_time_s, cfg.fps)
 
         if events["rerecord_episode"]:
             log_say("Re-record episode", cfg.play_sounds)
             events["rerecord_episode"] = False
             events["exit_early"] = False
+            # Reset success/failure flags if re-recording
+            events["mark_success"] = False
+            events["mark_failure"] = False
             dataset.clear_episode_buffer()
             continue
 
-        dataset.save_episode()
+        # Pass the success status to save_episode
+        dataset.save_episode(success_status=episode_success_status)
         recorded_episodes += 1
+
+        # Reset flags for the next iteration
+        events["mark_success"] = False
+        events["mark_failure"] = False
 
         if events["stop_recording"]:
             break
@@ -16583,6 +16606,8 @@ def init_keyboard_listener():
     events["exit_early"] = False
     events["rerecord_episode"] = False
     events["stop_recording"] = False
+    events["mark_success"] = False
+    events["mark_failure"] = False
 
     if is_headless():
         logging.warning(
@@ -16596,7 +16621,15 @@ def init_keyboard_listener():
 
     def on_press(key):
         try:
-            if key == keyboard.Key.right:
+            if key == keyboard.Key.up:
+                print("Up arrow key pressed. Marking episode as SUCCESS and exiting loop...")
+                events["mark_success"] = True
+                events["exit_early"] = True
+            elif key == keyboard.Key.down:
+                print("Down arrow key pressed. Marking episode as FAILURE and exiting loop...")
+                events["mark_failure"] = True
+                events["exit_early"] = True
+            elif key == keyboard.Key.right:
                 print("Right arrow key pressed. Exiting loop...")
                 events["exit_early"] = True
             elif key == keyboard.Key.left:
@@ -23919,7 +23952,6 @@ def get_feature_stats(array: np.ndarray, axis: tuple, keepdims: bool) -> dict[st
 
 def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], features: dict) -> dict:
     ep_stats = {}
-    print(f"Computing stats for episode data: {episode_data}")
     for key, data in episode_data.items():
         if features[key]["dtype"] == "string":
             continue  # HACK: we should receive np.arrays of strings
@@ -25607,6 +25639,7 @@ class LeRobotDatasetMetadata:
         episode_length: int,
         episode_tasks: list[str],
         episode_stats: dict[str, dict],
+        success_status: bool | None = None,
     ) -> None:
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
@@ -25627,6 +25660,9 @@ class LeRobotDatasetMetadata:
             "tasks": episode_tasks,
             "length": episode_length,
         }
+        if success_status is not None:
+            episode_dict["success"] = success_status
+
         self.episodes[episode_index] = episode_dict
         write_episode(episode_dict, self.root)
 
@@ -26188,7 +26224,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         self.episode_buffer["size"] += 1
 
-    def save_episode(self, episode_data: dict | None = None) -> None:
+    def save_episode(self, episode_data: dict | None = None, success_status: bool | None = None) -> None:
         """
         This will save to disk the current episode in self.episode_buffer.
 
@@ -26196,6 +26232,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
             episode_data (dict | None, optional): Dict containing the episode data to save. If None, this will
                 save the current episode in self.episode_buffer, which is filled with 'add_frame'. Defaults to
                 None.
+            success_status (bool | None, optional): Success status for the episode. True for success, False for
+                failure, None for unspecified. Defaults to None.
         """
         if not episode_data:
             episode_buffer = self.episode_buffer
@@ -26237,7 +26275,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 episode_buffer[key] = video_paths[key]
 
         # `meta.save_episode` be executed after encoding the videos
-        self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
+        self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats, success_status)
 
         ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
         ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}

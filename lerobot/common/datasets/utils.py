@@ -214,6 +214,7 @@ def load_tasks(local_dir: Path) -> tuple[dict, dict]:
 
 
 def write_episode(episode: dict, local_dir: Path):
+    print(f"Writing episode: {episode}")
     append_jsonlines(episode, local_dir / EPISODES_PATH)
 
 
