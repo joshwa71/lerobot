@@ -36,21 +36,9 @@ def save_json(data: dict, file_path: Path):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Merge two LeRobot datasets (source into target). Assumes single-chunk datasets."
-    )
-    parser.add_argument("source_dir", type=str, help="Path to the source dataset directory.")
-    parser.add_argument("target_dir", type=str, help="Path to the target dataset directory. This dataset will be modified (or created if it doesn't exist).")
-    args = parser.parse_args()
-
-    source_path = Path(args.source_dir).resolve()
-    target_path = Path(args.target_dir).resolve()
-
-    if not source_path.is_dir():
-        print(f"Error: Source directory {source_path} not found.")
-        return
-
+def merge_single_source_into_target(source_path, target_path, target_info, target_episodes, target_tasks_list, target_episodes_stats):
+    """Merge a single source dataset into target dataset"""
+    
     # Create target directories if they don't exist
     meta_target_path = target_path / "meta"
     data_target_path = target_path / "data" / "chunk-000"
@@ -68,18 +56,14 @@ def main():
 
     if not source_info or not source_episodes:
         print(f"Error: Source dataset metadata (info.json or episodes.jsonl) not found or incomplete in {source_path / 'meta'}")
-        return
+        return target_info, target_episodes, target_tasks_list, target_episodes_stats
+    
     if source_info.get("total_chunks", 1) > 1:
         print("Warning: Source dataset appears to have multiple chunks. This script is designed for single-chunk datasets. Merging might be incomplete or incorrect.")
     
-    # 2. Load or initialize metadata from target
-    target_info = load_json(meta_target_path / "info.json")
-    target_episodes = load_jsonl(meta_target_path / "episodes.jsonl")
-    target_tasks_list = load_jsonl(meta_target_path / "tasks.jsonl") 
-    target_episodes_stats = load_jsonl(meta_target_path / "episodes_stats.jsonl")
-
-    if target_info is None: # Target is new or empty
-        print(f"Target metadata not found in {meta_target_path}. Initializing new metadata.")
+    # 2. Initialize target metadata if it's None (first source)
+    if target_info is None:
+        print(f"Initializing new target dataset metadata based on first source.")
         target_info = {
             "codebase_version": source_info.get("codebase_version", "v2.1"),
             "robot_type": source_info.get("robot_type", "unknown"),
@@ -98,9 +82,6 @@ def main():
         target_episodes = []
         target_tasks_list = []
         target_episodes_stats = []
-    elif target_info.get("total_chunks", 1) > 1:
-         print("Warning: Target dataset appears to have multiple chunks. This script is designed for single-chunk datasets. Merging might be incomplete or incorrect.")
-
 
     # 3. Determine offsets
     episode_index_offset = target_info["total_episodes"]
@@ -226,19 +207,60 @@ def main():
     target_info["total_videos"] = target_info.get("total_videos",0) + \
                                  source_info.get("total_videos", num_video_streams * source_info["total_episodes"])
 
-
     if target_info["total_episodes"] > 0:
         target_info["splits"]["train"] = f"0:{target_info['total_episodes']}" 
     else:
         target_info["splits"]["train"] = ""
 
-    # 10. Save updated/merged metadata to target
-    save_jsonl(target_episodes + updated_source_episodes, meta_target_path / "episodes.jsonl")
-    save_jsonl(target_episodes_stats + updated_source_episodes_stats, meta_target_path / "episodes_stats.jsonl")
-    save_jsonl(final_merged_tasks_for_jsonl, meta_target_path / "tasks.jsonl")
+    # Return updated target metadata
+    return target_info, target_episodes + updated_source_episodes, final_merged_tasks_for_jsonl, target_episodes_stats + updated_source_episodes_stats
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Merge two LeRobot datasets (source1 and source2 into target). Assumes single-chunk datasets."
+    )
+    parser.add_argument("source1_dir", type=str, help="Path to the first source dataset directory.")
+    parser.add_argument("source2_dir", type=str, help="Path to the second source dataset directory.")
+    parser.add_argument("target_dir", type=str, help="Path to the target dataset directory. This dataset will be created.")
+    args = parser.parse_args()
+
+    source1_path = Path(args.source1_dir).resolve()
+    source2_path = Path(args.source2_dir).resolve()
+    target_path = Path(args.target_dir).resolve()
+
+    if not source1_path.is_dir():
+        print(f"Error: Source1 directory {source1_path} not found.")
+        return
+    if not source2_path.is_dir():
+        print(f"Error: Source2 directory {source2_path} not found.")
+        return
+
+    # Initialize empty target metadata
+    target_info = None
+    target_episodes = []
+    target_tasks_list = []
+    target_episodes_stats = []
+
+    # Merge source1 into target
+    print(f"Merging dataset from {source1_path} into target...")
+    target_info, target_episodes, target_tasks_list, target_episodes_stats = merge_single_source_into_target(
+        source1_path, target_path, target_info, target_episodes, target_tasks_list, target_episodes_stats
+    )
+
+    # Merge source2 into target
+    print(f"Merging dataset from {source2_path} into target...")
+    target_info, target_episodes, target_tasks_list, target_episodes_stats = merge_single_source_into_target(
+        source2_path, target_path, target_info, target_episodes, target_tasks_list, target_episodes_stats
+    )
+
+    # Save final merged metadata to target
+    meta_target_path = target_path / "meta"
+    save_jsonl(target_episodes, meta_target_path / "episodes.jsonl")
+    save_jsonl(target_episodes_stats, meta_target_path / "episodes_stats.jsonl")
+    save_jsonl(target_tasks_list, meta_target_path / "tasks.jsonl")
     save_json(target_info, meta_target_path / "info.json")
 
-    print(f"Successfully merged dataset from {source_path} into {target_path}")
+    print(f"Successfully merged datasets from {source1_path} and {source2_path} into {target_path}")
 
 if __name__ == "__main__":
     main() 

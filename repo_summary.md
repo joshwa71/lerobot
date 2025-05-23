@@ -99,6 +99,10 @@ The repository is structured to separate concerns like configuration, common uti
 
 5.  **`media/`**: Contains images, GIFs, and videos used in documentation and READMEs.
 
+**LeRobot Dataset Structure**
+
+LeRobot datasets follow a standardized file-based format designed for robotics data collection and training. The dataset is organized into three main components: **metadata** (`meta/` directory), **episode data** (`data/` directory), and **videos** (`videos/` directory). The metadata includes four key files: `info.json` contains dataset-wide information like robot type, total episodes/frames, feature schemas, and file path templates; `tasks.jsonl` stores task definitions with indices and natural language descriptions (e.g., `{"task_index": 0, "task": "Grasp a lego block and put it in the bin."}`); `episodes.jsonl` records per-episode metadata including episode indices, associated tasks, and lengths; and `episodes_stats.jsonl` contains comprehensive statistics (min, max, mean, std) for all features in each episode. The actual data is stored in **chunked parquet files** under `data/chunk-XXX/episode_XXXXXX.parquet`, where each episode's observations, actions, timestamps, and indices are stored as structured tabular data. Visual data is stored separately as **MP4 videos** organized by camera streams (e.g., `videos/chunk-000/observation.images.head/episode_000000.mp4`), with video paths templated in the info.json using format strings like `"videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"`. This structure enables efficient loading of specific episodes, supports both local storage and Hugging Face Hub distribution, and maintains synchronization between tabular data and video frames through timestamp matching at the configured FPS (typically 30Hz).
+
 **Key Design Principles:**
 
 *   **Configuration-Driven:** Most functionalities are driven by dataclass-based configurations, allowing easy modification via CLI or config files.
