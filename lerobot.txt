@@ -646,6 +646,10 @@ import json
 import os
 import shutil
 from pathlib import Path
+import pyarrow.parquet as pq
+import pandas as pd # Added for Parquet manipulation
+import pyarrow as pa
+
 
 # Helper functions
 def load_jsonl(file_path: Path):
@@ -677,6 +681,22 @@ def save_json(data: dict, file_path: Path):
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
+
+def update_parquet_episode_index(file_path: Path, new_episode_index: int):
+    """Opens a Parquet file, updates the 'episode_index' column, and saves it back."""
+    try:
+        table = pq.read_table(file_path)
+        df = table.to_pandas()
+        if 'episode_index' in df.columns:
+            df['episode_index'] = new_episode_index
+            updated_table = pa.Table.from_pandas(df, schema=table.schema, preserve_index=False) # Use original schema
+            pq.write_table(updated_table, file_path)
+            # print(f"Updated 'episode_index' in {file_path} to {new_episode_index}")
+        else:
+            print(f"Warning: 'episode_index' column not found in {file_path}.")
+    except Exception as e:
+        print(f"Error updating Parquet file {file_path}: {e}")
+
 
 def merge_single_source_into_target(source_path, target_path, target_info, target_episodes, target_tasks_list, target_episodes_stats):
     """Merge a single source dataset into target dataset"""
@@ -729,7 +749,7 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
     episode_index_offset = target_info["total_episodes"]
     frame_index_offset = target_info["total_frames"] 
 
-    # 4. Merge tasks and create task mapping
+    # 4. Merge tasks and create task mapping (No changes here based on the problem description)
     merged_tasks_map = {t['task_index']: t['task'] for t in target_tasks_list}
     merged_descriptions_to_idx_map = {t['task']: t['task_index'] for t in target_tasks_list}
 
@@ -763,18 +783,30 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
         new_episode["episode_index"] += episode_index_offset
         updated_source_episodes.append(new_episode)
 
-    # 6. Process source episodes_stats.jsonl
+    # 6. Process source episodes_stats.jsonl (MODIFIED SECTION)
     updated_source_episodes_stats = []
     for stats_item in source_episodes_stats:
         new_stats = stats_item.copy()
-        new_stats["episode_index"] += episode_index_offset
+        original_episode_index_in_stats = new_stats["episode_index"] # Keep original for filename mapping
+        new_episode_index_in_stats = original_episode_index_in_stats + episode_index_offset
+        
+        new_stats["episode_index"] = new_episode_index_in_stats # Update top-level episode_index
 
         if "stats" in new_stats:
             if "index" in new_stats["stats"]: 
                 idx_stats = new_stats["stats"]["index"]
                 for key in ["min", "max", "mean"]: 
                     if key in idx_stats and isinstance(idx_stats[key], list) and idx_stats[key]:
-                        idx_stats[key][0] += frame_index_offset
+                        # This is the global frame index, so it always needs offset
+                        idx_stats[key][0] += frame_index_offset 
+            
+            # Update the nested "episode_index" stat
+            if "episode_index" in new_stats["stats"]:
+                ep_idx_stats_dict = new_stats["stats"]["episode_index"]
+                for key in ["min", "max", "mean"]:
+                    if key in ep_idx_stats_dict and isinstance(ep_idx_stats_dict[key], list) and ep_idx_stats_dict[key]:
+                        # This refers to the episode_index, so update it
+                        ep_idx_stats_dict[key][0] = new_episode_index_in_stats
             
             if "task_index" in new_stats["stats"]:
                 task_idx_stats = new_stats["stats"]["task_index"]
@@ -790,37 +822,58 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
 
         updated_source_episodes_stats.append(new_stats)
 
-    # 7. Copy and rename data files (.parquet)
+    # 7. Copy and rename data files (.parquet) and UPDATE 'episode_index' column (MODIFIED SECTION)
     source_data_files_path = source_path / "data" / "chunk-000"
     if source_data_files_path.is_dir():
-        num_parquet_copied = 0
-        print(f"Attempting to copy {source_info['total_episodes']} parquet episode files from {source_data_files_path}...")
+        num_parquet_copied_and_updated = 0
+        print(f"Attempting to copy and update {source_info['total_episodes']} parquet episode files from {source_data_files_path}...")
         for i in range(source_info["total_episodes"]):
             old_episode_num_str = f"{i:06d}"
-            new_episode_num_str = f"{i + episode_index_offset:06d}"
+            new_episode_index_val = i + episode_index_offset # The new integer value for episode_index
+            new_episode_num_str = f"{new_episode_index_val:06d}"
+            
             src_file = source_data_files_path / f"episode_{old_episode_num_str}.parquet"
             tgt_file = data_target_path / f"episode_{new_episode_num_str}.parquet"
+            
             if src_file.exists():
                 shutil.copy2(src_file, tgt_file)
-                num_parquet_copied +=1
+                update_parquet_episode_index(tgt_file, new_episode_index_val) # Update the copied file
+                num_parquet_copied_and_updated +=1
             else:
                 print(f"Warning: Source data file {src_file} not found.")
-        print(f"Finished copying parquet files. {num_parquet_copied} files copied to {data_target_path}.")
+        print(f"Finished copying and updating parquet files. {num_parquet_copied_and_updated} files processed and saved to {data_target_path}.")
     
-    # 8. Copy and rename video files (.mp4)
+    # 8. Copy and rename video files (.mp4) (No changes here based on the problem description)
     video_feature_keys = []
     if "features" in source_info:
         for f_key, f_props in source_info["features"].items():
-            if f_props.get("dtype") == "video" and f_key.startswith("observation.images."):
-                video_feature_keys.append(f_key) 
+            if f_props.get("dtype") == "video" and f_key.startswith("observation.images."): # Ensure it's an image feature for video
+                video_feature_keys.append(f_key) # Get the actual key like 'head' or 'wrist'
     
     if not video_feature_keys: 
-        video_feature_keys = ["observation.images.head", "observation.images.wrist"]
-        print("Warning: Video keys not found in source_info.features, using default head/wrist.")
+        # Heuristic: if not explicitly found, assume common keys.
+        # This might need adjustment based on typical dataset structures if "observation.images." prefix is not standard.
+        for f_key, f_props in source_info.get("features", {}).items():
+            if f_props.get("dtype") == "video":
+                video_feature_keys.append(f_key) # Take the key as is
+        if not video_feature_keys:
+            video_feature_keys = ["head", "wrist"] # Fallback default
+            print(f"Warning: Video keys not found in source_info.features['observation.images.'], using default keys: {video_feature_keys} or all video keys found.")
+
 
     for video_feature_key in video_feature_keys:
-        source_video_dir = source_path / "videos" / "chunk-000" / video_feature_key
-        target_video_dir = videos_target_path_base / video_feature_key
+        # Construct paths based on the typical structure.
+        # The video_feature_key might be 'head' or 'observation.images.head'.
+        # We need to handle both.
+        if video_feature_key.startswith("observation.images."):
+            video_dir_name_in_source = video_feature_key # e.g. "observation.images.head"
+        else:
+            video_dir_name_in_source = f"observation.images.{video_feature_key}" # e.g. "head" -> "observation.images.head"
+
+        target_video_key_dir_name = video_feature_key
+
+        source_video_dir = source_path / "videos" / "chunk-000" / video_dir_name_in_source
+        target_video_dir = videos_target_path_base / target_video_key_dir_name # Use just 'head' or 'wrist'
         target_video_dir.mkdir(parents=True, exist_ok=True)
 
         if source_video_dir.is_dir():
@@ -850,7 +903,7 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
                                  source_info.get("total_videos", num_video_streams * source_info["total_episodes"])
 
     if target_info["total_episodes"] > 0:
-        target_info["splits"]["train"] = f"0:{target_info['total_episodes']}" 
+        target_info["splits"]["train"] = f"0:{target_info['total_episodes']-1}" # Adjusted to be 0-indexed end
     else:
         target_info["splits"]["train"] = ""
 
@@ -876,6 +929,17 @@ def main():
     if not source2_path.is_dir():
         print(f"Error: Source2 directory {source2_path} not found.")
         return
+
+    if target_path.exists():
+        user_input = input(f"Target directory {target_path} already exists. Overwrite? (yes/no): ")
+        if user_input.lower() != 'yes':
+            print("Operation cancelled.")
+            return
+        print(f"Overwriting target directory {target_path}...")
+        shutil.rmtree(target_path) # Remove existing target directory
+    
+    target_path.mkdir(parents=True, exist_ok=True) # Recreate target directory
+
 
     # Initialize empty target metadata
     target_info = None
@@ -905,7 +969,7 @@ def main():
     print(f"Successfully merged datasets from {source1_path} and {source2_path} into {target_path}")
 
 if __name__ == "__main__":
-    main() 
+    main()
 
 # File: /home/josh/phddev/lerobot/lerobot/scripts/eval.py
 
@@ -1903,6 +1967,382 @@ if __name__ == "__main__":
     main()
 
 
+# File: /home/josh/phddev/lerobot/lerobot/scripts/train_fcil_classifier.py
+
+#!/usr/bin/env python
+
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import logging
+import time
+import json
+from contextlib import nullcontext
+from dataclasses import dataclass, field
+from pathlib import Path
+from pprint import pformat
+from typing import List # Python 3.8 compatibility
+
+import torch
+from torch.amp import GradScaler
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader 
+
+from lerobot.common.datasets.compute_stats import aggregate_stats 
+from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
+from lerobot.common.datasets.trajectory_dataset import TrajectoryDataset
+from lerobot.common.datasets.utils import cycle
+from lerobot.common.optim.factory import make_optimizer_and_scheduler
+from lerobot.common.policies.fcil_classifier.configuration_fcil_classifier import FCILClassifierConfig
+from lerobot.common.policies.fcil_classifier.modeling_fcil_classifier import FCILClassifierPolicy
+from lerobot.common.policies.utils import get_device_from_parameters
+from lerobot.common.utils.logging_utils import AverageMeter, MetricsTracker
+from lerobot.common.utils.random_utils import set_seed
+from lerobot.common.utils.train_utils import (
+    get_step_checkpoint_dir,
+    load_training_state,
+    save_checkpoint,
+    update_last_checkpoint,
+)
+from lerobot.common.utils.utils import (
+    format_big_number,
+    get_safe_torch_device,
+    init_logging,
+)
+from lerobot.common.utils.wandb_utils import WandBLogger
+from lerobot.configs import parser
+from lerobot.configs.train import TrainPipelineConfig, TRAIN_CONFIG_NAME
+from lerobot.configs.default import DatasetConfig 
+
+
+@dataclass
+class FCILClassifierTrainConfig(TrainPipelineConfig):
+    dataset: DatasetConfig = field(default_factory=lambda: DatasetConfig(repo_id="fcil_classifier/dummy_dataset_placeholder"))
+    policy: FCILClassifierConfig = field(default_factory=FCILClassifierConfig)
+    success_dataset_repo_id: str = "lerobot/so100_peg_insertion_cloned_teleop_success" 
+    mixed_dataset_repo_id: str = "lerobot/so100_peg_insertion_cloned_teleop_mixed" 
+    mixed_ds_identifier: str = "mixed" 
+    dataset_root: Path | None = None
+    # Add image_feature_keys to be passed to TrajectoryDataset and Policy
+    # This should match the keys used in your datasets (e.g., from robot.camera_features)
+    image_feature_keys: List[str] = field(default_factory=lambda: ["observation.images.head", "observation.images.wrist"])
+
+    def __post_init__(self):
+        self.checkpoint_path = None
+
+    def validate(self):
+        if self.resume:
+            config_path_cli = parser.parse_arg("config_path")
+            if not config_path_cli:
+                policy_path_cli = parser.get_path_arg("policy")
+                if policy_path_cli:
+                    policy_path_obj = Path(policy_path_cli)
+                    if policy_path_obj.name == "pretrained_model":
+                        potential_config_path = policy_path_obj.parent / TRAIN_CONFIG_NAME
+                        if potential_config_path.exists():
+                             config_path_cli = str(potential_config_path)
+                if not config_path_cli:
+                    raise ValueError(
+                        f"A config_path or a policy.path pointing to a checkpoint is expected when resuming a run. Please specify path to {TRAIN_CONFIG_NAME}"
+                    )
+            
+            if not Path(config_path_cli).resolve().exists():
+                raise NotADirectoryError(
+                    f"config_path '{config_path_cli}' is expected to be a local path. "
+                    "Resuming from the hub is not supported for now."
+                )
+
+            self.policy.pretrained_path = Path(config_path_cli).parent / "pretrained_model"
+            self.checkpoint_path = Path(config_path_cli).parent 
+
+        if not self.job_name:
+            self.job_name = f"{self.policy.type}_so100" 
+
+        if not self.resume and isinstance(self.output_dir, Path) and self.output_dir.is_dir():
+            if any(self.output_dir.iterdir()):
+                raise FileExistsError(
+                    f"Output directory {self.output_dir} already exists and is not empty, and resume is {self.resume}. "
+                    f"Please change your output directory or set resume=True."
+                )
+        elif not self.output_dir:
+            import datetime as dt 
+            now = dt.datetime.now()
+            train_dir = f"{now:%Y-%m-%d}/{now:%H-%M-%S}_{self.job_name}"
+            self.output_dir = Path("outputs/train_fcil_classifier") / train_dir
+        
+        if self.use_policy_training_preset and not self.resume: 
+            self.optimizer = self.policy.get_optimizer_preset()
+            self.scheduler = self.policy.get_scheduler_preset()
+        elif not self.use_policy_training_preset and self.optimizer is None:
+             raise ValueError("Optimizer must be set when policy training presets are not used.")
+        
+        # Pass image_feature_keys from main config to policy config
+        if not self.policy.image_feature_keys and self.image_feature_keys:
+            self.policy.image_feature_keys = self.image_feature_keys
+
+
+def update_classifier_policy(
+    train_metrics: MetricsTracker,
+    policy: FCILClassifierPolicy,
+    batch: dict,
+    optimizer: Optimizer,
+    grad_clip_norm: float,
+    grad_scaler: GradScaler,
+    lr_scheduler=None,
+    use_amp: bool = False,
+) -> tuple[MetricsTracker, dict]:
+    start_time = time.perf_counter()
+    device = get_device_from_parameters(policy)
+    policy.train()
+
+    for key, value in batch.items():
+        if isinstance(value, torch.Tensor):
+            batch[key] = value.to(device, non_blocking=True)
+
+    with torch.autocast(device_type=device.type, enabled=use_amp) if use_amp else nullcontext():
+        loss, output_dict = policy.forward(batch)
+    
+    grad_scaler.scale(loss).backward()
+    grad_scaler.unscale_(optimizer) 
+    torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip_norm, error_if_nonfinite=False)
+    grad_scaler.step(optimizer)
+    grad_scaler.update()
+    optimizer.zero_grad(set_to_none=True) 
+
+    if lr_scheduler is not None:
+        lr_scheduler.step()
+
+    train_metrics.loss = loss.item()
+    if output_dict: 
+        for k, v in output_dict.items():
+            if hasattr(train_metrics, k) and isinstance(getattr(train_metrics,k), AverageMeter): 
+                getattr(train_metrics,k).update(v)
+            elif k == "loss": 
+                pass
+            else: 
+                if isinstance(v, (int, float)):
+                    logging.warning(f"Metric '{k}' from policy output not in MetricsTracker, skipping average update.")
+
+    train_metrics.lr = optimizer.param_groups[0]["lr"]
+    train_metrics.update_s = time.perf_counter() - start_time
+    return train_metrics, output_dict
+
+
+@parser.wrap(config_path=None) 
+def train_fcil_classifier(cfg: FCILClassifierTrainConfig):
+    if not cfg.resume: 
+        cfg.validate()
+        
+    logging.info(pformat(cfg.to_dict()))
+
+    if cfg.wandb.enable and cfg.wandb.project:
+        from termcolor import colored 
+        wandb_logger = WandBLogger(cfg) 
+    else:
+        from termcolor import colored
+        wandb_logger = None
+        logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
+
+    if cfg.seed is not None:
+        set_seed(cfg.seed)
+
+    device = get_safe_torch_device(cfg.policy.device, log=True)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+
+    logging.info("Creating TrajectoryDataset for classifier training")
+    
+    try:
+        logging.info(f"Loading success dataset metadata from {cfg.success_dataset_repo_id} at {cfg.dataset_root}")
+        example_ds_meta_success = LeRobotDatasetMetadata(cfg.success_dataset_repo_id, root=Path(cfg.dataset_root) / cfg.success_dataset_repo_id)
+        
+        if cfg.policy.state_dim is None:
+            cfg.policy.state_dim = example_ds_meta_success.features["observation.state"]["shape"][0]
+        if cfg.policy.action_dim is None:
+            cfg.policy.action_dim = example_ds_meta_success.features["action"]["shape"][0]
+        
+        # If image_feature_keys are not set in the config, try to infer from the success dataset's camera keys
+        if not cfg.policy.image_feature_keys and example_ds_meta_success.camera_keys:
+            cfg.policy.image_feature_keys = example_ds_meta_success.camera_keys
+            logging.info(f"Inferred image_feature_keys from success dataset: {cfg.policy.image_feature_keys}")
+        
+        example_ds_meta_mixed = LeRobotDatasetMetadata(cfg.mixed_dataset_repo_id, root=Path(cfg.dataset_root) / cfg.mixed_dataset_repo_id)
+        if example_ds_meta_success.stats and example_ds_meta_mixed.stats:
+            combined_stats = aggregate_stats([example_ds_meta_success.stats, example_ds_meta_mixed.stats])
+        elif example_ds_meta_success.stats:
+            combined_stats = example_ds_meta_success.stats
+            logging.warning("Using stats only from success_dataset_repo_id as mixed_dataset_repo_id has no stats.")
+        elif example_ds_meta_mixed.stats:
+            combined_stats = example_ds_meta_mixed.stats
+            logging.warning("Using stats only from mixed_dataset_repo_id as success_dataset_repo_id has no stats.")
+        else:
+            combined_stats = None
+            logging.warning("No stats found in either dataset metadata. Normalization layers will use defaults (infinity).")
+
+    except Exception as e:
+        logging.error(f"Could not load metadata to infer state/action dims or stats: {e}")
+        if cfg.policy.state_dim is None or cfg.policy.action_dim is None :
+            logging.error("Please ensure `state_dim` and `action_dim` are set in the config, "
+                          "or provide valid dataset_repo_ids for metadata loading.")
+            if cfg.policy.state_dim is None: cfg.policy.state_dim = 6 
+            if cfg.policy.action_dim is None: cfg.policy.action_dim = 6 
+        if not cfg.policy.image_feature_keys and cfg.image_feature_keys: # Use from main config if policy's is empty
+            cfg.policy.image_feature_keys = cfg.image_feature_keys
+        elif not cfg.policy.image_feature_keys: # Fallback if still empty
+            logging.warning("No image_feature_keys specified in config and could not infer. Classifier will not use images.")
+            cfg.policy.image_feature_keys = []
+
+        combined_stats = None 
+
+    logging.info(f"Using state_dim: {cfg.policy.state_dim}, action_dim: {cfg.policy.action_dim}, image_keys: {cfg.policy.image_feature_keys}")
+
+    trajectory_dataset = TrajectoryDataset(
+        repo_ids=[cfg.success_dataset_repo_id, cfg.mixed_dataset_repo_id],
+        max_seq_len=cfg.policy.max_seq_len,
+        image_feature_keys=cfg.policy.image_feature_keys, # Pass the keys
+        root=cfg.dataset_root,
+        mixed_ds_identifier=cfg.mixed_ds_identifier,
+        download_videos=bool(cfg.policy.image_feature_keys) # Download videos only if images are used
+    )
+    
+    num_total_episodes = len(trajectory_dataset)
+    if num_total_episodes == 0:
+        raise ValueError("TrajectoryDataset is empty. Check repo_ids and dataset contents.")
+    logging.info(f"TrajectoryDataset created with {num_total_episodes} total episodes.")
+
+    dataloader = DataLoader(
+        trajectory_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=True, 
+        num_workers=cfg.num_workers,
+        pin_memory=device.type != "cpu",
+        drop_last=True, 
+    )
+    dl_iter = cycle(dataloader)
+
+    logging.info("Creating FCILClassifierPolicy")
+    policy = FCILClassifierPolicy(cfg.policy, dataset_stats=combined_stats)
+    policy.to(device)
+    
+    logging.info("Creating optimizer and scheduler")
+    optimizer = cfg.optimizer.build(policy.get_optim_params()) 
+    lr_scheduler = cfg.scheduler.build(optimizer, cfg.steps) if cfg.scheduler else None
+
+    grad_scaler = GradScaler(device.type, enabled=cfg.policy.use_amp)
+
+    step = 0
+    if cfg.resume:
+        if not cfg.checkpoint_path or not cfg.checkpoint_path.exists():
+            potential_last_checkpoint = cfg.output_dir / "checkpoints" / "last"
+            if potential_last_checkpoint.exists() and potential_last_checkpoint.is_symlink():
+                 cfg.checkpoint_path = potential_last_checkpoint.resolve()
+                 logging.info(f"Resuming from last checkpoint: {cfg.checkpoint_path}")
+            else:
+                raise FileNotFoundError(f"Resume specified but checkpoint_path '{cfg.checkpoint_path}' not found or not set.")
+
+        policy_checkpoint_file = cfg.checkpoint_path / "pretrained_model" / "model.safetensors"
+        if policy_checkpoint_file.exists():
+            # state_dict = torch.load(policy_checkpoint_file, map_location="cpu")
+            from safetensors.torch import load_model
+            load_model(policy, policy_checkpoint_file, strict=True) # Use safetensors load_model
+            logging.info(f"Loaded policy weights from {policy_checkpoint_file}")
+        else:
+            logging.warning(f"Policy checkpoint file not found at {policy_checkpoint_file}, policy initialized with random weights.")
+            
+        step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
+    
+    if cfg.resume: # Re-validate if resuming to ensure output_dir is set correctly based on loaded cfg potentially
+        cfg.validate()
+
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+
+    from termcolor import colored
+    logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
+    logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
+    num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+    logging.info(f"num_learnable_params: {format_big_number(num_learnable_params)}")
+
+    train_metrics_def = {
+        "loss": AverageMeter("loss", ":.4f"), 
+        "lr": AverageMeter("lr", ":0.1e"),
+        "update_s": AverageMeter("updt_s", ":.3f"),
+        "dataloading_s": AverageMeter("data_s", ":.3f"),
+    }
+
+    train_tracker = MetricsTracker(
+        cfg.batch_size, 
+        num_total_episodes, 
+        num_total_episodes, 
+        train_metrics_def, 
+        initial_step=step
+    )
+    
+    (cfg.output_dir / TRAIN_CONFIG_NAME).parent.mkdir(parents=True, exist_ok=True)
+    cfg_dict_to_save = cfg.to_dict()
+    if "dataset" in cfg_dict_to_save and cfg_dict_to_save["dataset"]["repo_id"] == "fcil_classifier/dummy_dataset_placeholder":
+        del cfg_dict_to_save["dataset"]
+    with open(cfg.output_dir / TRAIN_CONFIG_NAME, "w") as f:
+        json.dump(cfg_dict_to_save, f, indent=4)
+
+    logging.info("Start classifier training")
+    for current_iter_step in range(step, cfg.steps):
+        logging.info(f"Step {current_iter_step}/{cfg.steps}")
+        iter_start_time = time.perf_counter()
+        batch = next(dl_iter)
+        train_tracker.dataloading_s = time.perf_counter() - iter_start_time
+
+        train_tracker, output_dict = update_classifier_policy(
+            train_tracker,
+            policy,
+            batch,
+            optimizer,
+            cfg.optimizer.grad_clip_norm,
+            grad_scaler,
+            lr_scheduler,
+            use_amp=cfg.policy.use_amp,
+        )
+        
+        train_tracker.step() 
+
+        is_log_step = cfg.log_freq > 0 and train_tracker.steps % cfg.log_freq == 0
+        is_saving_step = train_tracker.steps % cfg.save_freq == 0 or train_tracker.steps == cfg.steps
+        
+        if is_log_step:
+            logging.info(f"Step {train_tracker.steps}/{cfg.steps} - {str(train_tracker)}")
+            if wandb_logger:
+                wandb_log_dict = train_tracker.to_dict()
+                if output_dict and "loss" in output_dict: 
+                    wandb_log_dict.update({"train/" + k: v for k,v in output_dict.items() if k != "loss"})
+                wandb_logger.log_dict(wandb_log_dict, train_tracker.steps)
+            train_tracker.reset_averages()
+
+        if cfg.save_checkpoint and is_saving_step:
+            logging.info(f"Checkpoint policy after step {train_tracker.steps}")
+            checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, train_tracker.steps)
+            # For save_checkpoint, the cfg passed should be the main training config (FCILClassifierTrainConfig)
+            save_checkpoint(checkpoint_dir, train_tracker.steps, cfg, policy, optimizer, lr_scheduler)
+            update_last_checkpoint(checkpoint_dir) 
+            if wandb_logger:
+                wandb_logger.log_policy(checkpoint_dir) 
+
+    logging.info("End of classifier training")
+
+
+if __name__ == "__main__":
+    init_logging()
+    train_fcil_classifier()
+
 # File: /home/josh/phddev/lerobot/lerobot/scripts/train.py
 
 #!/usr/bin/env python
@@ -2879,8 +3319,10 @@ def record(
         ):
             if events["mark_success"]:
                 log_say("Episode marked as SUCCESS. Reset the environment", cfg.play_sounds)
+                episode_success_status = True
             elif events["mark_failure"]:
                 log_say("Episode marked as FAILURE. Reset the environment", cfg.play_sounds)
+                episode_success_status = False
             else:
                 log_say("Reset the environment", cfg.play_sounds)
             
@@ -3420,6 +3862,200 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     configure_motor(args.port, args.brand, args.model, args.ID, args.baudrate)
+
+
+# File: /home/josh/phddev/lerobot/lerobot/scripts/encode_dataset.py
+
+# encode_dataset.py — offline embedding for LeRobot‑style datasets
+# ---------------------------------------------------------------
+# Usage (example):
+#   python encode_dataset.py \
+#       --root /path/to/lerobot \
+#       --model dinov2_vitb14 \
+#       --batch 64 \
+#       --proj-dim 512
+#
+# Mirrors `videos/` → `embeddings/`, writing one <frame_XXX.npy> (float16) per
+# frame.  Now robust to occasional “corrupted” MP4s: if decord cannot open a
+# video it automatically falls back to OpenCV and will skip empty/invalid files
+# rather than crashing.
+
+import argparse
+import os
+from pathlib import Path
+import sys
+import warnings
+from typing import List
+
+import numpy as np
+import torch
+from torch import nn
+from torchvision import transforms
+from tqdm import tqdm
+
+# ---------------------------------------------------------------
+# Optional fast video backend: decord (falls back to cv2 automatically)
+# ---------------------------------------------------------------
+decord = None
+DECORDError = Exception  # placeholder
+import cv2
+warnings.warn("[WARN] decord not installed — using OpenCV (slower)")
+
+# ---------------------------------------------------------------
+# Model + pre-processing helpers
+# ---------------------------------------------------------------
+
+def _dinov2(name: str, device: torch.device):
+    model = torch.hub.load("facebookresearch/dinov2", name).to(device)
+    model.eval()
+    tr = transforms.Compose([
+        transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.CenterCrop(224),
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+    return model, tr, model.embed_dim
+
+
+def _siglip2(name: str, device: torch.device):
+    import open_clip  # local import to keep deps optional
+    pretrained = "webli" if "/" not in name and name.lower().startswith("vit") else None
+    model, _, preprocess = open_clip.create_model_and_transforms(name,
+                                                                 pretrained=pretrained or "laion400m",
+                                                                 device=device)
+    model.eval()
+    return model.visual, preprocess, model.visual.output_dim
+
+
+def load_encoder(model_name: str, device: torch.device):
+    m = model_name.lower()
+    if m.startswith("dino"):
+        return _dinov2(model_name, device)
+    return _siglip2(model_name, device)
+
+# ---------------------------------------------------------------
+# Video I/O helpers with robust fallback
+# ---------------------------------------------------------------
+
+def _read_video_decord(path: Path):
+    vr = decord.VideoReader(str(path))
+    frames = vr.get_batch(range(len(vr)))  # (T, H, W, 3) RGB uint8
+    return (frames.permute(0, 3, 1, 2).float() / 255.0).tolist()  # List[C×H×W]
+
+
+def _read_video_cv2(path: Path):
+    cap = cv2.VideoCapture(str(path))
+    ok, out = True, []
+    while ok:
+        ok, frame_bgr = cap.read()
+        if ok and frame_bgr is not None:
+            rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            out.append(torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0)
+    cap.release()
+    return out
+
+
+def read_video(path: Path):
+    """Return list[Tensor C×H×W] or [] on failure."""
+
+    try:
+        import av
+        frames = []
+        with av.open(str(path)) as container:
+            for fr in container.decode(video=0):
+                img = fr.to_ndarray(format='rgb24')
+                frames.append(torch.from_numpy(img)
+                               .permute(2,0,1).float() / 255.0)
+        return frames
+    except Exception as e:
+        warnings.warn(f"[pyav] {path.name}: {e} — skipping file.")
+        return []
+
+# ---------------------------------------------------------------
+# Embedding pipeline
+# ---------------------------------------------------------------
+
+def encode_frames(frames: List[torch.Tensor], model: nn.Module, transform, device,
+                  batch_size: int, projector: nn.Module | None = None):
+    embeds: List[torch.Tensor] = []
+    for i in range(0, len(frames), batch_size):
+        chunk = frames[i:i + batch_size]
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            batch = torch.stack([transform(f) for f in chunk]).to(device)
+            feats = model(batch)
+            if isinstance(feats, tuple):  # open_clip returns (img_emb, ...)
+                feats = feats[0]
+            if projector is not None:
+                feats = projector(feats)
+            embeds.extend(feats.cpu())
+    return embeds
+
+# ---------------------------------------------------------------
+# Directory helpers
+# ---------------------------------------------------------------
+
+def mirror_path(src_file: Path, src_root: Path, dst_root: Path, ext: str = "") -> Path:
+    rel = src_file.relative_to(src_root)
+    dst = dst_root / rel
+    if ext:
+        dst = dst.with_suffix(ext)
+    return dst
+
+# ---------------------------------------------------------------
+# Main dataset traversal / processing
+# ---------------------------------------------------------------
+
+def process_dataset(root: Path, model_name: str, batch: int, proj_dim: int):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, transform, feat_dim = load_encoder(model_name, device)
+
+    projector: nn.Module | None = None
+    out_dim = feat_dim
+    if 0 < proj_dim != feat_dim:
+        projector = nn.Linear(feat_dim, proj_dim, bias=False).to(device)
+        nn.init.normal_(projector.weight, std=feat_dim ** -0.5)
+        out_dim = proj_dim
+
+    print(f"[INFO] Using {model_name} → {out_dim}-D, batch {batch}, device {device}")
+
+    vids_root = root / "videos"
+    out_root = root / "embeddings"
+
+    mp4_files = list(vids_root.rglob("*.mp4"))
+    with tqdm(mp4_files, desc="Encoding videos") as tbar:
+        for mp4 in tbar:
+            frames = read_video(mp4)
+            if not frames:
+                continue  # skip empty / unreadable video
+
+            embeds = encode_frames(frames, model, transform, device, batch, projector)
+            dst_dir = mirror_path(mp4.parent, vids_root, out_root)
+            dst_ep_root = dst_dir / mp4.stem
+            dst_ep_root.mkdir(parents=True, exist_ok=True)
+            for idx, emb in enumerate(embeds):
+                np.save(dst_ep_root / f"frame_{idx}.npy", emb.numpy().astype(np.float16))
+
+# ---------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------
+
+def main():
+    p = argparse.ArgumentParser("Offline video frame embedding for LeRobot datasets")
+    p.add_argument("--root", type=Path, required=True, help="Dataset root (with videos/)")
+    p.add_argument("--model", type=str, default="dinov2_vitb14", help="dinov2_* or ViT-B-16-SigLIP2 etc.")
+    p.add_argument("--batch", type=int, default=64)
+    p.add_argument("--proj-dim", type=int, default=0, help="Project features to this dim (0 = keep native)")
+    args = p.parse_args()
+
+    try:
+        process_dataset(args.root, args.model, args.batch, args.proj_dim)
+    except KeyboardInterrupt:
+        print("[INTERRUPT] Stopped by user — partial embeddings are kept on disk.")
+
+
+if __name__ == "__main__":
+    main()
 
 
 # File: /home/josh/phddev/lerobot/lerobot/common/policies/act/modeling_act.py
@@ -4451,6 +5087,367 @@ def get_output_shape(module: nn.Module, input_shape: tuple) -> tuple:
         output = module(dummy_input)
     return tuple(output.shape)
 
+
+# File: /home/josh/phddev/lerobot/lerobot/common/policies/fcil_classifier/configuration_fcil_classifier.py
+
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from dataclasses import dataclass, field
+from typing import List # Python 3.8 compatibility
+
+from lerobot.common.optim.optimizers import AdamWConfig
+from lerobot.common.optim.schedulers import LRSchedulerConfig
+from lerobot.configs.policies import PreTrainedConfig
+from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
+
+
+@PreTrainedConfig.register_subclass("fcil_classifier")
+@dataclass
+class FCILClassifierConfig(PreTrainedConfig):
+    """Configuration class for the Trajectory Failure Classifier Policy with Image Processing."""
+
+    # Input features:
+    # state_dim and action_dim will be dynamically set from dataset_stats.
+    # image_feature_keys will list the camera keys to use.
+    state_dim: int | None = None
+    action_dim: int | None = None
+    image_feature_keys: List[str] = field(default_factory=list)
+    
+    # Image processing (similar to ACTConfig)
+    vision_backbone: str = "resnet18"  # torchvision resnet backbone
+    pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
+    vision_feature_dim: int = 512 # Needs to match vision_backbone output
+
+    # Normalization settings
+    normalization_mapping: dict[str, NormalizationMode] = field(
+        default_factory=lambda: {
+            "STATE": NormalizationMode.MEAN_STD,
+            "ACTION": NormalizationMode.MEAN_STD,
+            "VISUAL": NormalizationMode.MEAN_STD, # For raw image pixels if needed
+        }
+    )
+
+    # Architecture (Transformer Encoder based)
+    dim_model: int = 256
+    n_heads: int = 4
+    n_encoder_layers: int = 3 # Number of transformer encoder layers
+    dim_feedforward: int = 1024
+    feedforward_activation: str = "relu"
+    dropout: float = 0.1
+    max_seq_len: int = 100  # Max trajectory length for the classifier
+    pre_norm: bool = True # From ACTConfig, use pre-normalization in transformer blocks
+
+    # Training presets (can be overridden)
+    optimizer_lr: float = 1e-4
+    optimizer_weight_decay: float = 1e-4
+    scheduler_config: LRSchedulerConfig | None = None # e.g., CosineDecayWithWarmupSchedulerConfig
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.output_features = {
+            "is_failure_pred": PolicyFeature(type=FeatureType.STATE, shape=(1,))
+        }
+
+    @property
+    def observation_delta_indices(self) -> None:
+        return None
+
+    @property
+    def action_delta_indices(self) -> None:
+        return None
+
+    @property
+    def reward_delta_indices(self) -> None:
+        return None
+
+    def get_optimizer_preset(self) -> AdamWConfig:
+        return AdamWConfig(
+            lr=self.optimizer_lr,
+            weight_decay=self.optimizer_weight_decay,
+        )
+
+    def get_scheduler_preset(self) -> LRSchedulerConfig | None:
+        return self.scheduler_config
+
+    def validate_features(self) -> None:
+        # state_dim, action_dim, and image_feature_keys should be set,
+        # typically by the policy factory after inspecting the dataset.
+        if self.state_dim is None or self.action_dim is None:
+            pass # Will be caught later if not set
+        if not self.image_feature_keys:
+            pass # Images are optional, but if specified, must be valid
+
+        # Dynamically create input_features based on configured dimensions
+        self.input_features = {}
+        if self.state_dim:
+            self.input_features["observation.state"] = PolicyFeature(type=FeatureType.STATE, shape=(self.state_dim,))
+        if self.action_dim:
+            self.input_features["action"] = PolicyFeature(type=FeatureType.ACTION, shape=(self.action_dim,))
+        
+        for key in self.image_feature_keys:
+            # Image shape is not strictly needed here as backbone handles it,
+            # but could be added for completeness if known (e.g. from dataset metadata)
+            # For now, Normalize module for VISUAL uses (C,1,1) so exact H,W not critical for it.
+             self.input_features[key] = PolicyFeature(type=FeatureType.VISUAL, shape=(3,224,224)) # Placeholder shape
+
+        if not self.input_features:
+             raise ValueError("FCILClassifierConfig requires state_dim, action_dim, or image_feature_keys to be set, "
+                             "or input_features to be populated by the policy factory.")
+
+# File: /home/josh/phddev/lerobot/lerobot/common/policies/fcil_classifier/modeling_fcil_classifier.py
+
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+from torchvision.models._utils import IntermediateLayerGetter # For ResNet feature extraction
+from torchvision.ops.misc import FrozenBatchNorm2d # For ResNet
+
+from lerobot.common.policies.act.modeling_act import ACTEncoderLayer 
+from lerobot.common.policies.normalize import Normalize
+from lerobot.common.policies.pretrained import PreTrainedPolicy
+from lerobot.common.policies.fcil_classifier.configuration_fcil_classifier import FCILClassifierConfig
+from lerobot.configs.types import PolicyFeature, FeatureType
+
+
+class FCILClassifierModel(nn.Module):
+    def __init__(self, config: FCILClassifierConfig):
+        super().__init__()
+        self.config = config
+
+        # Image Backbone (ResNet-style)
+        if self.config.image_feature_keys:
+            if not hasattr(torchvision.models, config.vision_backbone):
+                raise ValueError(f"Vision backbone {config.vision_backbone} not found in torchvision.models")
+            
+            backbone_model = getattr(torchvision.models, config.vision_backbone)(
+                replace_stride_with_dilation=[False, False, False], # Standard ResNet
+                weights=config.pretrained_backbone_weights,
+                norm_layer=FrozenBatchNorm2d if config.pretrained_backbone_weights else nn.BatchNorm2d,
+            )
+            # We'll take features before the final FC layer (typically after global avg pooling)
+            # For ResNet, this is usually by removing the 'fc' layer.
+            self.vision_backbone = nn.Sequential(*list(backbone_model.children())[:-1])
+            # Projection for image features
+            self.image_feature_proj = nn.Linear(config.vision_feature_dim * len(config.image_feature_keys), config.dim_model)
+        else:
+            self.vision_backbone = None
+            self.image_feature_proj = None
+
+        # Projection for state features
+        self.state_proj = nn.Linear(config.state_dim, config.dim_model)
+        
+        # Projection for action features
+        self.action_proj = nn.Linear(config.action_dim, config.dim_model)
+        
+        # CLS token
+        self.cls_token = nn.Parameter(torch.randn(1, 1, config.dim_model))
+        
+        # Positional embedding for CLS token + sequence tokens
+        self.pos_embed = nn.Embedding(config.max_seq_len + 1, config.dim_model)
+        
+        # Transformer Encoder
+        self.encoder_layers = nn.ModuleList(
+            [ACTEncoderLayer(config) for _ in range(config.n_encoder_layers)]
+        )
+        self.encoder_norm = nn.LayerNorm(config.dim_model) if config.pre_norm else nn.Identity()
+
+        # Output head for binary classification
+        self.output_head = nn.Linear(config.dim_model, 1)
+
+    def forward(self, obs_state_seq, act_seq, obs_image_seq_dict=None, padding_mask=None):
+        # obs_state_seq: (batch, seq_len, state_dim)
+        # act_seq: (batch, seq_len, action_dim)
+        # obs_image_seq_dict: Dict{"cam_key": (batch, seq_len, C, H, W)}
+        # padding_mask: (batch, seq_len) - True for padded elements
+        
+        batch_size, seq_len, _ = obs_state_seq.shape
+        
+        # Project states and actions
+        state_embed = self.state_proj(obs_state_seq) # (batch, seq_len, dim_model)
+        action_embed = self.action_proj(act_seq)     # (batch, seq_len, dim_model)
+
+        # Process images if available
+        if self.vision_backbone and obs_image_seq_dict:
+            all_cam_features_proj = []
+            for cam_key in self.config.image_feature_keys:
+                img_seq = obs_image_seq_dict[cam_key] # (B, T, C, H, W)
+                
+                # Reshape for backbone: (B*T, C, H, W)
+                bt, c, h, w = img_seq.shape[0]*img_seq.shape[1], img_seq.shape[2], img_seq.shape[3], img_seq.shape[4]
+                img_seq_reshaped = img_seq.reshape(bt, c, h, w)
+                
+                img_features = self.vision_backbone(img_seq_reshaped) # (B*T, vision_feature_dim, 1, 1) for ResNet GAP
+                img_features = img_features.squeeze(-1).squeeze(-1) # (B*T, vision_feature_dim)
+                
+                # Reshape back to (B, T, vision_feature_dim)
+                img_features_seq = img_features.view(batch_size, seq_len, -1)
+                all_cam_features_proj.append(img_features_seq)
+            
+            # Concatenate features from all cameras along the feature dimension
+            concatenated_img_features = torch.cat(all_cam_features_proj, dim=-1) # (B, T, num_cams * vision_feature_dim)
+            image_embed = self.image_feature_proj(concatenated_img_features) # (batch, seq_len, dim_model)
+            
+            # Combine modalities: simple summation
+            fused_embed_per_timestep = state_embed + action_embed + image_embed
+        else:
+            # Combine modalities: simple summation (state + action only)
+            fused_embed_per_timestep = state_embed + action_embed
+
+        # Prepend CLS token
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1) # (batch, 1, dim_model)
+        encoder_input = torch.cat([cls_tokens, fused_embed_per_timestep], dim=1) # (batch, seq_len+1, dim_model)
+        
+        # Add positional embeddings
+        positions = torch.arange(0, seq_len + 1, device=obs_state_seq.device).unsqueeze(0).expand(batch_size, -1)
+        encoder_input += self.pos_embed(positions)
+        
+        if padding_mask is not None:
+            cls_padding_mask = torch.full((batch_size, 1), False, device=padding_mask.device)
+            transformer_key_padding_mask = torch.cat([cls_padding_mask, padding_mask], dim=1) 
+        else:
+            transformer_key_padding_mask = None
+            
+        x = encoder_input.permute(1, 0, 2) # (seq_len+1, batch, dim_model)
+        
+        for layer in self.encoder_layers:
+            x = layer(x, pos_embed=None, key_padding_mask=transformer_key_padding_mask) 
+        x = self.encoder_norm(x)
+        
+        cls_output = x[0] # (batch, dim_model)
+        logits = self.output_head(cls_output) # (batch, 1)
+        return logits
+
+
+class FCILClassifierPolicy(PreTrainedPolicy):
+    config_class = FCILClassifierConfig
+    name = "fcil_classifier"
+
+    def __init__(
+        self,
+        config: FCILClassifierConfig,
+        dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
+    ):
+        super().__init__(config)
+        self.config = config
+
+        # Infer dimensions and features if not explicitly set in config
+        self._infer_and_set_config_dims(dataset_stats)
+        
+        self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
+        self.model = FCILClassifierModel(config)
+
+    def _infer_and_set_config_dims(self, dataset_stats):
+        # Helper to set dimensions from stats if not in config
+        if self.config.state_dim is None and dataset_stats and "observation.state" in dataset_stats:
+            self.config.state_dim = dataset_stats["observation.state"]["mean"].shape[0]
+        if self.config.action_dim is None and dataset_stats and "action" in dataset_stats:
+            self.config.action_dim = dataset_stats["action"]["mean"].shape[0]
+        
+        # Image feature keys must be in config if images are used.
+        # Vision feature dim must match backbone output.
+
+        if self.config.state_dim is None or self.config.action_dim is None :
+            raise ValueError(
+                "state_dim and action_dim must be provided in config or inferable from dataset_stats."
+            )
+
+        # Re-validate/populate input_features after potential updates
+        self.config.validate_features()
+
+
+    def get_optim_params(self) -> dict:
+        return self.parameters()
+
+    def reset(self):
+        pass
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict]:
+        obs_state_seq = batch['observation.state']
+        act_seq = batch['action']
+        labels = batch['label']
+        padding_mask = batch.get('padding_mask')
+        
+        obs_image_seq_dict = {key: batch[key] for key in self.config.image_feature_keys if key in batch}
+
+        # Normalize inputs
+        # Create a temporary dict for normalization, including only expected features
+        norm_input_dict = {'observation.state': obs_state_seq, 'action': act_seq}
+        if obs_image_seq_dict:
+             norm_input_dict.update(obs_image_seq_dict)
+        
+        normalized_batch = self.normalize_inputs(norm_input_dict)
+        
+        norm_obs_state_seq = normalized_batch['observation.state']
+        norm_act_seq = normalized_batch['action']
+        norm_obs_image_seq_dict = {key: normalized_batch[key] for key in self.config.image_feature_keys if key in normalized_batch}
+
+
+        logits = self.model(
+            norm_obs_state_seq, 
+            norm_act_seq, 
+            obs_image_seq_dict=norm_obs_image_seq_dict if norm_obs_image_seq_dict else None,
+            padding_mask=padding_mask
+        )
+        
+        loss = F.binary_cross_entropy_with_logits(logits, labels)
+        
+        return loss, {"loss": loss.item()}
+
+    @torch.no_grad()
+    def predict_failure_prob(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        self.eval()
+        obs_state_seq = batch['observation.state']
+        act_seq = batch['action']
+        padding_mask = batch.get('padding_mask')
+        obs_image_seq_dict = {key: batch[key] for key in self.config.image_feature_keys if key in batch}
+
+        norm_input_dict = {'observation.state': obs_state_seq, 'action': act_seq}
+        if obs_image_seq_dict:
+             norm_input_dict.update(obs_image_seq_dict)
+        
+        normalized_batch = self.normalize_inputs(norm_input_dict)
+        
+        norm_obs_state_seq = normalized_batch['observation.state']
+        norm_act_seq = normalized_batch['action']
+        norm_obs_image_seq_dict = {key: normalized_batch[key] for key in self.config.image_feature_keys if key in normalized_batch}
+
+        logits = self.model(
+            norm_obs_state_seq, 
+            norm_act_seq, 
+            obs_image_seq_dict=norm_obs_image_seq_dict if norm_obs_image_seq_dict else None,
+            padding_mask=padding_mask
+        )
+        probs = torch.sigmoid(logits)
+        return probs
+
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        return self.predict_failure_prob(batch)
 
 # File: /home/josh/phddev/lerobot/lerobot/common/policies/normalize.py
 
@@ -10941,7 +11938,7 @@ from .diffusion.configuration_diffusion import DiffusionConfig as DiffusionConfi
 from .pi0.configuration_pi0 import PI0Config as PI0Config
 from .tdmpc.configuration_tdmpc import TDMPCConfig as TDMPCConfig
 from .vqbet.configuration_vqbet import VQBeTConfig as VQBeTConfig
-
+from .fcil_classifier.configuration_fcil_classifier import FCILClassifierConfig as FCILClassifierConfig
 
 # File: /home/josh/phddev/lerobot/lerobot/common/policies/pi0fast/configuration_pi0fast.py
 
@@ -21688,8 +22685,10 @@ def cast_stats_to_numpy(stats) -> dict[str, dict[str, np.ndarray]]:
 
 def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
     if not (local_dir / STATS_PATH).exists():
+        print(f"Stats file does not exist at {local_dir / STATS_PATH}")
         return None
     stats = load_json(local_dir / STATS_PATH)
+    print(f"Loaded stats: {stats}")
     return cast_stats_to_numpy(stats)
 
 
@@ -21709,6 +22708,7 @@ def load_tasks(local_dir: Path) -> tuple[dict, dict]:
 
 
 def write_episode(episode: dict, local_dir: Path):
+    print(f"Writing episode: {episode}")
     append_jsonlines(episode, local_dir / EPISODES_PATH)
 
 
@@ -21725,7 +22725,7 @@ def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path
 
 
 def load_episodes_stats(local_dir: Path) -> dict:
-    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH)
+    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH) 
     return {
         item["episode_index"]: cast_stats_to_numpy(item["stats"])
         for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
@@ -22307,6 +23307,263 @@ def validate_episode_buffer(episode_buffer: dict, total_episodes: int, features:
             f"In features not in episode_buffer: {set(features) - buffer_keys}"
         )
 
+
+# File: /home/josh/phddev/lerobot/lerobot/common/datasets/fcil_dataset.py
+
+import logging
+from pathlib import Path
+from typing import Callable, Tuple
+
+import torch
+from torch.utils.data import Dataset
+
+from lerobot.common.datasets.compute_stats import aggregate_stats
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.common.datasets.utils import get_hf_features_from_features
+from lerobot.configs.policies import PreTrainedConfig # For delta_timestamps resolution helper
+
+
+class FCILCombinedDataset(Dataset):
+    def __init__(
+        self,
+        success_repo_id: str,
+        mixed_repo_id: str,
+        policy_config: PreTrainedConfig, # Used to resolve delta_timestamps
+        context_window_N: int,
+        root: str | Path | None = None,
+        image_transforms: Callable | None = None,
+        revision: str | None = None,
+        force_cache_sync: bool = False,
+        download_videos: bool = True,
+        video_backend: str | None = None,
+        tolerance_s: float = 1e-4,
+    ):
+        self.context_window_N = context_window_N
+
+        self.success_ds_meta = LeRobotDatasetMetadata(
+            success_repo_id, root=Path(root) / success_repo_id if root else None, revision=revision, force_cache_sync=force_cache_sync
+        )
+        success_delta_timestamps = self._resolve_delta_timestamps(policy_config, self.success_ds_meta)
+        self.success_ds = LeRobotDataset(
+            repo_id=success_repo_id,
+            root=Path(root) / success_repo_id if root else None,
+            episodes=None,
+            image_transforms=image_transforms,
+            delta_timestamps=success_delta_timestamps,
+            tolerance_s=tolerance_s,
+            revision=revision,
+            force_cache_sync=force_cache_sync,
+            download_videos=download_videos,
+            video_backend=video_backend,
+        )
+
+        self.mixed_ds_meta = LeRobotDatasetMetadata(
+            mixed_repo_id, root=Path(root) / mixed_repo_id if root else None, revision=revision, force_cache_sync=force_cache_sync
+        )
+        mixed_delta_timestamps = self._resolve_delta_timestamps(policy_config, self.mixed_ds_meta)
+        self.mixed_ds = LeRobotDataset(
+            repo_id=mixed_repo_id,
+            root=Path(root) / mixed_repo_id if root else None,
+            episodes=None, # Use all episodes from mixed_ds
+            image_transforms=image_transforms,
+            delta_timestamps=mixed_delta_timestamps,
+            tolerance_s=tolerance_s,
+            revision=revision,
+            force_cache_sync=force_cache_sync,
+            download_videos=download_videos,
+            video_backend=video_backend,
+        )
+
+        self.mixed_episodes_info = self.mixed_ds.meta.episodes
+        self.num_pairs = self.mixed_ds.meta.total_episodes // 2
+
+        # Build internal index mapping
+        # Indices 0 to len(success_ds)-1 map to standard successes
+        # Indices len(success_ds) onwards map to recovery trajectories from mixed_ds
+        self._index_map = []
+        for i in range(len(self.success_ds)):
+            self._index_map.append({"type": "standard", "original_idx": i})
+
+        for i in range(self.num_pairs):
+            success_ep_idx_in_mixed = 2 * i + 1
+            failure_ep_idx_in_mixed = 2 * i
+            # map to each frame in the successful recovery trajectory
+            success_ep_global_start = self.mixed_ds.episode_data_index["from"][success_ep_idx_in_mixed].item()
+            success_ep_global_end = self.mixed_ds.episode_data_index["to"][success_ep_idx_in_mixed].item()
+            for global_frame_idx in range(success_ep_global_start, success_ep_global_end):
+                 self._index_map.append({
+                    "type": "recovery", 
+                    "original_idx": global_frame_idx, # global frame index in mixed_ds.hf_dataset for the success part
+                    "failure_ep_idx": failure_ep_idx_in_mixed 
+                })
+
+    def _resolve_delta_timestamps(
+        self, cfg: PreTrainedConfig, ds_meta: LeRobotDatasetMetadata
+    ) -> dict[str, list] | None:
+        """Resolves delta_timestamps by reading from the 'delta_indices' properties of the PreTrainedConfig."""
+        delta_timestamps = {}
+        for key in ds_meta.features:
+            if key == "next.reward" and cfg.reward_delta_indices is not None:
+                delta_timestamps[key] = [i / ds_meta.fps for i in cfg.reward_delta_indices]
+            if key == "action" and cfg.action_delta_indices is not None:
+                delta_timestamps[key] = [i / ds_meta.fps for i in cfg.action_delta_indices]
+            if key.startswith("observation.") and cfg.observation_delta_indices is not None:
+                delta_timestamps[key] = [i / ds_meta.fps for i in cfg.observation_delta_indices]
+
+        if len(delta_timestamps) == 0:
+            delta_timestamps = None
+        return delta_timestamps
+
+    def __len__(self):
+        return len(self._index_map)
+
+    def _get_dummy_obs_state(self, ds_instance: LeRobotDataset) -> torch.Tensor:
+        obs_state_shape = ds_instance.meta.features.get("observation.state", {}).get("shape")
+        if obs_state_shape is None:
+             # Fallback if "observation.state" is not in features, though it's expected for ACT
+            logging.warning("'observation.state' not found in dataset features. Padding with zeros of shape (1,).")
+            obs_state_shape = (1,)
+        return torch.zeros(obs_state_shape, dtype=torch.float32)
+
+    def _get_dummy_action(self, ds_instance: LeRobotDataset) -> torch.Tensor:
+        action_shape = ds_instance.meta.features.get("action", {}).get("shape")
+        if action_shape is None:
+            # Fallback if "action" is not in features
+            logging.warning("'action' not found in dataset features. Padding with zeros of shape (1,).")
+            action_shape = (1,)
+        return torch.zeros(action_shape, dtype=torch.float32)
+
+
+    def get_full_episode_data(self, ds_instance: LeRobotDataset, ep_idx: int, last_n_steps: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ep_frames_start = ds_instance.episode_data_index["from"][ep_idx].item()
+        ep_frames_end = ds_instance.episode_data_index["to"][ep_idx].item()
+        
+        actual_start_global_idx = max(ep_frames_start, ep_frames_end - last_n_steps)
+        
+        obs_list = []
+        act_list = []
+        
+        num_actual_frames = ep_frames_end - actual_start_global_idx
+        
+        for i in range(actual_start_global_idx, ep_frames_end):
+            frame_data = ds_instance.hf_dataset[i]
+            # Assuming 'observation.state' and 'action' are primary features for failure context
+            # and are directly available as numpy arrays or lists in hf_dataset items.
+            # LeRobotDataset.__getitem__ converts these to tensors.
+            # Here, we access raw data and then convert.
+            if "observation.state" in frame_data and frame_data["observation.state"] is not None:
+                obs_list.append(torch.tensor(frame_data['observation.state'], dtype=torch.float32))
+            else:
+                # This case should ideally not happen if 'observation.state' is always present.
+                obs_list.append(self._get_dummy_obs_state(ds_instance))
+
+            if "action" in frame_data and frame_data["action"] is not None:
+                act_list.append(torch.tensor(frame_data['action'], dtype=torch.float32))
+            else:
+                act_list.append(self._get_dummy_action(ds_instance))
+
+        padding_mask = torch.ones(last_n_steps, dtype=torch.bool) # True for padded elements
+
+        num_padding = last_n_steps - num_actual_frames
+        if num_padding > 0:
+            dummy_obs = self._get_dummy_obs_state(ds_instance)
+            dummy_act = self._get_dummy_action(ds_instance)
+            
+            obs_padding = [dummy_obs] * num_padding
+            act_padding = [dummy_act] * num_padding
+            
+            obs_list = obs_padding + obs_list
+            act_list = act_padding + act_list
+            padding_mask[:num_padding] = True # Padded elements are at the beginning
+            padding_mask[num_padding:] = False # Actual data
+        else:
+            padding_mask[:] = False # No padding
+
+        return torch.stack(obs_list), torch.stack(act_list), padding_mask
+
+
+    def __getitem__(self, idx):
+        map_info = self._index_map[idx]
+
+        if map_info["type"] == "standard":
+            item = self.success_ds[map_info["original_idx"]]
+            # Ensure obs_seq and act_seq are present
+            obs_seq = item.get('observation.state', self._get_dummy_obs_state(self.success_ds))
+            act_seq = item.get('action', self._get_dummy_action(self.success_ds))
+
+            return {
+                'obs_seq': obs_seq,
+                'act_seq': act_seq,
+                'is_recovery': False,
+                'failed_traj_obs': None,
+                'failed_traj_act': None,
+                'failed_traj_padding_mask': None,
+            }
+        
+        elif map_info["type"] == "recovery":
+            # original_idx is the global frame index for the success part in mixed_ds
+            global_idx_s = map_info["original_idx"]
+            failure_ep_idx = map_info["failure_ep_idx"]
+
+            item_s = self.mixed_ds[global_idx_s]
+            obs_seq_s = item_s.get('observation.state', self._get_dummy_obs_state(self.mixed_ds))
+            act_seq_s = item_s.get('action', self._get_dummy_action(self.mixed_ds))
+
+            failed_obs_seq, failed_act_seq, failed_padding_mask = self.get_full_episode_data(
+                self.mixed_ds, failure_ep_idx, self.context_window_N
+            )
+            
+            return {
+                'obs_seq': obs_seq_s,
+                'act_seq': act_seq_s,
+                'is_recovery': True,
+                'failed_traj_obs': failed_obs_seq,
+                'failed_traj_act': failed_act_seq,
+                'failed_traj_padding_mask': failed_padding_mask,
+            }
+        else:
+            raise ValueError(f"Unknown sample type: {map_info['type']}")
+
+    def get_combined_stats(self):
+        # Aggregate stats from both datasets
+        # Ensure that stats are loaded for both datasets
+        if self.success_ds.meta.stats is None:
+            logging.warning("Stats for success_ds are not loaded. Combined stats might be incomplete.")
+            success_stats = {}
+        else:
+            success_stats = self.success_ds.meta.stats
+
+        if self.mixed_ds.meta.stats is None:
+            logging.warning("Stats for mixed_ds are not loaded. Combined stats might be incomplete.")
+            mixed_stats = {}
+        else:
+            mixed_stats = self.mixed_ds.meta.stats
+        
+        # Handle cases where one or both stats are empty
+        if not success_stats and not mixed_stats:
+            return {}
+        if not success_stats:
+            return mixed_stats
+        if not mixed_stats:
+            return success_stats
+            
+        return aggregate_stats([success_stats, mixed_stats])
+
+    @property
+    def features(self) -> dict:
+        # Return features from the success_ds as a representative.
+        # Assumes features are compatible for the policy.
+        return self.success_ds_meta.features
+
+    @property
+    def hf_features(self) -> dict:
+         # Return hf_features from the success_ds as a representative.
+        return get_hf_features_from_features(self.features)
+
+    @property
+    def fps(self) -> int:
+        # Assuming fps is the same for both datasets
+        return self.success_ds.fps 
 
 # File: /home/josh/phddev/lerobot/lerobot/common/datasets/v2/batch_convert_dataset_v1_to_v2.py
 
@@ -24301,6 +25558,14 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
     return dataset
 
 
+# File: /home/josh/phddev/lerobot/lerobot/common/datasets/__init__.py
+
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata, MultiLeRobotDataset
+from lerobot.common.datasets.fcil_dataset import FCILCombinedDataset
+from lerobot.common.datasets.sampler import EpisodeAwareSampler # noqa: F401
+from lerobot.common.datasets.transforms import ImageTransformsConfig # noqa: F401
+from lerobot.common.datasets.trajectory_dataset import TrajectoryDataset
+
 # File: /home/josh/phddev/lerobot/lerobot/common/datasets/v21/convert_stats.py
 
 # Copyright 2024 The HuggingFace Inc. team. All rights reserved.
@@ -25477,6 +26742,7 @@ class LeRobotDatasetMetadata:
         self.revision = revision if revision else CODEBASE_VERSION
         self.root = Path(root) if root is not None else HF_LEROBOT_HOME / repo_id
 
+        print(f"Loading metadata from {self.root}")
         try:
             if force_cache_sync:
                 raise FileNotFoundError
@@ -26610,6 +27876,276 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             f")"
         )
 
+
+# File: /home/josh/phddev/lerobot/lerobot/common/datasets/trajectory_dataset.py
+
+# File: /home/josh/phddev/lerobot/common/datasets/trajectory_dataset.py
+
+import logging
+from pathlib import Path
+from typing import Callable, List 
+
+import torch
+import datasets # type: ignore
+from torch.utils.data import Dataset
+import torchvision # To check for transforms
+
+from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
+from lerobot.common.datasets.utils import get_episode_data_index, hf_transform_to_torch
+from lerobot.common.datasets.video_utils import decode_video_frames, get_safe_default_codec
+
+
+class TrajectoryDataset(Dataset):
+    def __init__(
+        self,
+        repo_ids: List[str],
+        max_seq_len: int,
+        image_feature_keys: List[str], 
+        root: str | Path | None = None,
+        image_transforms: Callable | None = None, 
+        tolerance_s: float = 1e-4, 
+        revision: str | None = None,
+        force_cache_sync: bool = False,
+        download_videos: bool = True, 
+        video_backend: str | None = None,
+        mixed_ds_identifier: str = "mixed"
+    ):
+        self.max_seq_len = max_seq_len
+        self.mixed_ds_identifier = mixed_ds_identifier
+        self.image_feature_keys = image_feature_keys
+        self.image_transforms = image_transforms 
+        self.video_backend = video_backend if video_backend else get_safe_default_codec()
+        self.tolerance_s = tolerance_s
+        
+        self.dataset_metadatas: List[LeRobotDatasetMetadata] = []
+        self.hf_datasets_list: List[datasets.Dataset | None] = [] 
+        self.episode_data_indices_list: List[dict | None] = [] 
+        self.episode_map = [] 
+
+        # Store determined final image shapes after transforms (C, H, W)
+        self.final_image_shapes: dict[str, tuple[int, int, int]] = {}
+
+
+        for ds_list_idx, repo_id in enumerate(repo_ids):
+            ds_root = Path(root) / repo_id if root else None
+            meta = LeRobotDatasetMetadata(repo_id, root=ds_root, revision=revision, force_cache_sync=force_cache_sync)
+            self.dataset_metadatas.append(meta)
+            
+            if meta.total_episodes == 0:
+                 logging.warning(f"Dataset {repo_id} has 0 episodes in its metadata. Skipping.")
+                 self.hf_datasets_list.append(None) 
+                 self.episode_data_indices_list.append(None)
+                 continue
+
+            # Determine final image shapes for this dataset meta
+            if self.image_feature_keys:
+                for key in self.image_feature_keys:
+                    if key not in self.final_image_shapes: # Only determine once per key globally
+                        if key in meta.features and meta.features[key]['dtype'] in ['image', 'video']:
+                            h_orig, w_orig, c_orig = meta.features[key]['shape']
+                            c_final, h_final, w_final = c_orig, h_orig, w_orig # Start with CHW from metadata
+
+                            if self.image_transforms is not None:
+                                try:
+                                    # Create a dummy tensor (1 frame, C, H, W)
+                                    dummy_frame = torch.zeros(1, c_orig, h_orig, w_orig)
+                                    transformed_dummy = self.image_transforms(dummy_frame)
+                                    # Shape is (B, C_t, H_t, W_t), get C_t, H_t, W_t
+                                    c_final, h_final, w_final = transformed_dummy.shape[1], transformed_dummy.shape[2], transformed_dummy.shape[3]
+                                except Exception as e_transform:
+                                    logging.warning(f"Could not infer shape after transforms for {key} from {repo_id}: {e_transform}. Checking for explicit Resize.")
+                                    # Fallback: Check for explicit Resize in transforms
+                                    has_resize = False
+                                    if isinstance(self.image_transforms, (torch.nn.Sequential, torchvision.transforms.v2.Compose)):
+                                        for t_comp in self.image_transforms.transforms:
+                                            if isinstance(t_comp, torchvision.transforms.v2.Resize):
+                                                size = t_comp.size
+                                                if isinstance(size, int): h_final, w_final = size, size
+                                                elif isinstance(size, (list,tuple)) and len(size)==2: h_final, w_final = size[0], size[1]
+                                                has_resize = True; break
+                                    if not has_resize:
+                                         logging.warning(f"No Resize found, using original CHW {c_orig, h_orig, w_orig} for {key}.")
+                            self.final_image_shapes[key] = (c_final, h_final, w_final)
+                        else:
+                            logging.warning(f"Image key {key} from config not in metadata features of {repo_id} or not image/video. Using default (3,224,224).")
+                            self.final_image_shapes[key] = (3, 224, 224)
+
+
+            parquet_files_for_this_ds = []
+            video_files_to_download = []
+            for ep_idx_in_meta in range(meta.total_episodes):
+                try:
+                    parquet_path = meta.root / meta.get_data_file_path(ep_idx_in_meta)
+                    # Use relative paths for hub datasets if root is not specified for this ds
+                    parquet_files_for_this_ds.append(str(parquet_path) if ds_root else str(meta.get_data_file_path(ep_idx_in_meta)))
+                    
+                    if download_videos and self.image_feature_keys:
+                        for key_img in self.image_feature_keys: 
+                             if key_img in meta.video_keys: 
+                                video_path_obj = meta.root / meta.get_video_file_path(ep_idx_in_meta, key_img)
+                                if not video_path_obj.exists():
+                                     video_files_to_download.append(str(meta.get_video_file_path(ep_idx_in_meta, key_img)))
+                except Exception as e:
+                    logging.warning(f"Error getting path for episode {ep_idx_in_meta} in {repo_id}: {e}. Skipping.")
+
+            if download_videos and video_files_to_download:
+                logging.info(f"Downloading {len(video_files_to_download)} video files for {repo_id}...")
+                meta.pull_from_repo(allow_patterns=list(set(video_files_to_download)), ignore_patterns=None)
+
+            if not parquet_files_for_this_ds:
+                logging.warning(f"No parquet files found or downloadable for {repo_id}. Skipping.")
+                self.hf_datasets_list.append(None); self.episode_data_indices_list.append(None); continue
+            
+            try:
+                data_files_arg = parquet_files_for_this_ds
+                # If not local (no ds_root), assume hub paths
+                # For hub datasets, paths should be relative to the dataset root on the hub
+                if not ds_root: 
+                    data_files_arg = { "data_files": parquet_files_for_this_ds }
+                
+                hf_ds = datasets.load_dataset("parquet", data_files=data_files_arg, cache_dir=ds_root.parent / ".cache" if ds_root else None, split="train")
+                hf_ds.set_transform(hf_transform_to_torch)
+                self.hf_datasets_list.append(hf_ds)
+                current_episode_data_index = get_episode_data_index(meta.episodes, list(range(meta.total_episodes)))
+                self.episode_data_indices_list.append(current_episode_data_index)
+
+                for ep_idx_in_meta in range(meta.total_episodes):
+                    if ep_idx_in_meta < len(current_episode_data_index["from"]):
+                        self.episode_map.append((ds_list_idx, ep_idx_in_meta))
+                    else:
+                        logging.warning(f"Ep {ep_idx_in_meta} of {repo_id} not in loaded parquet. Skipping.")
+            except Exception as e:
+                logging.error(f"Failed to load/process parquet for {repo_id}: {e}")
+                self.hf_datasets_list.append(None); self.episode_data_indices_list.append(None)
+        
+        if not self.episode_map:
+            raise ValueError("TrajectoryDataset init resulted in no episodes. Check paths/contents.")
+
+    def __len__(self):
+        return len(self.episode_map)
+
+    def _load_and_process_images_for_episode(self, meta, hf_ds_for_repo, ep_idx_in_original_dataset, ep_global_start, ep_global_end):
+        episode_timestamps = torch.stack(hf_ds_for_repo[ep_global_start:ep_global_end]['timestamp']).tolist()
+        all_cam_images_for_ep = {} 
+
+        for cam_key in self.image_feature_keys:
+            if cam_key in meta.video_keys:
+                video_path = meta.root / meta.get_video_file_path(ep_idx_in_original_dataset, cam_key)
+                frames = decode_video_frames(video_path, episode_timestamps, self.tolerance_s, self.video_backend)
+            elif cam_key in meta.image_keys:
+                # This assumes images are stored directly in hf_dataset and hf_transform_to_torch handles them
+                # If paths are stored, manual loading would be needed here.
+                frames = torch.stack(hf_ds_for_repo[ep_global_start:ep_global_end][cam_key])
+            else:
+                # Should be caught by config validation or __init__ shape determination
+                c,h,w = self.final_image_shapes.get(cam_key, (3,224,224))
+                frames = torch.zeros(len(episode_timestamps), c, h, w, dtype=torch.float32)
+                logging.warning(f"Image key {cam_key} not found in {meta.repo_id} for ep {ep_idx_in_original_dataset}. Using zeros.")
+
+            if self.image_transforms:
+                frames = torch.stack([self.image_transforms(f) for f in frames])
+            all_cam_images_for_ep[cam_key] = frames
+            
+        return all_cam_images_for_ep
+
+    def __getitem__(self, flat_idx):
+        ds_list_idx, ep_idx_in_original_dataset = self.episode_map[flat_idx]
+        
+        meta = self.dataset_metadatas[ds_list_idx]
+        hf_ds_for_repo = self.hf_datasets_list[ds_list_idx]
+        episode_data_index_for_repo = self.episode_data_indices_list[ds_list_idx]
+
+        # Default dummy values
+        state_dim = meta.features.get("observation.state", {}).get("shape", [6])[0] 
+        action_dim = meta.features.get("action", {}).get("shape", [6])[0]
+        
+        obs_state_dummy_full = torch.zeros(self.max_seq_len, state_dim, dtype=torch.float32)
+        act_dummy_full = torch.zeros(self.max_seq_len, action_dim, dtype=torch.float32)
+        obs_image_dummy_dict_full = {
+            key: torch.zeros(self.max_seq_len, *self.final_image_shapes.get(key, (3,224,224)), dtype=torch.float32)
+            for key in self.image_feature_keys
+        }
+        padding_mask_dummy = torch.ones(self.max_seq_len, dtype=torch.bool)
+        label_dummy = torch.tensor([0.0], dtype=torch.float32)
+
+        item_dict = {
+            'observation.state': obs_state_dummy_full,
+            'action': act_dummy_full,
+            'label': label_dummy,
+            'padding_mask': padding_mask_dummy,
+            **obs_image_dummy_dict_full 
+        }
+
+        if hf_ds_for_repo is None or episode_data_index_for_repo is None:
+            logging.error(f"Dataset {meta.repo_id} not loaded. Dummy data for flat_idx {flat_idx}.")
+            return item_dict
+        
+        try:
+            ep_global_start = episode_data_index_for_repo["from"][ep_idx_in_original_dataset].item()
+            ep_global_end = episode_data_index_for_repo["to"][ep_idx_in_original_dataset].item()
+        except IndexError:
+            logging.error(f"IndexError for {meta.repo_id}, ep_idx {ep_idx_in_original_dataset}. Dummy data.")
+            return item_dict
+        
+        episode_frames_data = hf_ds_for_repo[ep_global_start:ep_global_end]
+        
+        obs_state_seq_tensor = torch.stack(episode_frames_data['observation.state'])
+        act_seq_tensor = torch.stack(episode_frames_data['action'])
+        
+        obs_image_seq_dict_processed = {}
+        if self.image_feature_keys:
+            obs_image_seq_dict_processed = self._load_and_process_images_for_episode(
+                meta, hf_ds_for_repo, ep_idx_in_original_dataset, ep_global_start, ep_global_end
+            )
+
+        current_len = obs_state_seq_tensor.shape[0]
+        # padding_mask is True for padded elements, False for actual data.
+        padding_mask = torch.ones(self.max_seq_len, dtype=torch.bool) 
+
+        if current_len == 0:
+            logging.warning(f"Empty ep: {meta.repo_id}, ep_idx={ep_idx_in_original_dataset}")
+            # item_dict already contains full dummy data
+        elif current_len >= self.max_seq_len:
+            item_dict['observation.state'] = obs_state_seq_tensor[:self.max_seq_len]
+            item_dict['action'] = act_seq_tensor[:self.max_seq_len]
+            for key_cam in self.image_feature_keys:
+                item_dict[key_cam] = obs_image_seq_dict_processed[key_cam][:self.max_seq_len]
+            padding_mask[:] = False
+        else: # Pad
+            pad_len = self.max_seq_len - current_len
+            item_dict['observation.state'] = torch.cat([obs_state_seq_tensor, obs_state_dummy_full[:pad_len]], dim=0)
+            item_dict['action'] = torch.cat([act_seq_tensor, act_dummy_full[:pad_len]], dim=0)
+            
+            for key_cam in self.image_feature_keys:
+                if key_cam in obs_image_seq_dict_processed: 
+                    actual_cam_data = obs_image_seq_dict_processed[key_cam]
+                    # Use the shape from self.final_image_shapes for consistency for this cam_key
+                    c_final, h_final, w_final = self.final_image_shapes.get(key_cam, actual_cam_data.shape[1:])
+                    dummy_cam_pad = torch.zeros(pad_len, c_final, h_final, w_final, dtype=actual_cam_data.dtype)
+                    item_dict[key_cam] = torch.cat([actual_cam_data, dummy_cam_pad], dim=0)
+                # else, if key_cam was not processed (e.g. missing), it remains the full dummy tensor from item_dict init
+            
+            padding_mask[:current_len] = False
+        
+        item_dict['padding_mask'] = padding_mask
+
+        is_failure = False
+        episode_meta_info = meta.episodes.get(ep_idx_in_original_dataset)
+        success_flag = episode_meta_info.get('success') if episode_meta_info else None
+
+        if success_flag is False: is_failure = True
+        elif success_flag is True: is_failure = False
+        else:
+            if self.mixed_ds_identifier and self.mixed_ds_identifier in meta.repo_id:
+                is_failure = (ep_idx_in_original_dataset % 2 == 0)
+            else:
+                 is_failure = False 
+                 if success_flag is None and episode_meta_info is not None : # Log only if key was expected but missing
+                     logging.debug(f"Ep {ep_idx_in_original_dataset} in {meta.repo_id} missing 'success' flag, assuming success.")
+        
+        item_dict['label'] = torch.tensor([float(is_failure)], dtype=torch.float32)
+
+        return item_dict
 
 # File: /home/josh/phddev/lerobot/lerobot/common/datasets/image_writer.py
 
@@ -28186,6 +29722,7 @@ available_policies = [
     "diffusion",
     "tdmpc",
     "vqbet",
+    "fcil_classifier",
 ]
 
 # lists all available robots from `lerobot/common/robot_devices/robots`

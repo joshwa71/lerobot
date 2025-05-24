@@ -193,8 +193,10 @@ def cast_stats_to_numpy(stats) -> dict[str, dict[str, np.ndarray]]:
 
 def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
     if not (local_dir / STATS_PATH).exists():
+        print(f"Stats file does not exist at {local_dir / STATS_PATH}")
         return None
     stats = load_json(local_dir / STATS_PATH)
+    print(f"Loaded stats: {stats}")
     return cast_stats_to_numpy(stats)
 
 
@@ -231,7 +233,7 @@ def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path
 
 
 def load_episodes_stats(local_dir: Path) -> dict:
-    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH)
+    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH) 
     return {
         item["episode_index"]: cast_stats_to_numpy(item["stats"])
         for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
