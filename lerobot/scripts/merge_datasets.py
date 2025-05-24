@@ -4,6 +4,10 @@ import json
 import os
 import shutil
 from pathlib import Path
+import pyarrow.parquet as pq
+import pandas as pd # Added for Parquet manipulation
+import pyarrow as pa
+
 
 # Helper functions
 def load_jsonl(file_path: Path):
@@ -35,6 +39,22 @@ def save_json(data: dict, file_path: Path):
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
+
+def update_parquet_episode_index(file_path: Path, new_episode_index: int):
+    """Opens a Parquet file, updates the 'episode_index' column, and saves it back."""
+    try:
+        table = pq.read_table(file_path)
+        df = table.to_pandas()
+        if 'episode_index' in df.columns:
+            df['episode_index'] = new_episode_index
+            updated_table = pa.Table.from_pandas(df, schema=table.schema, preserve_index=False) # Use original schema
+            pq.write_table(updated_table, file_path)
+            # print(f"Updated 'episode_index' in {file_path} to {new_episode_index}")
+        else:
+            print(f"Warning: 'episode_index' column not found in {file_path}.")
+    except Exception as e:
+        print(f"Error updating Parquet file {file_path}: {e}")
+
 
 def merge_single_source_into_target(source_path, target_path, target_info, target_episodes, target_tasks_list, target_episodes_stats):
     """Merge a single source dataset into target dataset"""
@@ -87,7 +107,7 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
     episode_index_offset = target_info["total_episodes"]
     frame_index_offset = target_info["total_frames"] 
 
-    # 4. Merge tasks and create task mapping
+    # 4. Merge tasks and create task mapping (No changes here based on the problem description)
     merged_tasks_map = {t['task_index']: t['task'] for t in target_tasks_list}
     merged_descriptions_to_idx_map = {t['task']: t['task_index'] for t in target_tasks_list}
 
@@ -121,18 +141,30 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
         new_episode["episode_index"] += episode_index_offset
         updated_source_episodes.append(new_episode)
 
-    # 6. Process source episodes_stats.jsonl
+    # 6. Process source episodes_stats.jsonl (MODIFIED SECTION)
     updated_source_episodes_stats = []
     for stats_item in source_episodes_stats:
         new_stats = stats_item.copy()
-        new_stats["episode_index"] += episode_index_offset
+        original_episode_index_in_stats = new_stats["episode_index"] # Keep original for filename mapping
+        new_episode_index_in_stats = original_episode_index_in_stats + episode_index_offset
+        
+        new_stats["episode_index"] = new_episode_index_in_stats # Update top-level episode_index
 
         if "stats" in new_stats:
             if "index" in new_stats["stats"]: 
                 idx_stats = new_stats["stats"]["index"]
                 for key in ["min", "max", "mean"]: 
                     if key in idx_stats and isinstance(idx_stats[key], list) and idx_stats[key]:
-                        idx_stats[key][0] += frame_index_offset
+                        # This is the global frame index, so it always needs offset
+                        idx_stats[key][0] += frame_index_offset 
+            
+            # Update the nested "episode_index" stat
+            if "episode_index" in new_stats["stats"]:
+                ep_idx_stats_dict = new_stats["stats"]["episode_index"]
+                for key in ["min", "max", "mean"]:
+                    if key in ep_idx_stats_dict and isinstance(ep_idx_stats_dict[key], list) and ep_idx_stats_dict[key]:
+                        # This refers to the episode_index, so update it
+                        ep_idx_stats_dict[key][0] = new_episode_index_in_stats
             
             if "task_index" in new_stats["stats"]:
                 task_idx_stats = new_stats["stats"]["task_index"]
@@ -148,37 +180,58 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
 
         updated_source_episodes_stats.append(new_stats)
 
-    # 7. Copy and rename data files (.parquet)
+    # 7. Copy and rename data files (.parquet) and UPDATE 'episode_index' column (MODIFIED SECTION)
     source_data_files_path = source_path / "data" / "chunk-000"
     if source_data_files_path.is_dir():
-        num_parquet_copied = 0
-        print(f"Attempting to copy {source_info['total_episodes']} parquet episode files from {source_data_files_path}...")
+        num_parquet_copied_and_updated = 0
+        print(f"Attempting to copy and update {source_info['total_episodes']} parquet episode files from {source_data_files_path}...")
         for i in range(source_info["total_episodes"]):
             old_episode_num_str = f"{i:06d}"
-            new_episode_num_str = f"{i + episode_index_offset:06d}"
+            new_episode_index_val = i + episode_index_offset # The new integer value for episode_index
+            new_episode_num_str = f"{new_episode_index_val:06d}"
+            
             src_file = source_data_files_path / f"episode_{old_episode_num_str}.parquet"
             tgt_file = data_target_path / f"episode_{new_episode_num_str}.parquet"
+            
             if src_file.exists():
                 shutil.copy2(src_file, tgt_file)
-                num_parquet_copied +=1
+                update_parquet_episode_index(tgt_file, new_episode_index_val) # Update the copied file
+                num_parquet_copied_and_updated +=1
             else:
                 print(f"Warning: Source data file {src_file} not found.")
-        print(f"Finished copying parquet files. {num_parquet_copied} files copied to {data_target_path}.")
+        print(f"Finished copying and updating parquet files. {num_parquet_copied_and_updated} files processed and saved to {data_target_path}.")
     
-    # 8. Copy and rename video files (.mp4)
+    # 8. Copy and rename video files (.mp4) (No changes here based on the problem description)
     video_feature_keys = []
     if "features" in source_info:
         for f_key, f_props in source_info["features"].items():
-            if f_props.get("dtype") == "video" and f_key.startswith("observation.images."):
-                video_feature_keys.append(f_key) 
+            if f_props.get("dtype") == "video" and f_key.startswith("observation.images."): # Ensure it's an image feature for video
+                video_feature_keys.append(f_key) # Get the actual key like 'head' or 'wrist'
     
     if not video_feature_keys: 
-        video_feature_keys = ["observation.images.head", "observation.images.wrist"]
-        print("Warning: Video keys not found in source_info.features, using default head/wrist.")
+        # Heuristic: if not explicitly found, assume common keys.
+        # This might need adjustment based on typical dataset structures if "observation.images." prefix is not standard.
+        for f_key, f_props in source_info.get("features", {}).items():
+            if f_props.get("dtype") == "video":
+                video_feature_keys.append(f_key) # Take the key as is
+        if not video_feature_keys:
+            video_feature_keys = ["head", "wrist"] # Fallback default
+            print(f"Warning: Video keys not found in source_info.features['observation.images.'], using default keys: {video_feature_keys} or all video keys found.")
+
 
     for video_feature_key in video_feature_keys:
-        source_video_dir = source_path / "videos" / "chunk-000" / video_feature_key
-        target_video_dir = videos_target_path_base / video_feature_key
+        # Construct paths based on the typical structure.
+        # The video_feature_key might be 'head' or 'observation.images.head'.
+        # We need to handle both.
+        if video_feature_key.startswith("observation.images."):
+            video_dir_name_in_source = video_feature_key # e.g. "observation.images.head"
+        else:
+            video_dir_name_in_source = f"observation.images.{video_feature_key}" # e.g. "head" -> "observation.images.head"
+
+        target_video_key_dir_name = video_feature_key
+
+        source_video_dir = source_path / "videos" / "chunk-000" / video_dir_name_in_source
+        target_video_dir = videos_target_path_base / target_video_key_dir_name # Use just 'head' or 'wrist'
         target_video_dir.mkdir(parents=True, exist_ok=True)
 
         if source_video_dir.is_dir():
@@ -208,7 +261,7 @@ def merge_single_source_into_target(source_path, target_path, target_info, targe
                                  source_info.get("total_videos", num_video_streams * source_info["total_episodes"])
 
     if target_info["total_episodes"] > 0:
-        target_info["splits"]["train"] = f"0:{target_info['total_episodes']}" 
+        target_info["splits"]["train"] = f"0:{target_info['total_episodes']-1}" # Adjusted to be 0-indexed end
     else:
         target_info["splits"]["train"] = ""
 
@@ -234,6 +287,17 @@ def main():
     if not source2_path.is_dir():
         print(f"Error: Source2 directory {source2_path} not found.")
         return
+
+    if target_path.exists():
+        user_input = input(f"Target directory {target_path} already exists. Overwrite? (yes/no): ")
+        if user_input.lower() != 'yes':
+            print("Operation cancelled.")
+            return
+        print(f"Overwriting target directory {target_path}...")
+        shutil.rmtree(target_path) # Remove existing target directory
+    
+    target_path.mkdir(parents=True, exist_ok=True) # Recreate target directory
+
 
     # Initialize empty target metadata
     target_info = None
@@ -263,4 +327,4 @@ def main():
     print(f"Successfully merged datasets from {source1_path} and {source2_path} into {target_path}")
 
 if __name__ == "__main__":
-    main() 
+    main()

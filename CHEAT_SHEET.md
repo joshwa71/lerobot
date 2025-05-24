@@ -77,3 +77,15 @@ The codebase provides a useful server to visualise a dataset locally:
 python lerobot/scripts/visualize_dataset_html.py \
   --repo-id outputs/*
 ``` 
+
+### Train a Policy
+
+```
+python lerobot/scripts/train.py \
+  --dataset.repo_id=outputs/* \
+  --policy.type=act \
+  --output_dir=outputs/train/* \
+  --job_name=* \
+  --policy.device=cuda \
+  --wandb.enable=true
+```
