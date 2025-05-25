@@ -245,7 +245,7 @@ class TrajectoryDataset(Dataset):
 
         obs_feature_dummy_dict_full = {}
         for key in self.image_feature_keys:
-            feature_shape = self.final_feature_shapes.get(key) # Get pre-determined shape
+            feature_shape = self.final_feature_shapes.get(key)
             if not feature_shape: # Fallback
                  feature_shape = (self.embedding_dim,) if self.use_embeddings else (3,224,224)
                  logging.warning(f"Could not determine final shape for {key}, using fallback {feature_shape}")
@@ -295,9 +295,8 @@ class TrajectoryDataset(Dataset):
             for key_cam in self.image_feature_keys:
                  if key_cam in obs_feature_seq_dict_processed:
                     item_dict[key_cam] = obs_feature_seq_dict_processed[key_cam][:self.max_seq_len]
-                 # else: it remains the full dummy tensor from item_dict init
             padding_mask[:] = False
-        else: # Pad
+        else:
             pad_len = self.max_seq_len - current_len
             item_dict['observation.state'] = torch.cat([obs_state_seq_tensor, obs_state_dummy_full[:pad_len]], dim=0)
             item_dict['action'] = torch.cat([act_seq_tensor, act_dummy_full[:pad_len]], dim=0)
@@ -305,11 +304,9 @@ class TrajectoryDataset(Dataset):
             for key_cam in self.image_feature_keys:
                 if key_cam in obs_feature_seq_dict_processed:
                     actual_cam_data = obs_feature_seq_dict_processed[key_cam]
-                    # Use the shape from self.final_feature_shapes for consistency for this cam_key
-                    final_shape_this_cam = self.final_feature_shapes.get(key_cam, actual_cam_data.shape[1:]) # fallback to actual data's shape if not found
+                    final_shape_this_cam = self.final_feature_shapes.get(key_cam, actual_cam_data.shape[1:])
                     dummy_cam_pad = torch.zeros(pad_len, *final_shape_this_cam, dtype=actual_cam_data.dtype)
                     item_dict[key_cam] = torch.cat([actual_cam_data, dummy_cam_pad], dim=0)
-                # else, if key_cam was not processed, it remains the full dummy tensor
 
             padding_mask[:current_len] = False
 

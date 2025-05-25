@@ -1,0 +1,64 @@
+# fcil_train_config.yaml
+
+# Where to save checkpoints, logs, etc.
+output_dir: "outputs/train/fcil_policy/run1"
+job_name: "fcil_policy_run1"
+seed: 42
+
+# Dataloader settings
+num_workers: 0
+batch_size: 4
+
+# Training duration and logging
+steps: 1000
+log_freq: 10
+save_freq: 50
+save_checkpoint: True
+
+# Use optimizer and scheduler presets defined in the policy's config
+use_policy_training_preset: True
+
+# --- FCIL Specific Dataset Configuration ---
+success_dataset_repo_id: "outputs/success_50"
+mixed_dataset_repo_id: "outputs/mixed_50"
+dataset_root: "/home/josh/phddev/lerobot"
+
+dataset:
+  repo_id: "placeholder_for_draccus"
+  root: null
+
+# --- Policy Configuration (FCILPolicyConfig) ---
+policy:
+  type: fcil_policy
+  state_dim: 6
+  action_dim: 6
+
+  image_feature_keys: ["observation.images.head", "observation.images.wrist"]
+  use_embeddings: True
+  embedding_dim_in: 1024
+
+  # Transformer architecture
+  model_dim: 1024
+  n_heads: 2
+  n_layers: 3
+  dropout: 0.1
+  activation_function: "relu"
+
+  # Context lengths
+  history_len: 1000
+  max_fail_traj_len: 1000
+  
+  # Max sequence length for the transformer.
+  max_seq_len: 20000    
+
+  # Loss weighting
+  recovery_loss_weight: 0.5
+  normalization_mapping:
+    STATE: MEAN_STD
+    ACTION: MEAN_STD
+    VISUAL: IDENTITY
+
+# --- Weights & Biases Logging ---
+wandb:
+  enable: True
+  project: "fcil_policy"

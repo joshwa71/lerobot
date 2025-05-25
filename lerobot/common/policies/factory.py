@@ -22,6 +22,7 @@ from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.common.envs.configs import EnvConfig
 from lerobot.common.envs.utils import env_to_policy_features
+from lerobot.common.policies.fcil_policy.configuration_fcil_policy import FCILPolicyConfig
 from lerobot.common.policies.act.configuration_act import ACTConfig
 from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.common.policies.pi0.configuration_pi0 import PI0Config
@@ -34,30 +35,26 @@ from lerobot.configs.types import FeatureType
 
 
 def get_policy_class(name: str) -> PreTrainedPolicy:
-    """Get the policy's class and config class given a name (matching the policy class' `name` attribute)."""
     if name == "tdmpc":
         from lerobot.common.policies.tdmpc.modeling_tdmpc import TDMPCPolicy
-
         return TDMPCPolicy
     elif name == "diffusion":
         from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
-
         return DiffusionPolicy
     elif name == "act":
         from lerobot.common.policies.act.modeling_act import ACTPolicy
-
         return ACTPolicy
+    elif name == "fcil_policy":
+        from lerobot.common.policies.fcil_policy.modeling_fcil_policy import FCILPolicy
+        return FCILPolicy
     elif name == "vqbet":
         from lerobot.common.policies.vqbet.modeling_vqbet import VQBeTPolicy
-
         return VQBeTPolicy
     elif name == "pi0":
         from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
-
         return PI0Policy
     elif name == "pi0fast":
         from lerobot.common.policies.pi0fast.modeling_pi0fast import PI0FASTPolicy
-
         return PI0FASTPolicy
     else:
         raise NotImplementedError(f"Policy with name {name} is not implemented.")
@@ -76,6 +73,8 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
         return PI0Config(**kwargs)
     elif policy_type == "pi0fast":
         return PI0FASTConfig(**kwargs)
+    elif policy_type == "fcil_policy":
+        return FCILPolicyConfig(**kwargs)
     else:
         raise ValueError(f"Policy type '{policy_type}' is not available.")
 

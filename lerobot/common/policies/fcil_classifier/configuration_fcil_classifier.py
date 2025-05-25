@@ -23,53 +23,63 @@ from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 @PreTrainedConfig.register_subclass("fcil_classifier")
 @dataclass
 class FCILClassifierConfig(PreTrainedConfig):
-    """Configuration class for the Trajectory Failure Classifier Policy with Image Processing."""
+    """Configuration class for the Trajectory Failure Classifier Policy."""
 
-    # Input features:
     state_dim: int | None = None
     action_dim: int | None = None
-    image_feature_keys: List[str] = field(default_factory=list) # If use_embeddings=True, these keys point to embeddings
+    image_feature_keys: List[str] = field(default_factory=list)
 
-    # Embedding settings (if use_embeddings=True)
     use_embeddings: bool = False
-    embedding_dim: int | None = None # Dimension of pre-computed embeddings
+    embedding_dim: int | None = None
 
-    # Image processing (if use_embeddings=False)
     vision_backbone: str = "resnet18"
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
-    vision_feature_dim: int = 512 # Output dim of vision_backbone before projection
+    vision_feature_dim: int = 512 # Output dim of vision_backbone (e.g., 512 for ResNet18) before any final FC layer.
 
-    # Normalization settings
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
             "STATE": NormalizationMode.MEAN_STD,
             "ACTION": NormalizationMode.MEAN_STD,
-            "VISUAL": NormalizationMode.IDENTITY, # For raw image pixels or embeddings
+            "VISUAL": NormalizationMode.MEAN_STD,
         }
     )
 
-    # Architecture (Transformer Encoder based)
-    dim_model: int = 256
+    dim_model: int = 256       # Transformer hidden dimension
     n_heads: int = 4
     n_encoder_layers: int = 3
     dim_feedforward: int = 1024
     feedforward_activation: str = "relu"
     dropout: float = 0.1
-    max_seq_len: int = 100
+    max_seq_len: int = 100     # Number of original trajectory timesteps
     pre_norm: bool = True
 
-    # Training presets (can be overridden)
     optimizer_lr: float = 1e-4
     optimizer_weight_decay: float = 1e-4
     scheduler_config: LRSchedulerConfig | None = None
+
+    # Calculated property, not user-set directly
+    _actual_transformer_max_seq_len: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         super().__post_init__()
         self.output_features = {
             "is_failure_pred": PolicyFeature(type=FeatureType.STATE, shape=(1,))
         }
-        if self.use_embeddings and self.embedding_dim is None:
-            raise ValueError("If use_embeddings is True, embedding_dim must be specified.")
+        if self.use_embeddings:
+            if self.embedding_dim is None:
+                raise ValueError("If use_embeddings is True, embedding_dim must be specified.")
+            if self.embedding_dim % self.dim_model != 0 :
+                 raise ValueError(f"embedding_dim ({self.embedding_dim}) must be divisible by dim_model ({self.dim_model}) for segmentation.")
+        
+        # Calculate actual sequence length after tokenization strategy
+        tokens_per_timestep = 2 # state + action
+        if self.image_feature_keys:
+            if self.use_embeddings:
+                num_visual_tokens_per_cam = self.embedding_dim // self.dim_model
+                tokens_per_timestep += num_visual_tokens_per_cam * len(self.image_feature_keys)
+            else:
+                tokens_per_timestep += 1 # One fused visual token
+        self._actual_transformer_max_seq_len = 1 + self.max_seq_len * tokens_per_timestep # +1 for CLS
 
     @property
     def observation_delta_indices(self) -> None:
@@ -94,9 +104,8 @@ class FCILClassifierConfig(PreTrainedConfig):
 
     def validate_features(self) -> None:
         if self.state_dim is None or self.action_dim is None :
-            # This will be caught later if not set by the policy factory
             pass
-        
+
         self.input_features = {}
         if self.state_dim:
             self.input_features["observation.state"] = PolicyFeature(type=FeatureType.STATE, shape=(self.state_dim,))
@@ -107,11 +116,9 @@ class FCILClassifierConfig(PreTrainedConfig):
             if self.use_embeddings:
                 if self.embedding_dim is None:
                     raise ValueError("embedding_dim must be set in config if use_embeddings is True and image_feature_keys are present.")
+                # The input feature from dataset is embedding_dim
                 self.input_features[key] = PolicyFeature(type=FeatureType.VISUAL, shape=(self.embedding_dim,))
             else:
-                # For raw images, shape is typically (C, H, W). Let's use a placeholder or infer from dataset.
-                # For now, Normalize module for VISUAL uses (C,1,1) so exact H,W not critical for it.
-                # The actual image shape is handled by the backbone.
                 self.input_features[key] = PolicyFeature(type=FeatureType.VISUAL, shape=(3,224,224)) # Placeholder for raw images
 
         if not self.input_features and not (self.state_dim or self.action_dim or self.image_feature_keys):
