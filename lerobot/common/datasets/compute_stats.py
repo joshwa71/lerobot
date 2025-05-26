@@ -116,7 +116,7 @@ def _assert_type_and_shape(stats_list: list[dict[str, dict]]):
                         f"Stats must be composed of numpy array, but key '{k}' of feature '{fkey}' is of type '{type(v)}' instead."
                     )
                 if v.ndim == 0:
-                    raise ValueError("Number of dimensions must be at least 1, and is 0 instead.")
+                    raise ValueError(f"Number of dimensions must be at least 1, and is 0 instead for key '{k}' of feature '{fkey}' in stats {stats_list[i]}.")
                 if k == "count" and v.shape != (1,):
                     raise ValueError(f"Shape of 'count' must be (1), but is {v.shape} instead.")
                 if "image" in fkey and k != "count" and v.shape != (3, 1, 1):

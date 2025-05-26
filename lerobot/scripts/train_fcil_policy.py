@@ -23,6 +23,7 @@ from pathlib import Path
 from pprint import pformat
 from typing import List, Dict, Any, Tuple 
 import functools # Import functools for partial
+from tqdm import tqdm
 
 import torch
 from torch.amp import GradScaler
@@ -258,11 +259,16 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         json.dump(cfg_dict_to_save, f, indent=4)
 
     logger.info("Start FCIL policy training")
-    for current_iter_step in range(step, cfg.steps):
-        if current_iter_step > 0 and current_iter_step % (cfg.log_freq if cfg.log_freq > 0 else 100) == 0 : 
-            logger.info(f"Overall Progress: Step {current_iter_step}/{cfg.steps}")
-            
-        logger.info(f"Current iter step: {current_iter_step}")
+    progress_bar = tqdm(
+        range(step, cfg.steps),
+        desc="Training",
+        initial=step,
+        total=cfg.steps,
+        dynamic_ncols=True,
+        position=0,
+        leave=True,
+    )
+    for current_iter_step in progress_bar:
         iter_start_time = time.perf_counter()
         batch = next(dl_iter) 
         train_tracker.dataloading_s = time.perf_counter() - iter_start_time
@@ -283,7 +289,8 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         is_saving_step = train_tracker.steps % cfg.save_freq == 0 or train_tracker.steps == cfg.steps
         
         if is_log_step:
-            logger.info(f"Step {train_tracker.steps}/{cfg.steps} - {str(train_tracker)}")
+            progress_bar.set_postfix(loss=f"{train_tracker.loss.avg:.4f}", lr=f"{train_tracker.lr.avg:.1e}")
+            tqdm.write(f"Step {train_tracker.steps}/{cfg.steps} - {str(train_tracker)}")
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
                 if output_dict:
@@ -294,13 +301,14 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
             train_tracker.reset_averages()
         
         if cfg.save_checkpoint and is_saving_step:
-            logger.info(f"Checkpoint policy after step {train_tracker.steps}")
+            tqdm.write(f"Checkpoint policy after step {train_tracker.steps}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, train_tracker.steps)
             save_checkpoint(checkpoint_dir, train_tracker.steps, cfg, policy, optimizer, lr_scheduler)
             update_last_checkpoint(checkpoint_dir)
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
 
+    progress_bar.close()
     logger.info("End of FCIL policy training")
 
 if __name__ == "__main__":

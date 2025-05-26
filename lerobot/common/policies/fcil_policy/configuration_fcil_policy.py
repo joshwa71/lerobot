@@ -53,6 +53,8 @@ class FCILPolicyConfig(PreTrainedConfig):
 
     history_len: int = 10 # Number of past (s, o, a) timesteps to use as context
     max_fail_traj_len: int = 50 # Max number of timesteps from the failure trajectory to use as context
+    
+    frame_skip_rate: int = 1 # Sample every Nth frame. 1 means no skipping (backward compatible).
 
     # Calculated internally, but good to know the components
     # Max tokens per state = 1
@@ -78,25 +80,22 @@ class FCILPolicyConfig(PreTrainedConfig):
     # Optimizer and Scheduler presets
     optimizer_lr: float = 1e-4
     optimizer_weight_decay: float = 1e-4
-    scheduler_warmup_steps: int = 100
-    scheduler_decay_steps: int = 1000
-    scheduler_decay_lr_ratio: float = 0.1 # Ratio of peak_lr for final decay_lr
+    scheduler_warmup_steps: int = 1000
+    scheduler_decay_steps: int = 9000
+    scheduler_decay_lr_ratio: float = 0.1
 
     def __post_init__(self):
         super().__post_init__()
+        if self.frame_skip_rate < 1:
+            raise ValueError("frame_skip_rate must be >= 1.")
         if not self.use_embeddings:
             raise ValueError("FCILPolicy currently requires use_embeddings=True.")
         if self.embedding_dim_in % self.model_dim != 0:
             raise ValueError(f"embedding_dim_in ({self.embedding_dim_in}) must be divisible by model_dim ({self.model_dim}) for token splitting.")
 
-        # Action dim for policy output (includes a "done" flag)
-        # This is set here because output_features depends on it.
-        # self.policy_action_dim = (self.action_dim if self.action_dim else 0) + 1
-
     @property
     def policy_action_dim(self):
         if self.action_dim is None:
-            # This can happen if config is loaded before action_dim is inferred from dataset
             return None
         return self.action_dim + 1
 
@@ -115,7 +114,6 @@ class FCILPolicyConfig(PreTrainedConfig):
         )
     
     def validate_features(self) -> None:
-        # Called by policy factory after features are inferred from dataset
         if self.action_dim is None and self.input_features.get("action"):
             self.action_dim = self.input_features["action"].shape[0]
         
@@ -125,13 +123,10 @@ class FCILPolicyConfig(PreTrainedConfig):
         if self.action_dim is None or self.state_dim is None:
             raise ValueError("action_dim and state_dim must be set or inferable from dataset features.")
 
-        # Output feature for the policy (action + done flag)
         self.output_features = {
             "action_pred": PolicyFeature(type=FeatureType.ACTION, shape=(self.policy_action_dim,))
         }
         
-        # Input features are already populated by the policy factory using dataset_to_policy_features
-        # We just need to ensure the required ones are there.
         if "observation.state" not in self.input_features:
             raise ValueError("FCILPolicy requires 'observation.state' in input_features.")
         if not self.image_feature_keys:
@@ -139,9 +134,8 @@ class FCILPolicyConfig(PreTrainedConfig):
         for key in self.image_feature_keys:
             if key not in self.input_features:
                 raise ValueError(f"Image feature key '{key}' not found in inferred input_features.")
-            # Override shape for image embeddings if not correctly inferred (should be embedding_dim_in)
             self.input_features[key] = PolicyFeature(type=FeatureType.VISUAL, shape=(self.embedding_dim_in,))
-        if "action" not in self.input_features: # For history
+        if "action" not in self.input_features: 
              self.input_features["action"] = PolicyFeature(type=FeatureType.ACTION, shape=(self.action_dim,))
 
 

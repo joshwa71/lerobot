@@ -6,11 +6,11 @@ job_name: "fcil_policy_run1"
 seed: 42
 
 # Dataloader settings
-num_workers: 0
-batch_size: 4
+num_workers: 4
+batch_size: 32
 
 # Training duration and logging
-steps: 1000
+steps: 10000
 log_freq: 10
 save_freq: 50
 save_checkpoint: True
@@ -39,17 +39,20 @@ policy:
 
   # Transformer architecture
   model_dim: 1024
-  n_heads: 2
+  n_heads: 4
   n_layers: 3
   dropout: 0.1
   activation_function: "relu"
 
+  # Max ep length is 768 frames
+
   # Context lengths
-  history_len: 1000
-  max_fail_traj_len: 1000
+  history_len: 192 # 768 / 4
+  max_fail_traj_len: 192 # 768 / 4
   
   # Max sequence length for the transformer.
-  max_seq_len: 20000    
+  max_seq_len: 2048
+  frame_skip_rate: 4
 
   # Loss weighting
   recovery_loss_weight: 0.5

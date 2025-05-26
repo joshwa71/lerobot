@@ -15,7 +15,7 @@ from lerobot.common.policies.fcil_policy.configuration_fcil_policy import FCILPo
 
 logger = logging.getLogger(__name__)
 
-def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], config: FCILPolicyConfig) -> Tuple[Dict[str, Any], torch.Tensor]: # Added config argument
+def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], config: FCILPolicyConfig) -> Tuple[Dict[str, Any], torch.Tensor]:
     """
     Custom collate function for FCILPolicyDataset.
     Handles 'history_context' and 'fail_traj_context_optional' which can contain lists of (dict or None).
@@ -29,15 +29,14 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
     batch_size = len(policy_input_dicts)
 
     for key in first_input_dict:
-        if key not in ["history_context", "fail_traj_context_optional"]: # Removed "config" from here
+        if key not in ["history_context", "fail_traj_context_optional"]:
             collated_policy_input_dict[key] = default_collate([d[key] for d in policy_input_dicts])
 
-    # --- Custom collation for history_context ---
     history_contexts = [d["history_context"] for d in policy_input_dicts] 
     history_len = 0
     first_valid_history_sample = next((hc for hc in history_contexts if hc is not None and len(hc) > 0), None)
     if first_valid_history_sample is not None:
-        history_len = len(first_valid_history_sample) # Should be config.history_len
+        history_len = len(first_valid_history_sample) 
     
     collated_history_context_list: List[Dict[str, Any]] = [] 
 
@@ -54,7 +53,6 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
         
         if template_item_hist is None:
             logger.debug("No valid history item found for template, using fallback for padding shapes based on config.")
-            # Use config for shapes if no live template
             template_item_hist_fallback = {
                 'state': torch.zeros((config.state_dim,), dtype=torch.float32),
                 'action': torch.zeros((config.action_dim,), dtype=torch.float32),
@@ -84,22 +82,20 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
             collated_history_context_list.append(default_collate(history_step_batch_items))
     collated_policy_input_dict["history_context"] = collated_history_context_list
 
-
-    # --- Custom collation for fail_traj_context_optional ---
     fail_traj_contexts = [d.get("fail_traj_context_optional") for d in policy_input_dicts] 
     
-    collated_fail_traj_context_list: List[Dict[str, Any]] | None = None # Initialize as None
+    collated_fail_traj_context_list: List[Dict[str, Any]] | None = None 
 
     if any(ftc is not None for ftc in fail_traj_contexts):
-        collated_fail_traj_context_list = [] # Will become a list of dicts
+        collated_fail_traj_context_list = [] 
         first_valid_fail_traj = next((ftc for ftc in fail_traj_contexts if ftc is not None and len(ftc) > 0), None)
         
-        fail_traj_len_for_batch = config.max_fail_traj_len # Use config for consistent length
+        fail_traj_len_for_batch = config.max_fail_traj_len 
         
         template_item_fail_step = None
         if first_valid_fail_traj is not None and len(first_valid_fail_traj) > 0:
-             template_item_fail_step = first_valid_fail_traj[0] # Template for a single step
-        else: # Fallback template if no valid fail traj in batch
+             template_item_fail_step = first_valid_fail_traj[0] 
+        else: 
             logger.debug("No valid fail_traj item found for template, using fallback for padding shapes based on config.")
             template_item_fail_step = {
                 'state': torch.zeros((config.state_dim,), dtype=torch.float32),
@@ -115,7 +111,6 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
             fail_step_batch_items = []
             for sample_idx in range(batch_size):
                 ftc_sample = fail_traj_contexts[sample_idx]
-                # Check if the sample is in recovery and has this specific step
                 if ftc_sample is not None and i < len(ftc_sample) and ftc_sample[i] is not None : 
                     fail_step_batch_items.append(ftc_sample[i])
                 else: 
@@ -203,7 +198,7 @@ class FCILPolicyDataset(Dataset):
             meta.pull_from_repo(allow_patterns=list(set(files_to_download)), ignore_patterns=None)
 
         cache_dir_path_str = None
-        if meta.root: # Only set cache_dir if root is local, otherwise datasets library handles HF cache
+        if meta.root: 
             cache_dir_path = Path(meta.root).parent / ".cache" / meta.repo_id.split("/")[-1]
             cache_dir_path.mkdir(parents=True, exist_ok=True)
             cache_dir_path_str = str(cache_dir_path)
@@ -220,7 +215,7 @@ class FCILPolicyDataset(Dataset):
         for ep_idx in range(self.success_ds_meta.total_episodes):
             ep_len = self.success_ds_meta.episodes[ep_idx]['length']
             if ep_len == 0: continue
-            for t in range(ep_len): 
+            for t in range(0, ep_len, self.config.frame_skip_rate): 
                 self.episode_map.append({
                     "ds_idx": 0, 
                     "ep_idx_in_ds": ep_idx, 
@@ -235,7 +230,7 @@ class FCILPolicyDataset(Dataset):
             is_success_ep = ep_meta.get('success', True) 
 
             if is_success_ep:
-                for t in range(ep_len):
+                for t in range(0, ep_len, self.config.frame_skip_rate):
                     self.episode_map.append({
                         "ds_idx": 1, 
                         "ep_idx_in_ds": ep_idx,
@@ -248,7 +243,7 @@ class FCILPolicyDataset(Dataset):
                     if next_ep_meta.get('success', False): 
                         succ_ep_len = next_ep_meta['length']
                         if succ_ep_len == 0: continue
-                        for t_succ in range(succ_ep_len):
+                        for t_succ in range(0, succ_ep_len, self.config.frame_skip_rate):
                             self.episode_map.append({
                                 "ds_idx": 1, 
                                 "fail_ep_idx_in_ds": ep_idx,
@@ -297,9 +292,9 @@ class FCILPolicyDataset(Dataset):
     def _get_history_and_current(self, ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep) -> Tuple[List[Dict[str, Any] | None], Dict[str, Any], torch.Tensor]:
         history_data_list: List[Dict[str, Any] | None] = []
         for k_hist_offset in range(self.config.history_len, 0, -1): 
-            hist_t = t_in_ep - k_hist_offset
-            if hist_t >= 0:
-                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, hist_t)
+            hist_t_original = t_in_ep - (k_hist_offset * self.config.frame_skip_rate)
+            if hist_t_original >= 0:
+                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, hist_t_original)
                 history_data_list.append({
                     "state": step_data['state'],
                     "observation_visual": step_data['observation_visual'],
@@ -318,24 +313,27 @@ class FCILPolicyDataset(Dataset):
         return history_data_list, current_s_o, target_action_done
 
     def _get_fail_trajectory_context(self, ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds) -> List[Dict[str, Any]]:
-        fail_traj_data_list: List[Dict[str, Any]] = []
+        fail_traj_data_list_ordered: List[Dict[str, Any]] = []
         fail_ep_len = ds_meta.episodes[fail_ep_idx_in_ds]['length']
         
-        start_t_fail = max(0, fail_ep_len - self.config.max_fail_traj_len)
-        
-        for t_fail in range(start_t_fail, fail_ep_len):
-            step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds, t_fail)
-            fail_traj_data_list.append({
-                "state": step_data['state'],
-                "observation_visual": step_data['observation_visual'],
-                "action": step_data['action'] 
-            })
+        for k_fail_offset in range(self.config.max_fail_traj_len, 0, -1):
+            t_fail_original = fail_ep_len - (k_fail_offset * self.config.frame_skip_rate)
+            if t_fail_original >= 0:
+                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds, t_fail_original)
+                fail_traj_data_list_ordered.append({
+                    "state": step_data['state'],
+                    "observation_visual": step_data['observation_visual'],
+                    "action": step_data['action'] 
+                })
+
+        fail_traj_data_list = list(reversed(fail_traj_data_list_ordered))
         
         num_actual_fail_steps = len(fail_traj_data_list)
         num_pad_fail_steps = self.config.max_fail_traj_len - num_actual_fail_steps
+
         if num_pad_fail_steps > 0:
             if num_actual_fail_steps > 0:
-                template_step = fail_traj_data_list[0] # Use first actual step as template
+                template_step = fail_traj_data_list[0] 
             else: 
                 template_step = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
@@ -346,6 +344,7 @@ class FCILPolicyDataset(Dataset):
                     }
                 }
             
+            padding_list = []
             for _ in range(num_pad_fail_steps):
                 padding_step_data = {
                     'state': torch.zeros_like(template_step['state']),
@@ -354,7 +353,8 @@ class FCILPolicyDataset(Dataset):
                         k: torch.zeros_like(v) for k,v in template_step['observation_visual'].items()
                     }
                 }
-                fail_traj_data_list.insert(0, padding_step_data) # Prepend padding
+                padding_list.append(padding_step_data)
+            fail_traj_data_list = padding_list + fail_traj_data_list
 
         return fail_traj_data_list
 
@@ -383,7 +383,6 @@ class FCILPolicyDataset(Dataset):
             history_context, current_state_obs, target_action_and_done = \
                 self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep)
             is_recovery_mode = False
-            # For standard mode, create a fully padded fail_traj_context for consistent structure
             fail_traj_context_optional = []
             template_step_fail_pad = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
@@ -418,7 +417,7 @@ class FCILPolicyDataset(Dataset):
         policy_input_dict = {
             "history_context": history_context, 
             "current_state_obs": current_state_obs, 
-            "fail_traj_context_optional": fail_traj_context_optional, # Now always a list of dicts
+            "fail_traj_context_optional": fail_traj_context_optional, 
             "is_recovery_mode": is_recovery_mode,
         }
         
