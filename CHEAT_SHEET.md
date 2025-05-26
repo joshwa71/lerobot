@@ -16,7 +16,7 @@ Once the ports are opened, run this script and follow instructions:
 python lerobot/scripts/find_motors_bus_port.py
 ```
 
-Following this, update `lerobot/common/robot_devices/configs.py` with the relevant ports for the leader and follower arm.
+Following this, update `lerobot/common/robot_devices/robots/configs.py` with the relevant ports for the leader and follower arm.
 
 ### 2. Camera Check
 The next step is to ensure the cameras are connected correctly. Run this script to search for cameras connected:
