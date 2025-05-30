@@ -1,3 +1,5 @@
+## Repo Summary
+
 **Overall Goal:**
 LeRobot aims to be a comprehensive PyTorch-based library for real-world and simulated robotics research and application. It focuses on lowering the barrier to entry by providing tools, datasets, and pre-trained models, with a strong emphasis on imitation learning and reinforcement learning, and deep integration with the Hugging Face Hub.
 

@@ -1,26 +1,28 @@
 # fcil_train_config.yaml
 
 # Where to save checkpoints, logs, etc.
-output_dir: "outputs/train/fcil_policy/run1"
-job_name: "fcil_policy_run1"
+output_dir: "outputs/train/fcil_policy/run4"
+job_name: "fcil_policy_run4"
 seed: 42
 
 # Dataloader settings
 num_workers: 4
 batch_size: 32
+eval_freq: 1000
+train_val_split_ratio: 0.9
 
 # Training duration and logging
-steps: 10000
+steps: 100000
 log_freq: 10
-save_freq: 50
+save_freq: 1000
 save_checkpoint: True
 
 # Use optimizer and scheduler presets defined in the policy's config
 use_policy_training_preset: True
 
 # --- FCIL Specific Dataset Configuration ---
-success_dataset_repo_id: "outputs/success_50"
-mixed_dataset_repo_id: "outputs/mixed_50"
+success_dataset_repo_id: "outputs/success_100"
+mixed_dataset_repo_id: "outputs/mixed_186"
 dataset_root: "/home/josh/phddev/lerobot"
 
 dataset:
@@ -54,8 +56,15 @@ policy:
   max_seq_len: 2048
   frame_skip_rate: 4
 
+  # Learning rate
+  optimizer_lr: 1e-4
+  optimizer_weight_decay: 1e-4
+  scheduler_warmup_steps: 10000
+  scheduler_decay_steps: 90000
+  scheduler_decay_lr_ratio: 0.1
+
   # Loss weighting
-  recovery_loss_weight: 0.5
+  recovery_loss_weight: 1.0
   normalization_mapping:
     STATE: MEAN_STD
     ACTION: MEAN_STD

@@ -28,7 +28,7 @@ from tqdm import tqdm
 import torch
 from torch.amp import GradScaler
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata 
 from lerobot.common.datasets.fcil_policy_dataset import FCILPolicyDataset, fcil_policy_collate_fn 
@@ -63,7 +63,9 @@ class FCILPolicyTrainConfig(TrainPipelineConfig):
     success_dataset_repo_id: str = "lerobot/success_50_placeholder" 
     mixed_dataset_repo_id: str = "lerobot/mixed_50_placeholder"   
     dataset_root: Path | None = None
-    
+    train_val_split_ratio: float = 0.9
+    eval_freq: int = 10
+
     def __post_init__(self):
         super().__post_init__() 
         if not self.job_name:
@@ -130,6 +132,45 @@ def update_fcil_policy(
     return train_metrics, output_dict
 
 
+@torch.no_grad() # Evaluation should not compute gradients
+def evaluate_policy(policy: FCILPolicy, val_loader: DataLoader, device: torch.device, use_amp: bool = False) -> dict:
+    policy.eval()
+
+    all_batch_losses = []
+    all_unweighted_losses = []
+    all_recovery_proportions = []
+    
+    for batch in val_loader:
+        policy_input_dict, target_action_and_done = batch
+        
+        def move_to_device(item):
+            if isinstance(item, torch.Tensor):
+                return item.to(device, non_blocking=True)
+            elif isinstance(item, dict):
+                return {k: move_to_device(v) for k, v in item.items()}
+            elif isinstance(item, list):
+                return [move_to_device(i) if i is not None else None for i in item]
+            return item 
+
+        policy_input_dict_device = move_to_device(policy_input_dict)
+        target_action_and_done_device = target_action_and_done.to(device, non_blocking=True)
+        
+        with torch.autocast(device_type=device.type, enabled=use_amp) if use_amp else nullcontext():
+            loss, output_dict = policy.forward((policy_input_dict_device, target_action_and_done_device))
+
+        all_batch_losses.append(loss.item())
+        all_unweighted_losses.append(output_dict.get("unweighted_mse_loss", 0.0))
+        all_recovery_proportions.append(output_dict.get("recovery_proportion", 0.0))
+
+    # Aggregate metrics over all validation batches
+    eval_metrics = {
+        "loss": sum(all_batch_losses) / len(all_batch_losses) if all_batch_losses else 0.0,
+        "unweighted_mse_loss": sum(all_unweighted_losses) / len(all_unweighted_losses) if all_unweighted_losses else 0.0,
+        "recovery_proportion": sum(all_recovery_proportions) / len(all_recovery_proportions) if all_recovery_proportions else 0.0
+    }
+    return eval_metrics
+
+
 @parser.wrap(config_path=None) 
 def train_fcil_policy(cfg: FCILPolicyTrainConfig):
     if not cfg.resume:
@@ -179,12 +220,28 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         )
 
     logger.info("Creating FCILPolicyDataset")
-    train_dataset = FCILPolicyDataset(
+    full_dataset = FCILPolicyDataset(
         config=cfg.policy, 
         success_dataset_repo_id=cfg.success_dataset_repo_id,
         mixed_dataset_repo_id=cfg.mixed_dataset_repo_id,
         root=cfg.dataset_root,
         revision=cfg.dataset.revision, 
+    )
+
+    num_total_episodes = len(full_dataset)
+    if num_total_episodes == 0:
+        raise ValueError("TrajectoryDataset is empty. Check repo_ids and dataset contents.")
+    logging.info(f"TrajectoryDataset created with {num_total_episodes} total episodes.")
+
+    # Split dataset
+    num_train_episodes = int(num_total_episodes * cfg.train_val_split_ratio)
+    num_val_episodes = num_total_episodes - num_train_episodes
+
+    generator = torch.Generator().manual_seed(cfg.seed) if cfg.seed is not None else None
+    train_dataset, val_dataset = random_split(
+        full_dataset, 
+        [num_train_episodes, num_val_episodes],
+        generator=generator
     )
 
     # Use functools.partial to pass the config to the collate_fn
@@ -199,6 +256,17 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         drop_last=True,
         collate_fn=collate_fn_with_config # USE THE CUSTOM COLLATE FN via partial
     )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+        pin_memory=device.type != "cpu",
+        drop_last=False,
+        collate_fn=collate_fn_with_config
+    )
+
     dl_iter = cycle(train_loader)
 
     logger.info("Creating FCILPolicy")
@@ -240,6 +308,8 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
     train_metrics_def = {
         "loss": AverageMeter("loss", ":.4f"),       
         "mse_loss": AverageMeter("mse", ":.4f"),    
+        "unweighted_mse_loss": AverageMeter("unw_mse", ":.4f"),
+        "recovery_proportion": AverageMeter("rec_prop", ":.3f"),
         "lr": AverageMeter("lr", ":0.1e"),
         "update_s": AverageMeter("updt_s", ":.3f"),
         "dataloading_s": AverageMeter("data_s", ":.3f"),
@@ -287,6 +357,7 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
 
         is_log_step = cfg.log_freq > 0 and train_tracker.steps % cfg.log_freq == 0
         is_saving_step = train_tracker.steps % cfg.save_freq == 0 or train_tracker.steps == cfg.steps
+        is_eval_step = cfg.eval_freq > 0 and train_tracker.steps % cfg.eval_freq == 0
         
         if is_log_step:
             progress_bar.set_postfix(loss=f"{train_tracker.loss.avg:.4f}", lr=f"{train_tracker.lr.avg:.1e}")
@@ -299,6 +370,13 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
                              wandb_log_dict[f"train_batch/{k_metric}"] = v_metric
                 wandb_logger.log_dict(wandb_log_dict, train_tracker.steps, mode="train")
             train_tracker.reset_averages()
+        
+        if is_eval_step:
+            tqdm.write(f"Evaluating policy after step {train_tracker.steps}...")
+            eval_output_dict = evaluate_policy(policy, val_loader, device, use_amp=cfg.policy.use_amp)
+            tqdm.write(f"Step {train_tracker.steps}/{cfg.steps} - Eval Metrics: {eval_output_dict}")
+            if wandb_logger:
+                wandb_logger.log_dict(eval_output_dict, train_tracker.steps, mode="eval")
         
         if cfg.save_checkpoint and is_saving_step:
             tqdm.write(f"Checkpoint policy after step {train_tracker.steps}")

@@ -39,7 +39,7 @@ class FCILTransformerModel(nn.Module):
         self.image_tokens_per_cam = config.embedding_dim_in // config.model_dim
 
         self.state_embed = nn.Linear(config.state_dim, config.model_dim)
-        self.action_embed = nn.Linear(config.action_dim, config.model_dim) 
+        self.action_embed = nn.Linear(config.policy_action_dim, config.model_dim) 
         
         self.image_chunk_embed = nn.Linear(config.model_dim, config.model_dim) 
         
@@ -346,7 +346,6 @@ class FCILPolicy(PreTrainedPolicy):
         return action_pred 
 
     def forward(self, batch: Tuple[Dict[str, Any], torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, float]]:
-        self.train()
         policy_input_batch_collated, target_action_and_done_batch = batch
         
         predicted_action_done_normalized = self.model(policy_input_batch_collated) 
@@ -360,7 +359,17 @@ class FCILPolicy(PreTrainedPolicy):
         sample_weights = torch.ones_like(loss[:,0], device=loss.device) 
         sample_weights[policy_input_batch_collated["is_recovery_mode"]] = self.config.recovery_loss_weight
         
+        # Compute unweighted loss for debugging
+        unweighted_loss = loss.mean()
+        
         loss = (loss.mean(dim=1) * sample_weights).mean() 
         
-        loss_dict = {"mse_loss": loss.item()}
+        # Calculate proportion of recovery samples
+        recovery_proportion = policy_input_batch_collated["is_recovery_mode"].float().mean().item()
+        
+        loss_dict = {
+            "mse_loss": loss.item(),
+            "unweighted_mse_loss": unweighted_loss.item(),
+            "recovery_proportion": recovery_proportion
+        }
         return loss, loss_dict

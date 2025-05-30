@@ -190,7 +190,7 @@ def evaluate_policy(policy: FCILClassifierPolicy, val_loader: DataLoader, device
                 batch[key] = value.to(device, non_blocking=True)
         
         with torch.autocast(device_type=device.type, enabled=use_amp) if use_amp else nullcontext():
-            loss, output_dict = policy.forward(batch) # policy.forward now returns batch-wise metrics
+            loss, output_dict = policy.forward(batch)
 
         all_batch_losses.append(loss.item())
         all_batch_accuracies.append(output_dict.get("accuracy", 0.0))

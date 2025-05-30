@@ -175,7 +175,7 @@ def process_dataset(root: Path, model_name: str, batch: int, proj_dim: int):
 def main():
     p = argparse.ArgumentParser("Offline video frame embedding for LeRobot datasets")
     p.add_argument("--root", type=Path, required=True, help="Dataset root (with videos/)")
-    p.add_argument("--model", type=str, default="dinov2_vitb14", help="dinov2_* or ViT-B-16-SigLIP2 etc.")
+    p.add_argument("--model", type=str, default="dinov2_vitl14", help="dinov2_* or ViT-B-16-SigLIP2 etc.")
     p.add_argument("--batch", type=int, default=64)
     p.add_argument("--proj-dim", type=int, default=0, help="Project features to this dim (0 = keep native)")
     args = p.parse_args()

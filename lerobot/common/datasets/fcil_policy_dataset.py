@@ -55,7 +55,7 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
             logger.debug("No valid history item found for template, using fallback for padding shapes based on config.")
             template_item_hist_fallback = {
                 'state': torch.zeros((config.state_dim,), dtype=torch.float32),
-                'action': torch.zeros((config.action_dim,), dtype=torch.float32),
+                'action': torch.zeros((config.policy_action_dim,), dtype=torch.float32), # Use policy_action_dim
                 'observation_visual': {
                     k: torch.zeros((config.embedding_dim_in,), dtype=torch.float32) 
                     for k in config.image_feature_keys
@@ -73,7 +73,7 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
                 else:
                     padding_dict = {
                         'state': torch.zeros_like(template_item_hist['state']), 
-                        'action': torch.zeros_like(template_item_hist['action']),
+                        'action': torch.zeros_like(template_item_hist['action']), # Action now includes done
                         'observation_visual': {
                             k: torch.zeros_like(v) for k, v in template_item_hist['observation_visual'].items()
                         }
@@ -99,7 +99,7 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
             logger.debug("No valid fail_traj item found for template, using fallback for padding shapes based on config.")
             template_item_fail_step = {
                 'state': torch.zeros((config.state_dim,), dtype=torch.float32),
-                'action': torch.zeros((config.action_dim,), dtype=torch.float32),
+                'action': torch.zeros((config.policy_action_dim,), dtype=torch.float32), # Use policy_action_dim
                 'observation_visual': {
                     k: torch.zeros((config.embedding_dim_in,), dtype=torch.float32) 
                     for k in config.image_feature_keys
@@ -116,7 +116,7 @@ def fcil_policy_collate_fn(batch: List[Tuple[Dict[str, Any], torch.Tensor]], con
                 else: 
                     padding_dict_fail = {
                         'state': torch.zeros_like(template_item_fail_step['state']),
-                        'action': torch.zeros_like(template_item_fail_step['action']),
+                        'action': torch.zeros_like(template_item_fail_step['action']), # Action now includes done
                         'observation_visual': {
                             k: torch.zeros_like(v) for k,v in template_item_fail_step['observation_visual'].items()
                         }
@@ -216,11 +216,13 @@ class FCILPolicyDataset(Dataset):
             ep_len = self.success_ds_meta.episodes[ep_idx]['length']
             if ep_len == 0: continue
             for t in range(0, ep_len, self.config.frame_skip_rate): 
+                is_last_sampled = (t + self.config.frame_skip_rate >= ep_len)
                 self.episode_map.append({
                     "ds_idx": 0, 
                     "ep_idx_in_ds": ep_idx, 
-                    "timestep_in_ep": t,
-                    "mode": "standard"
+                    "timestep_in_ep": t, # This 't' is the original index of the sampled frame
+                    "mode": "standard",
+                    "is_last_sampled_in_ep": is_last_sampled 
                 })
 
         for ep_idx in range(self.mixed_ds_meta.total_episodes):
@@ -231,11 +233,13 @@ class FCILPolicyDataset(Dataset):
 
             if is_success_ep:
                 for t in range(0, ep_len, self.config.frame_skip_rate):
+                    is_last_sampled = (t + self.config.frame_skip_rate >= ep_len)
                     self.episode_map.append({
                         "ds_idx": 1, 
                         "ep_idx_in_ds": ep_idx,
-                        "timestep_in_ep": t,
-                        "mode": "standard"
+                        "timestep_in_ep": t, # This 't' is the original index
+                        "mode": "standard",
+                        "is_last_sampled_in_ep": is_last_sampled
                     })
             else: 
                 if ep_idx + 1 < self.mixed_ds_meta.total_episodes:
@@ -244,12 +248,14 @@ class FCILPolicyDataset(Dataset):
                         succ_ep_len = next_ep_meta['length']
                         if succ_ep_len == 0: continue
                         for t_succ in range(0, succ_ep_len, self.config.frame_skip_rate):
+                            is_last_sampled = (t_succ + self.config.frame_skip_rate >= succ_ep_len)
                             self.episode_map.append({
                                 "ds_idx": 1, 
                                 "fail_ep_idx_in_ds": ep_idx,
                                 "succ_ep_idx_in_ds": ep_idx + 1,
-                                "timestep_in_succ_ep": t_succ, 
-                                "mode": "recovery"
+                                "timestep_in_succ_ep": t_succ, # This 't_succ' is the original index
+                                "mode": "recovery",
+                                "is_last_sampled_in_ep": is_last_sampled
                             })
                     else:
                         logger.debug(f"Failure ep {ep_idx} in {self.mixed_ds_meta.repo_id} not followed by a success ep. Skipping for recovery.")
@@ -260,18 +266,25 @@ class FCILPolicyDataset(Dataset):
 
 
     def _load_trajectory_timestep_data(self, ds_meta: LeRobotDatasetMetadata, hf_ds: datasets.Dataset, 
-                                      ep_data_idx: Dict, ep_idx_in_ds: int, t_in_ep: int) -> Dict[str, Any]:
+                                      ep_data_idx: Dict, ep_idx_in_ds: int, t_in_ep: int, 
+                                      is_done_for_target: bool) -> Dict[str, Any]:
         ep_global_start = ep_data_idx["from"][ep_idx_in_ds].item()
         
         frame_data = hf_ds[ep_global_start + t_in_ep]
         
         data_out = {}
         data_out['state'] = torch.tensor(frame_data['observation.state'], dtype=torch.float32)
-        data_out['action'] = torch.tensor(frame_data['action'], dtype=torch.float32)
         
-        is_done = (t_in_ep == ds_meta.episodes[ep_idx_in_ds]['length'] - 1)
-        done_signal = torch.tensor([1.0 if is_done else 0.0], dtype=torch.float32)
-        data_out['action_done_target'] = torch.cat([data_out['action'], done_signal])
+        raw_action = torch.tensor(frame_data['action'], dtype=torch.float32)
+        # For context actions, "done" refers to whether this *original* frame was terminal in its episode
+        is_done_for_original_frame = (t_in_ep == ds_meta.episodes[ep_idx_in_ds]['length'] - 1)
+        done_signal_for_context = torch.tensor([1.0 if is_done_for_original_frame else 0.0], dtype=torch.float32)
+        data_out['action_with_done_for_context'] = torch.cat([raw_action, done_signal_for_context])
+
+        # For target, "done" refers to whether this *sampled* frame is the last sampled in its episode
+        done_signal_for_target = torch.tensor([1.0 if is_done_for_target else 0.0], dtype=torch.float32)
+        data_out['action_done_target'] = torch.cat([raw_action, done_signal_for_target])
+
 
         visual_features = {}
         for cam_key in self.config.image_feature_keys:
@@ -289,21 +302,23 @@ class FCILPolicyDataset(Dataset):
         
         return data_out
 
-    def _get_history_and_current(self, ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep) -> Tuple[List[Dict[str, Any] | None], Dict[str, Any], torch.Tensor]:
+    def _get_history_and_current(self, ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep, is_last_sampled_for_this_item: bool) -> Tuple[List[Dict[str, Any] | None], Dict[str, Any], torch.Tensor]:
         history_data_list: List[Dict[str, Any] | None] = []
         for k_hist_offset in range(self.config.history_len, 0, -1): 
             hist_t_original = t_in_ep - (k_hist_offset * self.config.frame_skip_rate)
             if hist_t_original >= 0:
-                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, hist_t_original)
+                # For history, the "done" for the action part of context refers to the original frame's doneness
+                # is_last_sampled_for_this_item is False for history step_data for target generation.
+                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, hist_t_original, False)
                 history_data_list.append({
                     "state": step_data['state'],
                     "observation_visual": step_data['observation_visual'],
-                    "action": step_data['action'] 
+                    "action": step_data['action_with_done_for_context'] 
                 })
             else: 
                 history_data_list.append(None) 
 
-        current_step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep)
+        current_step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep, is_last_sampled_for_this_item)
         current_s_o = {
             "state": current_step_data['state'],
             "observation_visual": current_step_data['observation_visual']
@@ -319,11 +334,12 @@ class FCILPolicyDataset(Dataset):
         for k_fail_offset in range(self.config.max_fail_traj_len, 0, -1):
             t_fail_original = fail_ep_len - (k_fail_offset * self.config.frame_skip_rate)
             if t_fail_original >= 0:
-                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds, t_fail_original)
+                # For fail context, the "done" for action part refers to original frame's doneness
+                step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds, t_fail_original, False)
                 fail_traj_data_list_ordered.append({
                     "state": step_data['state'],
                     "observation_visual": step_data['observation_visual'],
-                    "action": step_data['action'] 
+                    "action": step_data['action_with_done_for_context'] 
                 })
 
         fail_traj_data_list = list(reversed(fail_traj_data_list_ordered))
@@ -337,7 +353,7 @@ class FCILPolicyDataset(Dataset):
             else: 
                 template_step = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
-                    'action': torch.zeros(self.config.action_dim, dtype=torch.float32),
+                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32), # Now policy_action_dim
                     'observation_visual': {
                         k: torch.zeros(self.config.embedding_dim_in, dtype=torch.float32)
                         for k in self.config.image_feature_keys
@@ -348,7 +364,7 @@ class FCILPolicyDataset(Dataset):
             for _ in range(num_pad_fail_steps):
                 padding_step_data = {
                     'state': torch.zeros_like(template_step['state']),
-                    'action': torch.zeros_like(template_step['action']),
+                    'action': torch.zeros_like(template_step['action']), 
                     'observation_visual': {
                         k: torch.zeros_like(v) for k,v in template_step['observation_visual'].items()
                     }
@@ -365,6 +381,7 @@ class FCILPolicyDataset(Dataset):
     def __getitem__(self, idx):
         sample_info = self.episode_map[idx]
         mode = sample_info["mode"]
+        is_last_sampled_in_ep = sample_info["is_last_sampled_in_ep"]
 
         target_action_and_done: torch.Tensor
         history_context: List[Dict[str, Any] | None] 
@@ -381,12 +398,12 @@ class FCILPolicyDataset(Dataset):
             ep_data_idx = self.success_ep_data_idx if ds_idx == 0 else self.mixed_ep_data_idx
 
             history_context, current_state_obs, target_action_and_done = \
-                self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep)
+                self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep, is_last_sampled_in_ep)
             is_recovery_mode = False
             fail_traj_context_optional = []
             template_step_fail_pad = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
-                    'action': torch.zeros(self.config.action_dim, dtype=torch.float32),
+                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32), # Now policy_action_dim
                     'observation_visual': {
                         k: torch.zeros(self.config.embedding_dim_in, dtype=torch.float32)
                         for k in self.config.image_feature_keys
@@ -408,7 +425,7 @@ class FCILPolicyDataset(Dataset):
             fail_traj_context_optional = self._get_fail_trajectory_context(ds_meta, hf_ds, ep_data_idx, fail_ep_idx)
             
             history_context, current_state_obs, target_action_and_done = \
-                self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, succ_ep_idx, t_in_succ_ep)
+                self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, succ_ep_idx, t_in_succ_ep, is_last_sampled_in_ep)
             is_recovery_mode = True
         
         else:
