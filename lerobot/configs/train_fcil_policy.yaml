@@ -1,13 +1,14 @@
 # fcil_train_config.yaml
 
 # Where to save checkpoints, logs, etc.
-output_dir: "outputs/train/fcil_policy/run4"
-job_name: "fcil_policy_run4"
+output_dir: "outputs/train/fcil_policy/success_only"
+job_name: "fcil_policy_success_only"
 seed: 42
+
 
 # Dataloader settings
 num_workers: 4
-batch_size: 32
+batch_size: 64
 eval_freq: 1000
 train_val_split_ratio: 0.9
 
@@ -22,7 +23,7 @@ use_policy_training_preset: True
 
 # --- FCIL Specific Dataset Configuration ---
 success_dataset_repo_id: "outputs/success_100"
-mixed_dataset_repo_id: "outputs/mixed_186"
+mixed_dataset_repo_id: null # "outputs/mixed_186"
 dataset_root: "/home/josh/phddev/lerobot"
 
 dataset:
@@ -50,10 +51,10 @@ policy:
 
   # Context lengths
   history_len: 192 # 768 / 4
-  max_fail_traj_len: 192 # 768 / 4
+  max_fail_traj_len: 0 # 192 # 768 / 4
   
   # Max sequence length for the transformer.
-  max_seq_len: 2048
+  max_seq_len: 1024
   frame_skip_rate: 4
 
   # Learning rate

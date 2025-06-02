@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# lerobot/lerobot/scripts/train_fcil_policy.py
+
 # Copyright 2024 The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,9 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from pprint import pformat
 from typing import List, Dict, Any, Tuple 
-import functools # Import functools for partial
+import functools 
 from tqdm import tqdm
-
+from termcolor import colored 
 import torch
 from torch.amp import GradScaler
 from torch.optim import Optimizer
@@ -50,6 +52,7 @@ from lerobot.common.utils.utils import (
     get_safe_torch_device,
     init_logging,
 )
+from lerobot.common.policies.factory import make_policy 
 from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig, TRAIN_CONFIG_NAME
@@ -61,7 +64,7 @@ class FCILPolicyTrainConfig(TrainPipelineConfig):
     policy: FCILPolicyConfig = field(default_factory=FCILPolicyConfig)
     
     success_dataset_repo_id: str = "lerobot/success_50_placeholder" 
-    mixed_dataset_repo_id: str = "lerobot/mixed_50_placeholder"   
+    mixed_dataset_repo_id: str | None = "lerobot/mixed_50_placeholder"   
     dataset_root: Path | None = None
     train_val_split_ratio: float = 0.9
     eval_freq: int = 10
@@ -73,9 +76,9 @@ class FCILPolicyTrainConfig(TrainPipelineConfig):
 
     def validate(self):
         super().validate() 
-        if not self.success_dataset_repo_id or not self.mixed_dataset_repo_id:
-            raise ValueError("`success_dataset_repo_id` and `mixed_dataset_repo_id` must be provided for FCIL training.")
-        
+        if not self.success_dataset_repo_id:
+            raise ValueError("`success_dataset_repo_id` must be provided for FCIL training.")
+
 
 def update_fcil_policy(
     train_metrics: MetricsTracker,
@@ -132,7 +135,7 @@ def update_fcil_policy(
     return train_metrics, output_dict
 
 
-@torch.no_grad() # Evaluation should not compute gradients
+@torch.no_grad()
 def evaluate_policy(policy: FCILPolicy, val_loader: DataLoader, device: torch.device, use_amp: bool = False) -> dict:
     policy.eval()
 
@@ -173,15 +176,12 @@ def evaluate_policy(policy: FCILPolicy, val_loader: DataLoader, device: torch.de
 
 @parser.wrap(config_path=None) 
 def train_fcil_policy(cfg: FCILPolicyTrainConfig):
-    if not cfg.resume:
-        cfg.validate() 
+    cfg.validate() 
     logging.info(pformat(cfg.to_dict()))
 
     if cfg.wandb.enable and cfg.wandb.project:
-        from termcolor import colored 
         wandb_logger = WandBLogger(cfg)
     else:
-        from termcolor import colored 
         wandb_logger = None
         logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
 
@@ -189,51 +189,67 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         set_seed(cfg.seed)
 
     device = get_safe_torch_device(cfg.policy.device, log=True)
-    torch.backends.cudnn.benchmark = True # type: ignore
-    torch.backends.cuda.matmul.allow_tf32 = True # type: ignore
+    torch.backends.cudnn.benchmark = True 
+    torch.backends.cuda.matmul.allow_tf32 = True 
 
     logger.info("Attempting to load dataset_stats for policy normalization and dimension inference.")
-    dataset_stats = None
-    mixed_ds_meta_for_stats = None 
-    try:
-        mixed_ds_meta_for_stats = LeRobotDatasetMetadata(
-            cfg.mixed_dataset_repo_id, 
-            root=Path(cfg.dataset_root) / cfg.mixed_dataset_repo_id if cfg.dataset_root else None,
-            revision=cfg.dataset.revision, 
-        )
-        dataset_stats = mixed_ds_meta_for_stats.stats
-        
-        if cfg.policy.state_dim is None and dataset_stats and "observation.state" in dataset_stats:
-            cfg.policy.state_dim = dataset_stats["observation.state"]["mean"].shape[0]
-            logger.info(f"Inferred policy.state_dim: {cfg.policy.state_dim} from dataset stats.")
-        if cfg.policy.action_dim is None and dataset_stats and "action" in dataset_stats:
-            cfg.policy.action_dim = dataset_stats["action"]["mean"].shape[0]
-            logger.info(f"Inferred policy.action_dim: {cfg.policy.action_dim} from dataset stats.")
+    
+    ds_meta_for_policy_stats = None
+    
+    success_ds_meta = LeRobotDatasetMetadata(
+        cfg.success_dataset_repo_id,
+        root=Path(cfg.dataset_root) / cfg.success_dataset_repo_id if cfg.dataset_root else None,
+        revision=cfg.dataset.revision,
+    )
 
-    except Exception as e:
-        logger.warning(f"Could not load metadata/stats from {cfg.mixed_dataset_repo_id} to infer dims: {e}. Will rely on config values or fail later.")
+    if cfg.mixed_dataset_repo_id:
+        try:
+            mixed_ds_meta = LeRobotDatasetMetadata(
+                cfg.mixed_dataset_repo_id,
+                root=Path(cfg.dataset_root) / cfg.mixed_dataset_repo_id if cfg.dataset_root else None,
+                revision=cfg.dataset.revision,
+            )
+            ds_meta_for_policy_stats = mixed_ds_meta 
+            logger.info(f"Using metadata from {cfg.mixed_dataset_repo_id} for policy stats and primary dim inference.")
+        except Exception as e:
+            logger.warning(f"Could not load metadata/stats from {cfg.mixed_dataset_repo_id}: {e}. Will use success_dataset_repo_id for stats/dims.")
+            ds_meta_for_policy_stats = success_ds_meta
+    else:
+        logger.info("No mixed_dataset_repo_id provided. Using success_dataset_repo_id for policy stats and dim inference.")
+        ds_meta_for_policy_stats = success_ds_meta
+
+    dim_inference_source_meta = ds_meta_for_policy_stats
+    if not dim_inference_source_meta.stats:
+        dim_inference_source_meta = success_ds_meta
+        logger.info(f"Stats not found in primary source, attempting dim inference from {success_ds_meta.repo_id}")
+
+    if cfg.policy.state_dim is None and dim_inference_source_meta.stats and "observation.state" in dim_inference_source_meta.stats:
+        cfg.policy.state_dim = dim_inference_source_meta.stats["observation.state"]["mean"].shape[0]
+        logger.info(f"Inferred policy.state_dim: {cfg.policy.state_dim} from {dim_inference_source_meta.repo_id} stats.")
+    if cfg.policy.action_dim is None and dim_inference_source_meta.stats and "action" in dim_inference_source_meta.stats:
+        cfg.policy.action_dim = dim_inference_source_meta.stats["action"]["mean"].shape[0]
+        logger.info(f"Inferred policy.action_dim: {cfg.policy.action_dim} from {dim_inference_source_meta.repo_id} stats.")
     
     if cfg.policy.state_dim is None or cfg.policy.action_dim is None:
         raise ValueError(
             "policy.state_dim and policy.action_dim must be specified in the YAML configuration "
-            "or be inferable from dataset_stats of mixed_dataset_repo_id."
+            "or be inferable from dataset_stats."
         )
 
     logger.info("Creating FCILPolicyDataset")
     full_dataset = FCILPolicyDataset(
         config=cfg.policy, 
         success_dataset_repo_id=cfg.success_dataset_repo_id,
-        mixed_dataset_repo_id=cfg.mixed_dataset_repo_id,
+        mixed_dataset_repo_id=cfg.mixed_dataset_repo_id, 
         root=cfg.dataset_root,
         revision=cfg.dataset.revision, 
     )
 
     num_total_episodes = len(full_dataset)
     if num_total_episodes == 0:
-        raise ValueError("TrajectoryDataset is empty. Check repo_ids and dataset contents.")
-    logging.info(f"TrajectoryDataset created with {num_total_episodes} total episodes.")
+        raise ValueError("FCILPolicyDataset is empty. Check repo_ids and dataset contents.")
+    logging.info(f"FCILPolicyDataset created with {num_total_episodes} total samples (frames to predict from).")
 
-    # Split dataset
     num_train_episodes = int(num_total_episodes * cfg.train_val_split_ratio)
     num_val_episodes = num_total_episodes - num_train_episodes
 
@@ -244,7 +260,6 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         generator=generator
     )
 
-    # Use functools.partial to pass the config to the collate_fn
     collate_fn_with_config = functools.partial(fcil_policy_collate_fn, config=cfg.policy)
 
     train_loader = DataLoader(
@@ -254,7 +269,7 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
         num_workers=cfg.num_workers,
         pin_memory=device.type != "cpu",
         drop_last=True,
-        collate_fn=collate_fn_with_config # USE THE CUSTOM COLLATE FN via partial
+        collate_fn=collate_fn_with_config
     )
 
     val_loader = DataLoader(
@@ -269,41 +284,24 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
 
     dl_iter = cycle(train_loader)
 
-    logger.info("Creating FCILPolicy")
-    policy = make_policy(cfg=cfg.policy, ds_meta=mixed_ds_meta_for_stats) 
+    logging.info("Creating FCILPolicy")
+    policy = make_policy(cfg=cfg.policy, ds_meta=ds_meta_for_policy_stats) 
     policy.to(device)
 
-    logger.info("Creating optimizer and scheduler")
+    logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy) 
     grad_scaler = GradScaler(enabled=cfg.policy.use_amp and device.type == 'cuda')
 
     step = 0
     if cfg.resume:
-        if not cfg.checkpoint_path or not cfg.checkpoint_path.exists():
-            potential_last_checkpoint = cfg.output_dir / "checkpoints" / "last"
-            if potential_last_checkpoint.exists() and potential_last_checkpoint.is_symlink():
-                 cfg.checkpoint_path = potential_last_checkpoint.resolve()
-                 logger.info(f"Resuming from last checkpoint: {cfg.checkpoint_path}")
-            else:
-                raise FileNotFoundError(f"Resume specified but checkpoint_path '{cfg.checkpoint_path}' not found or not set.")
-        
-        policy_checkpoint_file = cfg.checkpoint_path / "pretrained_model" / "model.safetensors"
-        if policy_checkpoint_file.exists():
-            state_dict = torch.load(policy_checkpoint_file, map_location=device)
-            policy.load_state_dict(state_dict)
-            logger.info(f"Loaded policy weights from {policy_checkpoint_file}")
-        else:
-            logger.warning(f"Policy checkpoint file not found at {policy_checkpoint_file}, policy initialized with random weights.")
-        
         step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
-        logger.info(f"Resumed training from step {step}.")
-
+        logging.info(f"Resumed training from step {step}.")
 
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
-    logger.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
+    logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
+    logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
-    logger.info(f"num_learnable_params: {format_big_number(num_learnable_params)}")
+    logging.info(f"num_learnable_params: {format_big_number(num_learnable_params)}")
 
     train_metrics_def = {
         "loss": AverageMeter("loss", ":.4f"),       
@@ -328,7 +326,7 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
     with open(cfg.output_dir / TRAIN_CONFIG_NAME, "w") as f:
         json.dump(cfg_dict_to_save, f, indent=4)
 
-    logger.info("Start FCIL policy training")
+    logging.info("Start FCIL policy training")
     progress_bar = tqdm(
         range(step, cfg.steps),
         desc="Training",
@@ -387,9 +385,8 @@ def train_fcil_policy(cfg: FCILPolicyTrainConfig):
                 wandb_logger.log_policy(checkpoint_dir)
 
     progress_bar.close()
-    logger.info("End of FCIL policy training")
+    logging.info("End of FCIL policy training")
 
 if __name__ == "__main__":
     init_logging()
-    from lerobot.common.policies.factory import make_policy 
     train_fcil_policy()

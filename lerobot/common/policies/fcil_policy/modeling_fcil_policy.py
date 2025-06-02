@@ -1,5 +1,6 @@
 # Copyright 2024 The HuggingFace Inc. team. All rights reserved.
 #
+# lerobot/lerobot/common/policies/fcil_policy/modeling_fcil_policy.py
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -192,10 +193,15 @@ class FCILPolicy(PreTrainedPolicy):
 
         self.config.validate_features()
 
+        if dataset_stats and "action_pred" in dataset_stats and "action" in dataset_stats:
+            dataset_stats["action"] = dataset_stats["action_pred"]
+            logger.info("Mapped action_pred stats (7D) to action stats for normalization")
+
+        # Now create the normalization modules with the corrected stats
         self.normalize_inputs = Normalize(self.config.input_features, self.config.normalization_mapping, dataset_stats)
         self.normalize_targets = Normalize(self.config.output_features, self.config.normalization_mapping, dataset_stats)
         self.unnormalize_outputs = Unnormalize(self.config.output_features, self.config.normalization_mapping, dataset_stats)
-        
+
         self.model = FCILTransformerModel(self.config)
         
         self._history_queue: deque = deque(maxlen=self.config.history_len)

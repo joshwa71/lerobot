@@ -80,7 +80,8 @@ python lerobot/scripts/visualize_dataset_html.py \
 
 ### Train a Policy
 
-```
+1. Start a training run:
+```bash
 python lerobot/scripts/train.py \
   --dataset.repo_id=outputs/* \
   --policy.type=act \
@@ -88,4 +89,15 @@ python lerobot/scripts/train.py \
   --job_name=* \
   --policy.device=cuda \
   --wandb.enable=true
+```
+2. Resume a training run:
+```bash
+python lerobot/scripts/train_fcil_policy.py --config_path=/home/josh/phddev/lerobot/outputs/train/fcil_policy/success_only/checkpoints/last/pretrained_model/train_config.json --resume=true
+```
+
+
+### Run a Policy
+
+```bash
+python lerobot/scripts/control_robot.py   --robot.type=so100   --control.type=record   --control.fps=30   --control.single_task="Grasp a lego block and put it in the bin."   --control.repo_id=outputs/eval_success_100   --control.tags='["tutorial"]'   --control.warmup_time_s=5   --control.episode_time_s=30   --control.reset_time_s=30   --control.num_episodes=10   --control.push_to_hub=false   --control.policy.path=/home/josh/phddev/lerobot/outputs/train/fcil_policy/success_only/checkpoints/last/pretrained_model
 ```

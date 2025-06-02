@@ -1,6 +1,8 @@
+# lerobot/lerobot/common/datasets/fcil_policy_dataset.py
+
 import logging
 from pathlib import Path
-from typing import Callable, List, Tuple, Dict, Any
+from typing import Callable, List, Tuple, Dict, Any, Optional
 
 import torch
 import datasets # type: ignore
@@ -136,7 +138,7 @@ class FCILPolicyDataset(Dataset):
         self,
         config: FCILPolicyConfig,
         success_dataset_repo_id: str,
-        mixed_dataset_repo_id: str,
+        mixed_dataset_repo_id: Optional[str], # Changed to Optional
         root: str | Path | None = None,
         image_transforms: Callable | None = None, 
         revision: str | None = None,
@@ -150,17 +152,29 @@ class FCILPolicyDataset(Dataset):
             root=self.root / success_dataset_repo_id if self.root else None, 
             revision=revision
         )
-        self.mixed_ds_meta = LeRobotDatasetMetadata(
-            mixed_dataset_repo_id, 
-            root=self.root / mixed_dataset_repo_id if self.root else None, 
-            revision=revision
-        )
-
         self.success_hf_ds = self._load_hf_dataset_for_meta(self.success_ds_meta)
-        self.mixed_hf_ds = self._load_hf_dataset_for_meta(self.mixed_ds_meta)
-        
         self.success_ep_data_idx = get_episode_data_index(self.success_ds_meta.episodes)
-        self.mixed_ep_data_idx = get_episode_data_index(self.mixed_ds_meta.episodes)
+
+        self.mixed_ds_meta: Optional[LeRobotDatasetMetadata] = None
+        self.mixed_hf_ds: Optional[datasets.Dataset] = None
+        self.mixed_ep_data_idx: Optional[Dict] = None
+
+        if mixed_dataset_repo_id:
+            try:
+                self.mixed_ds_meta = LeRobotDatasetMetadata(
+                    mixed_dataset_repo_id, 
+                    root=self.root / mixed_dataset_repo_id if self.root else None, 
+                    revision=revision
+                )
+                self.mixed_hf_ds = self._load_hf_dataset_for_meta(self.mixed_ds_meta)
+                self.mixed_ep_data_idx = get_episode_data_index(self.mixed_ds_meta.episodes)
+            except Exception as e:
+                logger.warning(f"Failed to load mixed dataset {mixed_dataset_repo_id}: {e}. Proceeding without it.")
+                self.mixed_ds_meta = None
+                self.mixed_hf_ds = None
+                self.mixed_ep_data_idx = None
+        else:
+            logger.info("No mixed_dataset_repo_id provided. FCILPolicyDataset will run in 'success-only' mode.")
 
         self.image_tokens_per_cam = self.config.embedding_dim_in // self.config.model_dim
         
@@ -220,47 +234,48 @@ class FCILPolicyDataset(Dataset):
                 self.episode_map.append({
                     "ds_idx": 0, 
                     "ep_idx_in_ds": ep_idx, 
-                    "timestep_in_ep": t, # This 't' is the original index of the sampled frame
+                    "timestep_in_ep": t, 
                     "mode": "standard",
                     "is_last_sampled_in_ep": is_last_sampled 
                 })
 
-        for ep_idx in range(self.mixed_ds_meta.total_episodes):
-            ep_meta = self.mixed_ds_meta.episodes[ep_idx]
-            ep_len = ep_meta['length']
-            if ep_len == 0: continue
-            is_success_ep = ep_meta.get('success', True) 
+        if self.mixed_ds_meta and self.mixed_hf_ds and self.mixed_ep_data_idx:
+            for ep_idx in range(self.mixed_ds_meta.total_episodes):
+                ep_meta = self.mixed_ds_meta.episodes[ep_idx]
+                ep_len = ep_meta['length']
+                if ep_len == 0: continue
+                is_success_ep = ep_meta.get('success', True) 
 
-            if is_success_ep:
-                for t in range(0, ep_len, self.config.frame_skip_rate):
-                    is_last_sampled = (t + self.config.frame_skip_rate >= ep_len)
-                    self.episode_map.append({
-                        "ds_idx": 1, 
-                        "ep_idx_in_ds": ep_idx,
-                        "timestep_in_ep": t, # This 't' is the original index
-                        "mode": "standard",
-                        "is_last_sampled_in_ep": is_last_sampled
-                    })
-            else: 
-                if ep_idx + 1 < self.mixed_ds_meta.total_episodes:
-                    next_ep_meta = self.mixed_ds_meta.episodes[ep_idx + 1]
-                    if next_ep_meta.get('success', False): 
-                        succ_ep_len = next_ep_meta['length']
-                        if succ_ep_len == 0: continue
-                        for t_succ in range(0, succ_ep_len, self.config.frame_skip_rate):
-                            is_last_sampled = (t_succ + self.config.frame_skip_rate >= succ_ep_len)
-                            self.episode_map.append({
-                                "ds_idx": 1, 
-                                "fail_ep_idx_in_ds": ep_idx,
-                                "succ_ep_idx_in_ds": ep_idx + 1,
-                                "timestep_in_succ_ep": t_succ, # This 't_succ' is the original index
-                                "mode": "recovery",
-                                "is_last_sampled_in_ep": is_last_sampled
-                            })
+                if is_success_ep:
+                    for t in range(0, ep_len, self.config.frame_skip_rate):
+                        is_last_sampled = (t + self.config.frame_skip_rate >= ep_len)
+                        self.episode_map.append({
+                            "ds_idx": 1, 
+                            "ep_idx_in_ds": ep_idx,
+                            "timestep_in_ep": t, 
+                            "mode": "standard",
+                            "is_last_sampled_in_ep": is_last_sampled
+                        })
+                else: 
+                    if ep_idx + 1 < self.mixed_ds_meta.total_episodes:
+                        next_ep_meta = self.mixed_ds_meta.episodes[ep_idx + 1]
+                        if next_ep_meta.get('success', False): 
+                            succ_ep_len = next_ep_meta['length']
+                            if succ_ep_len == 0: continue
+                            for t_succ in range(0, succ_ep_len, self.config.frame_skip_rate):
+                                is_last_sampled = (t_succ + self.config.frame_skip_rate >= succ_ep_len)
+                                self.episode_map.append({
+                                    "ds_idx": 1, 
+                                    "fail_ep_idx_in_ds": ep_idx,
+                                    "succ_ep_idx_in_ds": ep_idx + 1,
+                                    "timestep_in_succ_ep": t_succ, 
+                                    "mode": "recovery",
+                                    "is_last_sampled_in_ep": is_last_sampled
+                                })
+                        else:
+                            logger.debug(f"Failure ep {ep_idx} in {self.mixed_ds_meta.repo_id} not followed by a success ep. Skipping for recovery.")
                     else:
-                        logger.debug(f"Failure ep {ep_idx} in {self.mixed_ds_meta.repo_id} not followed by a success ep. Skipping for recovery.")
-                else:
-                    logger.debug(f"Failure ep {ep_idx} in {self.mixed_ds_meta.repo_id} is last ep. Skipping for recovery.")
+                        logger.debug(f"Failure ep {ep_idx} in {self.mixed_ds_meta.repo_id} is last ep. Skipping for recovery.")
         
         logger.info(f"Built episode map with {len(self.episode_map)} samples.")
 
@@ -276,12 +291,10 @@ class FCILPolicyDataset(Dataset):
         data_out['state'] = torch.tensor(frame_data['observation.state'], dtype=torch.float32)
         
         raw_action = torch.tensor(frame_data['action'], dtype=torch.float32)
-        # For context actions, "done" refers to whether this *original* frame was terminal in its episode
         is_done_for_original_frame = (t_in_ep == ds_meta.episodes[ep_idx_in_ds]['length'] - 1)
         done_signal_for_context = torch.tensor([1.0 if is_done_for_original_frame else 0.0], dtype=torch.float32)
         data_out['action_with_done_for_context'] = torch.cat([raw_action, done_signal_for_context])
 
-        # For target, "done" refers to whether this *sampled* frame is the last sampled in its episode
         done_signal_for_target = torch.tensor([1.0 if is_done_for_target else 0.0], dtype=torch.float32)
         data_out['action_done_target'] = torch.cat([raw_action, done_signal_for_target])
 
@@ -307,8 +320,6 @@ class FCILPolicyDataset(Dataset):
         for k_hist_offset in range(self.config.history_len, 0, -1): 
             hist_t_original = t_in_ep - (k_hist_offset * self.config.frame_skip_rate)
             if hist_t_original >= 0:
-                # For history, the "done" for the action part of context refers to the original frame's doneness
-                # is_last_sampled_for_this_item is False for history step_data for target generation.
                 step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, hist_t_original, False)
                 history_data_list.append({
                     "state": step_data['state'],
@@ -334,7 +345,6 @@ class FCILPolicyDataset(Dataset):
         for k_fail_offset in range(self.config.max_fail_traj_len, 0, -1):
             t_fail_original = fail_ep_len - (k_fail_offset * self.config.frame_skip_rate)
             if t_fail_original >= 0:
-                # For fail context, the "done" for action part refers to original frame's doneness
                 step_data = self._load_trajectory_timestep_data(ds_meta, hf_ds, ep_data_idx, fail_ep_idx_in_ds, t_fail_original, False)
                 fail_traj_data_list_ordered.append({
                     "state": step_data['state'],
@@ -353,7 +363,7 @@ class FCILPolicyDataset(Dataset):
             else: 
                 template_step = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
-                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32), # Now policy_action_dim
+                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32), 
                     'observation_visual': {
                         k: torch.zeros(self.config.embedding_dim_in, dtype=torch.float32)
                         for k in self.config.image_feature_keys
@@ -393,17 +403,24 @@ class FCILPolicyDataset(Dataset):
             ep_idx_in_ds = sample_info["ep_idx_in_ds"]
             t_in_ep = sample_info["timestep_in_ep"]
 
-            ds_meta = self.success_ds_meta if ds_idx == 0 else self.mixed_ds_meta
-            hf_ds = self.success_hf_ds if ds_idx == 0 else self.mixed_hf_ds
-            ep_data_idx = self.success_ep_data_idx if ds_idx == 0 else self.mixed_ep_data_idx
+            if ds_idx == 0:
+                ds_meta, hf_ds, ep_data_idx = self.success_ds_meta, self.success_hf_ds, self.success_ep_data_idx
+            elif ds_idx == 1 and self.mixed_ds_meta and self.mixed_hf_ds and self.mixed_ep_data_idx:
+                ds_meta, hf_ds, ep_data_idx = self.mixed_ds_meta, self.mixed_hf_ds, self.mixed_ep_data_idx
+            else:
+                # This case should not be reached if _build_episode_map is correct and mixed_ds is None.
+                raise RuntimeError(f"Invalid ds_idx {ds_idx} or missing mixed dataset for standard mode.")
+
 
             history_context, current_state_obs, target_action_and_done = \
                 self._get_history_and_current(ds_meta, hf_ds, ep_data_idx, ep_idx_in_ds, t_in_ep, is_last_sampled_in_ep)
             is_recovery_mode = False
+            
+            # Always provide a padded fail_traj_context, even if not in recovery mode
             fail_traj_context_optional = []
             template_step_fail_pad = {
                     'state': torch.zeros(self.config.state_dim, dtype=torch.float32),
-                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32), # Now policy_action_dim
+                    'action': torch.zeros(self.config.policy_action_dim, dtype=torch.float32),
                     'observation_visual': {
                         k: torch.zeros(self.config.embedding_dim_in, dtype=torch.float32)
                         for k in self.config.image_feature_keys
@@ -414,13 +431,14 @@ class FCILPolicyDataset(Dataset):
 
 
         elif mode == "recovery":
+            if not (self.mixed_ds_meta and self.mixed_hf_ds and self.mixed_ep_data_idx):
+                raise RuntimeError("Recovery mode selected but mixed dataset is not available.")
+            
             fail_ep_idx = sample_info["fail_ep_idx_in_ds"]
             succ_ep_idx = sample_info["succ_ep_idx_in_ds"]
             t_in_succ_ep = sample_info["timestep_in_succ_ep"]
 
-            ds_meta = self.mixed_ds_meta
-            hf_ds = self.mixed_hf_ds
-            ep_data_idx = self.mixed_ep_data_idx 
+            ds_meta, hf_ds, ep_data_idx = self.mixed_ds_meta, self.mixed_hf_ds, self.mixed_ep_data_idx 
 
             fail_traj_context_optional = self._get_fail_trajectory_context(ds_meta, hf_ds, ep_data_idx, fail_ep_idx)
             
