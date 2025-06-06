@@ -174,6 +174,8 @@ available_policies = [
     "tdmpc",
     "vqbet",
     "fcil_classifier",
+    "fcil_policy",
+    "fcdp",
 ]
 
 # lists all available robots from `lerobot/common/robot_devices/robots`

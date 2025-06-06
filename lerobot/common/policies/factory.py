@@ -25,6 +25,7 @@ from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.common.envs.configs import EnvConfig
 from lerobot.common.envs.utils import env_to_policy_features
 from lerobot.common.policies.fcil_policy.configuration_fcil_policy import FCILPolicyConfig
+from lerobot.common.policies.fcdp.configuration_fcdp import FCDPConfig
 from lerobot.common.policies.act.configuration_act import ACTConfig
 from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.common.policies.pi0.configuration_pi0 import PI0Config
@@ -49,6 +50,9 @@ def get_policy_class(name: str) -> PreTrainedPolicy:
     elif name == "fcil_policy":
         from lerobot.common.policies.fcil_policy.modeling_fcil_policy import FCILPolicy
         return FCILPolicy
+    elif name == "fcdp":
+        from lerobot.common.policies.fcdp.modeling_fcdp import FCDPPolicy
+        return FCDPPolicy
     elif name == "vqbet":
         from lerobot.common.policies.vqbet.modeling_vqbet import VQBeTPolicy
         return VQBeTPolicy
@@ -77,6 +81,8 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
         return PI0FASTConfig(**kwargs)
     elif policy_type == "fcil_policy":
         return FCILPolicyConfig(**kwargs)
+    elif policy_type == "fcdp":
+        return FCDPConfig(**kwargs)
     else:
         raise ValueError(f"Policy type '{policy_type}' is not available.")
 

@@ -1,0 +1,109 @@
+# train_fcdp.yaml - Failure-Conditioned Diffusion Policy Training Configuration
+
+# Where to save checkpoints, logs, etc.
+output_dir: "outputs/train/fcdp/test"
+job_name: "fcdp_test"
+seed: 42
+
+# Dataloader settings
+num_workers: 4
+batch_size: 64
+eval_freq: 1000
+train_val_split_ratio: 0.95
+
+# Training duration and logging
+steps: 2000
+log_freq: 10
+save_freq: 1000
+save_checkpoint: True
+# checkpoint_freq: 1000
+
+# Use optimizer and scheduler presets defined in the policy's config
+use_policy_training_preset: True
+
+# Gradient clipping
+# grad_clip_norm: 10.0
+
+# --- FCDP Specific Dataset Configuration ---
+success_dataset_repo_id: "outputs/success_100"
+mixed_dataset_repo_id: "outputs/mixed_50"
+dataset_root: "/home/josh/phddev/lerobot"
+
+dataset:
+  repo_id: "outputs/success_500"
+  root: "/home/josh/phddev/lerobot"
+
+# --- Policy Configuration (FCDPConfig) ---
+policy:
+  type: fcdp
+  device: "cuda"
+  use_amp: False
+  
+  # State and action dimensions
+  state_dim: 6
+  action_dim: 6
+  
+  # Visual features (same as FCIL)
+  image_feature_keys: ["observation.images.head", "observation.images.wrist"]
+  use_embeddings: True
+  embedding_dim_in: 1024
+  dinov2_model_name: "dinov2_vitl14"
+  
+  # Transformer architecture (same as FCIL)
+  model_dim: 1024
+  n_heads: 4
+  n_layers: 3
+  dropout: 0.1
+  activation_function: "relu"
+  
+  # Context lengths (same as FCIL)
+  history_len: 192  # 768 / 4
+  max_fail_traj_len: 0  # 192 # 768 / 4
+  frame_skip_rate: 4
+  
+  # Diffusion-specific parameters
+  horizon: 16  # Length of action trajectory to generate
+  n_action_steps: 8  # Number of actions to execute from trajectory
+  
+  # UNet architecture
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  diffusion_step_embed_dim: 128
+  
+  # Global conditioning dimension (output of transformer)
+  global_cond_dim: 256
+  
+  # Noise scheduler parameters
+  noise_scheduler_type: "DDPM"
+  num_train_timesteps: 100
+  beta_schedule: "squaredcos_cap_v2"
+  beta_start: 0.0001
+  beta_end: 0.02
+  prediction_type: "epsilon"
+  num_inference_steps: 50  # Faster inference than training
+  
+  # Training parameters (same as FCIL)
+  optimizer_lr: 1e-4
+  optimizer_weight_decay: 1e-4
+  scheduler_warmup_steps: 20000
+  scheduler_decay_steps: 180000
+  scheduler_decay_lr_ratio: 0.1
+  
+  # Loss computation
+  recovery_loss_weight: 1.0
+  do_mask_loss_for_padding: True
+  
+  # Normalization (same as FCIL)
+  normalization_mapping:
+    STATE: MEAN_STD
+    ACTION: MEAN_STD
+    VISUAL: IDENTITY
+  
+  # Drop last frames to avoid excessive padding
+  drop_n_last_frames: 8  # horizon - n_action_steps
+
+# --- Weights & Biases Logging ---
+wandb:
+  enable: True
+  project: "fcdp_policy"
