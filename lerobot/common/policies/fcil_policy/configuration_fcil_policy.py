@@ -63,6 +63,7 @@ class FCILPolicyConfig(PreTrainedConfig):
     scheduler_warmup_steps: int = 1000 
     scheduler_decay_steps: int = 9000  
     scheduler_decay_lr_ratio: float = 0.1
+    dinov2_model_name: str = "dinov2_vitl14"
 
     def __post_init__(self):
         super().__post_init__()

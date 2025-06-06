@@ -1,8 +1,8 @@
 # fcil_train_config.yaml
 
 # Where to save checkpoints, logs, etc.
-output_dir: "outputs/train/fcil_policy/success_only"
-job_name: "fcil_policy_success_only"
+output_dir: "outputs/train/fcil_policy/success_500"
+job_name: "fcil_policy_success_500"
 seed: 42
 
 
@@ -10,10 +10,10 @@ seed: 42
 num_workers: 4
 batch_size: 64
 eval_freq: 1000
-train_val_split_ratio: 0.9
+train_val_split_ratio: 0.95
 
 # Training duration and logging
-steps: 100000
+steps: 200000
 log_freq: 10
 save_freq: 1000
 save_checkpoint: True
@@ -22,13 +22,13 @@ save_checkpoint: True
 use_policy_training_preset: True
 
 # --- FCIL Specific Dataset Configuration ---
-success_dataset_repo_id: "outputs/success_100"
+success_dataset_repo_id: "outputs/success_500"
 mixed_dataset_repo_id: null # "outputs/mixed_186"
 dataset_root: "/home/josh/phddev/lerobot"
 
 dataset:
-  repo_id: "placeholder_for_draccus"
-  root: null
+  repo_id: "outputs/success_500"
+  root: "/home/josh/phddev/lerobot"
 
 # --- Policy Configuration (FCILPolicyConfig) ---
 policy:
@@ -60,8 +60,8 @@ policy:
   # Learning rate
   optimizer_lr: 1e-4
   optimizer_weight_decay: 1e-4
-  scheduler_warmup_steps: 10000
-  scheduler_decay_steps: 90000
+  scheduler_warmup_steps: 20000
+  scheduler_decay_steps: 180000
   scheduler_decay_lr_ratio: 0.1
 
   # Loss weighting

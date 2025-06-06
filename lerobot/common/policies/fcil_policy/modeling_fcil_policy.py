@@ -20,6 +20,8 @@ from typing import List, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.hub
+from torchvision import transforms
 
 from lerobot.common.policies.normalize import Normalize, Unnormalize
 from lerobot.common.policies.pretrained import PreTrainedPolicy
@@ -197,10 +199,33 @@ class FCILPolicy(PreTrainedPolicy):
             dataset_stats["action"] = dataset_stats["action_pred"]
             logger.info("Mapped action_pred stats (7D) to action stats for normalization")
 
+        self.dinov2_model = None
+        self.dinov2_transform = None
+
         # Now create the normalization modules with the corrected stats
         self.normalize_inputs = Normalize(self.config.input_features, self.config.normalization_mapping, dataset_stats)
         self.normalize_targets = Normalize(self.config.output_features, self.config.normalization_mapping, dataset_stats)
         self.unnormalize_outputs = Unnormalize(self.config.output_features, self.config.normalization_mapping, dataset_stats)
+
+        # Load the DINOv2 model from torch.hub
+        logger.info(f"Loading DINOv2 model ({self.config.dinov2_model_name}) for inference.")
+        self.dinov2_model = torch.hub.load("facebookresearch/dinov2", self.config.dinov2_model_name)
+        # Set it to evaluation mode and disable gradients
+        self.dinov2_model.eval()
+        n_params = 0
+        for param in self.dinov2_model.parameters():
+            param.requires_grad = False
+            n_params += param.numel()
+        logger.info(f"DINOv2 model has {n_params} parameters.")
+        # Define the exact same preprocessing transform as in your encode_dataset.py
+        self.dinov2_transform = transforms.Compose([
+            transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+            transforms.CenterCrop(224),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.dinov2_model.to(self.config.device)
 
         self.model = FCILTransformerModel(self.config)
         
@@ -224,132 +249,114 @@ class FCILPolicy(PreTrainedPolicy):
         self._fail_traj_for_recovery = failed_trajectory_data
         self._is_in_recovery_mode_inference = True
 
+
+    def _process_images_to_embeddings(self, raw_images: Dict[str, torch.Tensor], device: torch.device) -> Dict[str, torch.Tensor]:
+        batch_size = next(iter(raw_images.values())).shape[0]
+        embeddings = {}
+
+        if not self.dinov2_model or not self.dinov2_transform:
+            raise RuntimeError("DINOv2 model/transform not initialized for inference with raw images.")
+
+        with torch.inference_mode():
+            for key in self.config.image_feature_keys:
+                if key in raw_images:
+                    img_tensor = raw_images[key]
+                    # img_tensor is already in (batch, C, H, W) format from predict_action
+                    # No need to permute! Just apply the transform directly
+                    transformed_images = self.dinov2_transform(img_tensor).to(device)
+                    embeddings[key] = self.dinov2_model(transformed_images).detach()
+                else:
+                    logger.warning(f"Camera key '{key}' not found in observation. Using zero embedding.")
+                    embeddings[key] = torch.zeros(batch_size, self.config.embedding_dim_in, device=device)
+        return embeddings
+
     @torch.no_grad()
     def select_action(self, observation_batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         self.eval()
-        device = get_device_from_parameters(self.model)
-        batch_size = observation_batch["state"].shape[0]
+        device = get_device_from_parameters(self)
+        
+        raw_state = observation_batch["observation.state"]
+        raw_images = {key: val for key, val in observation_batch.items() if key.startswith("observation.images.")}
+        batch_size = raw_state.shape[0]
 
-
-        current_state_for_norm = {"observation.state": observation_batch["state"]}
-        norm_current_state = self.normalize_inputs(current_state_for_norm)["observation.state"]
-        norm_current_obs_visual = observation_batch["observation_visual"]
-
+        norm_state = self.normalize_inputs({"observation.state": raw_state})["observation.state"]
+        
+        norm_current_obs_visual = self._process_images_to_embeddings(raw_images, device)
 
         current_s_o_for_policy = {
-            "state": norm_current_state.to(device),
-            "observation_visual": {k: v.to(device) for k,v in norm_current_obs_visual.items()}
+            "state": norm_state.to(device),
+            "observation_visual": norm_current_obs_visual,
         }
-        
+
         policy_history_context_collated: List[Dict[str, Any] | None] = []
-        
-        temp_history_list = list(self._history_queue) 
-        
-        if temp_history_list : # Check if deque is not empty
-            history_len_model = len(temp_history_list)
-            for i in range(history_len_model):
-                current_hist_step_data = temp_history_list[i] 
+        temp_history_list = list(self._history_queue)
 
-                if current_hist_step_data is not None:
-                    hist_s_b = current_hist_step_data['state'].unsqueeze(0).expand(batch_size, -1).to(device)
-                    hist_a_b = current_hist_step_data['action'].unsqueeze(0).expand(batch_size, -1).to(device)
-                    hist_o_v_b = {
-                        k: v.unsqueeze(0).expand(batch_size, *v.shape).to(device)
-                        for k, v in current_hist_step_data['observation_visual'].items()
-                    }
-                    policy_history_context_collated.append({
-                        "state": hist_s_b, "observation_visual": hist_o_v_b, "action": hist_a_b
-                    })
-                else: 
-                    s_dim = self.config.state_dim
-                    a_dim = self.config.action_dim
-                    # Use norm_current_state for dtype and device for consistency if available
-                    dtype_ref = norm_current_state.dtype if norm_current_state is not None else torch.float32
-                    device_ref = norm_current_state.device if norm_current_state is not None else device
-
-                    pad_s = torch.zeros(batch_size, s_dim, device=device_ref, dtype=dtype_ref)
-                    pad_a = torch.zeros(batch_size, a_dim, device=device_ref, dtype=dtype_ref) 
-                    pad_o_v = {
-                        k: torch.zeros(batch_size, self.config.embedding_dim_in, device=device_ref, dtype=v.dtype if hasattr(v,'dtype') else torch.float32) 
-                        for k,v in norm_current_obs_visual.items()
-                    }
-                    policy_history_context_collated.append({
-                        "state": pad_s, "observation_visual": pad_o_v, "action": pad_a
-                    })
-        else: # history queue is empty (should be filled by Nones in reset)
-             for _ in range(self.config.history_len):
-                s_dim = self.config.state_dim
-                a_dim = self.config.action_dim
-                dtype_ref = norm_current_state.dtype if norm_current_state is not None else torch.float32
-                device_ref = norm_current_state.device if norm_current_state is not None else device
-                pad_s = torch.zeros(batch_size, s_dim, device=device_ref, dtype=dtype_ref)
-                pad_a = torch.zeros(batch_size, a_dim, device=device_ref, dtype=dtype_ref)
-                pad_o_v = {
-                    k: torch.zeros(batch_size, self.config.embedding_dim_in, device=device_ref, dtype=v.dtype if hasattr(v,'dtype') else torch.float32) 
-                    for k,v in norm_current_obs_visual.items()
+        for hist_step_data in temp_history_list:
+            if hist_step_data is not None:
+                hist_s_b = hist_step_data['state'].unsqueeze(0).expand(batch_size, -1).to(device)
+                hist_a_b = hist_step_data['action'].unsqueeze(0).expand(batch_size, -1).to(device)
+                hist_o_v_b = {
+                    k: v.unsqueeze(0).expand(batch_size, *v.shape).to(device)
+                    for k, v in hist_step_data['observation_visual'].items()
                 }
                 policy_history_context_collated.append({
-                    "state": pad_s, "observation_visual": pad_o_v, "action": pad_a
+                    "state": hist_s_b, "observation_visual": hist_o_v_b, "action": hist_a_b
                 })
-
+            else:
+                policy_history_context_collated.append(None)
 
         policy_fail_traj_context_collated = None
         if self._is_in_recovery_mode_inference and self._fail_traj_for_recovery:
             policy_fail_traj_context_collated = []
-            for step_data in self._fail_traj_for_recovery: 
-                fail_s_b = step_data['state'].unsqueeze(0).expand(batch_size, -1)
-                fail_a_b = step_data['action'].unsqueeze(0).expand(batch_size, -1)
+            for step_data in self._fail_traj_for_recovery:
+                fail_s_b = step_data['state'].unsqueeze(0).expand(batch_size, -1).to(device)
+                fail_a_b = step_data['action'].unsqueeze(0).expand(batch_size, -1).to(device)
                 fail_o_v_b = {
-                    k: v.unsqueeze(0).expand(batch_size, *v.shape)
+                    k: v.unsqueeze(0).expand(batch_size, *v.shape).to(device)
                     for k, v in step_data['observation_visual'].items()
                 }
                 policy_fail_traj_context_collated.append({
                     "state": fail_s_b, "observation_visual": fail_o_v_b, "action": fail_a_b
                 })
+            
             num_actual_fail_steps = len(policy_fail_traj_context_collated)
             num_pad_fail_steps = self.config.max_fail_traj_len - num_actual_fail_steps
             if num_pad_fail_steps > 0:
                 s_dim = self.config.state_dim
-                a_dim = self.config.action_dim
-                dtype_ref = norm_current_state.dtype if norm_current_state is not None else torch.float32
-                device_ref = norm_current_state.device if norm_current_state is not None else device
+                a_dim = self.config.policy_action_dim
+                dtype_ref = norm_state.dtype
+                device_ref = norm_state.device
                 pad_s_fail = torch.zeros(batch_size, s_dim, device=device_ref, dtype=dtype_ref)
                 pad_a_fail = torch.zeros(batch_size, a_dim, device=device_ref, dtype=dtype_ref)
                 pad_o_v_fail = {
-                    k: torch.zeros(batch_size, self.config.embedding_dim_in, device=device_ref, dtype=v.dtype if hasattr(v,'dtype') else torch.float32) 
-                    for k,v in norm_current_obs_visual.items()
+                    k: torch.zeros(batch_size, self.config.embedding_dim_in, device=device_ref, dtype=v.dtype)
+                    for k, v in norm_current_obs_visual.items()
                 }
                 for _ in range(num_pad_fail_steps):
                     policy_fail_traj_context_collated.append({
                         "state": pad_s_fail, "observation_visual": pad_o_v_fail, "action": pad_a_fail
                     })
 
-        
         is_recovery_mode_tensor = torch.tensor([self._is_in_recovery_mode_inference] * batch_size, dtype=torch.bool, device=device)
 
         input_dict_for_policy = {
             "history_context": policy_history_context_collated,
             "current_state_obs": current_s_o_for_policy,
             "fail_traj_context_optional": policy_fail_traj_context_collated,
-            "is_recovery_mode": is_recovery_mode_tensor 
+            "is_recovery_mode": is_recovery_mode_tensor,
         }
 
-        predicted_action_done_normalized = self.model(input_dict_for_policy) 
-        
+        predicted_action_done_normalized = self.model(input_dict_for_policy)
         unnormalized_action_done = self.unnormalize_outputs({"action_pred": predicted_action_done_normalized})["action_pred"]
-        
-        action_pred = unnormalized_action_done[:, :-1] 
-        
-        action_to_store_in_history = predicted_action_done_normalized[:, :-1].detach().clone()
+        action_pred = unnormalized_action_done[:, :-1]
 
-        # For B=1, this is fine. For B > 1, history queue needs to be a list of deques, or handle batching.
         self._history_queue.append({
-            "state": norm_current_state[0].detach().clone() if batch_size == 1 else norm_current_state.detach().clone(), # Store normalized
-            "observation_visual": {k:v[0].detach().clone() if batch_size == 1 else v.detach().clone() for k,v in norm_current_obs_visual.items()}, # Store normalized
-            "action": action_to_store_in_history[0] if batch_size == 1 else action_to_store_in_history # Store normalized action part
+            "state": norm_state[0].detach().clone(),
+            "observation_visual": {k: v[0].detach().clone() for k, v in norm_current_obs_visual.items()},
+            "action": predicted_action_done_normalized[0].detach().clone(),
         })
-        
-        return action_pred 
+
+        return action_pred
 
     def forward(self, batch: Tuple[Dict[str, Any], torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, float]]:
         policy_input_batch_collated, target_action_and_done_batch = batch
