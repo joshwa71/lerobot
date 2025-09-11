@@ -91,8 +91,11 @@ def replay(cfg: ReplayConfig):
             key = f"{name.removeprefix('main_')}.pos"
             action[key] = action_array[i].item()
 
-        action["shoulder_lift.pos"] = -(action["shoulder_lift.pos"] - 90)
-        action["elbow_flex.pos"] -= 90
+        action["shoulder_pan.pos"] -= 4.66
+        action["shoulder_lift.pos"] = -(action["shoulder_lift.pos"]) + 92.99
+        action["elbow_flex.pos"] -= 81.04
+        action["wrist_flex.pos"] -= 20.83
+        action["wrist_roll.pos"] = -(action["wrist_roll.pos"]) - 7.70
         robot.send_action(action)
 
         dt_s = time.perf_counter() - start_episode_t

@@ -52,6 +52,7 @@ from lerobot.cameras import opencv  # noqa: F401
 from lerobot.configs import parser
 from lerobot.envs.configs import EnvConfig
 from lerobot.envs.utils import preprocess_observation
+from lerobot.envs.libero_remote_env import LiberoRemoteEnv as _LiberoRemoteGym
 from lerobot.model.kinematics import RobotKinematics
 from lerobot.robots import (  # noqa: F401
     RobotConfig,
@@ -1860,9 +1861,49 @@ def make_robot_env(cfg: EnvConfig) -> gym.Env:
             render_mode="human",
             use_gripper=cfg.wrapper.use_gripper,
             gripper_penalty=cfg.wrapper.gripper_penalty,
+            max_episode_steps=cfg.episode_length,
         )
         env = GymHilObservationProcessorWrapper(env=env)
         env = GymHilDeviceWrapper(env=env, device=cfg.device)
+        env = BatchCompatibleWrapper(env=env)
+        env = TorchActionWrapper(env=env, device=cfg.device)
+        return env
+
+    if cfg.type == "libero_remote":
+        # Connect to LIBERO remote server and expose a Gym API.
+        env = _LiberoRemoteGym(host=cfg.gym_kwargs.get("host", "127.0.0.1"), port=cfg.gym_kwargs.get("port", 5555))
+        # Convert obs to LeRobot format and move to device
+        env = GymHilObservationProcessorWrapper(env=env)
+        env = GymHilDeviceWrapper(env=env, device=cfg.device)
+
+        # Optional teleop wrappers for human control
+        if hasattr(cfg, "teleop") and cfg.teleop is not None and hasattr(cfg, "wrapper") and cfg.wrapper is not None:
+            teleop_device = make_teleoperator_from_config(cfg.teleop)
+            teleop_device.connect()
+            control_mode = cfg.wrapper.control_mode
+            if control_mode == "gamepad":
+                assert isinstance(teleop_device, GamepadTeleop), (
+                    "teleop_device must be an instance of GamepadTeleop for gamepad control mode"
+                )
+                env = GamepadControlWrapper(
+                    env=env,
+                    teleop_device=teleop_device,
+                    use_gripper=cfg.wrapper.use_gripper,
+                )
+            elif control_mode == "keyboard_ee":
+                assert isinstance(teleop_device, KeyboardEndEffectorTeleop), (
+                    "teleop_device must be an instance of KeyboardEndEffectorTeleop for keyboard control mode"
+                )
+                env = KeyboardControlWrapper(
+                    env=env,
+                    teleop_device=teleop_device,
+                    use_gripper=cfg.wrapper.use_gripper,
+                )
+
+        # Time limit wrapper for episode duration
+        if hasattr(cfg, "wrapper") and cfg.wrapper is not None:
+            env = TimeLimitWrapper(env=env, control_time_s=cfg.wrapper.control_time_s, fps=cfg.fps)
+
         env = BatchCompatibleWrapper(env=env)
         env = TorchActionWrapper(env=env, device=cfg.device)
         return env
@@ -2097,10 +2138,25 @@ def record_dataset(env, policy, cfg):
             if info.get("rerecord_episode", False):
                 break
 
-            # For teleop, get action from intervention
-            recorded_action = {
-                "action": info["action_intervention"].cpu().squeeze(0).float() if policy is None else action
-            }
+            # For teleop, prefer human action; otherwise fall back to the action used
+            if policy is None and "action_intervention" in info and info["action_intervention"] is not None:
+                ai = info["action_intervention"]
+                if hasattr(ai, "cpu"):
+                    ai = ai.cpu()
+                if hasattr(ai, "numpy"):
+                    ai = ai.numpy()
+                ai = np.asarray(ai, dtype=np.float32).reshape(-1)
+                recorded_action = {"action": ai}
+            else:
+                a_used = action
+                if hasattr(a_used, "detach"):
+                    a_used = a_used.detach()
+                if hasattr(a_used, "cpu"):
+                    a_used = a_used.cpu()
+                if hasattr(a_used, "numpy"):
+                    a_used = a_used.numpy()
+                a_used = np.asarray(a_used, dtype=np.float32).reshape(-1)
+                recorded_action = {"action": a_used}
 
             # Process observation for dataset
             obs_processed = {k: v.cpu().squeeze(0).float() for k, v in obs.items()}

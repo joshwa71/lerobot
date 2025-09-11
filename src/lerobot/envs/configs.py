@@ -271,3 +271,55 @@ class HILEnvConfig(EnvConfig):
             "use_gamepad": self.use_gamepad,
             "gripper_penalty": self.gripper_penalty,
         }
+
+
+@EnvConfig.register_subclass("libero_remote")
+@dataclass
+class LiberoRemoteEnv(EnvConfig):
+    """Configuration for a remote LIBERO environment served over TCP.
+
+    The actual environment runs in a separate process / venv. This config only
+    carries connection params and expected feature mapping so LeRobot policies
+    see a standard observation set.
+    """
+
+    host: str = "127.0.0.1"
+    port: int = 5555
+    fps: int = 20
+    name: str = "libero_remote"
+    device: str = "cuda"
+    # Optional teleop & wrappers
+    teleop: TeleoperatorConfig | None = None
+    wrapper: EnvTransformConfig | None = None
+    # Record / eval parameters aligned with HILSerlRobotEnvConfig
+    mode: str | None = None  # Either "record", "replay", None
+    repo_id: str | None = None
+    dataset_root: str | None = None
+    task: str | None = ""
+    num_episodes: int = 10  # only for record mode
+    episode: int = 0
+    push_to_hub: bool = False
+    pretrained_policy_name_or_path: str | None = None
+    reward_classifier_pretrained_path: str | None = None
+    number_of_steps_after_success: int = 0
+    # Expect two image streams by default matching LIBERO cameras
+    features: dict[str, PolicyFeature] = field(
+        default_factory=lambda: {
+            "observation.images.agentview": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+            "observation.images.wrist": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(18,)),
+            "action": PolicyFeature(type=FeatureType.ACTION, shape=(4,)),
+        }
+    )
+    features_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "observation.images.agentview": f"{OBS_IMAGES}.agentview",
+            "observation.images.wrist": f"{OBS_IMAGES}.wrist",
+            "observation.state": OBS_STATE,
+            "action": ACTION,
+        }
+    )
+
+    @property
+    def gym_kwargs(self) -> dict:
+        return {"host": self.host, "port": self.port}

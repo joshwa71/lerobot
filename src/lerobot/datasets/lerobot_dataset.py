@@ -601,6 +601,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
 
+        print(f"ROOT: {self.root}")
+
         # Unused attributes
         self.image_writer = None
         self.episode_buffer = None

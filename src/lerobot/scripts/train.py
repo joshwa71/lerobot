@@ -127,6 +127,11 @@ def train(cfg: TrainPipelineConfig):
     logging.info("Creating dataset")
     dataset = make_dataset(cfg)
 
+    if cfg.epochs is not None:
+        cfg.steps = int(cfg.epochs * dataset.num_frames / cfg.batch_size)
+        logging.info(f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / {cfg.batch_size} batch_size = {cfg.steps} steps")
+
+
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
     # using the eval.py instead, with gym_dora environment and dora-rs.
