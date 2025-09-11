@@ -238,6 +238,26 @@ def record_loop(
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
         if policy is not None:
+            ## --- COMMENT OUT FOR NEW-CALIBRATION --- ##
+
+            # # Map observation (new-calib degrees) -> old-calib degrees for the policy
+            # obs_for_policy = observation.copy()
+            # if "shoulder_pan.pos" in obs_for_policy:
+            #     obs_for_policy["shoulder_pan.pos"] += 4.66
+            # if "shoulder_lift.pos" in obs_for_policy:
+            #     obs_for_policy["shoulder_lift.pos"] = -(obs_for_policy["shoulder_lift.pos"] - 92.99)
+            # if "elbow_flex.pos" in obs_for_policy:
+            #     obs_for_policy["elbow_flex.pos"] += 81.04
+            # if "wrist_flex.pos" in obs_for_policy:
+            #     obs_for_policy["wrist_flex.pos"] += 20.83
+            # if "wrist_roll.pos" in obs_for_policy:
+            #     obs_for_policy["wrist_roll.pos"] = -(obs_for_policy["wrist_roll.pos"] + 7.70)
+
+            # observation_frame_policy = build_dataset_frame(dataset.features, obs_for_policy, prefix="observation")
+            # observation_frame = observation_frame_policy
+
+            ## to here ##
+
             action_values = predict_action(
                 observation_frame,
                 policy,
@@ -247,6 +267,21 @@ def record_loop(
                 robot_type=robot.robot_type,
             )
             action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+
+
+            ## --- COMMENT OUT FOR NEW-CALIBRATION --- ##
+
+            # Old-calibration → new-calibration mapping (degrees)
+            # D_new ≈ s * D_old + offset, with s = +1 if old drive_mode==0 else -1
+            # Offsets derived from old homing_offset and new mid = (range_min+range_max)/2
+            # action["shoulder_pan.pos"] -= 4.66
+            # action["shoulder_lift.pos"] = -(action["shoulder_lift.pos"]) + 92.99
+            # action["elbow_flex.pos"] -= 81.04
+            # action["wrist_flex.pos"] -= 20.83
+            # action["wrist_roll.pos"] = -(action["wrist_roll.pos"]) - 7.70
+
+            ## to here ##
+
         elif policy is None and isinstance(teleop, Teleoperator):
             action = teleop.get_action()
         elif policy is None and isinstance(teleop, list):
@@ -337,19 +372,33 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     with VideoEncodingManager(dataset):
         recorded_episodes = 0
+        # Save original clipping configuration if available. We will disable it during
+        # policy-driven recording and re-enable it for the reset phase.
+        has_max_relative_target_attr = hasattr(robot.config, "max_relative_target")
+        original_max_relative_target = (
+            getattr(robot.config, "max_relative_target") if has_max_relative_target_attr else None
+        )
         while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
             log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
-            record_loop(
-                robot=robot,
-                events=events,
-                fps=cfg.dataset.fps,
-                teleop=teleop,
-                policy=policy,
-                dataset=dataset,
-                control_time_s=cfg.dataset.episode_time_s,
-                single_task=cfg.dataset.single_task,
-                display_data=cfg.display_data,
-            )
+            # Disable action clipping during policy inference (if supported by this robot)
+            if policy is not None and has_max_relative_target_attr:
+                robot.config.max_relative_target = None
+            try:
+                record_loop(
+                    robot=robot,
+                    events=events,
+                    fps=cfg.dataset.fps,
+                    teleop=teleop,
+                    policy=policy,
+                    dataset=dataset,
+                    control_time_s=cfg.dataset.episode_time_s,
+                    single_task=cfg.dataset.single_task,
+                    display_data=cfg.display_data,
+                )
+            finally:
+                # Restore original clipping for the reset phase (if supported by this robot)
+                if has_max_relative_target_attr:
+                    robot.config.max_relative_target = original_max_relative_target
 
             # Execute a few seconds without recording to give time to manually reset the environment
             # Skip reset for the last episode to be recorded

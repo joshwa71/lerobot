@@ -417,6 +417,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.eval()
 
         batch = self._prepare_batch(batch)
+
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
 
         actions = self._get_action_chunk(batch, noise)

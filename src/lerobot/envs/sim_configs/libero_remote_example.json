@@ -1,0 +1,48 @@
+{
+    "type": "libero_remote",
+    "name": "libero_remote_env",
+    "fps": 20,
+    "device": "cuda",
+    "mode": "record",
+    "repo_id": "outputs/libero_remote_demo",
+    "dataset_root": null,
+    "num_episodes": 10,
+    "task": "libero_10_task_0",
+    "host": "127.0.0.1",
+    "port": 5555,
+    "features": {
+        "observation.images.agentview": {"type": "VISUAL", "shape": [128, 128, 3]},
+        "observation.images.wrist": {"type": "VISUAL", "shape": [128, 128, 3]},
+        "observation.state": {"type": "STATE", "shape": [18]},
+        "action": {"type": "ACTION", "shape": [4]}
+    },
+    "features_map": {
+        "observation.images.agentview": "observation.images.agentview",
+        "observation.images.wrist": "observation.images.wrist",
+        "observation.state": "observation.state",
+        "action": "action"
+    },
+    "teleop": {
+        "type": "gamepad",
+        "id": "my_gamepad",
+        "use_gripper": true
+    },
+    "wrapper": {
+        "control_time_s": 20.0,
+        "use_gripper": true,
+        "gripper_penalty": 0.0,
+        "display_cameras": false,
+        "add_joint_velocity_to_observation": false,
+        "add_current_to_observation": false,
+        "add_ee_pose_to_observation": false,
+        "crop_params_dict": null,
+        "resize_size": [128, 128],
+        "fixed_reset_joint_positions": null,
+        "reset_time_s": 2.0,
+        "control_mode": "gamepad"
+    },
+    "push_to_hub": false,
+    "pretrained_policy_name_or_path": null
+}
+
+

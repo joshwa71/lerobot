@@ -74,6 +74,8 @@ def ensure_safe_goal_position(
 ) -> dict[str, float]:
     """Caps relative action target magnitude for safety."""
 
+    if isinstance(max_relative_target, int):
+        max_relative_target = float(max_relative_target)
     if isinstance(max_relative_target, float):
         diff_cap = dict.fromkeys(goal_present_pos, max_relative_target)
     elif isinstance(max_relative_target, dict):
