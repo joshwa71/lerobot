@@ -305,15 +305,15 @@ class LiberoRemoteEnv(EnvConfig):
     # Expect two image streams by default matching LIBERO cameras
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
-            "observation.images.agentview": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+            "observation.images.head": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
             "observation.images.wrist": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
-            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(18,)),
-            "action": PolicyFeature(type=FeatureType.ACTION, shape=(4,)),
+            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(15,)),
+            "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
         }
     )
     features_map: dict[str, str] = field(
         default_factory=lambda: {
-            "observation.images.agentview": f"{OBS_IMAGES}.agentview",
+            "observation.images.head": f"{OBS_IMAGES}.head",
             "observation.images.wrist": f"{OBS_IMAGES}.wrist",
             "observation.state": OBS_STATE,
             "action": ACTION,

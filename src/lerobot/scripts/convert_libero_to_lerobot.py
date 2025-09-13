@@ -33,7 +33,7 @@ CODEBASE_VERSION = "v2.1"
 # Feature mapping from LIBERO to LeRobot
 LIBERO_TO_LEROBOT_FEATURES = {
     # Camera observations
-    "agentview_rgb": "observation.images.top",
+    "agentview_rgb": "observation.images.head",
     "eye_in_hand_rgb": "observation.images.wrist",
     
     # Robot state observations - these will be concatenated into observation.state
@@ -109,17 +109,15 @@ def define_lerobot_features(metadata: Dict[str, Any]) -> Dict[str, Dict[str, Any
         ]
     }
     
-    # Define camera features
-    features["observation.images.top"] = {
+    features["observation.images.head"] = {
         "dtype": "video",
-        "shape": (3, 128, 128),  # C, H, W
-        "names": ["channels", "height", "width"]
+        "shape": (128, 128, 3),
+        "names": ["height", "width", "channel"],
     }
-    
     features["observation.images.wrist"] = {
         "dtype": "video",
-        "shape": (3, 128, 128),  # C, H, W
-        "names": ["channels", "height", "width"]
+        "shape": (128, 128, 3),
+        "names": ["height", "width", "channel"],
     }
     
     return features
@@ -165,7 +163,7 @@ def convert_episode_to_lerobot_format(
         frame = {
             "action": episode_data["actions"][i].astype(np.float32),
             "observation.state": obs_state,
-            "observation.images.top": episode_data["agentview_rgb"][i],  # Keep as uint8 HWC for now
+            "observation.images.head": episode_data["agentview_rgb"][i],  # Keep as uint8 HWC for now
             "observation.images.wrist": episode_data["eye_in_hand_rgb"][i],  # Keep as uint8 HWC for now
         }
         
