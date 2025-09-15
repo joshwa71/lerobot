@@ -26,7 +26,9 @@ from torch.optim import Optimizer
 
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
-from lerobot.datasets.factory import make_dataset
+from lerobot.datasets.factory import resolve_delta_timestamps
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.rc_act_dataset import RCACTDataset
 from lerobot.datasets.sampler import EpisodeAwareSampler
 from lerobot.datasets.utils import cycle
 from lerobot.envs.factory import make_env
@@ -53,30 +55,6 @@ from lerobot.utils.utils import (
 from lerobot.utils.wandb_utils import WandBLogger
 
 
-def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
-    """Convert values to basic types acceptable by our WandB wrapper.
-
-    - torch.Tensor with numel()==1 -> scalar via .item()
-    - torch.Tensor with more elements -> mean().item()
-    - pass through int/float/str; drop others
-    """
-    sanitized: dict[str, int | float | str] = {}
-    # Local import to avoid hard dependency if torch is unavailable in some contexts
-    import torch  # type: ignore
-
-    for k, v in d.items():
-        if isinstance(v, (int, float, str)):
-            sanitized[k] = v
-            continue
-        if isinstance(v, torch.Tensor):
-            if v.numel() == 1:
-                sanitized[k] = v.item()
-            else:
-                sanitized[k] = v.detach().float().mean().item()
-            continue
-    return sanitized
-
-
 def update_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
@@ -93,33 +71,24 @@ def update_policy(
     policy.train()
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
-        # TODO(rcadene): policy.unnormalize_outputs(out_dict)
     grad_scaler.scale(loss).backward()
 
-    # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
     grad_scaler.unscale_(optimizer)
 
     grad_norm = torch.nn.utils.clip_grad_norm_(
-        policy.parameters(),
-        grad_clip_norm,
-        error_if_nonfinite=False,
+        policy.parameters(), grad_clip_norm, error_if_nonfinite=False
     )
 
-    # Optimizer's gradients are already unscaled, so scaler.step does not unscale them,
-    # although it still skips optimizer.step() if the gradients contain infs or NaNs.
     with lock if lock is not None else nullcontext():
         grad_scaler.step(optimizer)
-    # Updates the scale for next iteration.
     grad_scaler.update()
 
     optimizer.zero_grad()
 
-    # Step through pytorch scheduler at every batch instead of epoch
     if lr_scheduler is not None:
         lr_scheduler.step()
 
     if has_method(policy, "update"):
-        # To possibly update an internal buffer (for instance an Exponential Moving Average like in TDMPC).
         policy.update()
 
     train_metrics.loss = loss.item()
@@ -130,7 +99,7 @@ def update_policy(
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig):
+def train_rc_act(cfg: TrainPipelineConfig):
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
 
@@ -143,39 +112,45 @@ def train(cfg: TrainPipelineConfig):
     if cfg.seed is not None:
         set_seed(cfg.seed)
 
-    # Check device is available
     device = get_safe_torch_device(cfg.policy.device, log=True)
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
     logging.info("Creating dataset")
-    dataset = make_dataset(cfg)
+
+    # Build delta timestamps from policy and dataset metadata
+    ds_meta = LeRobotDataset(cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision).meta
+    delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
+
+    dataset = RCACTDataset(
+        repo_id=cfg.dataset.repo_id,
+        root=cfg.dataset.root,
+        episodes=cfg.dataset.episodes,
+        delta_timestamps=delta_timestamps,
+        image_transforms=None,  # follow standard train.py which builds transforms via factory for general case
+        revision=cfg.dataset.revision,
+        video_backend=cfg.dataset.video_backend,
+    )
 
     if cfg.epochs is not None:
         cfg.steps = int(cfg.epochs * dataset.num_frames / cfg.batch_size)
-        logging.info(f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / {cfg.batch_size} batch_size = {cfg.steps} steps")
+        logging.info(
+            f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / {cfg.batch_size} batch_size = {cfg.steps} steps"
+        )
 
-
-    # Create environment used for evaluating checkpoints during training on simulation data.
-    # On real-world data, no need to create an environment as evaluations are done outside train.py,
-    # using the eval.py instead, with gym_dora environment and dora-rs.
     eval_env = None
     if cfg.eval_freq > 0 and cfg.env is not None:
         logging.info("Creating env")
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
     logging.info("Creating policy")
-    policy = make_policy(
-        cfg=cfg.policy,
-        ds_meta=dataset.meta,
-    )
+    policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta)
 
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
     grad_scaler = GradScaler(device.type, enabled=cfg.policy.use_amp)
 
-    step = 0  # number of policy updates (forward + backward + optim)
-
+    step = 0
     if cfg.resume:
         step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
 
@@ -191,12 +166,11 @@ def train(cfg: TrainPipelineConfig):
     logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
     logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
-    # create dataloader for offline training
+    # Dataloader mirroring ACT behavior
     if hasattr(cfg.policy, "drop_n_last_frames"):
         shuffle = False
         sampler = EpisodeAwareSampler(
-            dataset.meta.episodes["dataset_from_index"],
-            dataset.meta.episodes["dataset_to_index"],
+            dataset.episode_data_index,
             drop_n_last_frames=cfg.policy.drop_n_last_frames,
             shuffle=True,
         )
@@ -208,11 +182,10 @@ def train(cfg: TrainPipelineConfig):
         dataset,
         num_workers=cfg.num_workers,
         batch_size=cfg.batch_size,
-        shuffle=shuffle and not cfg.dataset.streaming,
+        shuffle=shuffle,
         sampler=sampler,
         pin_memory=device.type == "cuda",
         drop_last=False,
-        prefetch_factor=2,
     )
     dl_iter = cycle(dataloader)
 
@@ -230,7 +203,7 @@ def train(cfg: TrainPipelineConfig):
         cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
     )
 
-    logging.info("Start offline training on a fixed dataset")
+    logging.info("Start reward-conditioned offline training")
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
         batch = next(dl_iter)
@@ -238,9 +211,6 @@ def train(cfg: TrainPipelineConfig):
 
         for key in batch:
             if isinstance(batch[key], torch.Tensor):
-                if batch[key].dtype != torch.bool:
-                    batch[key] = batch[key].type(torch.float32) if device.type == "mps" else batch[key]
-
                 batch[key] = batch[key].to(device, non_blocking=device.type == "cuda")
 
         train_tracker, output_dict = update_policy(
@@ -254,8 +224,6 @@ def train(cfg: TrainPipelineConfig):
             use_amp=cfg.policy.use_amp,
         )
 
-        # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
-        # increment `step` here.
         step += 1
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
@@ -267,7 +235,7 @@ def train(cfg: TrainPipelineConfig):
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
                 if output_dict:
-                    wandb_log_dict.update(_sanitize_wandb_dict(output_dict))
+                    wandb_log_dict.update(output_dict)
                 wandb_logger.log_dict(wandb_log_dict, step)
             train_tracker.reset_averages()
 
@@ -282,6 +250,19 @@ def train(cfg: TrainPipelineConfig):
         if cfg.env and is_eval_step:
             step_id = get_step_identifier(step, cfg.steps)
             logging.info(f"Eval policy at step {step}")
+
+            # Monkey-patch select_action to force success during evaluation
+            original_select_action = policy.select_action
+
+            @torch.no_grad()
+            def select_action_for_eval(batch_eval):
+                any_tensor = next(v for v in batch_eval.values() if isinstance(v, torch.Tensor))
+                batch_eval = dict(batch_eval)
+                batch_eval["success"] = torch.ones((any_tensor.shape[0], 1), device=any_tensor.device)
+                return original_select_action(batch_eval)
+
+            policy.select_action = select_action_for_eval
+
             with (
                 torch.no_grad(),
                 torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext(),
@@ -294,6 +275,8 @@ def train(cfg: TrainPipelineConfig):
                     max_episodes_rendered=4,
                     start_seed=cfg.seed,
                 )
+
+            policy.select_action = original_select_action
 
             eval_metrics = {
                 "avg_sum_reward": AverageMeter("∑rwrd", ":.3f"),
@@ -316,14 +299,13 @@ def train(cfg: TrainPipelineConfig):
         eval_env.close()
     logging.info("End of training")
 
-    if cfg.policy.push_to_hub:
-        policy.push_model_to_hub(cfg)
-
 
 def main():
     init_logging()
-    train()
+    train_rc_act()
 
 
 if __name__ == "__main__":
     main()
+
+

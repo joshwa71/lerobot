@@ -34,6 +34,7 @@ from lerobot.policies.sac.reward_model.configuration_classifier import RewardCla
 from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.policies.tdmpc.configuration_tdmpc import TDMPCConfig
 from lerobot.policies.vqbet.configuration_vqbet import VQBeTConfig
+from lerobot.policies.rc_act.configuration_rc_act import RewardConditionedACTConfig
 
 
 def get_policy_class(name: str) -> PreTrainedPolicy:
@@ -50,6 +51,10 @@ def get_policy_class(name: str) -> PreTrainedPolicy:
         from lerobot.policies.act.modeling_act import ACTPolicy
 
         return ACTPolicy
+    elif name == "rc_act":
+        from lerobot.policies.rc_act.modeling_rc_act import RCACTPolicy
+
+        return RCACTPolicy
     elif name == "vqbet":
         from lerobot.policies.vqbet.modeling_vqbet import VQBeTPolicy
 
@@ -85,6 +90,8 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
         return DiffusionConfig(**kwargs)
     elif policy_type == "act":
         return ACTConfig(**kwargs)
+    elif policy_type == "rc_act":
+        return RewardConditionedACTConfig(**kwargs)
     elif policy_type == "vqbet":
         return VQBeTConfig(**kwargs)
     elif policy_type == "pi0":
