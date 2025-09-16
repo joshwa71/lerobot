@@ -33,7 +33,7 @@ lerobot-record \
 lerobot-train \
   --dataset.repo_id=outputs/libero_10_task_9 \
   --policy.type=act \
-  --steps=200000 \
+  --steps=100000 \
   --batch_size=64 \
   --output_dir=outputs/train/act_libero_10_task_9 \
   --job_name=act_libero_10_task_9 \

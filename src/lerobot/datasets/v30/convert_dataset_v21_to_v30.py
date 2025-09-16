@@ -451,21 +451,21 @@ def convert_dataset(
     shutil.move(str(root), str(old_root))
     shutil.move(str(new_root), str(root))
 
-    hub_api = HfApi()
-    try:
-        hub_api.delete_tag(repo_id, tag=CODEBASE_VERSION, repo_type="dataset")
-    except HTTPError as e:
-        print(f"tag={CODEBASE_VERSION} probably doesn't exist. Skipping exception ({e})")
-        pass
-    hub_api.delete_files(
-        delete_patterns=["data/chunk*/episode_*", "meta/*.jsonl", "videos/chunk*"],
-        repo_id=repo_id,
-        revision=branch,
-        repo_type="dataset",
-    )
-    hub_api.create_tag(repo_id, tag=CODEBASE_VERSION, revision=branch, repo_type="dataset")
+    # hub_api = HfApi()
+    # try:
+    #     hub_api.delete_tag(repo_id, tag=CODEBASE_VERSION, repo_type="dataset")
+    # except HTTPError as e:
+    #     print(f"tag={CODEBASE_VERSION} probably doesn't exist. Skipping exception ({e})")
+    #     pass
+    # hub_api.delete_files(
+    #     delete_patterns=["data/chunk*/episode_*", "meta/*.jsonl", "videos/chunk*"],
+    #     repo_id=repo_id,
+    #     revision=branch,
+    #     repo_type="dataset",
+    # )
+    # hub_api.create_tag(repo_id, tag=CODEBASE_VERSION, revision=branch, repo_type="dataset")
 
-    LeRobotDataset(repo_id).push_to_hub()
+    # LeRobotDataset(repo_id).push_to_hub()
 
 
 if __name__ == "__main__":
