@@ -44,7 +44,19 @@ lerobot-train \
 
 
 ### Train SmolVLA
-lerobot-train   --policy.path=lerobot/smolvla_base   --dataset.repo_id=outputs/bl_mixed_100   --batch_size=64   --steps=40000  --policy.repo_id=outputs/train/test_mixed_smolvla_training --output_dir=outputs/train/test_mixed_smolvla_training   --job_name=test_mixed_smolvla_training   --policy.device=cuda   --wandb.enable=true
+lerobot-train \
+  --policy.path=lerobot/smolvla_base \
+  --dataset.repo_id=outputs/libero_10_task_0 \
+  --batch_size=32 \
+  --epochs=100 \
+  --policy.repo_id=outputs/train/test_mixed_smolvla_training \
+  --output_dir=outputs/train/libero_10_task_0_smolvla_full_ft \
+  --job_name=libero_10_task_0_smolvla_full_ft \
+  --policy.device=cuda \
+  --wandb.enable=true \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
