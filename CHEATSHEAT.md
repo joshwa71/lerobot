@@ -80,6 +80,38 @@ lerobot-train \
   --job_name=libero_10
   --wandb.enable=true
 
+
+### Meta Train
+
+lerobot-meta-train \
+  --steps=100000 \
+  --batch_size=2 \
+  --dataset.repo_id=outputs/libero \
+  --policy.type=smolvla \
+  --policy.repo_id=outputs/train/meta_smolvla_lora_libero \
+  --lora.enable=true \
+  --lora.r=8 \
+  --lora.alpha=16 \
+  --lora.dropout=0.05 \
+  --algo.type=reptile \
+  --algo.meta_step_size=1.0 \
+  --inner_steps=3 \
+  --inner_opt.lr=3e-4 \
+  --inner_opt.grad_clip_norm=10 \
+  --tasks_per_outer_step=4 \
+  --support_frames_per_task=1024 \
+  --query_frames_per_task=512 \
+  --train_tasks=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34] \
+  --eval_tasks=[35,36,37,38,39] \
+  --eval_freq=10000 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=2 \
+  --env.type=libero \
+  --output_dir=outputs/train/meta_smolvla_lora_libero \
+  --job_name=meta_smolvla_lora_libero \
+  --wandb.enable=true
+
+
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
 

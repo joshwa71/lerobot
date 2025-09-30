@@ -28,6 +28,7 @@ from lerobot.configs.policies import PreTrainedConfig
 from lerobot.optim import OptimizerConfig
 from lerobot.optim.schedulers import LRSchedulerConfig
 from lerobot.utils.hub import HubMixin
+from lerobot.policies.adapters.lora import LoraAttachConfig
 
 TRAIN_CONFIG_NAME = "train_config.json"
 
@@ -64,6 +65,8 @@ class TrainPipelineConfig(HubMixin):
     scheduler: LRSchedulerConfig | None = None
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
+    # Optional LoRA attachment
+    lora: LoraAttachConfig | None = None
 
     def __post_init__(self):
         self.checkpoint_path = None
@@ -121,6 +124,10 @@ class TrainPipelineConfig(HubMixin):
             raise ValueError(
                 "'policy.repo_id' argument missing. Please specify it to push the model to the hub."
             )
+
+        # Default LoRA config holder to avoid None checks downstream
+        if self.lora is None:
+            self.lora = LoraAttachConfig(enable=False)
 
     @classmethod
     def __get_path_fields__(cls) -> list[str]:

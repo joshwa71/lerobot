@@ -52,6 +52,7 @@ from lerobot.utils.utils import (
     has_method,
     init_logging,
 )
+from lerobot.policies.adapters.lora import LoraAttachConfig, attach_lora
 
 
 def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
@@ -206,6 +207,10 @@ def train(cfg: TrainPipelineConfig):
         cfg=cfg.policy,
         ds_meta=dataset.meta,
     )
+
+    # Optional: attach LoRA adapters before creating optimizer
+    if hasattr(cfg, "lora") and isinstance(cfg.lora, LoraAttachConfig) and cfg.lora.enable:
+        attach_lora(policy, cfg.lora)
 
     # Create processors - only provide dataset_stats if not resuming from saved processors
     processor_kwargs = {}
