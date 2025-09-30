@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# /home/josh/phddev/lerobot-upstream/src/lerobot/scripts/fix_dataset_image_shapes.py
 import argparse
 import json
 from pathlib import Path

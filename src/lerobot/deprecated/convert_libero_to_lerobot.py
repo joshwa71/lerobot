@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# /home/josh/phddev/lerobot-upstream/src/lerobot/scripts/convert_libero_to_lerobot.py
 """
 Script to convert LIBERO datasets from HDF5 format to LeRobot dataset format.
 

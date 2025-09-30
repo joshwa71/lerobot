@@ -256,7 +256,7 @@ class LiberoEnv(EnvConfig):
     render_mode: str = "rgb_array"
     camera_name: str = "agentview_image,robot0_eye_in_hand_image"
     init_states: bool = True
-    camera_name_mapping: dict[str, str] | None = (None,)
+    camera_name_mapping: dict[str, str] | None = None
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
@@ -298,53 +298,53 @@ class LiberoEnv(EnvConfig):
         }
 
 
-@EnvConfig.register_subclass("libero_remote")
-@dataclass
-class LiberoRemoteEnv(EnvConfig):
-    """Configuration for a remote LIBERO environment served over TCP.
+# @EnvConfig.register_subclass("libero_remote")
+# @dataclass
+# class LiberoRemoteEnv(EnvConfig):
+#     """Configuration for a remote LIBERO environment served over TCP.
 
-    The actual environment runs in a separate process / venv. This config only
-    carries connection params and expected feature mapping so LeRobot policies
-    see a standard observation set.
-    """
+#     The actual environment runs in a separate process / venv. This config only
+#     carries connection params and expected feature mapping so LeRobot policies
+#     see a standard observation set.
+#     """
 
-    host: str = "127.0.0.1"
-    port: int = 5555
-    fps: int = 20
-    name: str = "libero_remote"
-    device: str = "cuda"
-    # Optional teleop & wrappers
-    teleop: TeleoperatorConfig | None = None
-    wrapper: EnvTransformConfig | None = None
-    # Record / eval parameters aligned with HILSerlRobotEnvConfig
-    mode: str | None = None  # Either "record", "replay", None
-    repo_id: str | None = None
-    dataset_root: str | None = None
-    task: str | None = ""
-    num_episodes: int = 10  # only for record mode
-    episode: int = 0
-    push_to_hub: bool = False
-    pretrained_policy_name_or_path: str | None = None
-    reward_classifier_pretrained_path: str | None = None
-    number_of_steps_after_success: int = 0
-    # Expect two image streams by default matching LIBERO cameras
-    features: dict[str, PolicyFeature] = field(
-        default_factory=lambda: {
-            "observation.images.head": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
-            "observation.images.wrist": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
-            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(15,)),
-            "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
-        }
-    )
-    features_map: dict[str, str] = field(
-        default_factory=lambda: {
-            "observation.images.head": f"{OBS_IMAGES}.head",
-            "observation.images.wrist": f"{OBS_IMAGES}.wrist",
-            "observation.state": OBS_STATE,
-            "action": ACTION,
-        }
-    )
+#     host: str = "127.0.0.1"
+#     port: int = 5555
+#     fps: int = 20
+#     name: str = "libero_remote"
+#     device: str = "cuda"
+#     # Optional teleop & wrappers
+#     teleop: TeleoperatorConfig | None = None
+#     wrapper: EnvTransformConfig | None = None
+#     # Record / eval parameters aligned with HILSerlRobotEnvConfig
+#     mode: str | None = None  # Either "record", "replay", None
+#     repo_id: str | None = None
+#     dataset_root: str | None = None
+#     task: str | None = ""
+#     num_episodes: int = 10  # only for record mode
+#     episode: int = 0
+#     push_to_hub: bool = False
+#     pretrained_policy_name_or_path: str | None = None
+#     reward_classifier_pretrained_path: str | None = None
+#     number_of_steps_after_success: int = 0
+#     # Expect two image streams by default matching LIBERO cameras
+#     features: dict[str, PolicyFeature] = field(
+#         default_factory=lambda: {
+#             "observation.images.head": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+#             "observation.images.wrist": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+#             "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(15,)),
+#             "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
+#         }
+#     )
+#     features_map: dict[str, str] = field(
+#         default_factory=lambda: {
+#             "observation.images.head": f"{OBS_IMAGES}.head",
+#             "observation.images.wrist": f"{OBS_IMAGES}.wrist",
+#             "observation.state": OBS_STATE,
+#             "action": ACTION,
+#         }
+#     )
 
-    @property
-    def gym_kwargs(self) -> dict:
-        return {"host": self.host, "port": self.port}
+#     @property
+#     def gym_kwargs(self) -> dict:
+#         return {"host": self.host, "port": self.port}
