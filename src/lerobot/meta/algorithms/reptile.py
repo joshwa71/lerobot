@@ -27,6 +27,11 @@ class Reptile(MetaAlgorithm):
     ) -> TaskResult:
         theta = self.snapshot(model)
         opt = self.inner_optimizer([p for p in model.parameters() if p.requires_grad], inner_cfg)
+        # Ensure training mode for modules with training-time behavior
+        was_training = model.training if hasattr(model, "training") else True
+        if hasattr(model, "train"):
+            model.train()
+        loss_sum = 0.0
         for inner_idx in range(1, steps + 1):
             t0 = time.perf_counter()
             batch = next(support_iter)
@@ -43,6 +48,7 @@ class Reptile(MetaAlgorithm):
                 torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], inner_cfg.grad_clip_norm, error_if_nonfinite=False)
             opt.step()
             t5 = time.perf_counter()
+            loss_sum += float(loss.item())
             # Best-effort flush for timing clarity
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
@@ -56,10 +62,16 @@ class Reptile(MetaAlgorithm):
             delta = {}
             for n, p in model.named_parameters():
                 if p.requires_grad and n in theta:
-                    delta[n] = (p - theta[n]).detach().clone()
+                    # Store deltas on CPU to lower GPU memory pressure
+                    d = (p - theta[n]).detach().to("cpu")
+                    delta[n] = d.clone()
         # restore initial params to keep model at meta-parameters before outer step aggregation
         self.restore_parameters(model, theta)
-        return TaskResult(delta=delta)
+        # Restore original training mode
+        if hasattr(model, "train") and not was_training:
+            model.eval()
+        avg_loss = loss_sum / max(1, steps)
+        return TaskResult(delta=delta, metrics={"inner_avg_loss": avg_loss})
 
     def outer_step(self, model, task_results: list[TaskResult]) -> None:
         if not task_results:
@@ -71,12 +83,13 @@ class Reptile(MetaAlgorithm):
             for res in task_results:
                 for n, d in res.delta.items():
                     if n not in acc:
-                        acc[n] = d.clone()
+                        acc[n] = d.to(acc.get(n, d).device).clone()
                     else:
-                        acc[n].add_(d)
+                        acc[n].add_(d.to(acc[n].device))
             scale = self.cfg.meta_step_size / max(1, len(task_results))
             for n, p in model.named_parameters():
                 if p.requires_grad and n in acc:
-                    p.add_(acc[n], alpha=scale)
+                    # Move delta to parameter device on the fly
+                    p.add_(acc[n].to(p.device), alpha=scale)
 
 

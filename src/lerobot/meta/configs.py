@@ -49,7 +49,7 @@ class MetaTrainConfig:
     # Outer loop control
     steps: int = 100_000
     batch_size: int = 8
-    log_freq: int = 200
+    log_freq: int = 1000
     save_freq: int = 10_000
     verbose_log: bool = False
 
@@ -69,7 +69,7 @@ class MetaTrainConfig:
     lora: LoraAttachConfig = field(default_factory=lambda: LoraAttachConfig(enable=True))
 
     # Logging / eval
-    eval_freq: int = 20000
+    eval_freq: int = 10000
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
 

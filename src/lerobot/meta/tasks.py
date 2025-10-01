@@ -9,7 +9,6 @@ from typing import Iterator
 import torch
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.sampler import EpisodeAwareSampler
 
 
 @dataclass
@@ -49,20 +48,49 @@ def build_task_dataloader(
     shuffle: bool,
     num_workers: int,
 ) -> torch.utils.data.DataLoader:
-    # Select episode indices for this task
+    # Efficiently choose up to frames_per_task indices across episodes of this task
     episode_indices_to_use = get_episode_indices_for_task(ds, task_index)
-    sampler = EpisodeAwareSampler(
-        dataset_from_indices=ds.meta.episodes["dataset_from_index"],
-        dataset_to_indices=ds.meta.episodes["dataset_to_index"],
-        episode_indices_to_use=episode_indices_to_use,
-        shuffle=shuffle,
-    )
+    ranges = []
+    for ep_idx in episode_indices_to_use:
+        start = ds.meta.episodes["dataset_from_index"][ep_idx]
+        end = ds.meta.episodes["dataset_to_index"][ep_idx]
+        if end > start:
+            ranges.append((start, end))
 
-    # Limit number of frames from this task per outer step
-    indices = list(sampler)
+    # Compute a simple uniform sampling across episode ranges without enumerating all indices
+    total = sum((end - start) for start, end in ranges)
+    target = min(frames_per_task, total)
+    indices: list[int] = []
+    if total == 0 or target == 0:
+        indices = []
+    else:
+        # Allocate proportional budget per episode
+        remaining = target
+        per_range = []
+        for start, end in ranges:
+            length = end - start
+            n = max(0, (length * target) // total)
+            per_range.append(max(0, int(n)))
+        # Fix rounding by distributing leftovers
+        assigned = sum(per_range)
+        i = 0
+        while assigned < target and i < len(per_range):
+            per_range[i] += 1
+            assigned += 1
+            i += 1
+        # Sample evenly within each episode range
+        for (start, end), count in zip(ranges, per_range, strict=False):
+            if count <= 0:
+                continue
+            step = max(1, (end - start) // count)
+            cur = start
+            added = 0
+            while added < count and cur < end:
+                indices.append(cur)
+                cur += step
+                added += 1
     if shuffle:
         random.shuffle(indices)
-    indices = indices[: frames_per_task]
 
     subset = torch.utils.data.Subset(ds, indices)
     return torch.utils.data.DataLoader(

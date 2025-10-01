@@ -22,7 +22,7 @@ from torch import nn
 @dataclass
 class LoraAttachConfig:
     enable: bool = False
-    r: int = 8
+    r: int = 4
     alpha: float = 16.0
     dropout: float = 0.05
     # Regexes matched against module qualified names in the policy
@@ -31,8 +31,8 @@ class LoraAttachConfig:
         default_factory=lambda: [
             r"self_attn\.(q_proj|k_proj|v_proj|o_proj)$",
             r"mlp\.(up_proj|down_proj|gate_proj)$",
-            r"^state_proj$",
-            r"^action_.*",
+            r"(?:^|\.)state_proj$",
+            r"(?:^|\.)action_.*",
         ]
     )
 
@@ -62,7 +62,8 @@ class LoRALinear(nn.Module):
         # LoRA parameters are initialized to zeros (B) and small random (A)
         # Following common practice: A small init helps stability
         device = self.base.weight.device
-        dtype = torch.float32
+        # Match base weight dtype to avoid upcasting large activations
+        dtype = self.base.weight.dtype
         self.lora_A = nn.Parameter(torch.zeros(self.in_features, self.r, device=device, dtype=dtype))
         self.lora_B = nn.Parameter(torch.zeros(self.r, self.out_features, device=device, dtype=dtype))
 
@@ -78,7 +79,6 @@ class LoRALinear(nn.Module):
         if self.r == 0:
             return y
         x_d = self.dropout(x)
-        # Ensure LoRA matmuls run in float32 for numerical stability
         x_proj = x_d.to(self.lora_A.dtype) @ self.lora_A
         delta = x_proj @ self.lora_B
         delta = delta.to(y.dtype)
@@ -137,6 +137,16 @@ def attach_lora(policy: nn.Module, cfg: LoraAttachConfig) -> nn.Module:
             lora_layer = LoRALinear(module, r=cfg.r, alpha=cfg.alpha, dropout=cfg.dropout)
             _replace_module(parent, child_name, lora_layer)
             replaced += 1
+
+    # Freeze all parameters, then unfreeze LoRA-specific params only
+    for p in policy.parameters():
+        p.requires_grad = False
+    for _, mod in policy.named_modules():
+        if isinstance(mod, LoRALinear):
+            if hasattr(mod, "lora_A"):
+                mod.lora_A.requires_grad = True
+            if hasattr(mod, "lora_B"):
+                mod.lora_B.requires_grad = True
 
     if replaced == 0:
         # It is fine if no module matched, but warn via print to keep dependency-free

@@ -91,6 +91,7 @@ class MetaEngine:
         )
         logging.info("Creating outer optimizer/scheduler...")
         self.optimizer, self.lr_scheduler = make_optimizer_and_scheduler(self.outer_cfg, self.policy)
+        # Outer optimizer is not used by Reptile; keep for future algos
         logging.info("Optimizer ready: %s param groups", len(self.optimizer.param_groups))
 
         # WandB logger (follow existing pattern)
@@ -157,7 +158,7 @@ class MetaEngine:
         preproc = self.preproc
 
         support_iters = self.build_task_iters(self.train_tasks, self.cfg.support_frames_per_task, batch_size, True)
-        query_iters = self.build_task_iters(self.train_tasks, self.cfg.query_frames_per_task, batch_size, True)
+        # Defer query loader creation to when needed (FOMAML) to avoid memory pressure
 
         meters = {
             "meta_update_s": AverageMeter("updt_s", ":.3f"),
@@ -170,26 +171,33 @@ class MetaEngine:
             if self.cfg.verbose_log and (step <= 3 or step % max(1, self.cfg.log_freq) == 0):
                 logging.info("Outer step %s: sampled tasks=%s", step, tasks)
             task_results = []
+            inner_losses = []
             for t in tasks:
                 if self.cfg.verbose_log and step <= 3:
                     logging.info("Adapting on task=%s for %s inner steps", t, self.cfg.inner_steps)
-                task_results.append(
-                    self.algo.adapt(
-                        model=policy,
-                        support_iter=support_iters[t],
-                        steps=self.cfg.inner_steps,
-                        inner_cfg=self.cfg.inner_opt,
-                        preprocessor=preproc,
-                    )
+                res = self.algo.adapt(
+                    model=policy,
+                    support_iter=support_iters[t],
+                    steps=self.cfg.inner_steps,
+                    inner_cfg=self.cfg.inner_opt,
+                    preprocessor=preproc,
                 )
+                task_results.append(res)
+                if res.metrics and "inner_avg_loss" in res.metrics:
+                    inner_losses.append(res.metrics["inner_avg_loss"])
 
             self.algo.outer_step(policy, task_results)
 
-            if self.cfg.verbose_log and step % log_freq == 0:
+            is_log_step = log_freq > 0 and step % log_freq == 0
+            if is_log_step:
                 logging.info(tracker)
+                avg_inner = float(sum(inner_losses) / len(inner_losses)) if inner_losses else None
                 tracker.reset_averages()
                 if self.wandb_logger:
-                    self.wandb_logger.log_dict({"outer_step": step}, step=step)
+                    log_payload = {"outer_step": step}
+                    if avg_inner is not None:
+                        log_payload["inner_avg_loss"] = avg_inner
+                    self.wandb_logger.log_dict(log_payload, step=step)
             # Lightweight heartbeat each step
             if self.cfg.verbose_log and step % 10 == 0:
                 logging.info("Heartbeat outer_step=%s", step)
@@ -212,6 +220,8 @@ class MetaEngine:
             if step % max(1, self.cfg.eval_freq) == 0:
                 self._run_meta_eval(step, total_outer_steps)
 
+            tracker.step()
+
     def _run_meta_eval(self, step: int, total_outer_steps: int):
         # 1) Save checkpoint to return after eval; already saved above in train every save_freq.
         # For safety, save a temporary eval checkpoint too.
@@ -230,7 +240,7 @@ class MetaEngine:
 
         # 2) and 3) Evaluate on held-out tasks: adapt on support, then roll out in LIBERO envs
         # Build support loaders for eval tasks
-        support_iters_eval = self.build_task_iters(self.eval_tasks, self.cfg.support_frames_per_task, batch_size=8, shuffle=True)
+        support_iters_eval = self.build_task_iters(self.eval_tasks, self.cfg.support_frames_per_task, batch_size=self.cfg.eval.batch_size, shuffle=True)
 
         # Per-task: clone meta-weights -> adapt -> build env -> eval
         per_task_results = {}
@@ -249,18 +259,25 @@ class MetaEngine:
             with torch.no_grad():
                 for n, p in self.policy.named_parameters():
                     if p.requires_grad and n in res.delta:
-                        p.add_(res.delta[n])
+                        p.add_(res.delta[n].to(p.device))
 
-            # Build a single-task LIBERO env for this task id using the existing eval stack
-            # env factory expects an EnvConfig; reuse cfg.env if provided, else skip true sim eval
+            # Build a single-task LIBERO env for this task id
+            # Restrict creation to the requested task_id to avoid unnecessary envs
             if self.cfg.env is not None and self.cfg.env.type == "libero":
-                from lerobot.envs.factory import make_env
+                from lerobot.envs.libero import create_libero_envs
+                import gymnasium as gym
                 env_cfg = self.cfg.env
-                # subset one task by id; make_env handles vectorization
-                envs = make_env(env_cfg, n_envs=1, use_async_envs=False)
+                envs_subset = create_libero_envs(
+                    task=env_cfg.task,
+                    n_envs=1,
+                    camera_name=env_cfg.camera_name,
+                    init_states=env_cfg.init_states,
+                    gym_kwargs={**env_cfg.gym_kwargs, "task_ids": [t]},
+                    env_cls=gym.vector.SyncVectorEnv,
+                )
                 try:
                     info = eval_policy_all(
-                        envs={"libero": {t: envs}},
+                        envs=envs_subset,
                         policy=self.policy,
                         preprocessor=self.preproc,
                         postprocessor=self.postproc,
@@ -273,7 +290,7 @@ class MetaEngine:
                     per_task_results[t] = info["overall"]
                 finally:
                     from lerobot.envs.utils import close_envs
-                    close_envs(envs)
+                    close_envs(envs_subset)
             else:
                 per_task_results[t] = {"note": "Env not provided; skipped real sim eval."}
 

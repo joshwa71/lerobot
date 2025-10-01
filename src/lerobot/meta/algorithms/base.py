@@ -14,6 +14,7 @@ from lerobot.meta.configs import InnerOptConfig
 @dataclass
 class TaskResult:
     delta: dict[str, torch.Tensor]
+    metrics: dict[str, float] | None = None
 
 
 class MetaAlgorithm:
