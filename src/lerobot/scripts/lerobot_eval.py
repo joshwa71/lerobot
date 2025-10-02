@@ -130,6 +130,7 @@ def rollout(
     Returns:
         The dictionary described above.
     """
+
     assert isinstance(policy, nn.Module), "Policy must be a PyTorch nn module."
 
     # Reset the policy and environments.

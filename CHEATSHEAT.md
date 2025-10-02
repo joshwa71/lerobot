@@ -62,22 +62,22 @@ lerobot-train \
 
 lerobot-train \
   --policy.type=smolvla \
-  --policy.repo_id=outputs/train/libero_10 \
-  --dataset.repo_id=outputs/libero_10 \
+  --policy.repo_id=outputs/train/mixed_libero_10 \
+  --dataset.repo_id=outputs/mixed_libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/libero_10 \
-  --steps=200000 \
-  --batch_size=8 \
+  --output_dir=./outputs/train/mixed_libero_10 \
+  --steps=300000 \
+  --batch_size=16 \
   --eval.batch_size=1 \
-  --eval.n_episodes=4 \
+  --eval.n_episodes=1 \
   --eval_freq=10000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_10
+  --policy.scheduler_decay_steps=250000 \
+  --job_name=mixed_libero_10
   --wandb.enable=true
 
 ### Run A Policy
