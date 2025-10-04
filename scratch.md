@@ -1,4 +1,9 @@
-lerobot-train   --policy.type=smolvla   --policy.repo_id=outputs/train/mixed_libero_10_600k^C --dataset.repo_id=outputs/mixed_libero_10   --env.type=libero   --env.task=libero_10   --output_dir=./outputs/train/mixed_libero_10_6
-00k   --steps=600000   --batch_size=8   --eval.batch_size=1   --eval.n_episodes=3   --eval_freq=20000   --policy.freeze_vision_encoder=false   --poli
-cy.train_expert_only=false   --policy.train_state_proj=true   --policy.scheduler_warmup_steps=20000   --policy.scheduler_decay_steps=500000   --job_n
-ame=mixed_libero_10_600k
+lerobot-train   --policy.type=smolvla --policy.repo_id=outputs/train/mixed_libero_10_smolvla_600k --dataset.repo_id=outputs/mixed_libero_10   --env.type=libero   --env.task=libero_10   --output_dir=./outputs/train/mixed_libero_10_smolvla_600k   --steps=600000   --batch_size=8   --eval.batch_size=1   --eval.n_episodes=3   --eval_freq=20000   --policy.freeze_vision_encoder=false   
+--policy.train_expert_only=false   --policy.train_state_proj=true   --policy.scheduler_warmup_steps=20000   --policy.scheduler_decay_steps=500000   --job_name=mixed_libero_10_smolvla_600k --wandb.enable=true
+
+lerobot-train   --policy.type=pi0  --policy.repo_id=outputs/train/mixed_libero_10_pi0_300k --eval_freq=0 --dataset.repo_id=outputs/mixed_libero_10   --env.task=libero_10   --output_dir=./outputs/train/mixed_libero_10_pi0_300k  --steps=600000   --batch_size=8  --policy.freeze_vision_encoder=false   --policy.train_expert_only=false   --policy.train_state_proj=true   --policy.scheduler_warmup_steps=20000   --policy.scheduler_decay_steps=500000   --job_name=mixed_libero_10_600k
+
+
+
+## Curriculum training
+lerobot-train --policy.type=smolvla --policy.repo_id=outputs/train/mixed_libero_10_smolvla_300k_curric --dataset.repo_id=outputs/mixed_libero_10 --env.type=libero --env.task=libero_10 --output_dir=./outputs/train/mixed_libero_10_smolvla_300k_curric --steps=300000 --batch_size=8 --eval.batch_size=1 --eval.n_episodes=3 --eval_freq=10000 --policy.freeze_vision_encoder=false --policy.train_expert_only=false --policy.train_state_proj=true --policy.scheduler_warmup_steps=10000 --policy.scheduler_decay_steps=250000 --job_name=mixed_libero_10_smolvla_300k_curric --wandb.enable=true --curriculum.enabled=true --curriculum.splits=[50,50] --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],"2":[10,11,12,13,14,15,16,17,18,19]}'

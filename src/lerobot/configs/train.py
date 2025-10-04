@@ -33,6 +33,15 @@ TRAIN_CONFIG_NAME = "train_config.json"
 
 
 @dataclass
+class CurriculumConfig:
+    enabled: bool = False
+    # Percent split per segment; must sum to 100 when enabled
+    splits: list[int] = field(default_factory=list)
+    # Mapping of segment id ("1", "2", ...) to task indices for that segment
+    tasks: dict[str, list[int]] = field(default_factory=dict)
+
+
+@dataclass
 class TrainPipelineConfig(HubMixin):
     dataset: DatasetConfig
     env: envs.EnvConfig | None = None
@@ -64,6 +73,7 @@ class TrainPipelineConfig(HubMixin):
     scheduler: LRSchedulerConfig | None = None
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
+    curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
 
     def __post_init__(self):
         self.checkpoint_path = None
@@ -121,6 +131,29 @@ class TrainPipelineConfig(HubMixin):
             raise ValueError(
                 "'policy.repo_id' argument missing. Please specify it to push the model to the hub."
             )
+
+        # Curriculum validation (config-level only; dataset-dependent checks happen at runtime)
+        if self.curriculum.enabled:
+            if not self.curriculum.splits:
+                raise ValueError("curriculum.enabled=True but 'curriculum.splits' is empty")
+            if sum(self.curriculum.splits) != 100:
+                raise ValueError("curriculum.splits must sum to 100")
+            # tasks keys must correspond to number of segments
+            if len(self.curriculum.splits) != len(self.curriculum.tasks):
+                raise ValueError(
+                    "Mismatch between number of curriculum splits and number of curriculum.tasks entries"
+                )
+            # Ensure keys are numeric strings starting at 1
+            try:
+                ordered = sorted((int(k) for k in self.curriculum.tasks.keys()))
+            except Exception as e:  # noqa: BLE001
+                raise ValueError("curriculum.tasks keys must be numeric strings like '1','2',...") from e
+            if ordered[0] != 1 or ordered[-1] != len(self.curriculum.splits) or len(ordered) != len(
+                self.curriculum.splits
+            ):
+                raise ValueError(
+                    "curriculum.tasks keys must cover 1..N exactly where N=len(curriculum.splits)"
+                )
 
     @classmethod
     def __get_path_fields__(cls) -> list[str]:

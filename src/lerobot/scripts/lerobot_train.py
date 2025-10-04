@@ -241,29 +241,81 @@ def train(cfg: TrainPipelineConfig):
     logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
     logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
-    # create dataloader for offline training
-    if hasattr(cfg.policy, "drop_n_last_frames"):
-        shuffle = False
-        sampler = EpisodeAwareSampler(
-            dataset.meta.episodes["dataset_from_index"],
-            dataset.meta.episodes["dataset_to_index"],
-            drop_n_last_frames=cfg.policy.drop_n_last_frames,
-            shuffle=True,
+    # create dataloader for offline training (with optional curriculum)
+    def _build_dataloader(episode_indices_to_use: list[int] | None = None):
+        use_sampler = episode_indices_to_use is not None or hasattr(cfg.policy, "drop_n_last_frames")
+        if use_sampler:
+            drop_n_last = getattr(cfg.policy, "drop_n_last_frames", 0)
+            sampler_local = EpisodeAwareSampler(
+                dataset.meta.episodes["dataset_from_index"],
+                dataset.meta.episodes["dataset_to_index"],
+                episode_indices_to_use=episode_indices_to_use,
+                drop_n_last_frames=drop_n_last,
+                shuffle=True,
+            )
+        else:
+            sampler_local = None
+
+        return torch.utils.data.DataLoader(
+            dataset,
+            num_workers=cfg.num_workers,
+            batch_size=cfg.batch_size,
+            shuffle=(not use_sampler) and not cfg.dataset.streaming,
+            sampler=sampler_local,
+            pin_memory=device.type == "cuda",
+            drop_last=False,
+            prefetch_factor=2,
+        )
+
+    curriculum_enabled = getattr(cfg, "curriculum", None) is not None and cfg.curriculum.enabled
+    if curriculum_enabled and getattr(cfg.dataset, "streaming", False):
+        raise NotImplementedError("Curriculum is not supported with streaming datasets")
+
+    if curriculum_enabled:
+        # Compute segment ends in steps
+        splits = cfg.curriculum.splits
+        segment_ends: list[int] = []
+        acc = 0
+        for i, pct in enumerate(splits):
+            if i == len(splits) - 1:
+                seg_steps = cfg.steps - acc
+            else:
+                seg_steps = round(cfg.steps * (pct / 100))
+            acc += seg_steps
+            segment_ends.append(acc)
+
+        # Map task_index -> task name
+        task_index_to_name: dict[int, str] = {}
+        if dataset.meta.tasks is not None:
+            for task_name, row in dataset.meta.tasks.iterrows():
+                task_index_to_name[int(row["task_index"])] = task_name
+
+        # Build per-segment episode indices from allowed task indices
+        all_episode_tasks = dataset.meta.episodes["tasks"]
+        segment_to_episode_indices: list[list[int]] = []
+        for seg_id in range(1, len(splits) + 1):
+            allowed_task_indices = cfg.curriculum.tasks.get(str(seg_id), [])
+            allowed_task_names = {task_index_to_name[i] for i in allowed_task_indices if i in task_index_to_name}
+            ep_indices = [
+                i for i, tlist in enumerate(all_episode_tasks) if any(t in allowed_task_names for t in tlist)
+            ]
+            segment_to_episode_indices.append(ep_indices)
+
+        # Determine initial segment (supports resume)
+        def _current_segment(step_val: int) -> int:
+            for idx, end in enumerate(segment_ends):
+                if step_val < end:
+                    return idx
+            return len(segment_ends) - 1
+
+        current_seg = _current_segment(step)
+        dataloader = _build_dataloader(segment_to_episode_indices[current_seg])
+        logging.info(
+            f"Curriculum segment {current_seg + 1}/{len(splits)} | episodes={len(segment_to_episode_indices[current_seg])}"
         )
     else:
-        shuffle = True
-        sampler = None
+        dataloader = _build_dataloader(None)
 
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=cfg.num_workers,
-        batch_size=cfg.batch_size,
-        shuffle=shuffle and not cfg.dataset.streaming,
-        sampler=sampler,
-        pin_memory=device.type == "cuda",
-        drop_last=False,
-        prefetch_factor=2,
-    )
     dl_iter = cycle(dataloader)
 
     policy.train()
@@ -305,6 +357,17 @@ def train(cfg: TrainPipelineConfig):
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps
         is_eval_step = cfg.eval_freq > 0 and step % cfg.eval_freq == 0
+
+        if curriculum_enabled:
+            # Switch segment exactly at boundary after completing that step
+            if step <= segment_ends[-1] and step == segment_ends[current_seg]:
+                if current_seg + 1 < len(segment_ends):
+                    current_seg += 1
+                    dataloader = _build_dataloader(segment_to_episode_indices[current_seg])
+                    dl_iter = cycle(dataloader)
+                    logging.info(
+                        f"Switched to curriculum segment {current_seg + 1}/{len(segment_ends)} | episodes={len(segment_to_episode_indices[current_seg])}"
+                    )
 
         if is_log_step:
             logging.info(train_tracker)
