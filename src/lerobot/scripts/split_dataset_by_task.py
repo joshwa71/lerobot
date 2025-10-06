@@ -187,6 +187,45 @@ def _copy_required_video_files(
     return mapping
 
 
+def _build_episode_to_files_index(src_root: Path) -> Dict[int, List[Path]]:
+    """Build an index mapping episode_idx -> list of parquet files containing that episode."""
+    data_dir = src_root / "data"
+    if not data_dir.exists():
+        return {}
+    
+    episode_to_files: Dict[int, List[Path]] = {}
+    
+    for chunk_dir in sorted(data_dir.glob("chunk-*")):
+        for file_path in sorted(chunk_dir.glob("file-*.parquet")):
+            # Read only episode_index column for speed
+            df = pd.read_parquet(file_path, columns=["episode_index"])
+            unique_episodes = df["episode_index"].unique()
+            for ep_idx in unique_episodes:
+                ep_idx = int(ep_idx)
+                if ep_idx not in episode_to_files:
+                    episode_to_files[ep_idx] = []
+                episode_to_files[ep_idx].append(file_path)
+    
+    return episode_to_files
+
+
+def _load_episode_data_from_files(file_paths: List[Path], episode_idx: int) -> pd.DataFrame:
+    """Load data for a specific episode from known parquet files."""
+    frames = []
+    for file_path in file_paths:
+        df = pd.read_parquet(file_path)
+        ep_frames = df[df["episode_index"] == episode_idx]
+        if len(ep_frames) > 0:
+            frames.append(ep_frames)
+    
+    if not frames:
+        return pd.DataFrame()
+    
+    combined = pd.concat(frames, ignore_index=True)
+    combined.sort_values("index", inplace=True)
+    return combined
+
+
 def _rebuild_data_and_meta(
     src_meta: LeRobotDatasetMetadata,
     dst_root: Path,
@@ -215,22 +254,21 @@ def _rebuild_data_and_meta(
     # Build hf features to ensure consistent columns ordering when writing
     hf_features = get_hf_features_from_features(src_meta.features)
 
+    # Build index once for all episodes (much faster than searching for each episode)
+    logging.info("Building episode-to-files index...")
+    episode_to_files = _build_episode_to_files_index(src_meta.root)
+
     for new_ep_idx, src_ep_idx in enumerate(episodes_to_keep):
         ep_meta = ep_df.loc[src_ep_idx]
-        src_data_chunk = int(ep_meta["data/chunk_index"])
-        src_data_file = int(ep_meta["data/file_index"])
-        src_data_path = src_meta.root / DEFAULT_DATA_PATH.format(
-            chunk_index=src_data_chunk, file_index=src_data_file
-        )
-
-        df = pd.read_parquet(src_data_path)
-        df = df[df["episode_index"] == src_ep_idx].copy()
-        df.sort_values("index", inplace=True)
+        
+        # Load episode data using pre-built index
+        file_paths = episode_to_files.get(src_ep_idx, [])
+        df = _load_episode_data_from_files(file_paths, src_ep_idx)
 
         # Reindex episode_index and global index
         length = len(df)
         if length == 0:
-            # Skip zero-length episodes to avoid creating empty parquet files
+            logging.warning(f"Episode {src_ep_idx} has no data frames (task: {ep_meta['tasks']}). Skipping.")
             continue
         df["episode_index"] = new_ep_idx
         df["index"] = np.arange(current_dataset_index, current_dataset_index + length)

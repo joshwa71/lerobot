@@ -110,6 +110,15 @@ lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --rob
 
 python evaluate_lerobot_act.py   --model_path /home/josh/phddev/lerobot-upstream/outputs/train/act_libero_10_task_9/checkpoints/last/pretrained_model   --task_id 2   --benchmark libero_10   --n_eval 5   --max_steps 600   --device cuda   --seed 10000   --render
 
+### Evaluate on LIBERO
+lerobot-eval \
+  --policy.path=/home/josh/phddev/lerobot-upstream/outputs/train/libero_10_smolvla_200k/checkpoints/last/pretrained_model \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=2 \
+  --eval.n_episodes=50 \
+  --output_dir=/home/josh/phddev/lerobot-upstream/outputs/eval/libero_10_smolvla_200k
+
 ### Recalibrate Dataset
 
 python /home/josh/phddev/lerobot-upstream/src/lerobot/scripts/recalibrate_dataset.py \
