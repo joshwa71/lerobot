@@ -45,7 +45,7 @@ lerobot-train \
 
 ### Train SmolVLA
 lerobot-train \
-  --policy.path=lerobot/smolvla_base \
+  --policy.path=outputs/smolvla_base \
   --dataset.repo_id=outputs/libero_10_task_0 \
   --batch_size=32 \
   --epochs=100 \
@@ -61,7 +61,7 @@ lerobot-train \
 ### Train Libero
 
 lerobot-train \
-  --policy.type=smolvla \
+  --policy.path=outputs/smolvla \
   --policy.repo_id=outputs/train/libero_10 \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
