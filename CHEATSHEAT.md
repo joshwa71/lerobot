@@ -87,7 +87,7 @@ lerobot-meta-train \
   --steps=100000 \
   --batch_size=2 \
   --dataset.repo_id=outputs/libero \
-  --policy.type=smolvla \
+  --policy.path=outputs/smolvla_base \
   --policy.repo_id=outputs/train/meta_smolvla_lora_libero \
   --lora.enable=true \
   --lora.r=8 \
