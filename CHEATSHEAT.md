@@ -45,7 +45,7 @@ lerobot-train \
 
 ### Train SmolVLA
 lerobot-train \
-  --policy.path=lerobot/smolvla_base \
+  --policy.path=outputs/smolvla_base \
   --dataset.repo_id=outputs/libero_10_task_0 \
   --batch_size=32 \
   --epochs=100 \
@@ -61,30 +61,8 @@ lerobot-train \
 ### Train Libero
 
 lerobot-train \
-  --policy.type=smolvla \
-  --policy.repo_id=outputs/train/mixed_libero_10 \
-  --dataset.repo_id=outputs/mixed_libero_10 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --output_dir=./outputs/train/mixed_libero_10 \
-  --steps=300000 \
-  --batch_size=16 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=1 \
-  --eval_freq=10000 \
-  --policy.freeze_vision_encoder=false \
-  --policy.train_expert_only=false \
-  --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=250000 \
-  --job_name=mixed_libero_10
-  --wandb.enable=true
-
-
-## New Train
-
-lerobot-train \
-  --policy.path=lerobot/smolvla_base \
+  --policy.path=outputs/smolvla_base \
+  --policy.repo_id=outputs/train/libero_10_smolvla_200k \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
