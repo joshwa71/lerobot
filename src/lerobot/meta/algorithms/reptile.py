@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -91,5 +90,3 @@ class Reptile(MetaAlgorithm):
                 if p.requires_grad and n in acc:
                     # Move delta to parameter device on the fly
                     p.add_(acc[n].to(p.device), alpha=scale)
-
-

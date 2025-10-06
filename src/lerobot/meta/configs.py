@@ -30,7 +30,7 @@ class MetaAlgoConfig(draccus.ChoiceRegistry):
 @MetaAlgoConfig.register_subclass("reptile")
 @dataclass
 class ReptileConfig(MetaAlgoConfig):
-    meta_step_size: float = 1.0
+    meta_step_size: float = 0.1
 
 
 @MetaAlgoConfig.register_subclass("fomaml")
