@@ -80,6 +80,29 @@ lerobot-train \
   --job_name=mixed_libero_10
   --wandb.enable=true
 
+
+## New Train
+
+lerobot-train \
+  --policy.path=lerobot/smolvla_base \
+  --dataset.repo_id=outputs/libero_10 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --output_dir=./outputs/train/libero_10_smolvla_200k \
+  --save_freq=10000 \
+  --steps=200000 \
+  --batch_size=8 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=150000 \
+  --job_name=libero_10_smolvla_200k \
+  --wandb.enable=true
+
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
 
