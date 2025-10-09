@@ -11,6 +11,7 @@ from lerobot.utils.utils import init_logging
 
 @parser.wrap()
 def meta_train(cfg: MetaTrainConfig):
+    cfg.validate()
     cfg_dict = cfg  # draccus already validated nested configs
     logging.info("Starting meta-training")
     engine = MetaEngine(cfg_dict)

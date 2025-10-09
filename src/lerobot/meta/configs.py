@@ -42,7 +42,7 @@ class FOMAMLConfig(MetaAlgoConfig):
 @dataclass
 class MetaTrainConfig:
     dataset: DatasetConfig
-    policy: PreTrainedConfig
+    policy: PreTrainedConfig | None = None
     env: envs.EnvConfig | None = None
     output_dir: Path | None = None
     job_name: str | None = None
@@ -72,5 +72,24 @@ class MetaTrainConfig:
     eval_freq: int = 10000
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
+
+    def validate(self):
+        from lerobot.configs import parser
+        policy_path = parser.get_path_arg("policy")
+        if policy_path:
+            cli_overrides = parser.get_cli_overrides("policy")
+            self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
+            self.policy.pretrained_path = policy_path
+        
+        if self.policy is None:
+            raise ValueError(
+                "Policy configuration is required. Please provide either --policy.path "
+                "to load a pretrained policy or specify --policy.type to create a new one."
+            )
+
+    @classmethod
+    def __get_path_fields__(cls) -> list[str]:
+        """This enables the parser to load config from the policy using `--policy.path=local/dir`"""
+        return ["policy"]
 
 

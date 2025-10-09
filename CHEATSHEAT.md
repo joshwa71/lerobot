@@ -85,7 +85,8 @@ lerobot-train \
 
 lerobot-meta-train \
   --steps=100000 \
-  --batch_size=2 \
+  --log_freq=100 \
+  --batch_size=8 \
   --dataset.repo_id=outputs/libero \
   --policy.path=outputs/smolvla_base \
   --policy.repo_id=outputs/train/meta_smolvla_lora_libero \
@@ -94,15 +95,15 @@ lerobot-meta-train \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
   --algo.type=reptile \
-  --algo.meta_step_size=1.0 \
+  --algo.meta_step_size=0.1 \
   --inner_steps=3 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
   --tasks_per_outer_step=4 \
-  --support_frames_per_task=1024 \
+  --support_frames_per_task=50000 \
   --query_frames_per_task=512 \
-  --train_tasks=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34] \
-  --eval_tasks=[35,36,37,38,39] \
+  --train_tasks=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39] \
+  --eval_tasks=[0,1,2,3,4] \
   --eval_freq=10000 \
   --eval.batch_size=1 \
   --eval.n_episodes=2 \
