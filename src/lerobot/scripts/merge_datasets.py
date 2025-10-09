@@ -118,6 +118,45 @@ def _iter_episode_slices(episodes_ds: Dataset) -> List[Tuple[int, int, int]]:
     return out
 
 
+def _build_episode_to_files_index(src_root: Path) -> Dict[int, List[Path]]:
+    """Build an index mapping episode_idx -> list of parquet files containing that episode."""
+    data_dir = src_root / "data"
+    if not data_dir.exists():
+        return {}
+    
+    episode_to_files: Dict[int, List[Path]] = {}
+    
+    for chunk_dir in sorted(data_dir.glob("chunk-*")):
+        for file_path in sorted(chunk_dir.glob("file-*.parquet")):
+            # Read only episode_index column for speed
+            df = pd.read_parquet(file_path, columns=["episode_index"])
+            unique_episodes = df["episode_index"].unique()
+            for ep_idx in unique_episodes:
+                ep_idx = int(ep_idx)
+                if ep_idx not in episode_to_files:
+                    episode_to_files[ep_idx] = []
+                episode_to_files[ep_idx].append(file_path)
+    
+    return episode_to_files
+
+
+def _load_episode_data_from_files(file_paths: List[Path], episode_idx: int) -> pd.DataFrame:
+    """Load data for a specific episode from known parquet files."""
+    frames = []
+    for file_path in file_paths:
+        df = pd.read_parquet(file_path)
+        ep_frames = df[df["episode_index"] == episode_idx]
+        if len(ep_frames) > 0:
+            frames.append(ep_frames)
+    
+    if not frames:
+        return pd.DataFrame()
+    
+    combined = pd.concat(frames, ignore_index=True)
+    combined.sort_values("index", inplace=True)
+    return combined
+
+
 def _rewrite_data_from_sources(
     sources: List[Path],
     dst: Path,
@@ -137,6 +176,12 @@ def _rewrite_data_from_sources(
     new_ep_counter = 0
 
     for si, src_root in enumerate(sources):
+        logging.info(f"Processing source {si}: {src_root}")
+        
+        # Build index once per source (much faster than searching for each episode)
+        logging.info(f"Building episode-to-files index for source {si}...")
+        episode_to_files = _build_episode_to_files_index(src_root)
+        
         src_episodes = load_episodes(src_root)
         src_records: List[dict] = []
 
@@ -144,15 +189,13 @@ def _rewrite_data_from_sources(
             old_ep_idx = int(row["episode_index"])  # scalar
             ep_from = int(row["dataset_from_index"])  # inclusive
             ep_to = int(row["dataset_to_index"])  # exclusive
-            data_chunk = int(row["data/chunk_index"])  # source chunk/file holding this episode
-            data_file = int(row["data/file_index"])  # source file index
 
-            src_path = src_root / DEFAULT_DATA_PATH.format(chunk_index=data_chunk, file_index=data_file)
-            df = pd.read_parquet(src_path)
-            df = df[df["episode_index"] == old_ep_idx].copy()
+            # Load episode data using pre-built index
+            file_paths = episode_to_files.get(old_ep_idx, [])
+            df = _load_episode_data_from_files(file_paths, old_ep_idx)
 
             if len(df) == 0:
-                # Skip zero-length episodes to avoid empty parquet files downstream
+                logging.warning(f"Source {si} episode {old_ep_idx} has no data frames. Skipping.")
                 continue
 
             # Compute length from actual rows

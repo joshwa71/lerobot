@@ -51,7 +51,7 @@ class EpisodeAwareSampler:
 
     def __iter__(self) -> Iterator[int]:
         if self.shuffle:
-            for i in torch.randperm(len(self.indices)):
+            for i in torch.randperm(len(self.indices)).tolist():
                 yield self.indices[i]
         else:
             for i in self.indices:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import logging
+import shutil
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -299,6 +300,12 @@ def collect_for_task(
 
                         # Commit episode to dataset
                         dataset.save_episode(ep_buffer)
+                        # Remove temporary images written for this episode, since internal cleanup
+                        # only runs when using the internal episode_buffer API.
+                        for cam_key in dataset.meta.image_keys:
+                            img_dir = dataset._get_image_file_dir(episode_index, cam_key)
+                            if img_dir.is_dir():
+                                shutil.rmtree(img_dir)
                         saved += 1
                 # Mark env as done and ready for next episode
                 done_mask[i] = True

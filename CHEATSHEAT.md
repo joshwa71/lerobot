@@ -66,18 +66,19 @@ lerobot-train \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/libero_10 \
+  --output_dir=./outputs/train/libero_10_smolvla_200k \
+  --save_freq=10000 \
   --steps=200000 \
   --batch_size=8 \
   --eval.batch_size=1 \
-  --eval.n_episodes=4 \
-  --eval_freq=10000 \
+  --eval.n_episodes=3 \
+  --eval_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_10
+  --job_name=libero_10_smolvla_200k \
   --wandb.enable=true
 
 
@@ -126,6 +127,15 @@ lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --rob
 ### Eval
 
 python evaluate_lerobot_act.py   --model_path /home/josh/phddev/lerobot-upstream/outputs/train/act_libero_10_task_9/checkpoints/last/pretrained_model   --task_id 2   --benchmark libero_10   --n_eval 5   --max_steps 600   --device cuda   --seed 10000   --render
+
+### Evaluate on LIBERO
+lerobot-eval \
+  --policy.path=/home/josh/phddev/lerobot-upstream/outputs/train/libero_10_smolvla_200k/checkpoints/last/pretrained_model \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=2 \
+  --eval.n_episodes=50 \
+  --output_dir=/home/josh/phddev/lerobot-upstream/outputs/eval/libero_10_smolvla_200k
 
 ### Recalibrate Dataset
 
