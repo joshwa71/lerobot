@@ -1,12 +1,13 @@
-cat > train_smolvla_mixed_libero_10_300k_curric_5050.sh << 'EOF'
+cat > train_smolvla_mixed_libero_10_200k_curric_5050.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=a100
+#$ -l gpu=true,gpu_type=(a100_80|a40|h100|l40s|rtx6000ada)
 #$ -pe gpu 1
 #$ -R y
-#$ -N smolvla_mixed_libero_10_300k_curric_5050_train
+#$ -l tscratch=100G
+#$ -N smolvla_mixed_libero_10_200k_curric_5050_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -16,23 +17,34 @@ set -eo pipefail
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $JOB_ID"
 
-# Set cache directories to project space to avoid home quota issues
-export TMPDIR="/SAN/vision/jo71_vla_wd/tmp"
-export HF_DATASETS_CACHE="/SAN/vision/jo71_vla_wd/cache/hf_datasets"
-export HUGGINGFACE_HUB_CACHE="/SAN/vision/jo71_vla_wd/cache/hf_hub"
-export TRANSFORMERS_CACHE="/SAN/vision/jo71_vla_wd/cache/transformers"
-export TORCH_HOME="/SAN/vision/jo71_vla_wd/cache/torch_home"
-export WANDB_DIR="/SAN/vision/jo71_vla_wd/wandb"
-export WANDB_CACHE_DIR="/SAN/vision/jo71_vla_wd/wandb/cache"
+# Setup cleanup trap
+function cleanup {
+    echo "Cleaning up scratch space..."
+    rm -rf /scratch0/johara/$JOB_ID
+    echo "Cleanup completed at $(date)"
+}
+trap cleanup EXIT ERR INT TERM
 
+# Create scratch directory
+SCRATCH_DIR="/scratch0/johara/$JOB_ID"
+mkdir -p "$SCRATCH_DIR"/{cache,data,outputs}
+
+echo "Created scratch directory: $SCRATCH_DIR"
+
+# Set cache directories to scratch space
+export TMPDIR="$SCRATCH_DIR/tmp"
+export HF_DATASETS_CACHE="$SCRATCH_DIR/cache/hf_datasets"
+export HUGGINGFACE_HUB_CACHE="$SCRATCH_DIR/cache/hf_hub"
+export TRANSFORMERS_CACHE="$SCRATCH_DIR/cache/transformers"
+export TORCH_HOME="$SCRATCH_DIR/cache/torch_home"
+export WANDB_DIR="$SCRATCH_DIR/wandb"
+export WANDB_CACHE_DIR="$SCRATCH_DIR/wandb/cache"
 mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR"
 
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot
-
-# Ensure conda libs are used first
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -40,29 +52,61 @@ echo "Python: $(which python)"
 echo "Python version: $(python --version)"
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
 
-# Enter directory
+# Copy dataset to scratch
+echo "Copying dataset to scratch space..."
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10"
+DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10"
+cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
+echo "Dataset copied to $DATASET_SCRATCH"
+
+# Copy pretrained model to scratch
+echo "Copying pretrained model to scratch space..."
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/smolvla_base"
+MODEL_SCRATCH="$SCRATCH_DIR/smolvla_base"
+cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
+echo "Model copied to $MODEL_SCRATCH"
+
+# Output directory in scratch
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_smolvla_200k_curric_5050"
+
+# Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
 
 # Run training
 lerobot-train \
-  --policy.path=outputs/smolvla_base \
-  --policy.repo_id=outputs/train/mixed_libero_10_smolvla_300k_curric_5050 \
-  --dataset.repo_id=outputs/mixed_libero_10 \
-  --output_dir=./outputs/train/mixed_libero_10_smolvla_300k_curric_5050 \
-  --steps=300000 \
-  --batch_size=16 \
+  --policy.path="$MODEL_SCRATCH" \
+  --policy.repo_id=outputs/train/mixed_libero_10_smolvla_200k_curric_5050 \
+  --dataset.repo_id="$DATASET_SCRATCH" \
+  --output_dir="$OUTPUT_SCRATCH" \
+  --steps=200000 \
+  --batch_size=32 \
+  --num_workers=12 \
   --eval_freq=0 \
   --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=20000 \
-  --policy.scheduler_decay_steps=250000 \
-  --job_name=mixed_libero_10_smolvla_300k_curric_5050 \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=150000 \
+  --job_name=mixed_libero_10_smolvla_200k_curric_5050 \
   --wandb.enable=true \
   --curriculum.enabled=true \
   --curriculum.splits=[50,50] \
   --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
+
+# Copy outputs back to permanent storage
+echo "Copying outputs back to permanent storage..."
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_smolvla_200k_curric_5050"
+mkdir -p "$FINAL_OUTPUT_DIR"
+cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
+echo "Outputs copied to $FINAL_OUTPUT_DIR"
+
+# Copy wandb logs back
+if [ -d "$WANDB_DIR" ]; then
+    echo "Copying wandb logs..."
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+fi
 
 echo "Job completed at $(date)"
 EOF
