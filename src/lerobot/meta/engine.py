@@ -38,7 +38,7 @@ class MetaEngine:
             def __init__(self, dataset, policy):
                 self.dataset = dataset
                 self.policy = policy
-                self.num_workers = 4
+                self.num_workers = 8
         ds = make_dataset(_DSCfg(self.cfg.dataset, self.cfg.policy))
         logging.info(
             "Dataset ready: frames=%s episodes=%s tasks=%s cameras=%s",
@@ -138,7 +138,7 @@ class MetaEngine:
                 len(ep_idxs),
                 frames_per_task,
                 batch_size,
-                4,
+                8,
             )
             loader = build_task_dataloader(
                 self.dataset,
@@ -146,7 +146,7 @@ class MetaEngine:
                 frames_per_task=frames_per_task,
                 batch_size=batch_size,
                 shuffle=shuffle,
-                num_workers=4,
+                num_workers=8,
             )
             # Create an infinite iterator to avoid StopIteration during inner adaptation
             iters[t] = cycle(loader)
@@ -333,7 +333,7 @@ class MetaEngine:
             job_name=self.cfg.job_name or f"meta_{self.cfg.policy.type}",
             resume=False,
             seed=1000,
-            num_workers=4,
+            num_workers=8,
             batch_size=8,
             steps=total_steps,
             eval_freq=0,

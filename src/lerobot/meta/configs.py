@@ -51,6 +51,7 @@ class MetaTrainConfig:
     batch_size: int = 8
     log_freq: int = 1000
     save_freq: int = 10_000
+    num_workers: int = 8
     verbose_log: bool = False
 
     # Tasking
@@ -79,7 +80,7 @@ class MetaTrainConfig:
         if policy_path:
             cli_overrides = parser.get_cli_overrides("policy")
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
-            # self.policy.pretrained_path = policy_path
+            self.policy.pretrained_path = policy_path
         
         if self.policy is None:
             raise ValueError(

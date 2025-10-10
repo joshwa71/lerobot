@@ -19,6 +19,11 @@ echo "Job ID: $JOB_ID"
 
 # Setup cleanup trap
 function cleanup {
+    echo "Stopping periodic backup process..."
+    if [ ! -z "$BACKUP_PID" ]; then
+        kill $BACKUP_PID 2>/dev/null || true
+        wait $BACKUP_PID 2>/dev/null || true
+    fi
     echo "Cleaning up scratch space..."
     rm -rf /scratch0/johara/$JOB_ID
     echo "Cleanup completed at $(date)"
@@ -69,6 +74,32 @@ echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_200k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+
+# Periodic backup function (every 6 hours)
+function periodic_backup {
+    local scratch_dir="$1"
+    local final_dir="$2"
+    while true; do
+        sleep 21600  # 6 hours in seconds
+        if [ -d "$scratch_dir" ]; then
+            echo "[$(date)] Performing periodic backup of training outputs..."
+            mkdir -p "$final_dir"
+            if command -v rsync &> /dev/null; then
+                rsync -av --delete "$scratch_dir/" "$final_dir/" 2>&1 | head -20
+            else
+                cp -r "$scratch_dir"/* "$final_dir/"
+            fi
+            echo "[$(date)] Periodic backup completed"
+        fi
+    done
+}
+
+# Start periodic backup in background
+echo "Starting periodic backup process (every 6 hours)..."
+periodic_backup "$OUTPUT_SCRATCH" "$FINAL_OUTPUT_DIR" &
+BACKUP_PID=$!
+echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -89,15 +120,15 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
+  --policy.push_to_hub=false \
   --job_name=libero_10_smolvla_200k \
   --wandb.enable=true
 
-# Copy outputs back to permanent storage
-echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+# Final copy of outputs back to permanent storage
+echo "Performing final copy of outputs to permanent storage..."
 mkdir -p "$FINAL_OUTPUT_DIR"
-cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
-echo "Outputs copied to $FINAL_OUTPUT_DIR"
+rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/"
+echo "Final outputs copied to $FINAL_OUTPUT_DIR"
 
 # Copy wandb logs back
 if [ -d "$WANDB_DIR" ]; then
