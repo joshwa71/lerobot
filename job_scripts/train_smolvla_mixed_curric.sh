@@ -24,6 +24,16 @@ function cleanup {
         kill $BACKUP_PID 2>/dev/null || true
         wait $BACKUP_PID 2>/dev/null || true
     fi
+    
+    # Save latest checkpoint on failure
+    if [ -d "$OUTPUT_SCRATCH/checkpoints/last" ]; then
+        echo "Saving latest checkpoint to permanent storage..."
+        mkdir -p "$FINAL_OUTPUT_DIR/checkpoints"
+        rsync -av "$OUTPUT_SCRATCH/checkpoints/last/" "$FINAL_OUTPUT_DIR/checkpoints/last/" || \
+            cp -r "$OUTPUT_SCRATCH/checkpoints/last" "$FINAL_OUTPUT_DIR/checkpoints/" || true
+        echo "Latest checkpoint saved to $FINAL_OUTPUT_DIR/checkpoints/last"
+    fi
+    
     echo "Cleaning up scratch space..."
     rm -rf /scratch0/johara/$JOB_ID
     echo "Cleanup completed at $(date)"
@@ -44,7 +54,8 @@ export TRANSFORMERS_CACHE="$SCRATCH_DIR/cache/transformers"
 export TORCH_HOME="$SCRATCH_DIR/cache/torch_home"
 export WANDB_DIR="$SCRATCH_DIR/wandb"
 export WANDB_CACHE_DIR="$SCRATCH_DIR/wandb/cache"
-mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR"
+export WANDB_DATA_DIR="$SCRATCH_DIR/wandb/data"
+mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR" "$WANDB_DATA_DIR"
 
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH

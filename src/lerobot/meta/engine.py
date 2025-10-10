@@ -21,7 +21,6 @@ from lerobot.meta.tasks import (
 from lerobot.optim.factory import make_optimizer_and_scheduler
 from lerobot.policies.adapters.lora import attach_lora
 from lerobot.policies.factory import make_policy, make_pre_post_processors
-from lerobot.scripts.lerobot_eval import eval_policy_all
 from lerobot.utils.logging_utils import AverageMeter, MetricsTracker
 from lerobot.utils.train_utils import get_step_checkpoint_dir, save_checkpoint, update_last_checkpoint
 from lerobot.rl.wandb_utils import WandBLogger
@@ -216,13 +215,14 @@ class MetaEngine:
                 )
                 update_last_checkpoint(checkpoint_dir)
 
-            # Periodic meta-eval
-            if step % max(1, self.cfg.eval_freq) == 0:
+            # Periodic meta-eval (disabled when eval_freq == 0)
+            if self.cfg.eval_freq > 0 and (step % self.cfg.eval_freq == 0):
                 self._run_meta_eval(step, total_outer_steps)
 
             tracker.step()
 
     def _run_meta_eval(self, step: int, total_outer_steps: int):
+        from lerobot.scripts.lerobot_eval import eval_policy_all  # Lazy import to avoid gym deps when eval disabled
         # 1) Save checkpoint to return after eval; already saved above in train every save_freq.
         # For safety, save a temporary eval checkpoint too.
         ckpt_dir = get_step_checkpoint_dir(self.cfg.output_dir, total_outer_steps, step)

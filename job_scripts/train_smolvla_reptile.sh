@@ -1,16 +1,16 @@
-cat > train_smolvla_libero_10_200k.sh << 'EOF'
+cat > train_smolvla_reptile_libero_10_100k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|a40|h100|l40s|rtx6000ada)
+#$ -l gpu=true,gpu_type=(a100|a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=100G
-#$ -N smolvla_train
-#$ -wd /SAN/vision/jo71_vla_wd/lerobot
+#$ -N smolvla_reptile_train
+#$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
-#$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
+#$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
 
 set -eo pipefail
 
@@ -61,7 +61,7 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
-conda activate lerobot
+conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -71,8 +71,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -84,8 +84,8 @@ cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_200k"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_reptile_smolvla_100k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/libero_reptile_smolvla_100k"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -116,23 +116,30 @@ echo "Periodic backup process started with PID: $BACKUP_PID"
 cd /SAN/vision/jo71_vla_wd/lerobot
 
 # Run training
-lerobot-train \
-  --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_smolvla_200k \
-  --dataset.repo_id="$DATASET_SCRATCH" \
-  --output_dir="$OUTPUT_SCRATCH" \
-  --steps=200000 \
+lerobot-meta-train \
+  --steps=100000 \
   --batch_size=32 \
-  --num_workers=12 \
+  --log_freq=100 \
+  --dataset.repo_id="$DATASET_SCRATCH" \
+  --policy.path="$MODEL_SCRATCH" \
+  --policy.repo_id=outputs/train/libero_reptile_smolvla_100k \
+  --lora.enable=true \
+  --lora.r=8 \
+  --lora.alpha=16 \
+  --lora.dropout=0.05 \
+  --algo.type=reptile \
+  --algo.meta_step_size=0.1 \
+  --inner_steps=3 \
+  --inner_opt.lr=3e-4 \
+  --inner_opt.grad_clip_norm=10 \
+  --tasks_per_outer_step=8 \
+  --support_frames_per_task=50000 \
+  --query_frames_per_task=512 \
+  --train_tasks=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39] \
   --eval_freq=0 \
-  --save_freq=20000 \
-  --policy.freeze_vision_encoder=false \
-  --policy.train_expert_only=false \
-  --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=150000 \
+  --output_dir="$OUTPUT_SCRATCH" \
+  --job_name=libero_reptile_100k \
   --policy.push_to_hub=false \
-  --job_name=libero_10_smolvla_200k \
   --wandb.enable=true
 
 # Final copy of outputs back to permanent storage
