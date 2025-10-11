@@ -86,8 +86,7 @@ lerobot-train \
 
 lerobot-meta-train \
   --steps=100000 \
-  --batch_size=2 \
-  --task_batch_size=2 \
+  --batch_size=16 \
   --log_freq=100 \
   --dataset.repo_id=outputs/libero \
   --policy.path=outputs/smolvla_base \

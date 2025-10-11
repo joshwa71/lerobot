@@ -32,16 +32,11 @@ class Reptile(MetaAlgorithm):
             model.train()
         loss_sum = 0.0
         for inner_idx in range(1, steps + 1):
-            t0 = time.perf_counter()
             batch = next(support_iter)
-            t1 = time.perf_counter()
             batch = preprocessor(batch)
-            t2 = time.perf_counter()
             loss, _ = model.forward(batch)
-            t3 = time.perf_counter()
             opt.zero_grad()
             loss.backward()
-            t4 = time.perf_counter()
             # optional grad clipping
             if inner_cfg.grad_clip_norm and inner_cfg.grad_clip_norm > 0.0:
                 torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], inner_cfg.grad_clip_norm, error_if_nonfinite=False)
@@ -51,12 +46,7 @@ class Reptile(MetaAlgorithm):
             # Best-effort flush for timing clarity
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            # If verbose enabled, log every inner update
-            if getattr(self, "_verbose_log", False):
-                logging.info(
-                    "Inner step %s/%s: data=%.3fs preprocess=%.3fs forward=%.3fs backward=%.3fs step=%.3fs loss=%.4f",
-                    inner_idx, steps, (t1 - t0), (t2 - t1), (t3 - t2), (t4 - t3), (t5 - t4), float(loss.item())
-                )
+
         with torch.no_grad():
             delta = {}
             for n, p in model.named_parameters():

@@ -56,10 +56,28 @@ class MetaEngine:
 
         # Always build fresh processors from dataset stats unless resuming
         logging.info("Building processors (pre/post)...")
+        # Mirror standard training overrides: ensure device placement and dataset stats are used
+        device = self.cfg.policy.device
+        pre_overrides = {
+            "device_processor": {"device": device},
+            "normalizer_processor": {
+                "stats": ds.meta.stats,
+                "features": {**policy.config.input_features, **policy.config.output_features},
+                "norm_map": policy.config.normalization_mapping,
+            },
+        }
+        post_overrides = {
+            "unnormalizer_processor": {
+                "stats": ds.meta.stats,
+                "features": policy.config.output_features,
+                "norm_map": policy.config.normalization_mapping,
+            },
+        }
         preproc, postproc = make_pre_post_processors(
             policy_cfg=self.cfg.policy,
             pretrained_path=self.cfg.policy.pretrained_path,
-            dataset_stats=ds.meta.stats,
+            preprocessor_overrides=pre_overrides,
+            postprocessor_overrides=post_overrides,
         )
         logging.info("Processors ready")
         self.preproc = preproc
@@ -137,7 +155,7 @@ class MetaEngine:
                 len(ep_idxs),
                 frames_per_task,
                 batch_size,
-                8,
+                4,
             )
             loader = build_task_dataloader(
                 self.dataset,
@@ -145,7 +163,7 @@ class MetaEngine:
                 frames_per_task=frames_per_task,
                 batch_size=batch_size,
                 shuffle=shuffle,
-                num_workers=8,
+                num_workers=4,
             )
             # Create an infinite iterator to avoid StopIteration during inner adaptation
             iters[t] = cycle(loader)
@@ -282,8 +300,8 @@ class MetaEngine:
                         preprocessor=self.preproc,
                         postprocessor=self.postproc,
                         n_episodes=self.cfg.eval.n_episodes,
-                        max_episodes_rendered=0,
-                        videos_dir=None,
+                        max_episodes_rendered=4,
+                        videos_dir=self.cfg.output_dir / "eval" / f"videos_step_{step:06d}",
                         start_seed=self.cfg.wandb.seed if hasattr(self.cfg.wandb, "seed") else None,
                         max_parallel_tasks=1,
                     )
@@ -333,7 +351,7 @@ class MetaEngine:
             job_name=self.cfg.job_name or f"meta_{self.cfg.policy.type}",
             resume=False,
             seed=1000,
-            num_workers=8,
+            num_workers=4,
             batch_size=8,
             steps=total_steps,
             eval_freq=0,
