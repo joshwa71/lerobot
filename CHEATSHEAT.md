@@ -62,11 +62,11 @@ lerobot-train \
 
 lerobot-train \
   --policy.path=outputs/smolvla_base \
-  --policy.repo_id=outputs/train/libero_10_smolvla_200k \
+  --policy.repo_id=outputs/train/libero_10_smolvla_200k_2 \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/libero_10_smolvla_200k \
+  --output_dir=./outputs/train/libero_10_smolvla_200k_2 \
   --save_freq=10000 \
   --steps=200000 \
   --batch_size=8 \
@@ -78,7 +78,8 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_10_smolvla_200k \
+  --job_name=libero_10_smolvla_200_2 \
+  --policy.push_to_hub=false \
   --wandb.enable=true
 
 ### Run A Policy
