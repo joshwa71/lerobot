@@ -40,6 +40,16 @@ class FOMAMLConfig(MetaAlgoConfig):
 
 
 @dataclass
+class ParallelAdaptConfig:
+    # Enable modes: "auto" uses multi-GPU if available, "on" forces parallel, "off" disables it
+    enable: str = "auto"
+    # Optional list of CUDA device ids to use (e.g., [0,1,2,3]); if None, use all visible
+    device_ids: list[int] | None = None
+    # Cap the number of concurrent adaptations per outer step
+    max_concurrent: int | None = None
+
+
+@dataclass
 class MetaTrainConfig:
     dataset: DatasetConfig
     policy: PreTrainedConfig | None = None
@@ -68,6 +78,9 @@ class MetaTrainConfig:
 
     # LoRA
     lora: LoraAttachConfig = field(default_factory=lambda: LoraAttachConfig(enable=True))
+
+    # Parallel adaptation
+    parallel: ParallelAdaptConfig = field(default_factory=ParallelAdaptConfig)
 
     # Logging / eval
     eval_freq: int = 10000

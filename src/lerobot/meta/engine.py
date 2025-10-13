@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, List
 
 import torch
+import copy
+from concurrent.futures import ThreadPoolExecutor
 
 from lerobot.datasets.factory import make_dataset
 from lerobot.meta.algorithms.reptile import Reptile
+from lerobot.meta.algorithms.base import TaskResult
 from lerobot.meta.configs import MetaTrainConfig, ReptileConfig
 from lerobot.meta.tasks import (
     build_task_dataloader,
@@ -82,6 +85,19 @@ class MetaEngine:
         logging.info("Processors ready")
         self.preproc = preproc
         self.postproc = postproc
+
+        # Parallel adaptation setup
+        try:
+            first_param = next(self.policy.parameters())
+            self.master_device = str(first_param.device)
+        except StopIteration:
+            self.master_device = str(self.cfg.policy.device)
+        self.devices: List[str] = self._detect_devices()
+        self.parallel_enabled = self._is_parallel_enabled()
+        self.preproc_by_device: dict[str, object] = {self.master_device: self.preproc}
+        self.replicas: dict[str, torch.nn.Module] = {}
+        if self.parallel_enabled and len(self.devices) > 1:
+            self._build_replicas_and_preprocessors()
 
         # Meta algorithm
         if isinstance(self.cfg.algo, ReptileConfig):
@@ -169,6 +185,86 @@ class MetaEngine:
             iters[t] = cycle(loader)
         return iters
 
+    def _detect_devices(self) -> List[str]:
+        # Respect user-specified device ids when provided
+        if self.cfg.parallel.device_ids is not None:
+            ids = [int(i) for i in self.cfg.parallel.device_ids]
+            if len(ids) == 0:
+                return [self.master_device]
+            return [f"cuda:{i}" for i in ids]
+        # Fallback to all visible CUDA devices when available
+        if torch.cuda.is_available():
+            n = torch.cuda.device_count()
+            if n > 0:
+                return [f"cuda:{i}" for i in range(n)]
+        return [self.master_device]
+
+    def _is_parallel_enabled(self) -> bool:
+        mode = (self.cfg.parallel.enable or "auto").lower()
+        if mode == "off":
+            return False
+        if mode == "on":
+            return True
+        # auto
+        return torch.cuda.is_available() and torch.cuda.device_count() > 1
+
+    def _copy_trainable_parameters(self, src: torch.nn.Module, dst: torch.nn.Module) -> None:
+        with torch.no_grad():
+            src_named = dict((n, p) for n, p in src.named_parameters() if p.requires_grad)
+            for n, p in dst.named_parameters():
+                if p.requires_grad and n in src_named:
+                    p.copy_(src_named[n].to(p.device, non_blocking=True))
+
+    def _build_replicas_and_preprocessors(self) -> None:
+        # Build per-device preprocessors and policy replicas (excluding master, which uses self.policy/self.preproc)
+        logging.info("Setting up %s devices for parallel adaptation: %s", len(self.devices), self.devices)
+        # Build preprocessors for non-master devices
+        for dev in self.devices:
+            pre_overrides = {
+                "device_processor": {"device": dev},
+                "normalizer_processor": {
+                    "stats": self.dataset.meta.stats,
+                    "features": {**self.policy.config.input_features, **self.policy.config.output_features},
+                    "norm_map": self.policy.config.normalization_mapping,
+                },
+            }
+            post_overrides = {
+                "unnormalizer_processor": {
+                    "stats": self.dataset.meta.stats,
+                    "features": self.policy.config.output_features,
+                    "norm_map": self.policy.config.normalization_mapping,
+                },
+            }
+            pre_dev, _ = make_pre_post_processors(
+                policy_cfg=self.cfg.policy,
+                pretrained_path=self.cfg.policy.pretrained_path,
+                preprocessor_overrides=pre_overrides,
+                postprocessor_overrides=post_overrides,
+            )
+            self.preproc_by_device[dev] = pre_dev
+
+        # Create replicas for all devices (including master) by deep-copying the master policy and moving to device
+        for dev in self.devices:
+            replica = copy.deepcopy(self.policy)
+            replica.to(dev)
+            self._copy_trainable_parameters(self.policy, replica)
+            self.replicas[dev] = replica
+
+    def _adapt_on_device(self, task_id: int, device: str, support_iter: Iterator) -> tuple[dict[str, torch.Tensor], float]:
+        # Choose model and preprocessor for the target device
+        model = self.replicas[device]
+        self._copy_trainable_parameters(self.policy, model)
+        preproc = self.preproc_by_device[device]
+        res = self.algo.adapt(
+            model=model,
+            support_iter=support_iter,
+            steps=self.cfg.inner_steps,
+            inner_cfg=self.cfg.inner_opt,
+            preprocessor=preproc,
+        )
+        avg_loss = res.metrics["inner_avg_loss"] if res.metrics and "inner_avg_loss" in res.metrics else None
+        return res.delta, float(avg_loss) if avg_loss is not None else float("nan")
+
     def train(self, total_outer_steps: int, batch_size: int = 8, log_freq: int = 100, save_freq: int = 1000):
         self.setup()
         policy = self.policy
@@ -189,19 +285,42 @@ class MetaEngine:
                 logging.info("Outer step %s: sampled tasks=%s", step, tasks)
             task_results = []
             inner_losses = []
-            for t in tasks:
-                if self.cfg.verbose_log and step <= 3:
-                    logging.info("Adapting on task=%s for %s inner steps", t, self.cfg.inner_steps)
-                res = self.algo.adapt(
-                    model=policy,
-                    support_iter=support_iters[t],
-                    steps=self.cfg.inner_steps,
-                    inner_cfg=self.cfg.inner_opt,
-                    preprocessor=preproc,
-                )
-                task_results.append(res)
-                if res.metrics and "inner_avg_loss" in res.metrics:
-                    inner_losses.append(res.metrics["inner_avg_loss"])
+            if self.parallel_enabled and len(self.devices) > 1 and len(tasks) > 1:
+                # Determine concurrency
+                max_conc = self.cfg.parallel.max_concurrent if self.cfg.parallel.max_concurrent and self.cfg.parallel.max_concurrent > 0 else None
+                device_pool = self.devices
+                if max_conc is not None:
+                    device_pool = device_pool[: max(1, min(max_conc, len(device_pool)))]
+                # Execute in waves to avoid assigning multiple tasks to the same device concurrently
+                start = 0
+                while start < len(tasks):
+                    wave_tasks = tasks[start : start + len(device_pool)]
+                    with ThreadPoolExecutor(max_workers=len(wave_tasks)) as executor:
+                        futures = []
+                        for i, t in enumerate(wave_tasks):
+                            device = device_pool[i]
+                            futures.append(executor.submit(self._adapt_on_device, t, device, support_iters[t]))
+                        for fut in futures:
+                            delta, avg_loss = fut.result()
+                            metrics = {"inner_avg_loss": avg_loss} if not (avg_loss != avg_loss) else None
+                            task_results.append(TaskResult(delta=delta, metrics=metrics))
+                            if not (avg_loss != avg_loss):  # not NaN
+                                inner_losses.append(avg_loss)
+                    start += len(device_pool)
+            else:
+                for t in tasks:
+                    if self.cfg.verbose_log and step <= 3:
+                        logging.info("Adapting on task=%s for %s inner steps", t, self.cfg.inner_steps)
+                    res = self.algo.adapt(
+                        model=policy,
+                        support_iter=support_iters[t],
+                        steps=self.cfg.inner_steps,
+                        inner_cfg=self.cfg.inner_opt,
+                        preprocessor=preproc,
+                    )
+                    task_results.append(res)
+                    if res.metrics and "inner_avg_loss" in res.metrics:
+                        inner_losses.append(res.metrics["inner_avg_loss"])
 
             self.algo.outer_step(policy, task_results)
 
