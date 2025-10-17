@@ -1,4 +1,4 @@
-cat > train_smolvla_mixed_libero_10_100k_curric_5050.sh << 'EOF'
+cat > train_smolvla_mixed_libero_10_100k_curric_9010.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_mixed_libero_10_100k_curric_5050.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=100G
-#$ -N smolvla_mixed_libero_10_100k_curric_5050_train
+#$ -N smolvla_mixed_libero_10_100k_curric_9010_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -44,7 +44,7 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
-conda activate lerobot
+conda activate lerobot-full
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -67,7 +67,7 @@ cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_smolvla_100k_curric_5050"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_smolvla_100k_curric_9010"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -75,28 +75,33 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/mixed_libero_10_smolvla_100k_curric_5050 \
+  --policy.repo_id=outputs/train/mixed_libero_10_smolvla_100k_curric_9010 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
-  --eval_freq=0 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=5000 \
   --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=1000 \
   --policy.scheduler_decay_steps=30000 \
-  --job_name=mixed_libero_10_smolvla_100k_curric_5050 \
+  --policy.push_to_hub=false \
+  --job_name=mixed_libero_10_smolvla_100k_curric_9010 \
   --wandb.enable=true \
   --curriculum.enabled=true \
-  --curriculum.splits=[50,50] \
+  --curriculum.splits=[90,10] \
   --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_smolvla_100k_curric_5050"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_smolvla_100k_curric_9010"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"

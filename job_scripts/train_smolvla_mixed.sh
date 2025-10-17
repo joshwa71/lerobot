@@ -45,7 +45,7 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
-conda activate lerobot
+conda activate lerobot-full
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -82,13 +82,18 @@ lerobot-train \
   --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
-  --eval_freq=0 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=5000 \
   --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=1000 \
   --policy.scheduler_decay_steps=30000 \
+  --policy.push_to_hub=false \
   --job_name=mixed_libero_10_smolvla_100k \
   --wandb.enable=true
 

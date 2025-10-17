@@ -1,4 +1,4 @@
-cat > train_smolvla_libero_10_test_libero.sh << 'EOF'
+cat > train_smolvla_mixed_libero_10_100k_curric_7030.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_libero_10_test_libero.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=100G
-#$ -N smolvla_train_test_libero
+#$ -N smolvla_mixed_libero_10_100k_curric_7030_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -39,7 +39,6 @@ export TRANSFORMERS_CACHE="$SCRATCH_DIR/cache/transformers"
 export TORCH_HOME="$SCRATCH_DIR/cache/torch_home"
 export WANDB_DIR="$SCRATCH_DIR/wandb"
 export WANDB_CACHE_DIR="$SCRATCH_DIR/wandb/cache"
-export WANDB_DISABLE_GPU=false
 mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR"
 
 # Setup conda
@@ -48,10 +47,6 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-full
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
-# Set Mujoco env vars
-export MUJOCO_GL=egl
-export PYOPENGL_PLATFORM=egl
-
 # Verify environment
 echo "Python: $(which python)"
 echo "Python version: $(python --version)"
@@ -59,8 +54,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10"
+DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -72,7 +67,7 @@ cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_200k_test_libero"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_smolvla_100k_curric_7030"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -80,29 +75,33 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_smolvla_200k_test_libero \
+  --policy.repo_id=outputs/train/mixed_libero_10_smolvla_100k_curric_7030 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
-  --steps=20000 \
+  --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
-  --eval_freq=1000 \
   --env.type=libero \
+  --env.task=libero_10 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
-  --env.task=libero_10 \
-  --save_freq=10000 \
+  --eval_freq=5000 \
+  --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=1000 \
-  --policy.scheduler_decay_steps=15000 \
-  --job_name=libero_10_smolvla_200k_test_libero \
-  --wandb.enable=true
+  --policy.scheduler_decay_steps=30000 \
+  --policy.push_to_hub=false \
+  --job_name=mixed_libero_10_smolvla_100k_curric_7030 \
+  --wandb.enable=true \
+  --curriculum.enabled=true \
+  --curriculum.splits=[70,30] \
+  --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_smolvla_100k_curric_7030"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"
