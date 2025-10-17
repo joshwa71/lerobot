@@ -112,6 +112,7 @@ lerobot-meta-train \
   --env.type=libero \
   --output_dir=outputs/train/meta_smolvla_lora_libero \
   --job_name=libero_reptile_100k \
+  --policy.push_to_hub=false \
   --wandb.enable=true
 
 
