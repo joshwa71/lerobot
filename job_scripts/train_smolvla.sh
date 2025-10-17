@@ -1,4 +1,4 @@
-cat > train_smolvla_libero_10_200k.sh << 'EOF'
+cat > train_smolvla_libero_10_100k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -68,7 +68,7 @@ cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_200k"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_100k"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -76,10 +76,10 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_smolvla_200k \
+  --policy.repo_id=outputs/train/libero_10_smolvla_100k \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
-  --steps=200000 \
+  --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
   --eval_freq=0 \
@@ -87,14 +87,14 @@ lerobot-train \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_10_smolvla_200k \
+  --policy.scheduler_warmup_steps=1000 \
+  --policy.scheduler_decay_steps=30000 \
+  --job_name=libero_10_smolvla_100k \
   --wandb.enable=true
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_100k"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"

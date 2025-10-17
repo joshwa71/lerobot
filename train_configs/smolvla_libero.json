@@ -206,7 +206,7 @@
     "num_workers": 4,
     "batch_size": 32,
     "steps": 100000,
-    "eval_freq": 10000,
+    "eval_freq": 1000,
     "log_freq": 200,
     "save_checkpoint": true,
     "save_freq": 20000,
