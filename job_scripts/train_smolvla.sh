@@ -1,4 +1,4 @@
-cat > train_smolvla_libero_10_200k.sh << 'EOF'
+cat > train_smolvla_libero_10_100k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -61,7 +61,7 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
-conda activate lerobot
+conda activate lerobot-full
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -118,23 +118,21 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_smolvla_200k \
+  --policy.repo_id=outputs/train/libero_10_smolvla_100k \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
-  --steps=200000 \
+  --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
-  --eval_freq=0 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=5000 \
   --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=150000 \
-  --policy.push_to_hub=false \
-  --job_name=libero_10_smolvla_200k \
-  --wandb.enable=true
-
 # Final copy of outputs back to permanent storage
 echo "Performing final copy of outputs to permanent storage..."
 mkdir -p "$FINAL_OUTPUT_DIR"
