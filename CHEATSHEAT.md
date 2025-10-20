@@ -155,3 +155,27 @@ pick up the black bowl from table center and place it on the plate              
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
 
 
+
+
+
+lerobot-train \
+  --policy.type=pi05 \
+  --policy.dtype=bfloat16 \
+  --policy.compile_model=true \
+  --policy.gradient_checkpointing=true \
+  --policy.pretrained_path=outputs/pi05_base \
+  --policy.repo_id=outputs/train/libero_10_pi05_100k \
+  --dataset.repo_id=outputs/libero_10 \
+  --output_dir=outputs/train/test_pi05 \
+  --steps=100000 \
+  --batch_size=2 \
+  --num_workers=12 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=5000 \
+  --save_freq=20000 \
+  --policy.push_to_hub=false \
+  --job_name=libero_10_pi05_100k \
+  --wandb.enable=true
