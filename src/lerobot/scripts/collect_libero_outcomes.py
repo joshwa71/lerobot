@@ -242,12 +242,19 @@ def collect_for_task(
             step_done = terminated | truncated
             # Success flags from final_info if present; else False
             successes = [False] * num_envs
-            if isinstance(info, dict) and "final_info" in info and info["final_info"] is not None:
-                final_info_list = info["final_info"]
-                for i in range(num_envs):
-                    finfo = final_info_list[i]
-                    if finfo is not None and isinstance(finfo, dict):
-                        successes[i] = bool(finfo.get("is_success", False))
+            final_info_container = None
+            if isinstance(info, dict):
+                final_info_container = info.get("final_info")
+
+            for i in range(num_envs):
+                finfo = None
+                if isinstance(final_info_container, (list, tuple)):
+                    if i < len(final_info_container):
+                        finfo = final_info_container[i]
+                elif isinstance(final_info_container, dict):
+                    finfo = final_info_container.get(i)
+                if isinstance(finfo, dict):
+                    successes[i] = bool(finfo.get("is_success", False))
 
             # Force completion at last step to ensure consistent termination and saving
             if (step + 1) >= int(max_steps):
@@ -348,7 +355,7 @@ def main():
     parser.add_argument(
         "--eps",
         type=int,
-        default=50,
+        default=25,
         help="Number of episodes to accumulate per task (matching --save_outcome)",
     )
     parser.add_argument(
@@ -359,7 +366,7 @@ def main():
             "Directory for the LeRobotDataset root. If omitted, a path under outputs/datasets is generated."
         ),
     )
-    parser.add_argument("--batch_size", type=int, default=4, help="Vectorized env batch size per task")
+    parser.add_argument("--batch_size", type=int, default=2, help="Vectorized env batch size per task")
     parser.add_argument("--async_envs", action="store_true", help="Use AsyncVectorEnv")
     parser.add_argument("--device", type=str, default="cuda", help="Override device (cpu/cuda)")
 
