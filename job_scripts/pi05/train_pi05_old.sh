@@ -107,18 +107,6 @@ accelerate launch \
   --job_name=libero_10_pi05_100k \
   --wandb.enable=true
 
-# Run final evaluation
-echo "Running final evaluation..."
-lerobot-eval \
-  --policy.path=$OUTPUT_SCRATCH/checkpoints/last/pretrained_model \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=2 \
-  --eval.n_episodes=50 \
-  --output_dir=$OUTPUT_SCRATCH/final_eval
-
-echo "Final evaluation completed"
-
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
 FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_pi05_100k"

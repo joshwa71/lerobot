@@ -1,4 +1,4 @@
-cat > train_pi05_libero_10_100k.sh << 'EOF'
+cat > train_pi05_mixed_5050_libero_10_100k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_pi05_libero_10_100k.sh << 'EOF'
 #$ -pe gpu 2
 #$ -R y
 #$ -l tscratch=200G
-#$ -N pi05_train
+#$ -N pi05_mixed_5050_libero_10_100k_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -55,8 +55,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10_quant"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10_quant"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10_quant"
+DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10_quant"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -75,7 +75,7 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_pi05_100k"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_5050"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -91,7 +91,7 @@ accelerate launch \
   --policy.compile_model=false \
   --policy.gradient_checkpointing=true \
   --policy.pretrained_path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k \
+  --policy.repo_id=outputs/train/mixed_libero_10_pi05_100k_5050 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=100000 \
@@ -104,7 +104,7 @@ accelerate launch \
   --eval_freq=5000 \
   --save_freq=20000 \
   --policy.push_to_hub=false \
-  --job_name=libero_10_pi05_100k \
+  --job_name=mixed_libero_10_pi05_100k_5050 \
   --wandb.enable=true
 
 # Run final evaluation
@@ -121,7 +121,7 @@ echo "Final evaluation completed"
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_pi05_100k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_5050"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"
