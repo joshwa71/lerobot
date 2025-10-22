@@ -1,13 +1,13 @@
-cat > train_pi05_libero_10_100k.sh << 'EOF'
+cat > train_smolvla_mixed_5012_libero_10_100k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|h100)
-#$ -pe gpu 2
+#$ -l gpu=true,gpu_type=(a100_80|a40|h100|l40s|rtx6000ada)
+#$ -pe gpu 1
 #$ -R y
-#$ -l tscratch=200G
-#$ -N pi05_train
+#$ -l tscratch=100G
+#$ -N smolvla_mixed_5012_libero_10_100k_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -55,40 +55,32 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10_quant"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10_quant"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10_5012"
+DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10_5012"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/pi05_base"
-MODEL_SCRATCH="$SCRATCH_DIR/pi05_base"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/smolvla_base"
+MODEL_SCRATCH="$SCRATCH_DIR/smolvla_base"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_pi05_100k"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_5012_smolvla_100k"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
 
 # Run training
-accelerate launch \
-  --multi_gpu \
-  --num_processes=2 \
-  --mixed_precision=bf16 \
-  $(which lerobot-train) \
-  --policy.type=pi05 \
-  --policy.dtype=bfloat16 \
-  --policy.compile_model=true \
-  --policy.gradient_checkpointing=true \
-  --policy.pretrained_path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k \
+lerobot-train \
+  --policy.path="$MODEL_SCRATCH" \
+  --policy.repo_id=outputs/train/mixed_libero_10_5012_smolvla_100k \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=100000 \
-  --batch_size=16 \
+  --batch_size=32 \
   --num_workers=12 \
   --env.type=libero \
   --env.task=libero_10 \
@@ -96,13 +88,18 @@ accelerate launch \
   --eval.n_episodes=3 \
   --eval_freq=5000 \
   --save_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=1000 \
+  --policy.scheduler_decay_steps=30000 \
   --policy.push_to_hub=false \
-  --job_name=libero_10_pi05_100k \
+  --job_name=mixed_libero_10_5012_smolvla_100k \
   --wandb.enable=true
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_pi05_100k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_5012_smolvla_100k"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"

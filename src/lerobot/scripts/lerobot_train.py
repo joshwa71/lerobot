@@ -474,21 +474,29 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             accelerator.wait_for_everyone()
 
         if cfg.env and is_eval_step:
+            # Run evaluation on ALL ranks to avoid waiting at barriers while one rank compiles/graphs
+            step_id = get_step_identifier(step, cfg.steps)
             if is_main_process:
-                step_id = get_step_identifier(step, cfg.steps)
                 logging.info(f"Eval policy at step {step}")
-                with torch.no_grad(), accelerator.autocast():
-                    eval_info = eval_policy_all(
-                        envs=eval_env,  # dict[suite][task_id] -> vec_env
-                        policy=accelerator.unwrap_model(policy),
-                        preprocessor=preprocessor,
-                        postprocessor=postprocessor,
-                        n_episodes=cfg.eval.n_episodes,
-                        videos_dir=cfg.output_dir / "eval" / f"videos_step_{step_id}",
-                        max_episodes_rendered=4,
-                        start_seed=cfg.seed,
-                        max_parallel_tasks=cfg.env.max_parallel_tasks,
-                    )
+
+            # Only main process writes videos to disk; others evaluate without rendering to avoid conflicts
+            videos_dir = (cfg.output_dir / "eval" / f"videos_step_{step_id}") if is_main_process else None
+            max_episodes_rendered = 4 if is_main_process else 0
+
+            with torch.no_grad(), accelerator.autocast():
+                eval_info = eval_policy_all(
+                    envs=eval_env,  # dict[suite][task_id] -> vec_env
+                    policy=accelerator.unwrap_model(policy),
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    n_episodes=cfg.eval.n_episodes,
+                    videos_dir=videos_dir,
+                    max_episodes_rendered=max_episodes_rendered,
+                    start_seed=cfg.seed,
+                    max_parallel_tasks=cfg.env.max_parallel_tasks,
+                )
+
+            if is_main_process:
                 # overall metrics (suite-agnostic)
                 aggregated = eval_info["overall"]
 
@@ -516,7 +524,8 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                 if wandb_logger:
                     wandb_log_dict = {**eval_tracker.to_dict(), **eval_info}
                     wandb_logger.log_dict(wandb_log_dict, step, mode="eval")
-                    wandb_logger.log_video(eval_info["overall"]["video_paths"][0], step, mode="eval")
+                    if eval_info["overall"].get("video_paths"):
+                        wandb_logger.log_video(eval_info["overall"]["video_paths"][0], step, mode="eval")
 
             accelerator.wait_for_everyone()
 
