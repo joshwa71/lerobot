@@ -107,19 +107,11 @@ accelerate launch \
   --policy.scheduler_warmup_steps=1000 \
   --policy.scheduler_decay_steps=90000 \
   --job_name=mixed_libero_10_pi05_100k_curric_5050 \
-  --wandb.enable=true
+  --wandb.enable=true \
+  --curriculum.enabled=true \
+  --curriculum.splits=[50,50] \
+  --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
 
-# Run final evaluation
-echo "Running final evaluation..."
-lerobot-eval \
-  --policy.path=$OUTPUT_SCRATCH/checkpoints/last/pretrained_model \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=2 \
-  --eval.n_episodes=50 \
-  --output_dir=$OUTPUT_SCRATCH/final_eval
-
-echo "Final evaluation completed"
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
