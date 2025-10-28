@@ -19,6 +19,21 @@ echo "Job ID: $JOB_ID"
 
 # Setup cleanup trap
 function cleanup {
+    echo "Stopping periodic backup process..."
+    if [ ! -z "$BACKUP_PID" ]; then
+        kill $BACKUP_PID 2>/dev/null || true
+        wait $BACKUP_PID 2>/dev/null || true
+    fi
+    
+    # Save latest checkpoint on failure
+    if [ -d "$OUTPUT_SCRATCH/checkpoints/last" ]; then
+        echo "Saving latest checkpoint to permanent storage..."
+        mkdir -p "$FINAL_OUTPUT_DIR/checkpoints"
+        rsync -av "$OUTPUT_SCRATCH/checkpoints/last/" "$FINAL_OUTPUT_DIR/checkpoints/last/" || \
+            cp -r "$OUTPUT_SCRATCH/checkpoints/last" "$FINAL_OUTPUT_DIR/checkpoints/" || true
+        echo "Latest checkpoint saved to $FINAL_OUTPUT_DIR/checkpoints/last"
+    fi
+    
     echo "Cleaning up scratch space..."
     rm -rf /scratch0/johara/$JOB_ID
     echo "Cleanup completed at $(date)"
@@ -39,8 +54,9 @@ export TRANSFORMERS_CACHE="$SCRATCH_DIR/cache/transformers"
 export TORCH_HOME="$SCRATCH_DIR/cache/torch_home"
 export WANDB_DIR="$SCRATCH_DIR/wandb"
 export WANDB_CACHE_DIR="$SCRATCH_DIR/wandb/cache"
+export WANDB_DATA_DIR="$SCRATCH_DIR/wandb/data"
 export WANDB_DISABLE_GPU=false
-mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR"
+mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" "$TORCH_HOME" "$WANDB_DIR" "$WANDB_CACHE_DIR" "$WANDB_DATA_DIR"
 
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
@@ -76,6 +92,32 @@ export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/reptile_smolvla_libero"
+
+# Periodic backup function (every 6 hours)
+function periodic_backup {
+    local scratch_dir="$1"
+    local final_dir="$2"
+    while true; do
+        sleep 21600  # 6 hours in seconds
+        if [ -d "$scratch_dir" ]; then
+            echo "[$(date)] Performing periodic backup of training outputs..."
+            mkdir -p "$final_dir"
+            if command -v rsync &> /dev/null; then
+                rsync -av --delete "$scratch_dir/" "$final_dir/" 2>&1 | head -20
+            else
+                cp -r "$scratch_dir"/* "$final_dir/"
+            fi
+            echo "[$(date)] Periodic backup completed"
+        fi
+    done
+}
+
+# Start periodic backup in background
+echo "Starting periodic backup process (every 6 hours)..."
+periodic_backup "$OUTPUT_SCRATCH" "$FINAL_OUTPUT_DIR" &
+BACKUP_PID=$!
+echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -113,12 +155,11 @@ lerobot-meta-train \
   --save_freq=10000 \
   --parallel.enable=on
 
-# Copy outputs back to permanent storage
-echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/reptile_smolvla_libero"
+# Final copy of outputs back to permanent storage
+echo "Performing final copy of outputs to permanent storage..."
 mkdir -p "$FINAL_OUTPUT_DIR"
-cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
-echo "Outputs copied to $FINAL_OUTPUT_DIR"
+rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/"
+echo "Final outputs copied to $FINAL_OUTPUT_DIR"
 
 # Copy wandb logs back
 if [ -d "$WANDB_DIR" ]; then
