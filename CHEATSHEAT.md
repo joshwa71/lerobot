@@ -66,9 +66,9 @@ lerobot-train \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/libero_10_smolvla_200k_2 \
+  --output_dir=./outputs/train/mixed_libero_10_5025 \
   --save_freq=10000 \
-  --steps=200000 \
+  --steps=100000 \
   --batch_size=8 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
@@ -78,9 +78,9 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_10_smolvla_200_2 \
+  --job_name=mixed_libero_10_5025 \
   --policy.push_to_hub=false \
-  --wandb.enable=true
+  --wandb.enable=false
 
 
 ### Meta Train
@@ -189,3 +189,27 @@ pick up the black bowl from table center and place it on the plate              
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
 
 
+
+
+
+lerobot-train \
+  --policy.type=pi05 \
+  --policy.dtype=bfloat16 \
+  --policy.compile_model=true \
+  --policy.gradient_checkpointing=true \
+  --policy.pretrained_path=outputs/pi05_base \
+  --policy.repo_id=outputs/train/libero_10_pi05_100k \
+  --dataset.repo_id=outputs/libero_10 \
+  --output_dir=outputs/train/test_pi05 \
+  --steps=100000 \
+  --batch_size=2 \
+  --num_workers=12 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=5000 \
+  --save_freq=20000 \
+  --policy.push_to_hub=false \
+  --job_name=libero_10_pi05_100k \
+  --wandb.enable=true
