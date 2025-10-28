@@ -8,9 +8,9 @@ cat > train_smolvla_meta_libero_10.sh << 'EOF'
 #$ -R y
 #$ -l tscratch=200G
 #$ -N smolvla_meta_libero_10_train
-#$ -wd /SAN/vision/jo71_vla_wd/lerobot
+#$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
-#$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
+#$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
 
 set -eo pipefail
 
@@ -61,7 +61,8 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 # Setup conda
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
-conda activate lerobot-full
+# new conda environment for meta training
+conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
@@ -92,7 +93,7 @@ export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/reptile_smolvla_libero"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_smolvla_libero"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -120,7 +121,7 @@ BACKUP_PID=$!
 echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
-cd /SAN/vision/jo71_vla_wd/lerobot
+cd /SAN/vision/jo71_vla_wd/lerobot_meta
 
 # Run training
 lerobot-meta-train \
@@ -164,8 +165,8 @@ echo "Final outputs copied to $FINAL_OUTPUT_DIR"
 # Copy wandb logs back
 if [ -d "$WANDB_DIR" ]; then
     echo "Copying wandb logs..."
-    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
-    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot_meta/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_meta/wandb/ || true
 fi
 
 echo "Job completed at $(date)"
