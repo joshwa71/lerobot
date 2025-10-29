@@ -59,6 +59,14 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
             )
         self.config = config
 
+    def post_load_setup(self) -> None:
+        """Optional hook called after loading weights (or after fresh init).
+
+        Subclasses can override to attach optional adapters that change module
+        topology (e.g., memory layers) without interfering with checkpoint loading.
+        """
+        return None
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "config_class", None):
@@ -127,6 +135,13 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
                 raise FileNotFoundError(
                     f"{SAFETENSORS_SINGLE_FILE} not found on the HuggingFace Hub in {model_id}"
                 ) from e
+
+        # Allow subclasses to attach optional adapters after weights are loaded,
+        # so checkpoint key names align with the base topology.
+        try:
+            policy.post_load_setup()
+        except Exception as e:
+            logging.warning(f"Post-load setup failed: {e}")
 
         policy.to(config.device)
         policy.eval()

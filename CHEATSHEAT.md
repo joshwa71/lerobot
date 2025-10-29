@@ -62,11 +62,11 @@ lerobot-train \
 
 lerobot-train \
   --policy.path=outputs/smolvla_base \
-  --policy.repo_id=outputs/train/mixed_libero_10_5025 \
-  --dataset.repo_id=outputs/mixed_libero_10_5025 \
+  --policy.repo_id=outputs/train/smolvla_libero_10 \
+  --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/mixed_libero_10_5025 \
+  --output_dir=./outputs/train/smolvla_libero_10 \
   --save_freq=10000 \
   --steps=100000 \
   --batch_size=8 \
@@ -78,9 +78,41 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=mixed_libero_10_5025 \
+  --job_name=smolvla_libero \
   --policy.push_to_hub=false \
   --wandb.enable=false
+
+
+### Train SmolVLA with Memory Layers
+lerobot-train \
+--policy.path=outputs/smolvla_base \
+--policy.repo_id=outputs/train/smolvla_libero_10_mem \
+--dataset.repo_id=outputs/libero_10 \
+--env.type=libero \
+--env.task=libero_10 \
+--output_dir=./outputs/train/smolvla_libero_10_mem \
+--save_freq=10000 \
+--steps=100000 \
+--batch_size=8 \
+--eval.batch_size=1 \
+--eval.n_episodes=3 \
+--eval_freq=20000 \
+--policy.freeze_vision_encoder=false \
+--policy.train_expert_only=false \
+--policy.train_state_proj=true \
+--policy.scheduler_warmup_steps=10000 \
+--policy.scheduler_decay_steps=150000 \
+--job_name=smolvla_libero_mem \
+--policy.push_to_hub=false \
+--wandb.enable=true \
+--policy.memory_layers=true \
+--policy.memory_layer.enabled=true \
+--policy.memory_layer.mem_n_keys=128 \
+--policy.memory_layer.mem_heads=4 \
+--policy.memory_layer.mem_knn=16 \
+--policy.memory_layer.mem_k_dim=256 \
+--policy.memory_layer.value_fixed_lr=0.001 \
+--policy.memory_layer.memory_lr=0.001
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model

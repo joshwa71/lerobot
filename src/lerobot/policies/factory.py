@@ -379,6 +379,9 @@ def make_policy(
     else:
         # Make a fresh policy.
         policy = policy_cls(**kwargs)
+        # Attach optional adapters (e.g., memory) after fresh init to keep
+        # a single code path for structural modifications.
+        policy.post_load_setup()
 
     policy.to(cfg.device)
     assert isinstance(policy, torch.nn.Module)

@@ -21,6 +21,7 @@ from lerobot.optim.schedulers import (
     CosineDecayWithWarmupSchedulerConfig,
 )
 from lerobot.utils.constants import OBS_IMAGES
+from lerobot.policies.modules.memory_config import MemoryLayerConfig
 
 
 @PreTrainedConfig.register_subclass("smolvla")
@@ -101,6 +102,11 @@ class SmolVLAConfig(PreTrainedConfig):
 
     min_period: float = 4e-3  # sensitivity range for the timestep used in sine-cosine positional encoding
     max_period: float = 4.0
+
+    # Optional memory layers (single GPU, torch-only). If enabled, selected expert MLPs will be
+    # wrapped with a Product-Key-like memory adapter.
+    memory_layers: bool = False
+    memory_layer: MemoryLayerConfig = field(default_factory=MemoryLayerConfig)
 
     def __post_init__(self):
         super().__post_init__()

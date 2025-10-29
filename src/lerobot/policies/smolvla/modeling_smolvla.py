@@ -67,6 +67,7 @@ from lerobot.policies.utils import (
 )
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
 from lerobot.utils.utils import get_safe_dtype
+from lerobot.policies.modules.memory_lite import attach_memory_to_expert, split_memory_params
 
 
 def create_sinusoidal_pos_embedding(
@@ -236,6 +237,15 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.model = VLAFlowMatching(config)
         self.reset()
 
+    def post_load_setup(self) -> None:
+        """Attach optional adapters after weights are loaded or after a fresh init.
+
+        This ensures that any structural changes (e.g., memory wrappers) happen
+        after loading base weights so parameter names align with the checkpoint.
+        """
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            attach_memory_to_expert(self.model.vlm_with_expert, self.config.memory_layer)
+
     def reset(self):
         """This should be called whenever the environment is reset."""
         self._queues = {
@@ -243,6 +253,17 @@ class SmolVLAPolicy(PreTrainedPolicy):
         }
 
     def get_optim_params(self) -> dict:
+        # If memory layers are enabled, return grouped params so memory values can
+        # have a separate LR/weight decay, otherwise default to all parameters.
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            mem_vals, others = split_memory_params(self)
+            # Fallback if no memory params found
+            if len(mem_vals) == 0:
+                return self.parameters()
+            return [
+                {"params": others, "lr": self.config.optimizer_lr, "weight_decay": self.config.optimizer_weight_decay},
+                {"params": mem_vals, "lr": getattr(self.config.memory_layer, "memory_lr", 1e-3), "weight_decay": getattr(self.config.memory_layer, "memory_weight_decay", 0.0)},
+            ]
         return self.parameters()
 
     def _get_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
