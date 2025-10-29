@@ -147,7 +147,7 @@ lerobot-meta-train \
   --eval_tasks=[0,1,2,3,4] \
   --eval_freq=2000 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
+  --eval.n_episodes=5 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
   --job_name=reptile_smolvla_libero \
