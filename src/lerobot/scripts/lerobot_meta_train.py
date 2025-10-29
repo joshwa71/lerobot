@@ -2,6 +2,11 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import logging
+import torch.multiprocessing as mp
+try:
+    mp.set_start_method("spawn", force=True)
+except RuntimeError:
+    pass
 
 from lerobot.configs import parser
 from lerobot.meta.configs import MetaTrainConfig
