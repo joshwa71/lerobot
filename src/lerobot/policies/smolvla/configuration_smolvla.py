@@ -85,6 +85,8 @@ class SmolVLAConfig(PreTrainedConfig):
 
     vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"  # Select the VLM backbone.
     load_vlm_weights: bool = False  # Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights
+    # HF accelerate device map for VLM loading. Use None to avoid auto-sharding so replicas can be moved per device.
+    device_map: str | None = None
 
     add_image_special_tokens: bool = False  # Whether to use special image tokens around image features.
 
