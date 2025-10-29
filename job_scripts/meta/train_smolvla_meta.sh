@@ -65,6 +65,12 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
+
+export HF_HOME="$SCRATCH_DIR/cache/hf_home"
+mkdir -p "$HF_HOME"
+# Suppress specific Python warnings
+export PYTHONWARNINGS="ignore::FutureWarning,ignore::pydantic._internal._generate_schema.UnsupportedFieldAttributeWarning"
+
 # Verify environment
 echo "Python: $(which python)"
 echo "Python version: $(python --version)"

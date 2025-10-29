@@ -37,11 +37,11 @@ class MetaEngine:
         logging.info("Creating dataset")
         # Build a small shim to reuse datasets.factory.make_dataset
         class _DSCfg:
-            def __init__(self, dataset, policy):
+            def __init__(self, dataset, policy, num_workers):
                 self.dataset = dataset
                 self.policy = policy
-                self.num_workers = 8
-        ds = make_dataset(_DSCfg(self.cfg.dataset, self.cfg.policy))
+                self.num_workers = num_workers
+        ds = make_dataset(_DSCfg(self.cfg.dataset, self.cfg.policy, self.cfg.num_workers))
         logging.info(
             "Dataset ready: frames=%s episodes=%s tasks=%s cameras=%s",
             ds.num_frames,
@@ -171,7 +171,7 @@ class MetaEngine:
                 len(ep_idxs),
                 frames_per_task,
                 batch_size,
-                4,
+                self.cfg.num_workers,
             )
             loader = build_task_dataloader(
                 self.dataset,
@@ -179,7 +179,7 @@ class MetaEngine:
                 frames_per_task=frames_per_task,
                 batch_size=batch_size,
                 shuffle=shuffle,
-                num_workers=4,
+                num_workers=self.cfg.num_workers,
             )
             # Create an infinite iterator to avoid StopIteration during inner adaptation
             iters[t] = cycle(loader)
@@ -470,7 +470,7 @@ class MetaEngine:
             job_name=self.cfg.job_name or f"meta_{self.cfg.policy.type}",
             resume=False,
             seed=1000,
-            num_workers=4,
+            num_workers=self.cfg.num_workers,
             batch_size=8,
             steps=total_steps,
             eval_freq=0,

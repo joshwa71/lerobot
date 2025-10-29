@@ -89,9 +89,10 @@ lerobot-meta-train \
   --steps=100000 \
   --batch_size=16 \
   --log_freq=100 \
+  --num_workers=1 \
   --dataset.repo_id=outputs/libero \
   --policy.path=outputs/smolvla_base \
-  --policy.repo_id=outputs/train/meta_smolvla_lora_libero_path \
+  --policy.repo_id=outputs/train/reptile_smolvla_libero_local \
   --lora.enable=true \
   --lora.r=8 \
   --lora.alpha=16 \
@@ -110,8 +111,8 @@ lerobot-meta-train \
   --eval.batch_size=1 \
   --eval.n_episodes=2 \
   --env.type=libero \
-  --output_dir=outputs/train/meta_smolvla_lora_libero \
-  --job_name=libero_reptile_100k \
+  --output_dir=outputs/train/reptile_smolvla_libero_local \
+  --job_name=reptile_smolvla_libero_local \
   --policy.push_to_hub=false \
   --wandb.enable=true
 
