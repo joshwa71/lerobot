@@ -165,6 +165,9 @@ class MetaEngine:
         iters = {}
         for t in tasks:
             ep_idxs = get_episode_indices_for_task(self.dataset, t)
+            if len(ep_idxs) == 0:
+                logging.warning("No episodes found for task_id=%s. Skipping this task.", t)
+                continue
             logging.info(
                 "Building DataLoader for task=%s | episodes=%s | frames_per_task=%s | batch_size=%s | num_workers=%s",
                 t,
@@ -181,7 +184,6 @@ class MetaEngine:
                 shuffle=shuffle,
                 num_workers=self.cfg.num_workers,
             )
-            # Create an infinite iterator to avoid StopIteration during inner adaptation
             iters[t] = cycle(loader)
         return iters
 
@@ -381,6 +383,7 @@ class MetaEngine:
 
         # Per-task: clone meta-weights -> adapt -> build env -> eval
         per_task_results = {}
+        inner_losses_eval: list[float] = []
         for t in self.eval_tasks:
             theta = {n: p.detach().clone() for n, p in self.policy.named_parameters() if p.requires_grad}
 
@@ -392,6 +395,9 @@ class MetaEngine:
                 inner_cfg=self.cfg.inner_opt,
                 preprocessor=self.preproc,
             )
+            # Track inner-loop average loss during eval adaptation when available
+            if res.metrics and "inner_avg_loss" in res.metrics:
+                inner_losses_eval.append(float(res.metrics["inner_avg_loss"]))
             # Apply adapted deltas
             with torch.no_grad():
                 for n, p in self.policy.named_parameters():
@@ -443,15 +449,15 @@ class MetaEngine:
         if self.wandb_logger:
             # Log aggregate over eval tasks if available
             agg = {}
-            try:
-                avg_sum = [v.get("avg_sum_reward") for v in per_task_results.values() if isinstance(v, dict) and "avg_sum_reward" in v]
-                pc_succ = [v.get("pc_success") for v in per_task_results.values() if isinstance(v, dict) and "pc_success" in v]
-                if len(avg_sum) > 0:
-                    agg["meta_eval/avg_sum_reward"] = float(sum(avg_sum) / len(avg_sum))
-                if len(pc_succ) > 0:
-                    agg["meta_eval/pc_success"] = float(sum(pc_succ) / len(pc_succ))
-            except Exception:
-                pass
+            avg_sum = [v.get("avg_sum_reward") for v in per_task_results.values() if isinstance(v, dict) and "avg_sum_reward" in v]
+            pc_succ = [v.get("pc_success") for v in per_task_results.values() if isinstance(v, dict) and "pc_success" in v]
+            if len(avg_sum) > 0:
+                agg["meta_eval/avg_sum_reward"] = float(sum(avg_sum) / len(avg_sum))
+            if len(pc_succ) > 0:
+                agg["meta_eval/pc_success"] = float(sum(pc_succ) / len(pc_succ))
+            if len(inner_losses_eval) > 0:
+                agg["meta_eval/inner_avg_loss"] = float(sum(inner_losses_eval) / len(inner_losses_eval))
+
             # Always log the step for eval timeline
             agg["outer_step"] = step
             self.wandb_logger.log_dict(agg, step=step, mode="eval")

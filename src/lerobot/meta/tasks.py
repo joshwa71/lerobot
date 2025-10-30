@@ -105,8 +105,11 @@ def build_task_dataloader(
 
 
 def cycle(loader: torch.utils.data.DataLoader) -> Iterator:
+    saw_any = False
     while True:
         for b in loader:
+            saw_any = True
             yield b
-
+        if not saw_any:
+            raise RuntimeError("Empty DataLoader in cycle(): check task selection and frames_per_task.")
 
