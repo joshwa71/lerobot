@@ -100,7 +100,7 @@ accelerate launch \
   --env.type=libero \
   --env.task=libero_10 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
+  --eval.n_episodes=5 \
   --eval_freq=5000 \
   --save_freq=20000 \
   --policy.push_to_hub=false \
@@ -109,17 +109,7 @@ accelerate launch \
   --job_name=mixed_libero_10_pi05_100k_5050_slow_decay \
   --wandb.enable=true
 
-# Run final evaluation
-echo "Running final evaluation..."
-lerobot-eval \
-  --policy.path=$OUTPUT_SCRATCH/checkpoints/last/pretrained_model \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=2 \
-  --eval.n_episodes=50 \
-  --output_dir=$OUTPUT_SCRATCH/final_eval
 
-echo "Final evaluation completed"
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
