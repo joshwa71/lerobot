@@ -1,4 +1,4 @@
-cat > train_pi05_mixed_5050_libero_10_100k_slow_decay.sh << 'EOF'
+cat > train_pi05_mixed_5050_state_dropout.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_pi05_mixed_5050_libero_10_100k_slow_decay.sh << 'EOF'
 #$ -pe gpu 2
 #$ -R y
 #$ -l tscratch=200G
-#$ -N pi05_mixed_5050_libero_10_100k_slow_decay_train
+#$ -N pi05_mixed_5050_state_dropout_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -75,7 +75,7 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_5050_slow_decay"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_5050_state_dropout"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -91,7 +91,7 @@ accelerate launch \
   --policy.compile_model=false \
   --policy.gradient_checkpointing=true \
   --policy.pretrained_path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/mixed_libero_10_pi05_100k_5050_slow_decay \
+  --policy.repo_id=outputs/train/mixed_libero_10_pi05_100k_5050_state_dropout \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=100000 \
@@ -100,7 +100,7 @@ accelerate launch \
   --env.type=libero \
   --env.task=libero_10 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
+  --eval.n_episodes=5 \
   --eval_freq=5000 \
   --save_freq=20000 \
   --policy.push_to_hub=false \
@@ -108,7 +108,7 @@ accelerate launch \
   --policy.scheduler_decay_steps=90000 \
   --policy.state_dropout=true \
   --policy.state_dropout_prob=0.1 \
-  --job_name=mixed_libero_10_pi05_100k_5050_slow_decay \
+  --job_name=mixed_libero_10_pi05_100k_5050_state_dropout \
   --wandb.enable=true
 
 # Run final evaluation
@@ -125,7 +125,7 @@ echo "Final evaluation completed"
 
 # Copy outputs back to permanent storage
 echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_5050_slow_decay"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_5050_state_dropout"
 mkdir -p "$FINAL_OUTPUT_DIR"
 cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
 echo "Outputs copied to $FINAL_OUTPUT_DIR"
