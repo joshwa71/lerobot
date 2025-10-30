@@ -257,6 +257,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
+
         lang_tokens = batch[f"{OBS_LANGUAGE_TOKENS}"]
         lang_masks = batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
 
@@ -414,6 +415,12 @@ class SmolVLAPolicy(PreTrainedPolicy):
         """Pad state"""
         state = batch[OBS_STATE][:, -1, :] if batch[OBS_STATE].ndim > 2 else batch[OBS_STATE]
         state = pad_vector(state, self.config.max_state_dim)
+        # Apply training-time state dropout if enabled
+        if self.config.state_dropout and torch.is_grad_enabled():
+            prob = float(self.config.state_dropout_prob)
+            if prob > 0.0:
+                mask = (torch.rand_like(state) > prob).to(state.dtype)
+                state = state * mask
         return state
 
     def prepare_action(self, batch):

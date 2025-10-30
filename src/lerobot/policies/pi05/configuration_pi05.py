@@ -37,6 +37,10 @@ class PI05Config(PreTrainedConfig):
     max_state_dim: int = 32
     max_action_dim: int = 32
 
+    # State dropout (training-time regularization)
+    state_dropout: bool = False
+    state_dropout_prob: float = 0.1
+
     # Flow matching parameters: see openpi `PI0Pytorch`
     num_inference_steps: int = 10
     time_sampling_beta_alpha: float = 1.5
@@ -100,6 +104,8 @@ class PI05Config(PreTrainedConfig):
 
         if self.dtype not in ["bfloat16", "float32"]:
             raise ValueError(f"Invalid dtype: {self.dtype}")
+        if not (0.0 <= self.state_dropout_prob <= 1.0):
+            raise ValueError(f"Invalid state_dropout_prob: {self.state_dropout_prob}")
 
     def validate_features(self) -> None:
         """Validate and set up input/output features."""

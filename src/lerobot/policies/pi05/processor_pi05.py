@@ -54,6 +54,8 @@ class Pi05PrepareStateTokenizerProcessorStep(ProcessorStep):
 
     max_state_dim: int = 32
     task_key: str = "task"
+    state_dropout: bool = False
+    state_dropout_prob: float = 0.1
 
     def __call__(self, transition: EnvTransition) -> EnvTransition:
         transition = transition.copy()
@@ -70,6 +72,13 @@ class Pi05PrepareStateTokenizerProcessorStep(ProcessorStep):
 
         # Prepare state (pad to max_state_dim)
         state = pad_vector(state, self.max_state_dim)
+
+        # Apply training-time state dropout if enabled
+        if self.state_dropout and torch.is_grad_enabled():
+            prob = float(self.state_dropout_prob)
+            if prob > 0.0:
+                mask = (torch.rand_like(state) > prob).to(state.dtype)
+                state = state * mask
 
         # State should already be normalized to [-1, 1] by the NormalizerProcessorStep that runs before this step
         # Discretize into 256 bins (see openpi `PaligemmaTokenizer.tokenize()`)
@@ -140,7 +149,11 @@ def make_pi05_pre_post_processors(
             norm_map=config.normalization_mapping,
             stats=dataset_stats,
         ),
-        Pi05PrepareStateTokenizerProcessorStep(max_state_dim=config.max_state_dim),
+        Pi05PrepareStateTokenizerProcessorStep(
+            max_state_dim=config.max_state_dim,
+            state_dropout=config.state_dropout,
+            state_dropout_prob=config.state_dropout_prob,
+        ),
         TokenizerProcessorStep(
             tokenizer_name="google/paligemma-3b-pt-224",
             max_length=config.tokenizer_max_length,

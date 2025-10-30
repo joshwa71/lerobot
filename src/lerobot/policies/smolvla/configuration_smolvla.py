@@ -43,6 +43,10 @@ class SmolVLAConfig(PreTrainedConfig):
     max_state_dim: int = 32
     max_action_dim: int = 32
 
+    # State dropout (training-time regularization)
+    state_dropout: bool = False
+    state_dropout_prob: float = 0.1
+
     # Image preprocessing
     resize_imgs_with_padding: tuple[int, int] = (512, 512)
 
@@ -115,6 +119,8 @@ class SmolVLAConfig(PreTrainedConfig):
             raise NotImplementedError(
                 "`use_delta_joint_actions_aloha` is used by smolvla for aloha real models. It is not ported yet in LeRobot."
             )
+        if not (0.0 <= self.state_dropout_prob <= 1.0):
+            raise ValueError(f"Invalid state_dropout_prob: {self.state_dropout_prob}")
 
     def validate_features(self) -> None:
         for i in range(self.empty_cameras):
