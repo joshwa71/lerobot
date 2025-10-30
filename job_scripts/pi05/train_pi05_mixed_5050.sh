@@ -100,7 +100,7 @@ accelerate launch \
   --env.type=libero \
   --env.task=libero_10 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
+  --eval.n_episodes=5 \
   --eval_freq=5000 \
   --save_freq=20000 \
   --policy.push_to_hub=false \
