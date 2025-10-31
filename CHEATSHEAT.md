@@ -86,13 +86,13 @@ lerobot-train \
 ### Train SmolVLA with Memory Layers
 lerobot-train \
 --policy.path=outputs/smolvla_base \
---policy.repo_id=outputs/train/smolvla_libero_10_mem \
---dataset.repo_id=outputs/libero_10 \
+--policy.repo_id=outputs/train/smolvla_libero_90_mem_pretrained \
+--dataset.repo_id=outputs/libero_90 \
 --env.type=libero \
---env.task=libero_10 \
---output_dir=./outputs/train/smolvla_libero_10_mem \
+--env.task=libero_spatial \
+--output_dir=./outputs/train/smolvla_libero_90_mem_pretrained \
 --save_freq=10000 \
---steps=100000 \
+--steps=200000 \
 --batch_size=8 \
 --eval.batch_size=1 \
 --eval.n_episodes=3 \
@@ -102,7 +102,7 @@ lerobot-train \
 --policy.train_state_proj=true \
 --policy.scheduler_warmup_steps=10000 \
 --policy.scheduler_decay_steps=150000 \
---job_name=smolvla_libero_mem \
+--job_name=smolvla_libero_90_mem_pretrained \
 --policy.push_to_hub=false \
 --wandb.enable=true \
 --policy.memory_layers=true \
@@ -185,29 +185,3 @@ pick up the black bowl next to the plate and place it on the plate              
 pick up the black bowl next to the ramekin and place it on the plate                              37
 pick up the black bowl from table center and place it on the plate                                38
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
-
-
-
-
-
-lerobot-train \
-  --policy.type=pi05 \
-  --policy.dtype=bfloat16 \
-  --policy.compile_model=true \
-  --policy.gradient_checkpointing=true \
-  --policy.pretrained_path=outputs/pi05_base \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k \
-  --dataset.repo_id=outputs/libero_10 \
-  --output_dir=outputs/train/test_pi05 \
-  --steps=100000 \
-  --batch_size=2 \
-  --num_workers=12 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=3 \
-  --eval_freq=5000 \
-  --save_freq=20000 \
-  --policy.push_to_hub=false \
-  --job_name=libero_10_pi05_100k \
-  --wandb.enable=true

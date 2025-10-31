@@ -196,7 +196,18 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     for li in target_layers:
         layer = smolvla_model.lm_expert.layers[li]
         dim = smolvla_model.expert_hidden_size
+        # Avoid double wrapping if resuming
+        if isinstance(layer.mlp, MLPPlusMemory):
+            continue
+        base_dtype = next(layer.mlp.parameters()).dtype
+        base_device = next(layer.mlp.parameters()).device
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg)
+        # Align non-value memory params to base dtype/device; keep values in float32
+        for name, p in layer.mlp.mem.named_parameters():
+            if name.startswith("values"):
+                p.data = p.data.to(device=base_device, dtype=torch.float32)
+            else:
+                p.data = p.data.to(device=base_device, dtype=base_dtype)
 
 
 def split_memory_params(module: nn.Module):

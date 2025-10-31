@@ -235,6 +235,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.config = config
 
         self.model = VLAFlowMatching(config)
+        # Attach memory wrappers before weight loading so state dicts with memory match
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            attach_memory_to_expert(self.model.vlm_with_expert, self.config.memory_layer)
         self.reset()
 
     def post_load_setup(self) -> None:
