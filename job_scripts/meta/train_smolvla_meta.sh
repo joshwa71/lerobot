@@ -69,7 +69,7 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 export HF_HOME="$SCRATCH_DIR/cache/hf_home"
 mkdir -p "$HF_HOME"
 # Suppress specific Python warnings
-export PYTHONWARNINGS="ignore::FutureWarning,ignore::pydantic._internal._generate_schema.UnsupportedFieldAttributeWarning"
+export PYTHONWARNINGS="ignore::FutureWarning"
 
 # Verify environment
 echo "Python: $(which python)"
