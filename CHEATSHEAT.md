@@ -145,6 +145,7 @@ Wrote recalibrated dataset to: /home/josh/phddev/lerobot-upstream/outputs/bl_mix
 
 ## Libero
 
+### Dataset Task IDs
 **Libero 10**
                                                                                           task_index
 put the white mug on the left plate and put the yellow and white mug on the right plate            0
@@ -190,27 +191,27 @@ pick up the black bowl from table center and place it on the plate              
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
 
 
+### Env Task Ids
 
+00 put both the alphabet soup and the tomato sauce in the basket
+01 put both the cream cheese box and the butter in the basket
+02 turn on the stove and put the moka pot on it
+03 put the black bowl in the bottom drawer of the cabinet and close it
+04 put the white mug on the left plate and put the yellow and white mug on the right plate
+05 pick up the book and place it in the back compartment of the caddy
+06 put the white mug on the plate and put the chocolate pudding to the right of the plate
+07 put both the alphabet soup and the cream cheese box in the basket
+08 put both moka pots on the stove
+09 put the yellow and white mug in the microwave and close it
 
-
-lerobot-train \
-  --policy.type=pi05 \
-  --policy.dtype=bfloat16 \
-  --policy.compile_model=true \
-  --policy.gradient_checkpointing=true \
-  --policy.pretrained_path=outputs/pi05_base \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k \
-  --dataset.repo_id=outputs/libero_10 \
-  --output_dir=outputs/train/test_pi05 \
-  --steps=100000 \
-  --batch_size=2 \
-  --num_workers=12 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=3 \
-  --eval_freq=5000 \
-  --save_freq=20000 \
-  --policy.push_to_hub=false \
-  --job_name=libero_10_pi05_100k \
-  --wandb.enable=true
+### Mapping Dataset -> Env
+0 → 4
+1 → 6
+2 → 9
+3 → 2
+4 → 7
+5 → 0
+6 → 8
+7 → 1
+8 → 3
+9 → 5

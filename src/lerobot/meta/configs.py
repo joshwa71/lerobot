@@ -70,6 +70,8 @@ class MetaTrainConfig:
     tasks_per_outer_step: int = 4
     support_frames_per_task: int = 1024
     query_frames_per_task: int = 512
+    # Map dataset task_index to env task_id (e.g., for LIBERO where dataset order != suite order)
+    dataset_to_env_task_mapping: dict[int, int] | None = None
 
     # Loops
     inner_steps: int = 3

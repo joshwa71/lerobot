@@ -404,6 +404,20 @@ class MetaEngine:
                     if p.requires_grad and n in res.delta:
                         p.add_(res.delta[n].to(p.device))
 
+            # Map dataset task_id to env task_id if mapping is provided
+            env_task_id = t
+            if self.cfg.dataset_to_env_task_mapping is not None:
+                if t not in self.cfg.dataset_to_env_task_mapping:
+                    logging.warning(f"Dataset task_id {t} not found in dataset_to_env_task_mapping; skipping eval.")
+                    # Restore meta-weights and continue
+                    with torch.no_grad():
+                        for n, p in self.policy.named_parameters():
+                            if p.requires_grad and n in theta:
+                                p.copy_(theta[n])
+                    continue
+                env_task_id = self.cfg.dataset_to_env_task_mapping[t]
+                logging.info(f"Mapped dataset task_id {t} to env task_id {env_task_id}")
+
             # Build a single-task LIBERO env for this task id
             # Restrict creation to the requested task_id to avoid unnecessary envs
             if self.cfg.env is not None and self.cfg.env.type == "libero":
@@ -415,7 +429,7 @@ class MetaEngine:
                     n_envs=1,
                     camera_name=env_cfg.camera_name,
                     init_states=env_cfg.init_states,
-                    gym_kwargs={**env_cfg.gym_kwargs, "task_ids": [t]},
+                    gym_kwargs={**env_cfg.gym_kwargs, "task_ids": [env_task_id]},
                     env_cls=gym.vector.SyncVectorEnv,
                 )
                 try:
