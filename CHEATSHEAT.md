@@ -114,6 +114,29 @@ lerobot-train \
 --policy.memory_layer.value_fixed_lr=0.001 \
 --policy.memory_layer.memory_lr=0.001
 
+
+# Train SmolVLA sequentially
+
+python -m lerobot.scripts.lerobot_sequential_train \
+  --policy.path=/home/josh/phddev/lerobot/outputs/train/smolvla_libero_90_mem_pretrained/checkpoints/last/pretrained_model \
+  --dataset.repo_id=outputs/libero_10 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online \
+  --steps=200000 \
+  --batch_size=16 \
+  --num_workers=4 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=10 \
+  --log_freq=200 \
+  --wandb.enable=true \
+  --job_name=smolvla_libero_10_mem_online \
+  --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
+  --online_steps_per_task=10000 \
+  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
+  --save_after_each_task=true \
+  --reinit_optimizer_each_task=false
+
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
 
@@ -154,6 +177,7 @@ put both moka pots on the stove                                                 
 put both the cream cheese box and the butter in the basket                                         7
 put the black bowl in the bottom drawer of the cabinet and close it                                8
 pick up the book and place it in the back compartment of the caddy                                 9
+
 **Other**
 put the bowl on the plate                                                                         10
 put the wine bottle on the rack                                                                   11
@@ -185,3 +209,28 @@ pick up the black bowl next to the plate and place it on the plate              
 pick up the black bowl next to the ramekin and place it on the plate                              37
 pick up the black bowl from table center and place it on the plate                                38
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
+
+### Env Task Ids
+
+00 put both the alphabet soup and the tomato sauce in the basket
+01 put both the cream cheese box and the butter in the basket
+02 turn on the stove and put the moka pot on it
+03 put the black bowl in the bottom drawer of the cabinet and close it
+04 put the white mug on the left plate and put the yellow and white mug on the right plate
+05 pick up the book and place it in the back compartment of the caddy
+06 put the white mug on the plate and put the chocolate pudding to the right of the plate
+07 put both the alphabet soup and the cream cheese box in the basket
+08 put both moka pots on the stove
+09 put the yellow and white mug in the microwave and close it
+
+### Mapping Dataset -> Env
+0 → 4
+1 → 6
+2 → 9
+3 → 2
+4 → 7
+5 → 0
+6 → 8
+7 → 1
+8 → 3
+9 → 5
