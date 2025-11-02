@@ -3,7 +3,7 @@ cat > train_smolvla_meta_libero_10.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|a40|h100|l40s|rtx6000ada)
+#$ -l gpu=true,gpu_type=(a100_80|a40|h100|l40s|rtx6000ada|a100|rtx6000|rtx8000|rtx4090|rtx3090)
 #$ -pe gpu 4
 #$ -R y
 #$ -l tscratch=200G
