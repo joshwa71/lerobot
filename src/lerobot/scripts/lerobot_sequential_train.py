@@ -116,7 +116,7 @@ def _build_dataloader_for_task(
         sampler=sampler,
         pin_memory=device_type == "cuda",
         drop_last=False,
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=4 if num_workers > 0 else None,
     )
 
 
@@ -396,14 +396,17 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 logging.info(colored(f"Evaluate on env tasks: {seen_env_task_ids}", "green"))
 
             with torch.no_grad(), accelerator.autocast():
+                step_id = get_step_identifier(global_step, cfg.steps)
+                videos_dir = (cfg.output_dir / "eval" / f"videos_step_{step_id}") if is_main else None
+                max_episodes_rendered = 4 if is_main else 0
                 eval_info = eval_policy_all(
                     envs=env_subset,
                     policy=accelerator.unwrap_model(policy),
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
                     n_episodes=cfg.eval.n_episodes,
-                    videos_dir=(cfg.output_dir / "eval" / f"after_task_{idx+1}"),
-                    max_episodes_rendered=0,
+                    videos_dir=videos_dir,
+                    max_episodes_rendered=max_episodes_rendered,
                     start_seed=cfg.seed,
                     max_parallel_tasks=cfg.env.max_parallel_tasks,
                 )
@@ -424,6 +427,11 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                         if isinstance(tinfo, dict) and "pc_success" in tinfo:
                             log_dict[f"success/task_{tid}"] = float(tinfo["pc_success"]) if tinfo["pc_success"] is not None else float("nan")
                     wandb_logger.log_dict(log_dict, global_step, mode="eval")
+                    # Log first video like in the standard pipeline, if present
+                    ov = eval_info.get("overall", {})
+                    vpaths = ov.get("video_paths") if isinstance(ov, dict) else None
+                    if vpaths:
+                        wandb_logger.log_video(vpaths[0], global_step, mode="eval")
 
     # Cleanup
     if eval_envs_all:
