@@ -132,7 +132,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_meta
 # Run training
 lerobot-meta-train \
   --steps=100000 \
-  --batch_size=32 \
+  --batch_size=16 \
   --log_freq=100 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
@@ -144,7 +144,7 @@ lerobot-meta-train \
   --lora.dropout=0.05 \
   --algo.type=reptile \
   --algo.meta_step_size=0.1 \
-  --inner_steps=5 \
+  --inner_steps=3 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
   --tasks_per_outer_step=4 \
