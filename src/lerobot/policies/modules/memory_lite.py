@@ -45,6 +45,7 @@ class HashingMemoryLite(nn.Module):
         self.knn = cfg.mem_knn
         self.n_keys = cfg.mem_n_keys
         self.size = self.n_keys ** 2
+        self.log_usage = getattr(cfg, "log_usage", False)
 
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
@@ -107,6 +108,7 @@ class HashingMemoryLite(nn.Module):
         # Indices and scores
         scores, indices = self._get_indices(query)  # (bs*heads, knn)
 
+        # Record selected indices/scores for analysis during eval
         if not self.training and self.EVAL_MEMORY:
             self.last_indices = indices.view(bs, self.heads, self.knn).detach().cpu()
             self.last_scores = scores.view(bs, self.heads, self.knn).detach().cpu().float()
@@ -116,6 +118,11 @@ class HashingMemoryLite(nn.Module):
         # Merge heads
         indices = indices.view(bs, self.heads * self.knn)
         weights = weights.view(bs, self.heads * self.knn)
+
+        # Record selected indices/weights during training when log_usage is enabled
+        if self.training and self.log_usage:
+            self.last_indices = indices.view(bs, self.heads, self.knn).detach()
+            self.last_weights = weights.view(bs, self.heads, self.knn).detach()
 
         # Weighted aggregation via embedding_bag
         # embedding_bag backward with per_sample_weights is not implemented for bf16 on CUDA.
@@ -175,7 +182,14 @@ class MLPPlusMemory(nn.Module):
 
 def _resolve_target_layers(num_expert_layers: int, layers: List[int]) -> List[int]:
     if layers:
-        return layers
+        # Sanitize provided indices: keep within range and deduplicate while preserving order
+        seen = set()
+        cleaned: List[int] = []
+        for li in layers:
+            if 0 <= li < num_expert_layers and li not in seen:
+                cleaned.append(li)
+                seen.add(li)
+        return cleaned
     # Default: last two layers
     if num_expert_layers >= 2:
         return [num_expert_layers - 2, num_expert_layers - 1]
@@ -193,10 +207,19 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     """
     num_layers = smolvla_model.num_expert_layers
     target_layers = _resolve_target_layers(num_layers, cfg.layers)
+    target_set = set(target_layers)
+
+    # First, unwrap any previously wrapped layers that are not in the target set
+    for li in range(num_layers):
+        layer = smolvla_model.lm_expert.layers[li]
+        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory) and li not in target_set:
+            layer.mlp = layer.mlp.mlp
+
+    # Now, wrap exactly the requested target layers
     for li in target_layers:
         layer = smolvla_model.lm_expert.layers[li]
         dim = smolvla_model.expert_hidden_size
-        # Avoid double wrapping if resuming
+        # Avoid double wrapping if already wrapped
         if isinstance(layer.mlp, MLPPlusMemory):
             continue
         base_dtype = next(layer.mlp.parameters()).dtype

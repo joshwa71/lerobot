@@ -53,6 +53,7 @@ policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
 """
 
 import math
+import os
 from collections import deque
 
 import torch
@@ -67,7 +68,11 @@ from lerobot.policies.utils import (
 )
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
 from lerobot.utils.utils import get_safe_dtype
-from lerobot.policies.modules.memory_lite import attach_memory_to_expert, split_memory_params
+from lerobot.policies.modules.memory_lite import attach_memory_to_expert, split_memory_params, MLPPlusMemory
+from huggingface_hub import hf_hub_download
+from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
+from huggingface_hub.errors import HfHubHTTPError
+from safetensors import safe_open
 
 
 def create_sinusoidal_pos_embedding(
@@ -235,8 +240,12 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.config = config
 
         self.model = VLAFlowMatching(config)
-        # Attach memory wrappers before weight loading so state dicts with memory match
-        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+        # Defer memory wrapper attachment to post_load_setup when loading from a pretrained checkpoint.
+        # This keeps base MLP key names stable during load. For fresh init (no pretrained_path), attach now.
+        if (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ) and not getattr(self.config, "pretrained_path", None):
             attach_memory_to_expert(self.model.vlm_with_expert, self.config.memory_layer)
         self.reset()
 
@@ -268,6 +277,109 @@ class SmolVLAPolicy(PreTrainedPolicy):
                 {"params": mem_vals, "lr": getattr(self.config.memory_layer, "memory_lr", 1e-3), "weight_decay": getattr(self.config.memory_layer, "memory_weight_decay", 0.0)},
             ]
         return self.parameters()
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_name_or_path: str | os.PathLike,
+        *,
+        config: SmolVLAConfig | None = None,
+        force_download: bool = False,
+        resume_download: bool | None = None,
+        proxies: dict | None = None,
+        token: str | bool | None = None,
+        cache_dir: str | os.PathLike | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        strict: bool = False,
+        **kwargs,
+    ):
+        model_id = str(pretrained_name_or_path)
+
+        # Fallback to base implementation if no config provided
+        if config is None:
+            return super().from_pretrained(
+                pretrained_name_or_path,
+                config=config,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                strict=strict,
+                **kwargs,
+            )
+
+        # Resolve local safetensors file path
+        if os.path.isdir(model_id):
+            model_file = os.path.join(model_id, SAFETENSORS_SINGLE_FILE)
+        else:
+            try:
+                model_file = hf_hub_download(
+                    repo_id=model_id,
+                    filename=SAFETENSORS_SINGLE_FILE,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    proxies=proxies,
+                    resume_download=resume_download,
+                    token=token,
+                    local_files_only=local_files_only,
+                )
+            except HfHubHTTPError:
+                # Defer to base if download fails to preserve original error handling
+                return super().from_pretrained(
+                    pretrained_name_or_path,
+                    config=config,
+                    force_download=force_download,
+                    resume_download=resume_download,
+                    proxies=proxies,
+                    token=token,
+                    cache_dir=cache_dir,
+                    local_files_only=local_files_only,
+                    revision=revision,
+                    strict=strict,
+                    **kwargs,
+                )
+
+        # Detect whether checkpoint already contains memory wrapper params
+        has_memory_params = False
+        try:
+            with safe_open(model_file, framework="pt") as f:
+                for k in f.keys():
+                    if ".mlp.mem." in k or ".mlp.mlp." in k:
+                        has_memory_params = True
+                        break
+        except Exception:
+            pass
+
+        want_memory = bool(getattr(config, "memory_layers", False) or getattr(config.memory_layer, "enabled", False))
+        attach_before_load = has_memory_params and want_memory
+
+        # Instantiate the model
+        instance = cls(config, **kwargs)
+
+        # Optionally attach memory wrappers before loading to align state dict keys
+        if attach_before_load:
+            try:
+                attach_memory_to_expert(instance.model.vlm_with_expert, config.memory_layer)
+            except Exception:
+                pass
+
+        # Load weights
+        policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
+
+        # Attach adapters after load when desired
+        try:
+            policy.post_load_setup()
+        except Exception:
+            pass
+
+        policy.to(config.device)
+        policy.eval()
+        return policy
 
     def _get_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         # TODO: Check if this for loop is needed.
@@ -363,6 +475,71 @@ class SmolVLAPolicy(PreTrainedPolicy):
         loss = losses.mean()
         # For backward pass
         loss_dict["loss"] = loss.item()
+
+        # Log memory usage diversity metrics per layer when enabled
+        try:
+            if (
+                getattr(self.config, "memory_layers", False)
+                or getattr(self.config.memory_layer, "enabled", False)
+            ) and getattr(self.config.memory_layer, "log_usage", False):
+                used_fracs: list[float] = []
+                perplexities: list[float] = []
+                top1_shares: list[float] = []
+                eff_nums: list[float] = []
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        mem = layer.mlp.mem
+                        if hasattr(mem, "last_indices") and mem.last_indices is not None:
+                            # Count unique slots selected in this batch
+                            # last_indices: (BS, heads, knn)
+                            try:
+                                idx = mem.last_indices
+                                unique_count = torch.unique(idx).numel()
+                                frac = float(unique_count) / float(mem.size)
+                                loss_dict[f"mem_used_count_L{li}"] = float(unique_count)
+                                loss_dict[f"mem_used_frac_L{li}"] = float(frac)
+                                used_fracs.append(frac)
+
+                                # Distributional metrics (weighted by selection weights if available)
+                                eps = 1e-12
+                                idx_flat = idx.reshape(-1)
+                                if hasattr(mem, "last_weights") and mem.last_weights is not None:
+                                    w_flat = mem.last_weights.reshape(-1).float()
+                                else:
+                                    w_flat = torch.ones_like(idx_flat, dtype=torch.float32)
+                                uniq, inv = torch.unique(idx_flat, return_inverse=True)
+                                usage = torch.zeros(uniq.shape[0], dtype=torch.float32, device=idx_flat.device)
+                                usage.scatter_add_(0, inv, w_flat)
+                                total = usage.sum()
+                                if total > 0:
+                                    p = usage / total
+                                    # Entropy/perplexity
+                                    H = -(p * (p + eps).log()).sum()
+                                    perplexity = float(torch.exp(H).item())
+                                    loss_dict[f"mem_usage_perplexity_L{li}"] = perplexity
+                                    perplexities.append(perplexity)
+                                    # Concentration metrics
+                                    top1 = float(p.max().item())
+                                    loss_dict[f"mem_usage_top1_share_L{li}"] = top1
+                                    top1_shares.append(top1)
+                                    hhi = float((p * p).sum().item())
+                                    eff_num = float(1.0 / max(hhi, eps))
+                                    loss_dict[f"mem_usage_effnum_L{li}"] = eff_num
+                                    eff_nums.append(eff_num)
+                            except Exception:
+                                pass
+                if used_fracs:
+                    loss_dict["mem_used_frac_mean"] = float(sum(used_fracs) / max(1, len(used_fracs)))
+                if perplexities:
+                    loss_dict["mem_usage_perplexity_mean"] = float(sum(perplexities) / max(1, len(perplexities)))
+                if top1_shares:
+                    loss_dict["mem_usage_top1_share_mean"] = float(sum(top1_shares) / max(1, len(top1_shares)))
+                if eff_nums:
+                    loss_dict["mem_usage_effnum_mean"] = float(sum(eff_nums) / max(1, len(eff_nums)))
+        except Exception:
+            # Never fail training due to logging
+            pass
         return loss, loss_dict
 
     def prepare_images(self, batch):

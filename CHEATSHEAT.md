@@ -86,11 +86,11 @@ lerobot-train \
 ### Train SmolVLA with Memory Layers
 lerobot-train \
 --policy.path=outputs/smolvla_base \
---policy.repo_id=outputs/train/smolvla_libero_90_mem_pretrained \
+--policy.repo_id=outputs/train/smolvla_libero_90_mem_pretrained_2 \
 --dataset.repo_id=outputs/libero_90 \
 --env.type=libero \
 --env.task=libero_spatial \
---output_dir=./outputs/train/smolvla_libero_90_mem_pretrained \
+--output_dir=./outputs/train/smolvla_libero_90_mem_pretrained_2 \
 --save_freq=10000 \
 --steps=200000 \
 --batch_size=8 \
@@ -106,8 +106,10 @@ lerobot-train \
 --policy.push_to_hub=false \
 --wandb.enable=true \
 --policy.memory_layers=true \
+--policy.memory_layer.layers="[11,13,15]" \
+--policy.memory_layer.log_usage=true \
 --policy.memory_layer.enabled=true \
---policy.memory_layer.mem_n_keys=128 \
+--policy.memory_layer.mem_n_keys=256 \
 --policy.memory_layer.mem_heads=4 \
 --policy.memory_layer.mem_knn=16 \
 --policy.memory_layer.mem_k_dim=256 \

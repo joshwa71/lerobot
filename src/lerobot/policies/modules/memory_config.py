@@ -33,4 +33,8 @@ class MemoryLayerConfig:
     memory_lr: float = 1e-3
     memory_weight_decay: float = 0.0
 
+    # Metrics: when true, record per-batch selected slot indices to enable
+    # diversity/coverage logging during training (logged via policy.forward).
+    log_usage: bool = False
+
 
