@@ -101,7 +101,6 @@ def build_task_dataloader(
         pin_memory=True,
         drop_last=False,
         prefetch_factor=4,
-        persistent_workers=True,
     )
 
 
