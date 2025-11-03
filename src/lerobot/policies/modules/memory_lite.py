@@ -1,4 +1,6 @@
 import math
+import ast
+import json
 from typing import List
 
 import torch
@@ -180,12 +182,36 @@ class MLPPlusMemory(nn.Module):
         return self.mlp(x) + self.mem(x)
 
 
-def _resolve_target_layers(num_expert_layers: int, layers: List[int]) -> List[int]:
+def _resolve_target_layers(num_expert_layers: int, layers: List[int] | str) -> List[int]:
     if layers:
+        # Accept list[int] or a string like "[11,13,15]" or "11,13,15"
+        parsed: List[int]
+        if isinstance(layers, str):
+            s = layers.strip()
+            parsed = []
+            try:
+                obj = json.loads(s)
+                if isinstance(obj, list):
+                    parsed = [int(x) for x in obj]
+                else:
+                    parsed = []
+            except Exception:
+                try:
+                    obj = ast.literal_eval(s)
+                    if isinstance(obj, list):
+                        parsed = [int(x) for x in obj]
+                    else:
+                        # fallback split on comma
+                        parsed = [int(x.strip()) for x in s.split(",") if x.strip()]
+                except Exception:
+                    parsed = [int(x.strip()) for x in s.split(",") if x.strip()]
+        else:
+            parsed = [int(x) for x in layers]
+
         # Sanitize provided indices: keep within range and deduplicate while preserving order
         seen = set()
         cleaned: List[int] = []
-        for li in layers:
+        for li in parsed:
             if 0 <= li < num_expert_layers and li not in seen:
                 cleaned.append(li)
                 seen.add(li)
@@ -207,6 +233,8 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     """
     num_layers = smolvla_model.num_expert_layers
     target_layers = _resolve_target_layers(num_layers, cfg.layers)
+
+    print(f"Target layers for memory: {target_layers}")
     target_set = set(target_layers)
 
     # First, unwrap any previously wrapped layers that are not in the target set
@@ -231,6 +259,11 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
                 p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
+    # Record for debugging/metrics
+    try:
+        smolvla_model.mem_target_layers = target_layers
+    except Exception:
+        pass
 
 
 def split_memory_params(module: nn.Module):
