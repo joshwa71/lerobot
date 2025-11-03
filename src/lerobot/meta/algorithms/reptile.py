@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Iterator
 
 import torch
-import time
-import logging
 
 from lerobot.meta.algorithms.base import MetaAlgorithm, TaskResult
 from lerobot.meta.configs import ReptileConfig, InnerOptConfig
@@ -25,27 +24,33 @@ class Reptile(MetaAlgorithm):
         preprocessor,
     ) -> TaskResult:
         theta = self.snapshot(model)
-        opt = self.inner_optimizer([p for p in model.parameters() if p.requires_grad], inner_cfg)
+        params = [p for p in model.parameters() if p.requires_grad]
+        opt = self.inner_optimizer(params, inner_cfg)
         # Ensure training mode for modules with training-time behavior
         was_training = model.training if hasattr(model, "training") else True
         if hasattr(model, "train"):
             model.train()
-        loss_sum = 0.0
+        if params:
+            device = params[0].device
+        else:
+            device = torch.device("cpu")
+        device_type = "cuda" if str(device).startswith("cuda") else "cpu"
+        use_amp = device_type == "cuda" and bool(getattr(getattr(model, "config", None), "use_amp", False))
+        loss_sum_t = None
         for inner_idx in range(1, steps + 1):
             batch = next(support_iter)
             batch = preprocessor(batch)
-            loss, _ = model.forward(batch)
-            opt.zero_grad()
+            autocast_cm = torch.autocast(device_type=device_type) if use_amp else nullcontext()
+            with autocast_cm:
+                loss, _ = model.forward(batch)
+            opt.zero_grad(set_to_none=True)
             loss.backward()
             # optional grad clipping
             if inner_cfg.grad_clip_norm and inner_cfg.grad_clip_norm > 0.0:
-                torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], inner_cfg.grad_clip_norm, error_if_nonfinite=False)
+                torch.nn.utils.clip_grad_norm_(params, inner_cfg.grad_clip_norm, error_if_nonfinite=False)
             opt.step()
-            t5 = time.perf_counter()
-            loss_sum += float(loss.item())
-            # Best-effort flush for timing clarity
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
+            detached_loss = loss.detach()
+            loss_sum_t = detached_loss if loss_sum_t is None else loss_sum_t + detached_loss
 
         with torch.no_grad():
             delta = {}
@@ -59,7 +64,10 @@ class Reptile(MetaAlgorithm):
         # Restore original training mode
         if hasattr(model, "train") and not was_training:
             model.eval()
-        avg_loss = loss_sum / max(1, steps)
+        if loss_sum_t is not None:
+            avg_loss = float((loss_sum_t / max(1, steps)).detach().cpu().item())
+        else:
+            avg_loss = float("nan")
         return TaskResult(delta=delta, metrics={"inner_avg_loss": avg_loss})
 
     def outer_step(self, model, task_results: list[TaskResult]) -> None:

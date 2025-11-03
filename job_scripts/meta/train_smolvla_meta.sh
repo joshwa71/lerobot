@@ -161,7 +161,8 @@ lerobot-meta-train \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --save_freq=10000 \
-  --parallel.enable=on
+  --parallel.enable=on \
+  --parallel.max_concurrent=2
 
 
 # Final copy of outputs back to permanent storage

@@ -31,6 +31,6 @@ class MetaAlgorithm:
         return {n: p.detach().clone() for n, p in model.named_parameters() if p.requires_grad}
 
     def inner_optimizer(self, params: Iterable[nn.Parameter], cfg: InnerOptConfig) -> torch.optim.Optimizer:
-        return torch.optim.AdamW(params, lr=cfg.lr, weight_decay=cfg.weight_decay)
+        return torch.optim.AdamW(params, lr=cfg.lr, weight_decay=cfg.weight_decay, foreach=True)
 
 

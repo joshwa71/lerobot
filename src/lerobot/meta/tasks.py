@@ -100,7 +100,8 @@ def build_task_dataloader(
         shuffle=shuffle,
         pin_memory=True,
         drop_last=False,
-        prefetch_factor=2,
+        prefetch_factor=4,
+        persistent_workers=True,
     )
 
 
