@@ -105,6 +105,31 @@ def save_checkpoint(
         postprocessor.save_pretrained(pretrained_dir)
     save_training_state(checkpoint_dir, step, optimizer, scheduler)
 
+    # Save accumulated memory usage (if any) next to model.safetensors
+    try:
+        from lerobot.policies.modules.memory_lite import MLPPlusMemory
+
+        usage: dict[str, dict[str, int]] = {}
+        # Traverse modules to find memory wrappers and export their per-slot counts
+        for module_name, module in policy.named_modules():
+            mem_wrapper = getattr(module, "mlp", None)
+            if isinstance(mem_wrapper, MLPPlusMemory) and hasattr(mem_wrapper, "mem"):
+                mem = mem_wrapper.mem
+                counts = getattr(mem, "usage_counts", None)
+                if counts is None:
+                    continue
+                counts_list = counts.tolist()
+                # Only persist non-zero entries to keep file small
+                slot_counts = {f"value_slot_{i}": int(c) for i, c in enumerate(counts_list) if c > 0}
+                if slot_counts:
+                    usage[module_name] = slot_counts
+
+        if usage:
+            write_json({"per_module": usage}, pretrained_dir / "memory_usage.json")
+    except Exception:
+        # Never fail checkpointing due to optional usage logging
+        pass
+
 
 def save_training_state(
     checkpoint_dir: Path,
