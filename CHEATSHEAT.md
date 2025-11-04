@@ -120,7 +120,7 @@ lerobot-train \
 # Train SmolVLA sequentially
 
 python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/train/smolvla_libero_90_mem_pretrained/checkpoints/last/pretrained_model \
+  --policy.path=/home/josh/phddev/lerobot/outputs/train/smolvla_libero_90_mem_pretrained_2/checkpoints/last/pretrained_model \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
