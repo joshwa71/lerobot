@@ -71,6 +71,7 @@ class SmolVLAConfig(PreTrainedConfig):
     freeze_vision_encoder: bool = False
     train_expert_only: bool = False
     train_state_proj: bool = True
+    use_amp: bool = True
 
     # Training presets
     optimizer_lr: float = 1e-4

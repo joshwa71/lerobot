@@ -36,11 +36,12 @@ class Reptile(MetaAlgorithm):
             device = torch.device("cpu")
         device_type = "cuda" if str(device).startswith("cuda") else "cpu"
         use_amp = device_type == "cuda" and bool(getattr(getattr(model, "config", None), "use_amp", False))
+        dtype = torch.bfloat16 if use_amp and device_type == "cuda" else None
         loss_sum_t = None
         for inner_idx in range(1, steps + 1):
             batch = next(support_iter)
             batch = preprocessor(batch)
-            autocast_cm = torch.autocast(device_type=device_type) if use_amp else nullcontext()
+            autocast_cm = torch.autocast(device_type=device_type, dtype=dtype) if use_amp else nullcontext()
             with autocast_cm:
                 loss, _ = model.forward(batch)
             opt.zero_grad(set_to_none=True)

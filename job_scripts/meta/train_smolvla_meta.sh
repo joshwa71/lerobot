@@ -139,7 +139,7 @@ lerobot-meta-train \
   --policy.repo_id=outputs/train/reptile_smolvla_libero \
   --lora.enable=true \
   --lora.r=8 \
-  --num_workers=8 \
+  --num_workers=2 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
   --algo.type=reptile \
