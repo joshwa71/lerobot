@@ -19,6 +19,32 @@ echo "Job ID: $JOB_ID"
 
 # Setup cleanup trap
 function cleanup {
+    echo "Stopping periodic backup process..."
+    if [ ! -z "$BACKUP_PID" ]; then
+        kill $BACKUP_PID 2>/dev/null || true
+        wait $BACKUP_PID 2>/dev/null || true
+    fi
+    
+    # Save outputs on failure or completion
+    if [ -d "$OUTPUT_SCRATCH" ]; then
+        echo "Performing final backup of training outputs..."
+        mkdir -p "$FINAL_OUTPUT_DIR"
+        if command -v rsync &> /dev/null; then
+            rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/" || \
+                cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+        else
+            cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+        fi
+        echo "Final outputs saved to $FINAL_OUTPUT_DIR"
+    fi
+    
+    # Copy wandb logs back
+    if [ -d "$WANDB_DIR" ]; then
+        echo "Copying wandb logs..."
+        mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
+        cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+    fi
+    
     echo "Cleaning up scratch space..."
     rm -rf /scratch0/johara/$JOB_ID
     echo "Cleanup completed at $(date)"
@@ -76,6 +102,32 @@ export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_curric_5050"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_curric_5050"
+
+# Periodic backup function (every 6 hours)
+function periodic_backup {
+    local scratch_dir="$1"
+    local final_dir="$2"
+    while true; do
+        sleep 21600  # 6 hours in seconds
+        if [ -d "$scratch_dir" ]; then
+            echo "[$(date)] Performing periodic backup of training outputs..."
+            mkdir -p "$final_dir"
+            if command -v rsync &> /dev/null; then
+                rsync -av --delete "$scratch_dir/" "$final_dir/" 2>&1 | head -20
+            else
+                cp -r "$scratch_dir"/* "$final_dir/"
+            fi
+            echo "[$(date)] Periodic backup completed"
+        fi
+    done
+}
+
+# Start periodic backup in background
+echo "Starting periodic backup process (every 6 hours)..."
+periodic_backup "$OUTPUT_SCRATCH" "$FINAL_OUTPUT_DIR" &
+BACKUP_PID=$!
+echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot
@@ -111,21 +163,6 @@ accelerate launch \
   --curriculum.enabled=true \
   --curriculum.splits=[50,50] \
   --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
-
-
-# Copy outputs back to permanent storage
-echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_curric_5050"
-mkdir -p "$FINAL_OUTPUT_DIR"
-cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
-echo "Outputs copied to $FINAL_OUTPUT_DIR"
-
-# Copy wandb logs back
-if [ -d "$WANDB_DIR" ]; then
-    echo "Copying wandb logs..."
-    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
-    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
-fi
 
 echo "Job completed at $(date)"
 EOF
