@@ -1,4 +1,4 @@
-cat > train_pi05_libero_10_100k_slow_decay.sh << 'EOF'
+cat > train_pi05_libero_10_200k.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_pi05_libero_10_100k_slow_decay.sh << 'EOF'
 #$ -pe gpu 2
 #$ -R y
 #$ -l tscratch=200G
-#$ -N pi05_libero_10_100k_slow_decay_train
+#$ -N pi05_libero_10_200k
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -101,8 +101,8 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_pi05_100k_slow_decay"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_pi05_100k_slow_decay"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_pi05_200k"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_pi05_200k"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -143,10 +143,10 @@ accelerate launch \
   --policy.compile_model=false \
   --policy.gradient_checkpointing=true \
   --policy.pretrained_path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k_slow_decay \
+  --policy.repo_id=outputs/train/libero_10_pi05_200k \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
-  --steps=100000 \
+  --steps=200000 \
   --batch_size=16 \
   --num_workers=12 \
   --env.type=libero \
@@ -154,12 +154,30 @@ accelerate launch \
   --eval.batch_size=1 \
   --eval.n_episodes=5 \
   --eval_freq=5000 \
-  --save_freq=20000 \
+  --save_freq=40000 \
   --policy.push_to_hub=false \
-  --policy.scheduler_warmup_steps=1000 \
-  --policy.scheduler_decay_steps=90000 \
-  --job_name=libero_10_pi05_100k_slow_decay \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=180000 \
+  --job_name=libero_10_pi05_200k \
   --wandb.enable=true
+
+# Copy outputs back to permanent storage
+echo "Copying outputs back to permanent storage..."
+mkdir -p "$FINAL_OUTPUT_DIR"
+if command -v rsync &> /dev/null; then
+    rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/" || \
+        cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+else
+    cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+fi
+echo "Outputs copied to $FINAL_OUTPUT_DIR"
+
+# Copy wandb logs back
+if [ -d "$WANDB_DIR" ]; then
+    echo "Copying wandb logs..."
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+fi
 
 echo "Job completed at $(date)"
 EOF

@@ -161,5 +161,23 @@ accelerate launch \
   --job_name=mixed_libero_10_pi05_100k_5025 \
   --wandb.enable=true
 
+# Copy outputs back to permanent storage
+echo "Copying outputs back to permanent storage..."
+mkdir -p "$FINAL_OUTPUT_DIR"
+if command -v rsync &> /dev/null; then
+    rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/" || \
+        cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+else
+    cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+fi
+echo "Outputs copied to $FINAL_OUTPUT_DIR"
+
+# Copy wandb logs back
+if [ -d "$WANDB_DIR" ]; then
+    echo "Copying wandb logs..."
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+fi
+
 echo "Job completed at $(date)"
 EOF

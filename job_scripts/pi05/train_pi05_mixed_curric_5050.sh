@@ -164,5 +164,23 @@ accelerate launch \
   --curriculum.splits=[50,50] \
   --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}'
 
+# Copy outputs back to permanent storage
+echo "Copying outputs back to permanent storage..."
+mkdir -p "$FINAL_OUTPUT_DIR"
+if command -v rsync &> /dev/null; then
+    rsync -av "$OUTPUT_SCRATCH/" "$FINAL_OUTPUT_DIR/" || \
+        cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+else
+    cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+fi
+echo "Outputs copied to $FINAL_OUTPUT_DIR"
+
+# Copy wandb logs back
+if [ -d "$WANDB_DIR" ]; then
+    echo "Copying wandb logs..."
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+fi
+
 echo "Job completed at $(date)"
 EOF

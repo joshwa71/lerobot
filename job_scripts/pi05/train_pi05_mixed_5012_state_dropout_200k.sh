@@ -1,4 +1,4 @@
-cat > train_pi05_mixed_libero_10_100k_curric_5050_state_dropout.sh << 'EOF'
+cat > train_pi05_mixed_5012_libero_10_200k_state_dropout.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_pi05_mixed_libero_10_100k_curric_5050_state_dropout.sh << 'EOF'
 #$ -pe gpu 2
 #$ -R y
 #$ -l tscratch=200G
-#$ -N pi05_mixed_libero_10_100k_curric_5050_state_dropout_train
+#$ -N pi05_mixed_5012_libero_10_200k_state_dropout_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -81,8 +81,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10_quant"
-DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10_quant"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/mixed_libero_10_5012_quant"
+DATASET_SCRATCH="$SCRATCH_DIR/data/mixed_libero_10_5012_quant"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -101,8 +101,8 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_curric_5050_state_dropout"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_100k_curric_5050_state_dropout"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_200k_5012_state_dropout"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/mixed_libero_10_pi05_200k_5012_state_dropout"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -143,10 +143,10 @@ accelerate launch \
   --policy.compile_model=false \
   --policy.gradient_checkpointing=true \
   --policy.pretrained_path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/mixed_libero_10_pi05_100k_curric_5050_state_dropout \
+  --policy.repo_id=outputs/train/mixed_libero_10_pi05_200k_5012_state_dropout \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
-  --steps=100000 \
+  --steps=200000 \
   --batch_size=16 \
   --num_workers=12 \
   --env.type=libero \
@@ -154,15 +154,12 @@ accelerate launch \
   --eval.batch_size=1 \
   --eval.n_episodes=5 \
   --eval_freq=5000 \
-  --save_freq=20000 \
+  --save_freq=40000 \
   --policy.push_to_hub=false \
-  --policy.scheduler_warmup_steps=1000 \
-  --policy.scheduler_decay_steps=90000 \
-  --job_name=mixed_libero_10_pi05_100k_curric_5050_state_dropout \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=180000 \
+  --job_name=mixed_libero_10_pi05_200k_5012_state_dropout \
   --wandb.enable=true \
-  --curriculum.enabled=true \
-  --curriculum.splits=[50,50] \
-  --curriculum.tasks='{"1":[0,1,2,3,4,5,6,7,8,9,40,41,42,43,44,45,46,47,48,49],"2":[0,1,2,3,4,5,6,7,8,9]}' \
   --policy.state_dropout=true \
   --policy.state_dropout_prob=0.1
 
