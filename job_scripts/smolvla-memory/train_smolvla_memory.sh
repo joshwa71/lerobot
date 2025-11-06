@@ -17,13 +17,23 @@ set -eo pipefail
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $JOB_ID"
 
-# Setup cleanup trap
-function cleanup {
+# Setup finish trap: sync outputs then cleanup scratch
+function finish {
+    set +e
+    echo "Syncing outputs from scratch before cleanup..."
+    if [ -n "$OUTPUT_SCRATCH" ] && [ -d "$OUTPUT_SCRATCH" ]; then
+        mkdir -p "$FINAL_OUTPUT_DIR"
+        cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+    fi
+    if [ -n "$WANDB_DIR" ] && [ -d "$WANDB_DIR" ]; then
+        mkdir -p /SAN/vision/jo71_vla_wd/lerobot_memory/wandb
+        cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_memory/wandb/ || true
+    fi
     echo "Cleaning up scratch space..."
-    rm -rf /scratch0/johara/$JOB_ID
+    rm -rf "$SCRATCH_DIR"
     echo "Cleanup completed at $(date)"
 }
-trap cleanup EXIT ERR INT TERM
+trap finish EXIT ERR INT TERM
 
 # Create scratch directory
 SCRATCH_DIR="/scratch0/johara/$JOB_ID"
@@ -97,6 +107,8 @@ export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_90_smolvla_memory"
+# Final output target (used by trap for sync-back)
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_90_smolvla_memory"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
@@ -124,6 +136,7 @@ lerobot-train \
   --job_name=libero_90_smolvla_memory \
   --policy.push_to_hub=false \
   --wandb.enable=true \
+  --wandb.disable_artifact=true \
   --policy.memory_layers=true \
   --policy.memory_layer.layers="[11,13,15]" \
   --policy.memory_layer.log_usage=true \
@@ -135,20 +148,6 @@ lerobot-train \
   --policy.memory_layer.value_fixed_lr=0.001 \
   --policy.memory_layer.memory_lr=0.001
 
-
-# Copy outputs back to permanent storage
-echo "Copying outputs back to permanent storage..."
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_90_smolvla_memory"
-mkdir -p "$FINAL_OUTPUT_DIR"
-cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/"
-echo "Outputs copied to $FINAL_OUTPUT_DIR"
-
-# Copy wandb logs back
-if [ -d "$WANDB_DIR" ]; then
-    echo "Copying wandb logs..."
-    mkdir -p /SAN/vision/jo71_vla_wd/lerobot_memory/wandb
-    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_memory/wandb/ || true
-fi
 
 echo "Job completed at $(date)"
 EOF
