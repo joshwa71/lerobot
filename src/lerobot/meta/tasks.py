@@ -102,6 +102,7 @@ def build_task_dataloader(
         drop_last=False,
         persistent_workers=(num_workers > 0),
         prefetch_factor=1,
+        multiprocessing_context='spawn',
     )
 
 
