@@ -100,9 +100,9 @@ def build_task_dataloader(
         shuffle=shuffle,
         pin_memory=False,
         drop_last=False,
-        persistent_workers=(num_workers > 0),
-        prefetch_factor=1,
-        multiprocessing_context='spawn',
+        # persistent_workers=(num_workers > 0),
+        # prefetch_factor=1,
+        # multiprocessing_context='spawn',
     )
 
 
