@@ -3,7 +3,7 @@ cat > train_smolvla_meta_libero_10.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|a40|h100|rtx6000ada|a100|rtx6000|rtx8000|rtx4090)
+#$ -l gpu=true,gpu_type=(a100_80|a40|h100|a100|rtx8000)
 #$ -pe gpu 4
 #$ -R y
 #$ -l tscratch=200G
@@ -139,7 +139,7 @@ lerobot-meta-train \
   --policy.repo_id=outputs/train/reptile_smolvla_libero \
   --lora.enable=true \
   --lora.r=8 \
-  --num_workers=2 \
+  --num_workers=0 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
   --algo.type=reptile \
