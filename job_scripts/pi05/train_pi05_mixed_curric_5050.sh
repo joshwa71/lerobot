@@ -99,6 +99,11 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
+# Avoid DDP port collisions on shared nodes
+export MASTER_ADDR=127.0.0.1
+export MASTER_PORT=$((20000 + (JOB_ID % 30000)))
+echo "Using DDP master port: $MASTER_PORT"
+
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/mixed_libero_10_pi05_100k_curric_5050"
@@ -136,6 +141,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 accelerate launch \
   --multi_gpu \
   --num_processes=2 \
+  --main_process_port "$MASTER_PORT" \
   --mixed_precision=bf16 \
   $(which lerobot-train) \
   --policy.type=pi05 \
