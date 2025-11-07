@@ -3,7 +3,7 @@ cat > train_pi05_libero_10_200k.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|h100)
+#$ -l gpu=true,gpu_type=(h100)
 #$ -pe gpu 2
 #$ -R y
 #$ -l tscratch=200G
@@ -148,12 +148,12 @@ accelerate launch \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=200000 \
   --batch_size=16 \
-  --num_workers=12 \
+  --num_workers=8 \
   --env.type=libero \
   --env.task=libero_10 \
   --eval.batch_size=1 \
   --eval.n_episodes=5 \
-  --eval_freq=5000 \
+  --eval_freq=10000 \
   --save_freq=40000 \
   --policy.push_to_hub=false \
   --policy.scheduler_warmup_steps=10000 \
