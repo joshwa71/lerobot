@@ -39,8 +39,19 @@ trap finish EXIT ERR INT TERM
 SCRATCH_DIR="/scratch0/johara/$JOB_ID"
 mkdir -p "$SCRATCH_DIR"/{cache,data,outputs}
 
-echo "Created scratch directory: $SCRATCH_DIR"
 export MUJOCO_GL=egl
+unset DISPLAY
+
+# Force NVIDIA EGL (avoid conda/Mesa libEGL)
+if [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ]; then
+  export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+fi
+if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
+  export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
+fi
+
+
+echo "Created scratch directory: $SCRATCH_DIR"
 # Set cache directories to scratch space
 export TMPDIR="$SCRATCH_DIR/tmp"
 export HF_DATASETS_CACHE="$SCRATCH_DIR/cache/hf_datasets"
@@ -57,25 +68,25 @@ export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-memory
 
-## Test ##
-# Force correct backend and GPU mapping for EGL
-export MUJOCO_GL=egl
-unset DISPLAY
-FIRST_VISIBLE="$(echo "${CUDA_VISIBLE_DEVICES}" | cut -d',' -f1)"
-export EGL_DEVICE_ID="${FIRST_VISIBLE}"
-export MUJOCO_EGL_DEVICE_ID="${FIRST_VISIBLE}"
+# ## Test ##
+# # Force correct backend and GPU mapping for EGL
+# export MUJOCO_GL=egl
+# unset DISPLAY
+# FIRST_VISIBLE="$(echo "${CUDA_VISIBLE_DEVICES}" | cut -d',' -f1)"
+# export EGL_DEVICE_ID="${FIRST_VISIBLE}"
+# export MUJOCO_EGL_DEVICE_ID="${FIRST_VISIBLE}"
 
-# Prefer system NVIDIA EGL over any conda-provided Mesa EGL
-if [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ]; then
-  export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-fi
-# Stronger vendor pin (optional)
-if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
-  export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
-fi
+# # Prefer system NVIDIA EGL over any conda-provided Mesa EGL
+# if [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ]; then
+#   export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+# fi
+# # Stronger vendor pin (optional)
+# if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
+#   export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
+# fi
 
-echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
-echo "EGL_DEVICE_ID=${EGL_DEVICE_ID}  MUJOCO_GL=${MUJOCO_GL}"
+# echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+# echo "EGL_DEVICE_ID=${EGL_DEVICE_ID}  MUJOCO_GL=${MUJOCO_GL}"
 
 # export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
@@ -123,7 +134,7 @@ lerobot-train \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
   --steps=200000 \
-  --batch_size=64 \
+  --batch_size=32 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
