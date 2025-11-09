@@ -109,18 +109,36 @@ def save_checkpoint(
     try:
         from lerobot.policies.modules.memory_lite import MLPPlusMemory
 
-        usage: dict[str, dict[str, int]] = {}
+        usage = {}
         # Traverse modules to find memory wrappers and export their per-slot counts
         for module_name, module in policy.named_modules():
             mem_wrapper = getattr(module, "mlp", None)
             if isinstance(mem_wrapper, MLPPlusMemory) and hasattr(mem_wrapper, "mem"):
                 mem = mem_wrapper.mem
                 counts = getattr(mem, "usage_counts", None)
-                if counts is None:
+                batch_counts = getattr(mem, "usage_batch_counts", None)
+                # Skip modules with no usage recorded at all
+                if counts is None and batch_counts is None:
                     continue
-                counts_list = counts.tolist()
+                size = getattr(mem, "size", None)
+                # Fallback sizes if needed
+                if size is None:
+                    if counts is not None:
+                        size = len(counts)
+                    elif batch_counts is not None:
+                        size = len(batch_counts)
+                total_list = counts.tolist() if counts is not None else [0] * int(size)
+                batch_list = batch_counts.tolist() if batch_counts is not None else [0] * int(size)
                 # Only persist non-zero entries to keep file small
-                slot_counts = {f"value_slot_{i}": int(c) for i, c in enumerate(counts_list) if c > 0}
+                slot_counts = {}
+                for i in range(int(size)):
+                    total = int(total_list[i])
+                    batches = int(batch_list[i])
+                    if total > 0 or batches > 0:
+                        slot_counts[f"value_slot_{i}"] = {
+                            "total_accesses": total,
+                            "batch_accesses": batches,
+                        }
                 if slot_counts:
                     usage[module_name] = slot_counts
 

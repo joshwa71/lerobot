@@ -76,6 +76,8 @@ class HashingMemoryLite(nn.Module):
         # Accumulator for per-slot selection counts across training steps (CPU tensor).
         # Not registered as a buffer to avoid dtype/device casting in forward.
         self.usage_counts = None
+        # Accumulator for per-batch (binary) slot usage across training steps (CPU tensor).
+        self.usage_batch_counts = None
 
     def reset_parameters(self):
         bound = 1 / math.sqrt(self.k_dim)
@@ -140,6 +142,11 @@ class HashingMemoryLite(nn.Module):
                 batch_counts = torch.bincount(flat_idx, minlength=self.size)
                 # In-place accumulate
                 self.usage_counts[: batch_counts.shape[0]] += batch_counts
+                # Accumulate per-batch (binary) usage: increment by 1 if slot appears in this batch
+                if self.usage_batch_counts is None or self.usage_batch_counts.numel() != self.size:
+                    self.usage_batch_counts = torch.zeros(self.size, dtype=torch.long)
+                batch_present = (batch_counts > 0).to(torch.long)
+                self.usage_batch_counts[: batch_present.shape[0]] += batch_present
 
         # Weighted aggregation via embedding_bag
         # embedding_bag backward with per_sample_weights is not implemented for bf16 on CUDA.
