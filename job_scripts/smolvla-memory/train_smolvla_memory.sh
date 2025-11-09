@@ -122,8 +122,8 @@ lerobot-train \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
-  --steps=300000 \
-  --batch_size=32 \
+  --steps=200000 \
+  --batch_size=64 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
@@ -132,7 +132,7 @@ lerobot-train \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=250000 \
+  --policy.scheduler_decay_steps=150000 \
   --job_name=libero_90_smolvla_memory \
   --policy.push_to_hub=false \
   --wandb.enable=true \
