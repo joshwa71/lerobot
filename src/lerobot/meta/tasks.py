@@ -104,7 +104,7 @@ def build_task_dataloader(
         kwargs.update(
             {
                 "persistent_workers": True,
-                "prefetch_factor": 2,
+                "prefetch_factor": 1,
                 "multiprocessing_context": "spawn",
             }
         )

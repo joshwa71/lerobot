@@ -65,6 +65,15 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
+# Cap CPU threading to avoid oversubscription in DataLoader workers
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export OPENCV_NUM_THREADS=1
+# Allow more file descriptors for many worker pipes (best-effort)
+ulimit -n 4096 || true
+
 
 export HF_HOME="$SCRATCH_DIR/cache/hf_home"
 mkdir -p "$HF_HOME"
