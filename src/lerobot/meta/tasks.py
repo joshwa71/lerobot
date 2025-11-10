@@ -98,7 +98,7 @@ def build_task_dataloader(
         num_workers=num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
-        pin_memory=False,
+        pin_memory=True,
         drop_last=False,
         # persistent_workers=(num_workers > 0),
         # prefetch_factor=1,

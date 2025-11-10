@@ -34,6 +34,9 @@ class MetaEngine:
     cfg: MetaTrainConfig
 
     def setup(self):
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
         logging.info("Creating dataset")
         # Build a small shim to reuse datasets.factory.make_dataset
         class _DSCfg:

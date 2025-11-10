@@ -3,7 +3,7 @@ cat > train_smolvla_meta_libero_10.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|a40|h100|a100|rtx8000)
+#$ -l gpu=true,gpu_type=(a100_80|a40|h100|a100|rtx8000|l40s|rtx6000ada|rtx6000|rtx4090)
 #$ -pe gpu 4
 #$ -R y
 #$ -l tscratch=200G
@@ -132,7 +132,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_meta
 # Run training
 lerobot-meta-train \
   --steps=100000 \
-  --batch_size=32 \
+  --batch_size=64 \
   --log_freq=100 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
@@ -142,6 +142,7 @@ lerobot-meta-train \
   --num_workers=0 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
+  --lora.target_modules_regex='["mlp\\.(up_proj|down_proj|gate_proj)$"]' \
   --algo.type=reptile \
   --algo.meta_step_size=0.1 \
   --inner_steps=5 \
