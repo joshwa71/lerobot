@@ -93,17 +93,22 @@ def build_task_dataloader(
         random.shuffle(indices)
 
     subset = torch.utils.data.Subset(ds, indices)
-    return torch.utils.data.DataLoader(
-        subset,
-        num_workers=num_workers,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        pin_memory=True,
-        drop_last=False,
-        # persistent_workers=(num_workers > 0),
-        # prefetch_factor=1,
-        # multiprocessing_context='spawn',
-    )
+    kwargs = {
+        "num_workers": num_workers,
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "pin_memory": True,
+        "drop_last": False,
+    }
+    if num_workers > 0:
+        kwargs.update(
+            {
+                "persistent_workers": True,
+                "prefetch_factor": 2,
+                "multiprocessing_context": "spawn",
+            }
+        )
+    return torch.utils.data.DataLoader(subset, **kwargs)
 
 
 def cycle(loader: torch.utils.data.DataLoader) -> Iterator:
