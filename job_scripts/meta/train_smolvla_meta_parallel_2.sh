@@ -139,7 +139,8 @@ lerobot-meta-train \
   --policy.repo_id=outputs/train/reptile_smolvla_libero_parallel_2 \
   --lora.enable=true \
   --lora.r=8 \
-  --num_workers=2 \
+  --num_workers=1 \
+  --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
   --lora.target_modules_regex='["mlp\\.(up_proj|down_proj|gate_proj)$"]' \
@@ -164,7 +165,7 @@ lerobot-meta-train \
   --wandb.enable=true \
   --save_freq=5000 \
   --parallel.enable=on \
-  --parallel.max_concurrent=4
+  --parallel.max_concurrent=2
 
 
 # Final copy of outputs back to permanent storage

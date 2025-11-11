@@ -140,6 +140,7 @@ lerobot-meta-train \
   --lora.enable=true \
   --lora.r=8 \
   --num_workers=4 \
+  --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
   --lora.target_modules_regex='["mlp\\.(up_proj|down_proj|gate_proj)$"]' \
