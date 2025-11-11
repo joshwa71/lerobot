@@ -24,6 +24,8 @@ from typing import Any
 
 import torch
 import torch.optim as optim
+import math
+import os
 from accelerate import Accelerator
 from termcolor import colored
 from torch.optim import Optimizer
@@ -84,6 +86,13 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Learning rate for memory value parameters (pk_value_param). Overrides any preset.
     memory_value_lr: float = 1e-3
 
+    # TF-IDF gating to sparsify memory value updates
+    tfidf_enable: bool = True
+    # Number of memory value slots per module allowed to receive gradients each step
+    tfidf_top_t: int = 128
+    # Optional path to pretraining memory usage stats JSON (memory_usage.json)
+    idf_stats_path: str | None = None
+
 
 def _default_libero10_map() -> dict[int, int]:
     return {0: 4, 1: 6, 2: 9, 3: 2, 4: 7, 5: 0, 6: 8, 7: 1, 8: 3, 9: 5}
@@ -112,7 +121,7 @@ def _build_dataloader_for_task(
         dataset,
         num_workers=num_workers,
         batch_size=batch_size,
-        shuffle=False,  # sampler handles shuffling
+        shuffle=False,
         sampler=sampler,
         pin_memory=device_type == "cuda",
         drop_last=False,
@@ -140,6 +149,222 @@ def _collect_task_index_to_name(dataset) -> dict[int, str]:
 def _subset_envs(envs_all: dict[str, dict[int, Any]], suite_name: str, env_task_ids: list[int]) -> dict[str, dict[int, Any]]:
     suite_envs = envs_all.get(suite_name, {})
     return {suite_name: {tid: suite_envs[tid] for tid in env_task_ids if tid in suite_envs}}
+
+
+def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
+    """
+    Yield tuples of (layer_index, mem_module, values_param, json_key) for all attached memory layers.
+    json_key is aligned with the keys used in memory_usage.json ("model.vlm_with_expert.lm_expert.layers.{i}").
+    """
+    mems = []
+    try:
+        model = unwrapped_policy.model  # VLAFlowMatching
+        expert = model.vlm_with_expert.lm_expert
+        for li, layer in enumerate(expert.layers):
+            mlp = getattr(layer, "mlp", None)
+            # Lazy import to avoid circulars; type check by attribute presence
+            mem = getattr(getattr(mlp, "mem", None), "values", None)
+            if mem is not None and hasattr(mlp, "mem"):
+                mem_module = mlp.mem
+                values_param = mlp.mem.values
+                json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
+                mems.append((li, mem_module, values_param, json_key))
+    except Exception:
+        pass
+    return mems
+
+
+def _enable_memory_batch_logging(unwrapped_policy: PreTrainedPolicy, enable: bool = True):
+    """
+    Ensure per-batch slot indices are recorded during training by toggling mem.log_usage.
+    """
+    for _, mem_module, _, _ in _iter_memory_modules(unwrapped_policy):
+        try:
+            mem_module.log_usage = bool(enable)
+        except Exception:
+            pass
+
+
+def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPolicy):
+    """
+    Build per-module IDF vectors from a memory_usage.json file produced during pretraining.
+    Returns dict: json_key -> torch.FloatTensor[idf_per_slot] on CPU.
+    If a module is missing in the JSON, it is omitted (callers should fallback to uniform IDF).
+    """
+    idf_by_module: dict[str, torch.Tensor] = {}
+    try:
+        with open(stats_path, "r") as f:
+            data = json.load(f)
+        per_module = data.get("per_module", {})
+    except Exception:
+        return idf_by_module
+
+    # Determine which modules we actually have, to avoid building unnecessary tensors
+    present = {json_key: (mem.values.shape[0] if hasattr(mem, "values") else mem.size) for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy)}
+
+    for json_key, num_slots in present.items():
+        module_dict = per_module.get(json_key)
+        if not isinstance(module_dict, dict):
+            continue
+        # Build DF vector and infer |B| as max(batch_accesses)
+        df = torch.zeros(num_slots, dtype=torch.float32)
+        max_batches = 0.0
+        for slot_idx in range(num_slots):
+            slot_key = f"value_slot_{slot_idx}"
+            slot_info = module_dict.get(slot_key)
+            if isinstance(slot_info, dict):
+                bacc = int(slot_info.get("batch_accesses", 0))
+                df[slot_idx] = float(bacc)
+                if bacc > max_batches:
+                    max_batches = float(bacc)
+        # Guard against degenerate |B|
+        if max_batches <= 0:
+            continue
+        # IDF = log((|B| + 1)/(DF + 1))
+        idf = torch.log((torch.tensor(max_batches + 1.0) / (df + 1.0)))
+        idf_by_module[json_key] = idf
+    return idf_by_module
+
+
+def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], top_t: int) -> dict[torch.nn.Parameter, torch.Tensor]:
+    """
+    For each memory module, compute TF-IDF over slots accessed in the current batch and
+    return a dict mapping values_param -> 1D LongTensor of allowed slot indices (top-t).
+    If idf is missing for a module, IDF defaults to 1 (i.e., TF only).
+    """
+    allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
+    for _, mem_module, values_param, json_key in _iter_memory_modules(unwrapped_policy):
+        # last_indices exists only when mem.log_usage == True
+        if not hasattr(mem_module, "last_indices") or mem_module.last_indices is None:
+            # Fallback: allow all accessed slots if we can reconstruct from usage_counts delta; otherwise skip
+            continue
+        try:
+            idx = mem_module.last_indices  # (B, heads, knn) on device
+            idx_flat = idx.reshape(-1).to(torch.long)
+            num_slots = mem_module.size
+            # c(i): per-batch counts (TF numerator)
+            counts = torch.bincount(idx_flat, minlength=num_slots).to(torch.float32)
+            total_count = counts.sum()
+            if total_count <= 0:
+                continue
+            tf = counts / total_count
+            idf = idf_by_module.get(json_key)
+            if idf is None or idf.numel() != num_slots:
+                # uniform IDF
+                idf = torch.ones(num_slots, dtype=torch.float32, device=tf.device)
+            else:
+                idf = idf.to(device=tf.device, dtype=torch.float32)
+            tfidf = tf * idf
+            # Consider only slots with c(i) > 0
+            used_mask = counts > 0
+            if used_mask.any():
+                tfidf_used = tfidf[used_mask]
+                used_indices = used_mask.nonzero(as_tuple=False).view(-1)
+                k = int(min(top_t, tfidf_used.numel()))
+                if k <= 0:
+                    continue
+                vals, top_pos = torch.topk(tfidf_used, k=k, largest=True, sorted=False)
+                top_indices = used_indices[top_pos]
+                allowed_by_param[values_param] = top_indices.detach()
+        except Exception:
+            # Be robust: skip module on any failure
+            continue
+    return allowed_by_param
+
+
+def _apply_gradient_mask_to_memory_values(allowed_by_param: dict[torch.nn.Parameter, torch.Tensor]):
+    """
+    Zero Out gradients for all rows not in the allowed index set for each memory values parameter.
+    Should be called after backward, before gradient clipping and optimizer.step().
+    """
+    for p, allowed_rows in allowed_by_param.items():
+        if p.grad is None:
+            continue
+        try:
+            # p.grad: (num_slots, v_dim)
+            num_slots = p.shape[0]
+            device = p.grad.device
+            mask = torch.zeros(num_slots, dtype=torch.bool, device=device)
+            mask[allowed_rows.to(device=device)] = True
+            # Zero out all rows not allowed
+            p.grad[~mask] = 0
+        except Exception:
+            # If anything goes wrong, don't crash training
+            continue
+
+
+def _update_policy_with_tfidf(
+    train_metrics: MetricsTracker,
+    policy: PreTrainedPolicy,
+    batch: Any,
+    optimizer: Optimizer,
+    grad_clip_norm: float,
+    accelerator: Accelerator,
+    idf_by_module: dict[str, torch.Tensor] | None,
+    top_t: int,
+    lr_scheduler=None,
+    lock=None,
+):
+    """
+    Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
+    """
+    start_time = torch.cuda.Event(enable_timing=True) if torch.cuda.is_available() else None
+    if start_time is None:
+        import time as _time
+        _st_wall = _time.perf_counter()
+    else:
+        start_time.record()
+
+    policy.train()
+    with accelerator.autocast():
+        loss, output_dict = policy.forward(batch)
+
+    accelerator.backward(loss)
+
+    # Compute and apply TF-IDF gradient masks before clipping and step
+    try:
+        unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        if idf_by_module is not None and top_t > 0:
+            allowed = _compute_tfidf_top_indices_for_batch(unwrapped, idf_by_module, top_t)
+            if allowed:
+                _apply_gradient_mask_to_memory_values(allowed)
+    except Exception:
+        # Be conservative: if masking fails, continue without masking
+        pass
+
+    if grad_clip_norm > 0:
+        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
+    else:
+        grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), float("inf"), error_if_nonfinite=False)
+
+    from contextlib import nullcontext
+    with (lock if lock is not None else nullcontext()):
+        optimizer.step()
+    optimizer.zero_grad()
+
+    if lr_scheduler is not None:
+        lr_scheduler.step()
+
+    # No special update hook beyond policy.update
+    unwrapped_for_update = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+    if hasattr(unwrapped_for_update, "update") and callable(getattr(unwrapped_for_update, "update")):
+        unwrapped_for_update.update()
+
+    # Timing
+    if start_time is None:
+        import time as _time
+        update_s = _time.perf_counter() - _st_wall
+    else:
+        end_time = torch.cuda.Event(enable_timing=True)
+        end_time.record()
+        torch.cuda.synchronize()
+        update_s = start_time.elapsed_time(end_time) / 1000.0
+
+    train_metrics.loss = loss.item()
+    train_metrics.grad_norm = grad_norm.item()
+    train_metrics.lr = optimizer.param_groups[0]["lr"]
+    train_metrics.update_s = update_s
+    return train_metrics, output_dict
 
 
 @parser.wrap()
@@ -222,6 +447,45 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     num_total = sum(p.numel() for p in policy.parameters())
     if is_main:
         logging.info(f"Trainable params (memory values only) = {num_trainable} / {num_total}")
+
+    # Enable per-batch memory usage logging to allow TF computation
+    try:
+        _enable_memory_batch_logging(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), enable=True)
+    except Exception:
+        pass
+
+    # Load IDF stats for TF-IDF gating (optional)
+    idf_by_module = None
+    if cfg.tfidf_enable:
+        # Resolve stats path
+        candidate_paths: list[Path] = []
+        if cfg.idf_stats_path:
+            candidate_paths.append(Path(cfg.idf_stats_path))
+        # Try deriving from pretrained_path
+        try:
+            if cfg.policy.pretrained_path:
+                pp = Path(cfg.policy.pretrained_path)
+                candidate_paths.append(pp / "memory_usage.json")
+                candidate_paths.append(pp / "pretrained_model" / "memory_usage.json")
+        except Exception:
+            pass
+        chosen = None
+        for pth in candidate_paths:
+            if pth is not None and pth.exists():
+                chosen = pth
+                break
+        if chosen is not None:
+            try:
+                idf_by_module = _load_idf_from_usage_json(chosen, accelerator.unwrap_model(policy, keep_fp32_wrapper=True))
+                if is_main:
+                    logging.info(f"Loaded IDF stats from: {chosen}")
+            except Exception as e:
+                idf_by_module = None
+                if is_main:
+                    logging.warning(f"Failed to load IDF stats from {chosen}: {e}")
+        else:
+            if is_main:
+                logging.warning("TF-IDF enabled but no memory_usage.json found; proceeding without IDF (TF only) or masking disabled if unavailable.")
 
     # Build optimizer/scheduler once, optionally reinit per task
     # Make the scheduler horizon equal to total steps across all tasks if we don't reinit per task.
@@ -341,15 +605,28 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         for _ in range(cfg.online_steps_per_task):
             batch = next(dl_iter)
             batch = preprocessor(batch)
-            train_tracker, output_dict = update_policy(
-                train_tracker,
-                policy,
-                batch,
-                optimizer,
-                cfg.optimizer.grad_clip_norm,
-                accelerator=accelerator,
-                lr_scheduler=lr_scheduler,
-            )
+            if cfg.tfidf_enable:
+                train_tracker, output_dict = _update_policy_with_tfidf(
+                    train_metrics=train_tracker,
+                    policy=policy,
+                    batch=batch,
+                    optimizer=optimizer,
+                    grad_clip_norm=cfg.optimizer.grad_clip_norm,
+                    accelerator=accelerator,
+                    idf_by_module=idf_by_module,
+                    top_t=cfg.tfidf_top_t,
+                    lr_scheduler=lr_scheduler,
+                )
+            else:
+                train_tracker, output_dict = update_policy(
+                    train_tracker,
+                    policy,
+                    batch,
+                    optimizer,
+                    cfg.optimizer.grad_clip_norm,
+                    accelerator=accelerator,
+                    lr_scheduler=lr_scheduler,
+                )
 
             global_step += 1
             train_tracker.step()

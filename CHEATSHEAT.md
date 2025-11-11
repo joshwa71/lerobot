@@ -120,24 +120,28 @@ lerobot-train \
 # Train SmolVLA sequentially
 
 python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/train/smolvla_libero_90_mem_pretrained_2/checkpoints/last/pretrained_model \
+  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/libero_90_smolvla_memory/checkpoints/last/pretrained_model/ \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf \
   --steps=200000 \
-  --batch_size=32 \
+  --batch_size=64 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=20 \
   --log_freq=200 \
   --wandb.enable=true \
-  --job_name=smolvla_libero_10_mem_online \
+  --job_name=smolvla_libero_10_mem_online_tfidf \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
-  --online_steps_per_task=20000 \
+  --online_steps_per_task=15000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
-  --reinit_optimizer_each_task=false
+  --reinit_optimizer_each_task=true \
+  --tfidf_enable=true \
+  --tfidf_top_t=256 \
+  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/libero_90_smolvla_memory/checkpoints/last/pretrained_model/memory_usage.json \
+  --memory_value_lr=0.001
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
