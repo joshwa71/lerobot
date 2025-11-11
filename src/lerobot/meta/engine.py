@@ -186,6 +186,7 @@ class MetaEngine:
                 batch_size=batch_size,
                 shuffle=shuffle,
                 num_workers=self.cfg.num_workers,
+                prefetch_factor=self.cfg.prefetch_factor,
             )
             iters[t] = cycle(loader)
         return iters

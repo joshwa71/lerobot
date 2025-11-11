@@ -1,4 +1,4 @@
-cat > train_smolvla_meta_libero_10.sh << 'EOF'
+cat > train_smolvla_meta_libero_10_2.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_meta_libero_10.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_meta_libero_10_train
+#$ -N smolvla_meta_libero_10_train_2
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
@@ -98,8 +98,8 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_smolvla_libero"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero_2"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_smolvla_libero_2"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -136,7 +136,7 @@ lerobot-meta-train \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
-  --policy.repo_id=outputs/train/reptile_smolvla_libero \
+  --policy.repo_id=outputs/train/reptile_smolvla_libero_2 \
   --lora.enable=true \
   --lora.r=8 \
   --num_workers=4 \
@@ -159,7 +159,7 @@ lerobot-meta-train \
   --eval.n_episodes=5 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
-  --job_name=reptile_smolvla_libero \
+  --job_name=reptile_smolvla_libero_2 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --save_freq=5000

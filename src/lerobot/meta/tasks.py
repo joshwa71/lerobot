@@ -47,6 +47,7 @@ def build_task_dataloader(
     batch_size: int,
     shuffle: bool,
     num_workers: int,
+    prefetch_factor: int | None = None,
 ) -> torch.utils.data.DataLoader:
     # Efficiently choose up to frames_per_task indices across episodes of this task
     episode_indices_to_use = get_episode_indices_for_task(ds, task_index)
@@ -93,17 +94,17 @@ def build_task_dataloader(
         random.shuffle(indices)
 
     subset = torch.utils.data.Subset(ds, indices)
-    return torch.utils.data.DataLoader(
-        subset,
+    dl_kwargs = dict(
         num_workers=num_workers,
         batch_size=batch_size,
         shuffle=shuffle,
         pin_memory=True,
         drop_last=False,
-        # persistent_workers=(num_workers > 0),
-        # prefetch_factor=1,
-        # multiprocessing_context='spawn',
+        persistent_workers=(num_workers > 0),
     )
+    if num_workers > 0 and prefetch_factor is not None:
+        dl_kwargs["prefetch_factor"] = int(prefetch_factor)
+    return torch.utils.data.DataLoader(subset, **dl_kwargs)
 
 
 def cycle(loader: torch.utils.data.DataLoader) -> Iterator:

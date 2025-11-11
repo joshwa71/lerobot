@@ -62,6 +62,7 @@ class MetaTrainConfig:
     log_freq: int = 1000
     save_freq: int = 10_000
     num_workers: int = 8
+    prefetch_factor: int | None = None
     verbose_log: bool = False
 
     # Tasking
