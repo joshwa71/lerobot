@@ -29,20 +29,6 @@ from lerobot.utils.train_utils import get_step_checkpoint_dir, save_checkpoint, 
 from lerobot.rl.wandb_utils import WandBLogger
 
 
-class PrefetchedIter:
-    def __init__(self, loader: torch.utils.data.DataLoader):
-        # Keep a strong reference to the loader so worker processes persist
-        self.loader = loader
-        # Creating the iterator eagerly starts worker processes and prefetching
-        self._it = iter(loader)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return next(self._it)
-
-
 @dataclass
 class MetaEngine:
     cfg: MetaTrainConfig
@@ -177,19 +163,6 @@ class MetaEngine:
             self.train_tasks = self.cfg.train_tasks
             self.eval_tasks = self.cfg.eval_tasks
         logging.info("Task split -> train=%s eval=%s", len(self.train_tasks), len(self.eval_tasks))
-        # Prefetch pool to build next wave of DataLoaders while current wave adapts
-        self._prefetch_pool = ThreadPoolExecutor(max_workers=max(1, self.cfg.tasks_per_outer_step))
-
-    def _build_prefetched(self, task_id: int, frames_per_task: int, batch_size: int, shuffle: bool) -> PrefetchedIter:
-        loader = build_task_dataloader(
-            self.dataset,
-            task_index=task_id,
-            frames_per_task=frames_per_task,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            num_workers=self.cfg.num_workers,
-        )
-        return PrefetchedIter(loader)
 
     def build_task_iters(self, tasks: list[int], frames_per_task: int, batch_size: int, shuffle: bool) -> dict[int, Iterator]:
         iters = {}
@@ -302,14 +275,8 @@ class MetaEngine:
         policy = self.policy
         preproc = self.preproc
 
-        # One-step lookahead prefetch of task DataLoaders to hide spawn/warmup time
-        frames = self.cfg.support_frames_per_task
-        tasks = random.sample(self.train_tasks, k=min(self.cfg.tasks_per_outer_step, len(self.train_tasks)))
-        support_iters = {}
-        for t in tasks:
-            support_iters[t] = self._build_prefetched(t, frames, batch_size, True)
-        next_tasks = random.sample(self.train_tasks, k=min(self.cfg.tasks_per_outer_step, len(self.train_tasks)))
-        next_futs = {t: self._prefetch_pool.submit(self._build_prefetched, t, frames, batch_size, True) for t in next_tasks}
+        support_iters = self.build_task_iters(self.train_tasks, self.cfg.support_frames_per_task, batch_size, True)
+        # Defer query loader creation to when needed (FOMAML) to avoid memory pressure
 
         meters = {
             "meta_update_s": AverageMeter("updt_s", ":.3f"),
@@ -317,6 +284,8 @@ class MetaEngine:
         tracker = MetricsTracker(batch_size, self.dataset.num_frames, self.dataset.num_episodes, meters, initial_step=0)
 
         for step in range(1, total_outer_steps + 1):
+            # sample tasks
+            tasks = random.sample(self.train_tasks, k=min(self.cfg.tasks_per_outer_step, len(self.train_tasks)))
             if self.cfg.verbose_log and (step <= 3 or step % max(1, self.cfg.log_freq) == 0):
                 logging.info("Outer step %s: sampled tasks=%s", step, tasks)
             task_results = []
@@ -393,17 +362,6 @@ class MetaEngine:
                 self._run_meta_eval(step, total_outer_steps)
 
             tracker.step()
-            
-            # Prepare next outer step: use prefetched loaders, and prefetch the following wave
-            tasks = next_tasks
-            support_iters = {}
-            for t in tasks:
-                if t in next_futs:
-                    support_iters[t] = next_futs[t].result()
-                else:
-                    support_iters[t] = self._build_prefetched(t, frames, batch_size, True)
-            next_tasks = random.sample(self.train_tasks, k=min(self.cfg.tasks_per_outer_step, len(self.train_tasks)))
-            next_futs = {t: self._prefetch_pool.submit(self._build_prefetched, t, frames, batch_size, True) for t in next_tasks}
 
     def _run_meta_eval(self, step: int, total_outer_steps: int):
         from lerobot.scripts.lerobot_eval import eval_policy_all  # Lazy import to avoid gym deps when eval disabled
