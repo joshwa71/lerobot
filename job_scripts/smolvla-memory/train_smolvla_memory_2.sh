@@ -1,13 +1,13 @@
-cat > train_smolvla_sequential.sh << 'EOF'
+cat > train_smolvla_memory_expert_vlm.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(rtx8000|a100|a100_80|h100|rtx6000ada|rtx6000)
+#$ -l gpu=true,gpu_type=(a100|a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train
+#$ -N smolvla_memory_train_expert_vlm
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -50,6 +50,7 @@ if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
   export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
 fi
 
+
 echo "Created scratch directory: $SCRATCH_DIR"
 # Set cache directories to scratch space
 export TMPDIR="$SCRATCH_DIR/tmp"
@@ -67,6 +68,27 @@ export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-memory
 
+# ## Test ##
+# # Force correct backend and GPU mapping for EGL
+# export MUJOCO_GL=egl
+# unset DISPLAY
+# FIRST_VISIBLE="$(echo "${CUDA_VISIBLE_DEVICES}" | cut -d',' -f1)"
+# export EGL_DEVICE_ID="${FIRST_VISIBLE}"
+# export MUJOCO_EGL_DEVICE_ID="${FIRST_VISIBLE}"
+
+# # Prefer system NVIDIA EGL over any conda-provided Mesa EGL
+# if [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ]; then
+#   export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+# fi
+# # Stronger vendor pin (optional)
+# if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
+#   export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
+# fi
+
+# echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+# echo "EGL_DEVICE_ID=${EGL_DEVICE_ID}  MUJOCO_GL=${MUJOCO_GL}"
+
+# export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
 # Verify environment
 echo "Python: $(which python)"
@@ -75,15 +97,15 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_90"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero_90"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_90_smolvla"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_90_smolvla"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/smolvla_base"
+MODEL_SCRATCH="$SCRATCH_DIR/smolvla_base"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -95,37 +117,48 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_sequential"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_memory_expert_vlm"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_10_smolvla_sequential"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
 
 # Run training
-python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path="$MODEL_SCRATCH/checkpoints/last/pretrained_model" \
+lerobot-train \
+  --policy.path="$MODEL_SCRATCH" \
+  --policy.repo_id=outputs/train/smolvla_libero_90_memory_expert_vlm \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
-  --env.task=libero_10 \
+  --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
+  --save_freq=10000 \
   --steps=200000 \
-  --batch_size=64 \
-  --num_workers=2 \
+  --batch_size=32 \
+  --num_workers=12 \
   --eval.batch_size=1 \
-  --eval.n_episodes=20 \
-  --log_freq=200 \
+  --eval.n_episodes=3 \
+  --eval_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=150000 \
+  --job_name=smolvla_libero_90_memory_expert_vlm \
+  --policy.push_to_hub=false \
   --wandb.enable=true \
-  --job_name=libero_10_smolvla_sequential \
-  --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
-  --online_steps_per_task=20000 \
-  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
-  --save_after_each_task=true \
-  --reinit_optimizer_each_task=true \
-  --tfidf_enable=true \
-  --tfidf_top_t=256 \
-  --idf_stats_path=$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.001
+  --wandb.disable_artifact=true \
+  --policy.memory_layers=true \
+  --policy.memory_layer.layers="[10]" \
+  --policy.memory_layer.vlm_layers="[10]" \
+  --policy.memory_layer.log_usage=true \
+  --policy.memory_layer.enabled=true \
+  --policy.memory_layer.mem_n_keys=512 \
+  --policy.memory_layer.mem_heads=4 \
+  --policy.memory_layer.mem_knn=16 \
+  --policy.memory_layer.mem_k_dim=512 \
+  --policy.memory_layer.value_fixed_lr=0.001 \
+  --policy.memory_layer.memory_lr=0.001
 
 
 echo "Job completed at $(date)"

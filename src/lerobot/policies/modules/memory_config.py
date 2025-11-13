@@ -14,9 +14,13 @@ class MemoryLayerConfig:
     # Whether to enable memory layers for the policy
     enabled: bool = False
 
-    # Which expert layers to attach the memory to (indices in expert depth)
-    # If empty, the last two expert layers are selected by default at runtime
+    # Which expert layers to attach the memory to (indices in expert depth).
+    # If empty, the last two expert layers are selected by default at runtime.
     layers: List[int] = field(default_factory=list)
+
+    # Optionally, attach memory to VLM text backbone layers (indices in VLM text depth).
+    # If empty, no VLM layers are wrapped.
+    vlm_layers: List[int] = field(default_factory=list)
 
     # Memory architecture parameters (kept simple for single-GPU)
     mem_n_keys: int = 128
@@ -36,5 +40,9 @@ class MemoryLayerConfig:
     # Metrics: when true, record per-batch selected slot indices to enable
     # diversity/coverage logging during training (logged via policy.forward).
     log_usage: bool = False
+
+    # Integration mode: when True, output is memory-only (layer_out = mem(x)).
+    # Default False keeps residual addition (layer_out = mlp(x) + mem(x)).
+    memory_only: bool = False
 
 

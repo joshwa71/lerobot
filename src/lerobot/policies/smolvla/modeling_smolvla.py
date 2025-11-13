@@ -68,7 +68,7 @@ from lerobot.policies.utils import (
 )
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
 from lerobot.utils.utils import get_safe_dtype
-from lerobot.policies.modules.memory_lite import attach_memory_to_expert, split_memory_params, MLPPlusMemory
+from lerobot.policies.modules.memory_lite import attach_memory_to_backbones, split_memory_params, MLPPlusMemory
 from huggingface_hub import hf_hub_download
 from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
 from huggingface_hub.errors import HfHubHTTPError
@@ -246,7 +246,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
             getattr(self.config, "memory_layers", False)
             or getattr(self.config.memory_layer, "enabled", False)
         ) and not getattr(self.config, "pretrained_path", None):
-            attach_memory_to_expert(self.model.vlm_with_expert, self.config.memory_layer)
+            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
         self.reset()
 
     def post_load_setup(self) -> None:
@@ -256,7 +256,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         after loading base weights so parameter names align with the checkpoint.
         """
         if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
-            attach_memory_to_expert(self.model.vlm_with_expert, self.config.memory_layer)
+            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
 
     def reset(self):
         """This should be called whenever the environment is reset."""
@@ -364,7 +364,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Optionally attach memory wrappers before loading to align state dict keys
         if attach_before_load:
             try:
-                attach_memory_to_expert(instance.model.vlm_with_expert, config.memory_layer)
+                attach_memory_to_backbones(instance.model.vlm_with_expert, config.memory_layer)
             except Exception:
                 pass
 
@@ -529,6 +529,48 @@ class SmolVLAPolicy(PreTrainedPolicy):
                                     eff_nums.append(eff_num)
                             except Exception:
                                 pass
+                # VLM backbone memory usage (if any)
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            mem = layer.mlp.mem
+                            if hasattr(mem, "last_indices") and mem.last_indices is not None:
+                                try:
+                                    idx = mem.last_indices
+                                    unique_count = torch.unique(idx).numel()
+                                    frac = float(unique_count) / float(mem.size)
+                                    loss_dict[f"vlm_mem_used_count_L{li}"] = float(unique_count)
+                                    loss_dict[f"vlm_mem_used_frac_L{li}"] = float(frac)
+                                    used_fracs.append(frac)
+
+                                    eps = 1e-12
+                                    idx_flat = idx.reshape(-1)
+                                    if hasattr(mem, "last_weights") and mem.last_weights is not None:
+                                        w_flat = mem.last_weights.reshape(-1).float()
+                                    else:
+                                        w_flat = torch.ones_like(idx_flat, dtype=torch.float32)
+                                    uniq, inv = torch.unique(idx_flat, return_inverse=True)
+                                    usage = torch.zeros(uniq.shape[0], dtype=torch.float32, device=idx_flat.device)
+                                    usage.scatter_add_(0, inv, w_flat)
+                                    total = usage.sum()
+                                    if total > 0:
+                                        p = usage / total
+                                        H = -(p * (p + eps).log()).sum()
+                                        perplexity = float(torch.exp(H).item())
+                                        loss_dict[f"vlm_mem_usage_perplexity_L{li}"] = perplexity
+                                        perplexities.append(perplexity)
+                                        top1 = float(p.max().item())
+                                        loss_dict[f"vlm_mem_usage_top1_share_L{li}"] = top1
+                                        top1_shares.append(top1)
+                                        hhi = float((p * p).sum().item())
+                                        eff_num = float(1.0 / max(hhi, eps))
+                                        loss_dict[f"vlm_mem_usage_effnum_L{li}"] = eff_num
+                                        eff_nums.append(eff_num)
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
                 if used_fracs:
                     loss_dict["mem_used_frac_mean"] = float(sum(used_fracs) / max(1, len(used_fracs)))
                 if perplexities:

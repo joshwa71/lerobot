@@ -199,9 +199,13 @@ class MLPPlusMemory(nn.Module):
         super().__init__()
         self.mlp = base_mlp
         self.mem = HashingMemoryLite(dim, dim, cfg)
+        self.memory_only = getattr(cfg, "memory_only", False)
 
     def forward(self, x: torch.Tensor):
-        return self.mlp(x) + self.mem(x)
+        mem_out = self.mem(x)
+        if self.memory_only:
+            return mem_out
+        return self.mlp(x) + mem_out
 
 
 def _resolve_target_layers(num_expert_layers: int, layers: List[int] | str) -> List[int]:
@@ -256,7 +260,7 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     num_layers = smolvla_model.num_expert_layers
     target_layers = _resolve_target_layers(num_layers, cfg.layers)
 
-    print(f"Target layers for memory: {target_layers}")
+    print(f"Target EXPERT layers for memory: {target_layers}")
     target_set = set(target_layers)
 
     # First, unwrap any previously wrapped layers that are not in the target set
@@ -284,6 +288,63 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     # Record for debugging/metrics
     try:
         smolvla_model.mem_target_layers = target_layers
+    except Exception:
+        pass
+
+
+def attach_memory_to_backbones(smolvla_model, cfg: MemoryLayerConfig):
+    """
+    Replace selected MLPs with MLPPlusMemory for both the action expert and (optionally) the VLM backbone.
+
+    smolvla_model: SmolVLMWithExpertModel
+    cfg: MemoryLayerConfig (enabled must be True at the callsite)
+    """
+    # Expert attachment (reuse existing logic)
+    attach_memory_to_expert(smolvla_model, cfg)
+
+    # VLM text backbone attachment
+    try:
+        vlm_text_model = smolvla_model.get_vlm_model().text_model
+    except Exception:
+        vlm_text_model = None
+    if vlm_text_model is None:
+        return
+
+    num_vlm_layers = len(vlm_text_model.layers)
+    target_vlm_layers = _resolve_target_layers(num_vlm_layers, getattr(cfg, "vlm_layers", []))
+    if not target_vlm_layers:
+        return
+
+    print(f"Target VLM layers for memory: {target_vlm_layers}")
+    target_vlm_set = set(target_vlm_layers)
+
+    # Unwrap any previously wrapped VLM layers not in the target set
+    for li in range(num_vlm_layers):
+        layer = vlm_text_model.layers[li]
+        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory) and li not in target_vlm_set:
+            layer.mlp = layer.mlp.mlp
+
+    # Wrap the requested VLM layers
+    for li in target_vlm_layers:
+        layer = vlm_text_model.layers[li]
+        # Avoid double wrapping if already wrapped
+        if isinstance(layer.mlp, MLPPlusMemory):
+            continue
+        # Determine dimension/dtype/device from the base MLP
+        dim = next(layer.mlp.parameters()).shape[-1]
+        base_dtype = next(layer.mlp.parameters()).dtype
+        base_device = next(layer.mlp.parameters()).device
+
+        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg)
+        for name, p in layer.mlp.mem.named_parameters():
+            if name.startswith("values"):
+                p.data = p.data.to(device=base_device, dtype=torch.float32)
+            else:
+                p.data = p.data.to(device=base_device, dtype=base_dtype)
+
+    # Record for debugging/metrics
+    try:
+        smolvla_model.vlm_mem_target_layers = target_vlm_layers
     except Exception:
         pass
 
