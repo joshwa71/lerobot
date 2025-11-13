@@ -1,4 +1,4 @@
-cat > train_smolvla_memory_expert_vlm.sh << 'EOF'
+cat > train_smolvla_memory_expert_vlm_memory_only_512_2.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_memory_expert_vlm.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_memory_train_expert_vlm
+#$ -N smolvla_memory_train_expert_vlm_memory_only_512_2
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -117,9 +117,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_memory_expert_vlm"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_512_2"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_512_2"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
@@ -127,14 +127,14 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/smolvla_libero_90_memory_expert_vlm \
+  --policy.repo_id=outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_512_2 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
   --steps=200000 \
-  --batch_size=32 \
+  --batch_size=64 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
@@ -144,11 +144,12 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=smolvla_libero_90_memory_expert_vlm \
+  --job_name=smolvla_libero_90_memory_expert_vlm_memory_only_512_2 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.disable_artifact=true \
   --policy.memory_layers=true \
+  --policy.memory_layer.memory_only=true \
   --policy.memory_layer.layers="[10]" \
   --policy.memory_layer.vlm_layers="[10]" \
   --policy.memory_layer.log_usage=true \
