@@ -2,8 +2,8 @@ cat > train_smolvla_memory_expert_vlm_memory_only_256.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
-#$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|h100)
+#$ -l h_rt=96:00:00
+#$ -l gpu=true,gpu_type=(h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
