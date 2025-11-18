@@ -65,6 +65,10 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
+export MUJOCO_GL=egl
+# pick the first (and usually only) visible GPU as the EGL device
+export MUJOCO_EGL_DEVICE_ID=$(cut -d',' -f1 <<< "${CUDA_VISIBLE_DEVICES:-0}")
+echo "MUJOCO_EGL_DEVICE_ID: $MUJOCO_EGL_DEVICE_ID"
 
 export HF_HOME="$SCRATCH_DIR/cache/hf_home"
 mkdir -p "$HF_HOME"

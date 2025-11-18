@@ -75,14 +75,17 @@ class LoRALinear(nn.Module):
         self.dropout = nn.Dropout(dropout) if dropout and dropout > 0.0 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.base(x)
+        # Forward through the frozen base without tracking gradients
+        with torch.no_grad():
+            y_base = self.base(x)
         if self.r == 0:
-            return y
-        x_d = self.dropout(x)
+            return y_base
+        # Block gradients into the frozen trunk; only LoRA params get grads
+        x_d = self.dropout(x).detach()
         x_proj = x_d.to(self.lora_A.dtype) @ self.lora_A
         delta = x_proj @ self.lora_B
-        delta = delta.to(y.dtype)
-        return y + self.scaling * delta
+        delta = delta.to(y_base.dtype)
+        return y_base + self.scaling * delta
 
     # Expose common Linear attributes for compatibility with downstream code
     @property

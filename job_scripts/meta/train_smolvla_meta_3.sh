@@ -3,7 +3,7 @@ cat > train_smolvla_meta_libero_10_3.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=96:00:00
-#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|a40|h100|a100|rtx8000|rtx6000ada|rtx6000)
+#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|h100|a100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
@@ -65,6 +65,10 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
+export MUJOCO_GL=egl
+# pick the first (and usually only) visible GPU as the EGL device
+export MUJOCO_EGL_DEVICE_ID=$(cut -d',' -f1 <<< "${CUDA_VISIBLE_DEVICES:-0}")
+echo "MUJOCO_EGL_DEVICE_ID: $MUJOCO_EGL_DEVICE_ID"
 
 export HF_HOME="$SCRATCH_DIR/cache/hf_home"
 mkdir -p "$HF_HOME"
@@ -95,7 +99,6 @@ export TORCH_NCCL_BLOCKING_WAIT=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
-
 
 # Output directory in scratch
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero_3"
