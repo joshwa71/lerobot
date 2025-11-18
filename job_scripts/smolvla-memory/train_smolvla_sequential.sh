@@ -1,4 +1,4 @@
-cat > train_smolvla_sequential.sh << 'EOF'
+cat > train_smolvla_sequential_256.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_sequential.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train
+#$ -N smolvla_sequential_train_256
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -82,8 +82,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_90_smolvla"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_90_smolvla"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_256"
+MODEL_SCRATCH="$SCRATCH_DIR/smolvla_libero_90_memory_expert_vlm_memory_only_256"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -95,9 +95,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_sequential"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_sequential_256"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_10_smolvla_sequential"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_10_smolvla_sequential_256"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
@@ -116,7 +116,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --eval.n_episodes=20 \
   --log_freq=200 \
   --wandb.enable=true \
-  --job_name=libero_10_smolvla_sequential \
+  --job_name=libero_10_smolvla_sequential_256 \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
   --online_steps_per_task=20000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
