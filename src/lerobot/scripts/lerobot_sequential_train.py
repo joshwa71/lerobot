@@ -153,8 +153,12 @@ def _subset_envs(envs_all: dict[str, dict[int, Any]], suite_name: str, env_task_
 
 def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
     """
-    Yield tuples of (layer_index, mem_module, values_param, json_key) for all attached memory layers.
-    json_key is aligned with the keys used in memory_usage.json ("model.vlm_with_expert.lm_expert.layers.{i}").
+    Yield tuples of (layer_index, mem_module, values_param, json_key) for all attached memory layers
+    across the action expert and the VLM text backbone.
+
+    json_key strings are aligned with memory_usage.json conventions:
+      - Expert: "model.vlm_with_expert.lm_expert.layers.{i}"
+      - VLM:    "model.vlm_with_expert.vlm.model.text_model.layers.{i}"
     """
     mems = []
     try:
@@ -168,6 +172,21 @@ def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
                 mem_module = mlp.mem
                 values_param = mlp.mem.values
                 json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
+                mems.append((li, mem_module, values_param, json_key))
+    except Exception:
+        pass
+
+    # Include VLM backbone (text_model) memory layers if present
+    try:
+        model = unwrapped_policy.model  # VLAFlowMatching
+        vlm_text_model = model.vlm_with_expert.get_vlm_model().text_model
+        for li, layer in enumerate(vlm_text_model.layers):
+            mlp = getattr(layer, "mlp", None)
+            mem = getattr(getattr(mlp, "mem", None), "values", None)
+            if mem is not None and hasattr(mlp, "mem"):
+                mem_module = mlp.mem
+                values_param = mlp.mem.values
+                json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
                 mems.append((li, mem_module, values_param, json_key))
     except Exception:
         pass
@@ -226,6 +245,32 @@ def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPoli
     return idf_by_module
 
 
+def _validate_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor]):
+    """
+    Validate that IDF stats exist and cover all present memory modules (expert + VLM) with correct sizes.
+    Raises a ValueError if validation fails.
+    """
+    if idf_by_module is None or len(idf_by_module) == 0:
+        raise ValueError("TF-IDF is enabled but no IDF statistics were loaded.")
+
+    present = {}
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        if num_slots is None:
+            raise ValueError(f"Cannot determine number of slots for memory module: {json_key}")
+        present[json_key] = int(num_slots)
+
+    missing = [k for k in present.keys() if k not in idf_by_module]
+    if missing:
+        raise ValueError(f"Missing IDF statistics for modules: {missing}")
+
+    mismatched = [k for k, n in present.items() if idf_by_module[k].numel() != n]
+    if mismatched:
+        raise ValueError(
+            f"IDF size mismatch for modules: {[(k, idf_by_module[k].numel(), present[k]) for k in mismatched]}"
+        )
+
+
 def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], top_t: int) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF-IDF over slots accessed in the current batch and
@@ -249,11 +294,11 @@ def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf
                 continue
             tf = counts / total_count
             idf = idf_by_module.get(json_key)
-            if idf is None or idf.numel() != num_slots:
-                # uniform IDF
-                idf = torch.ones(num_slots, dtype=torch.float32, device=tf.device)
-            else:
-                idf = idf.to(device=tf.device, dtype=torch.float32)
+            if idf is None:
+                raise RuntimeError(f"Missing IDF statistics for module: {json_key}")
+            if idf.numel() != num_slots:
+                raise RuntimeError(f"IDF size mismatch for module {json_key}: got {idf.numel()}, expected {num_slots}")
+            idf = idf.to(device=tf.device, dtype=torch.float32)
             tfidf = tf * idf
             # Consider only slots with c(i) > 0
             used_mask = counts > 0
@@ -268,7 +313,7 @@ def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf
                 allowed_by_param[values_param] = top_indices.detach()
         except Exception:
             # Be robust: skip module on any failure
-            continue
+            raise
     return allowed_by_param
 
 
@@ -474,18 +519,16 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             if pth is not None and pth.exists():
                 chosen = pth
                 break
-        if chosen is not None:
-            try:
-                idf_by_module = _load_idf_from_usage_json(chosen, accelerator.unwrap_model(policy, keep_fp32_wrapper=True))
-                if is_main:
-                    logging.info(f"Loaded IDF stats from: {chosen}")
-            except Exception as e:
-                idf_by_module = None
-                if is_main:
-                    logging.warning(f"Failed to load IDF stats from {chosen}: {e}")
-        else:
-            if is_main:
-                logging.warning("TF-IDF enabled but no memory_usage.json found; proceeding without IDF (TF only) or masking disabled if unavailable.")
+        if chosen is None:
+            raise FileNotFoundError("TF-IDF is enabled but no memory_usage.json path was found.")
+        try:
+            idf_by_module = _load_idf_from_usage_json(chosen, accelerator.unwrap_model(policy, keep_fp32_wrapper=True))
+        except Exception as e:
+            raise RuntimeError(f"Failed to load IDF stats from {chosen}: {e}")
+        # Validate full coverage and shapes
+        _validate_idf_stats(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_by_module)
+        if is_main:
+            logging.info(f"Loaded IDF stats from: {chosen}")
 
     # Build optimizer/scheduler once, optionally reinit per task
     # Make the scheduler horizon equal to total steps across all tasks if we don't reinit per task.

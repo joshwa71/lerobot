@@ -122,11 +122,11 @@ lerobot-train \
 # Train SmolVLA sequentially
 
 python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/libero_90_smolvla_memory/checkpoints/last/pretrained_model/ \
+  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/smolvla_libero_90_memory_expert_vlm_memory_only_512/checkpoints/last/pretrained_model \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_2 \
   --steps=200000 \
   --batch_size=64 \
   --num_workers=12 \
@@ -142,7 +142,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
   --tfidf_top_t=256 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/libero_90_smolvla_memory/checkpoints/last/pretrained_model/memory_usage.json \
+  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/smolvla_libero_90_memory_expert_vlm_memory_only_512/checkpoints/last/pretrained_model/memory_usage.json \
   --memory_value_lr=0.001
 
 ### Run A Policy
