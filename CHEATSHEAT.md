@@ -139,6 +139,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --online_steps_per_task=20000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
+  --policy.memory_layer.aggregate_usage=false \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
   --tfidf_top_t=256 \

@@ -48,6 +48,7 @@ class HashingMemoryLite(nn.Module):
         self.n_keys = cfg.mem_n_keys
         self.size = self.n_keys ** 2
         self.log_usage = getattr(cfg, "log_usage", False)
+        self.aggregate_usage = getattr(cfg, "aggregate_usage", False)
 
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
@@ -133,7 +134,7 @@ class HashingMemoryLite(nn.Module):
             self.last_weights = weights.view(bs, self.heads, self.knn).detach()
 
         # Accumulate per-slot usage counts across training
-        if self.training:
+        if self.training and self.aggregate_usage:
             with torch.no_grad():
                 flat_idx = indices.reshape(-1).to(torch.long).detach().cpu()
                 # Lazily initialize accumulator on first use

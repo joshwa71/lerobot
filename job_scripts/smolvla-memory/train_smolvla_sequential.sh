@@ -111,7 +111,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=200000 \
   --batch_size=64 \
-  --num_workers=2 \
+  --num_workers=8 \
   --eval.batch_size=1 \
   --eval.n_episodes=20 \
   --log_freq=200 \
@@ -119,6 +119,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --job_name=libero_10_smolvla_sequential_256 \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
   --online_steps_per_task=20000 \
+  --policy.memory_layer.aggregate_usage=false \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
   --reinit_optimizer_each_task=true \

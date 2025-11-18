@@ -154,6 +154,7 @@ lerobot-train \
   --policy.memory_layer.vlm_layers="[10]" \
   --policy.memory_layer.log_usage=true \
   --policy.memory_layer.enabled=true \
+  --policy.memory_layer.aggregate_usage=true \
   --policy.memory_layer.mem_n_keys=512 \
   --policy.memory_layer.mem_heads=4 \
   --policy.memory_layer.mem_knn=16 \

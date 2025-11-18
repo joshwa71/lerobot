@@ -26,6 +26,7 @@ import torch
 import torch.optim as optim
 import math
 import os
+import time
 from accelerate import Accelerator
 from termcolor import colored
 from torch.optim import Optimizer
@@ -353,26 +354,47 @@ def _update_policy_with_tfidf(
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
     """
-    start_time = torch.cuda.Event(enable_timing=True) if torch.cuda.is_available() else None
-    if start_time is None:
-        import time as _time
-        _st_wall = _time.perf_counter()
-    else:
-        start_time.record()
+    use_cuda_events = torch.cuda.is_available()
+    if use_cuda_events:
+        ev0 = torch.cuda.Event(enable_timing=True)
+        ev_fwd = torch.cuda.Event(enable_timing=True)
+        ev_bwd = torch.cuda.Event(enable_timing=True)
+        ev_mask = torch.cuda.Event(enable_timing=True)
+        ev_apply = torch.cuda.Event(enable_timing=True)
+        ev_clip = torch.cuda.Event(enable_timing=True)
+        ev_opt = torch.cuda.Event(enable_timing=True)
+        ev_sched = torch.cuda.Event(enable_timing=True)
+        ev_end = torch.cuda.Event(enable_timing=True)
+        ev0.record()
+    wall0 = time.perf_counter()
 
     policy.train()
     with accelerator.autocast():
         loss, output_dict = policy.forward(batch)
+    if use_cuda_events:
+        ev_fwd.record()
 
     accelerator.backward(loss)
+    if use_cuda_events:
+        ev_bwd.record()
 
     # Compute and apply TF-IDF gradient masks before clipping and step
+    mask_build_s = 0.0
+    mask_apply_s = 0.0
     try:
         unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
         if idf_by_module is not None and top_t > 0:
+            t0 = time.perf_counter()
             allowed = _compute_tfidf_top_indices_for_batch(unwrapped, idf_by_module, top_t)
+            mask_build_s = time.perf_counter() - t0
+            if use_cuda_events:
+                ev_mask.record()
             if allowed:
+                t1 = time.perf_counter()
                 _apply_gradient_mask_to_memory_values(allowed)
+                mask_apply_s = time.perf_counter() - t1
+                if use_cuda_events:
+                    ev_apply.record()
     except Exception:
         # Be conservative: if masking fails, continue without masking
         pass
@@ -381,34 +403,59 @@ def _update_policy_with_tfidf(
         grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
     else:
         grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), float("inf"), error_if_nonfinite=False)
+    if use_cuda_events:
+        ev_clip.record()
 
     from contextlib import nullcontext
     with (lock if lock is not None else nullcontext()):
         optimizer.step()
     optimizer.zero_grad()
+    if use_cuda_events:
+        ev_opt.record()
 
     if lr_scheduler is not None:
         lr_scheduler.step()
+    if use_cuda_events:
+        ev_sched.record()
 
     # No special update hook beyond policy.update
     unwrapped_for_update = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
     if hasattr(unwrapped_for_update, "update") and callable(getattr(unwrapped_for_update, "update")):
         unwrapped_for_update.update()
 
-    # Timing
-    if start_time is None:
-        import time as _time
-        update_s = _time.perf_counter() - _st_wall
-    else:
-        end_time = torch.cuda.Event(enable_timing=True)
-        end_time.record()
+    # Timing aggregation
+    step_wall_s = time.perf_counter() - wall0
+    if use_cuda_events:
+        ev_end.record()
         torch.cuda.synchronize()
-        update_s = start_time.elapsed_time(end_time) / 1000.0
+        fwd_s = ev0.elapsed_time(ev_fwd) / 1000.0
+        bwd_s = ev_fwd.elapsed_time(ev_bwd) / 1000.0
+        # mask_build_s and mask_apply_s measured by wall clock (may include host ops)
+        clip_s = ev_bwd.elapsed_time(ev_clip) / 1000.0
+        opt_s = ev_clip.elapsed_time(ev_opt) / 1000.0
+        sched_s = ev_opt.elapsed_time(ev_sched) / 1000.0 if lr_scheduler is not None else 0.0
+        update_s = ev0.elapsed_time(ev_end) / 1000.0
+    else:
+        # Fallback to wall time breakdown (coarser but informative)
+        fwd_s = float("nan")
+        bwd_s = float("nan")
+        clip_s = float("nan")
+        opt_s = float("nan")
+        sched_s = 0.0 if lr_scheduler is not None else 0.0
+        update_s = step_wall_s
 
     train_metrics.loss = loss.item()
     train_metrics.grad_norm = grad_norm.item()
     train_metrics.lr = optimizer.param_groups[0]["lr"]
     train_metrics.update_s = update_s
+    train_metrics.fwd_s = fwd_s
+    train_metrics.bwd_s = bwd_s
+    train_metrics.mask_s = mask_build_s
+    train_metrics.apply_mask_s = mask_apply_s
+    train_metrics.clip_s = clip_s
+    train_metrics.opt_s = opt_s
+    train_metrics.sched_s = sched_s
+    train_metrics.step_wall_s = step_wall_s
     return train_metrics, output_dict
 
 
@@ -594,6 +641,15 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         "lr": AverageMeter("lr", ":0.1e"),
         "update_s": AverageMeter("updt_s", ":.3f"),
         "dataloading_s": AverageMeter("data_s", ":.3f"),
+        "preproc_s": AverageMeter("pre_s", ":.3f"),
+        "fwd_s": AverageMeter("fwd_s", ":.3f"),
+        "bwd_s": AverageMeter("bwd_s", ":.3f"),
+        "mask_s": AverageMeter("mask_s", ":.3f"),
+        "apply_mask_s": AverageMeter("apmsk_s", ":.3f"),
+        "clip_s": AverageMeter("clip_s", ":.3f"),
+        "opt_s": AverageMeter("opt_s", ":.3f"),
+        "sched_s": AverageMeter("schd_s", ":.3f"),
+        "step_wall_s": AverageMeter("step_s", ":.3f"),
     }
 
     global_step = 0
@@ -646,8 +702,15 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         )
 
         for _ in range(cfg.online_steps_per_task):
+            # Dataloading timing (wall clock)
+            t0 = time.perf_counter()
             batch = next(dl_iter)
+            train_tracker.dataloading_s = time.perf_counter() - t0
+
+            # Preprocessing timing (wall clock)
+            t1 = time.perf_counter()
             batch = preprocessor(batch)
+            train_tracker.preproc_s = time.perf_counter() - t1
             if cfg.tfidf_enable:
                 train_tracker, output_dict = _update_policy_with_tfidf(
                     train_metrics=train_tracker,

@@ -41,6 +41,10 @@ class MemoryLayerConfig:
     # diversity/coverage logging during training (logged via policy.forward).
     log_usage: bool = False
 
+    # When true, accumulate CPU-side usage histograms each step (for offline stats).
+    # Not required for TF-IDF gating in sequential training.
+    aggregate_usage: bool = False
+
     # Integration mode: when True, output is memory-only (layer_out = mem(x)).
     # Default False keeps residual addition (layer_out = mlp(x) + mem(x)).
     memory_only: bool = False
