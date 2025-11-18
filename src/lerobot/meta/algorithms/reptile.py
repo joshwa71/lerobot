@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import torch
+import time
 
 from lerobot.meta.algorithms.base import MetaAlgorithm, TaskResult
 from lerobot.meta.configs import ReptileConfig, InnerOptConfig
@@ -38,9 +39,15 @@ class Reptile(MetaAlgorithm):
         use_amp = device_type == "cuda" and bool(getattr(getattr(model, "config", None), "use_amp", False))
         dtype = torch.bfloat16 if use_amp and device_type == "cuda" else None
         loss_sum_t = None
+        dl_time = 0.0
+        preproc_time = 0.0
+        compute_time = 0.0
         for inner_idx in range(1, steps + 1):
+            t0 = time.time()
             batch = next(support_iter)
+            t1 = time.time()
             batch = preprocessor(batch)
+            t2 = time.time()
             autocast_cm = torch.autocast(device_type=device_type, dtype=dtype) if use_amp else nullcontext()
             with autocast_cm:
                 loss, _ = model.forward(batch)
@@ -50,6 +57,10 @@ class Reptile(MetaAlgorithm):
             if inner_cfg.grad_clip_norm and inner_cfg.grad_clip_norm > 0.0:
                 torch.nn.utils.clip_grad_norm_(params, inner_cfg.grad_clip_norm, error_if_nonfinite=False)
             opt.step()
+            t3 = time.time()
+            dl_time += t1 - t0
+            preproc_time += t2 - t1
+            compute_time += t3 - t2
             detached_loss = loss.detach()
             loss_sum_t = detached_loss if loss_sum_t is None else loss_sum_t + detached_loss
 
@@ -69,7 +80,13 @@ class Reptile(MetaAlgorithm):
             avg_loss = float((loss_sum_t / max(1, steps)).detach().cpu().item())
         else:
             avg_loss = float("nan")
-        return TaskResult(delta=delta, metrics={"inner_avg_loss": avg_loss})
+        metrics = {
+            "inner_avg_loss": avg_loss,
+            "inner_dl_s": dl_time,
+            "inner_preproc_s": preproc_time,
+            "inner_compute_s": compute_time,
+        }
+        return TaskResult(delta=delta, metrics=metrics)
 
     def outer_step(self, model, task_results: list[TaskResult]) -> None:
         if not task_results:

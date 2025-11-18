@@ -10,6 +10,7 @@ from typing import Iterator, List
 import torch
 import copy
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 from lerobot.datasets.factory import make_dataset
 from lerobot.meta.algorithms.reptile import Reptile
@@ -268,8 +269,7 @@ class MetaEngine:
             inner_cfg=self.cfg.inner_opt,
             preprocessor=preproc,
         )
-        avg_loss = res.metrics["inner_avg_loss"] if res.metrics and "inner_avg_loss" in res.metrics else None
-        return res.delta, float(avg_loss) if avg_loss is not None else float("nan")
+        return res
 
     def train(self, total_outer_steps: int, batch_size: int = 8, log_freq: int = 100, save_freq: int = 1000):
         self.setup()
@@ -280,17 +280,26 @@ class MetaEngine:
         # Defer query loader creation to when needed (FOMAML) to avoid memory pressure
 
         meters = {
+            "step_s": AverageMeter("step_s", ":.3f"),
+            "inner_s": AverageMeter("inner_s", ":.3f"),
             "meta_update_s": AverageMeter("updt_s", ":.3f"),
+            "dl_s": AverageMeter("dl_s", ":.3f"),
+            "preproc_s": AverageMeter("preproc_s", ":.3f"),
+            "compute_s": AverageMeter("compute_s", ":.3f"),
         }
         tracker = MetricsTracker(batch_size, self.dataset.num_frames, self.dataset.num_episodes, meters, initial_step=0)
 
         for step in range(1, total_outer_steps + 1):
+            step_t0 = time.time()
+            inner_elapsed = 0.0
+            meta_elapsed = 0.0
             # sample tasks
             tasks = random.sample(self.train_tasks, k=min(self.cfg.tasks_per_outer_step, len(self.train_tasks)))
             if self.cfg.verbose_log and (step <= 3 or step % max(1, self.cfg.log_freq) == 0):
                 logging.info("Outer step %s: sampled tasks=%s", step, tasks)
             task_results = []
             inner_losses = []
+            inner_t0 = time.time()
             if self.parallel_enabled and len(self.devices) > 1 and len(tasks) > 1:
                 # Determine concurrency
                 max_conc = self.cfg.parallel.max_concurrent if self.cfg.parallel.max_concurrent and self.cfg.parallel.max_concurrent > 0 else None
@@ -307,11 +316,10 @@ class MetaEngine:
                             device = device_pool[i]
                             futures.append(executor.submit(self._adapt_on_device, t, device, support_iters[t]))
                         for fut in futures:
-                            delta, avg_loss = fut.result()
-                            metrics = {"inner_avg_loss": avg_loss} if not (avg_loss != avg_loss) else None
-                            task_results.append(TaskResult(delta=delta, metrics=metrics))
-                            if not (avg_loss != avg_loss):  # not NaN
-                                inner_losses.append(avg_loss)
+                            res = fut.result()
+                            task_results.append(res)
+                            if res.metrics and "inner_avg_loss" in res.metrics:
+                                inner_losses.append(res.metrics["inner_avg_loss"])
                     start += len(device_pool)
             else:
                 for t in tasks:
@@ -327,8 +335,27 @@ class MetaEngine:
                     task_results.append(res)
                     if res.metrics and "inner_avg_loss" in res.metrics:
                         inner_losses.append(res.metrics["inner_avg_loss"])
+            inner_elapsed = time.time() - inner_t0
 
+            meta_t0 = time.time()
             self.algo.outer_step(policy, task_results)
+            meta_elapsed = time.time() - meta_t0
+
+            step_elapsed = time.time() - step_t0
+            dl_total = 0.0
+            preproc_total = 0.0
+            compute_total = 0.0
+            for res in task_results:
+                if res.metrics:
+                    dl_total += float(res.metrics.get("inner_dl_s", 0.0))
+                    preproc_total += float(res.metrics.get("inner_preproc_s", 0.0))
+                    compute_total += float(res.metrics.get("inner_compute_s", 0.0))
+            tracker.metrics["step_s"].update(step_elapsed)
+            tracker.metrics["inner_s"].update(inner_elapsed)
+            tracker.metrics["meta_update_s"].update(meta_elapsed)
+            tracker.metrics["dl_s"].update(dl_total)
+            tracker.metrics["preproc_s"].update(preproc_total)
+            tracker.metrics["compute_s"].update(compute_total)
 
             is_log_step = log_freq > 0 and step % log_freq == 0
             if is_log_step:
