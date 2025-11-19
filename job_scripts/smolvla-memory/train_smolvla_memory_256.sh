@@ -147,6 +147,7 @@ lerobot-train \
   --job_name=smolvla_libero_90_memory_expert_vlm_memory_only_256 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
+  --wandb.project=vla-memory \
   --wandb.disable_artifact=true \
   --policy.memory_layers=true \
   --policy.memory_layer.memory_only=true \

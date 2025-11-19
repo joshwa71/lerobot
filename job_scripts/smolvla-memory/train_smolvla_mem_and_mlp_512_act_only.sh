@@ -1,13 +1,13 @@
-cat > train_smolvla_memory.sh << 'EOF'
+cat > train_smolvla_mem_mlp_512_act_only.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
-#$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(rtx8000|a100|a100_80|h100)
+#$ -l h_rt=96:00:00
+#$ -l gpu=true,gpu_type=(h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_memory_train
+#$ -N smolvla_memory_train_mem_mlp_512_act_only
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -117,9 +117,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_90_smolvla_memory"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_mem_mlp_512_act_only"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_90_smolvla_memory"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_mem_mlp_512_act_only"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
@@ -127,14 +127,14 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_90_smolvla_memory \
+  --policy.repo_id=outputs/train/smolvla_libero_90_mem_mlp_512_act_only \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
   --steps=200000 \
-  --batch_size=32 \
+  --batch_size=64 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
@@ -144,20 +144,21 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=libero_90_smolvla_memory \
+  --job_name=smolvla_libero_90_mem_mlp_512_act_only \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
   --wandb.disable_artifact=true \
   --policy.memory_layers=true \
-  --policy.memory_layer.layers="[11,13,15]" \
+  --policy.memory_layer.memory_only=false \
+  --policy.memory_layer.layers="[10]" \
   --policy.memory_layer.log_usage=true \
   --policy.memory_layer.enabled=true \
   --policy.memory_layer.aggregate_usage=true \
-  --policy.memory_layer.mem_n_keys=256 \
+  --policy.memory_layer.mem_n_keys=512 \
   --policy.memory_layer.mem_heads=4 \
   --policy.memory_layer.mem_knn=16 \
-  --policy.memory_layer.mem_k_dim=256 \
+  --policy.memory_layer.mem_k_dim=512 \
   --policy.memory_layer.value_fixed_lr=0.001 \
   --policy.memory_layer.memory_lr=0.001
 

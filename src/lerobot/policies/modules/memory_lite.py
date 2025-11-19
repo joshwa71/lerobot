@@ -243,11 +243,7 @@ def _resolve_target_layers(num_expert_layers: int, layers: List[int] | str) -> L
                 cleaned.append(li)
                 seen.add(li)
         return cleaned
-    # Default: last two layers
-    if num_expert_layers >= 2:
-        return [num_expert_layers - 2, num_expert_layers - 1]
-    elif num_expert_layers == 1:
-        return [0]
+    # Default: no layers
     return []
 
 

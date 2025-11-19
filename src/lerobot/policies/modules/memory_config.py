@@ -15,7 +15,7 @@ class MemoryLayerConfig:
     enabled: bool = False
 
     # Which expert layers to attach the memory to (indices in expert depth).
-    # If empty, the last two expert layers are selected by default at runtime.
+    # If empty, no expert layers are wrapped.
     layers: List[int] = field(default_factory=list)
 
     # Optionally, attach memory to VLM text backbone layers (indices in VLM text depth).

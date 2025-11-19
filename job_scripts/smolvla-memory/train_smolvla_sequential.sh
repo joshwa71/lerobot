@@ -116,6 +116,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --eval.n_episodes=20 \
   --log_freq=200 \
   --wandb.enable=true \
+  --wandb.project=vla-memory \
   --job_name=libero_10_smolvla_sequential_256 \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
   --online_steps_per_task=20000 \

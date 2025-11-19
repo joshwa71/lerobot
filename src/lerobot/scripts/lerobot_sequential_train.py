@@ -588,6 +588,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     # Build optimizer that only updates params with requires_grad=True (memory values)
     def _build_memory_optimizer(model: PreTrainedPolicy, lr: float) -> Optimizer:
         params = [p for p in model.parameters() if p.requires_grad]
+        # TODO: Try SGD
+        # return optim.SGD(params, lr=lr, weight_decay=0.0)
         return optim.AdamW(params, lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0)
 
     optimizer = _build_memory_optimizer(policy, cfg.memory_value_lr)
