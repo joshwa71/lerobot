@@ -171,7 +171,10 @@ python /home/josh/phddev/lerobot-upstream/src/lerobot/scripts/recalibrate_datase
   --new-calibration /home/josh/phddev/lerobot-upstream/calibration/robots/so100_follower/my_blue_follower_arm.json
 Wrote recalibrated dataset to: /home/josh/phddev/lerobot-upstream/outputs/bl_mixed_100_calibrated
 
-
+### Rsync
+rsync -avzP <source> <target>
+e.g.
+rsync -avzP /home/josh/phddev/lerobot/outputs/libero_95/ vic:/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_95/
 
 ## Libero
 
