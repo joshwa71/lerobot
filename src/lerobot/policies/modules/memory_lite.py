@@ -17,6 +17,13 @@ class QueryMLPLite(nn.Module):
         self.heads = heads
         self.k_dim = k_dim
         self.proj = nn.Linear(input_dim, heads * k_dim, bias=bias)
+        # Mark parameters so they can be selected for training during online adaptation
+        try:
+            self.proj.weight.pk_query_proj_param = True
+            if self.proj.bias is not None:
+                self.proj.bias.pk_query_proj_param = True
+        except Exception:
+            pass
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T, C)
@@ -53,6 +60,11 @@ class HashingMemoryLite(nn.Module):
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
         self.keys = nn.Parameter(torch.empty(2 * self.heads * self.n_keys, self.k_dim // 2))
+        # Tag keys param to allow selective training
+        try:
+            self.keys.pk_keys_param = True
+        except Exception:
+            pass
 
         # Values (embedding table) kept in float32 for correct CUDA backward and stability
         self.values = nn.Parameter(torch.empty(self.size, self.v_dim, dtype=torch.float32))

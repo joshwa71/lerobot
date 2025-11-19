@@ -18,6 +18,8 @@ import time
 from contextlib import nullcontext
 from pprint import pformat
 from typing import Any
+from pathlib import Path
+from collections import defaultdict, Counter
 
 import torch
 from accelerate import Accelerator
@@ -268,6 +270,133 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         **postprocessor_kwargs,
     )
 
+    # --- Memory logging helpers (per-batch indices) ---
+    def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
+        mems = []
+        try:
+            model = unwrapped_policy.model  # VLAFlowMatching
+            expert = model.vlm_with_expert.lm_expert
+            for li, layer in enumerate(expert.layers):
+                mlp = getattr(layer, "mlp", None)
+                mem = getattr(getattr(mlp, "mem", None), "values", None)
+                if mem is not None and hasattr(mlp, "mem"):
+                    mem_module = mlp.mem
+                    values_param = mlp.mem.values
+                    json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
+                    mems.append((li, mem_module, values_param, json_key))
+        except Exception:
+            pass
+        # VLM backbone
+        try:
+            model = unwrapped_policy.model
+            vlm_text_model = model.vlm_with_expert.get_vlm_model().text_model
+            for li, layer in enumerate(vlm_text_model.layers):
+                mlp = getattr(layer, "mlp", None)
+                mem = getattr(getattr(mlp, "mem", None), "values", None)
+                if mem is not None and hasattr(mlp, "mem"):
+                    mem_module = mlp.mem
+                    values_param = mlp.mem.values
+                    json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
+                    mems.append((li, mem_module, values_param, json_key))
+        except Exception:
+            pass
+        return mems
+
+    def _enable_memory_batch_logging(unwrapped_policy: PreTrainedPolicy, enable: bool = True):
+        for _, mem_module, _, _ in _iter_memory_modules(unwrapped_policy):
+            try:
+                mem_module.log_usage = bool(enable)
+            except Exception:
+                pass
+
+    # In-memory accumulators for per-task memory slot usage (offline)
+    _per_task_totals = defaultdict(lambda: defaultdict(Counter))
+    _per_task_batches = defaultdict(lambda: defaultdict(Counter))
+
+    def _accumulate_task_usage_for_mixed_batch(unwrapped_policy: PreTrainedPolicy, task_ids: torch.Tensor):
+        """
+        Accumulate per-task slot usage within a mixed batch (multiple tasks in the same batch).
+        task_ids: shape (B,)
+        """
+        try:
+            task_ids = task_ids.to(torch.long).detach().cpu()
+            B = int(task_ids.shape[0])
+            for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+                idx = getattr(mem, "last_indices", None)
+                if idx is None:
+                    continue
+                bs = int(idx.shape[0])  # == B * T
+                if B <= 0 or bs % B != 0:
+                    continue
+                T = bs // B
+                tasks_flat = task_ids.repeat_interleave(T)  # (bs,)
+                num_slots = int(getattr(mem, "size", 0))
+                if num_slots <= 0:
+                    continue
+                uniq_tasks = torch.unique(tasks_flat)
+                for t in uniq_tasks.tolist():
+                    mask = (tasks_flat == t)
+                    if not mask.any():
+                        continue
+                    idx_t = idx[mask]  # (n_t, heads, knn)
+                    counts = torch.bincount(idx_t.reshape(-1).to(torch.long), minlength=num_slots)
+                    used = counts > 0
+                    if used.any():
+                        slots = used.nonzero(as_tuple=False).view(-1).detach().cpu().tolist()
+                        vals = counts[used].detach().cpu().tolist()
+                        Tctr = _per_task_totals[json_key][int(t)]
+                        Bctr = _per_task_batches[json_key][int(t)]
+                        for s, v in zip(slots, vals):
+                            Tctr[int(s)] += int(v)
+                            Bctr[int(s)] += 1
+        except Exception:
+            # never fail training due to optional logging
+            pass
+
+    def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int = 5000):
+        """
+        Write JSON files <out_dir>/memory_by_task/memory_usage_task_{tid}.json summarizing per-task slot usage.
+        Keeps only top-k slots per task for compactness.
+        """
+        try:
+            out_dir = Path(out_dir) / "memory_by_task"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            if task_id is not None:
+                task_ids = [int(task_id)]
+            else:
+                seen = set()
+                for by_task in _per_task_totals.values():
+                    seen.update(by_task.keys())
+                task_ids = sorted(int(t) for t in seen)
+            for t in task_ids:
+                payload = {"per_module": {}}
+                for json_key, by_task in _per_task_totals.items():
+                    tctr = by_task.get(int(t), Counter())
+                    if not tctr:
+                        continue
+                    top = tctr.most_common(int(topk))
+                    bctr = _per_task_batches.get(json_key, {}).get(int(t), Counter())
+                    slots_dict = {}
+                    for s, v in top:
+                        slots_dict[f"value_slot_{int(s)}"] = {
+                            "total_accesses": int(v),
+                            "batch_accesses": int(bctr.get(int(s), 0)),
+                        }
+                    if slots_dict:
+                        payload["per_module"][json_key] = {f"task_{int(t)}": slots_dict}
+                if payload["per_module"]:
+                    with open(out_dir / f"memory_usage_task_{int(t)}.json", "w") as f:
+                        import json
+                        json.dump(payload, f)
+        except Exception:
+            pass
+
+    # Enable per-batch memory usage logging to allow accumulation
+    try:
+        _enable_memory_batch_logging(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), enable=True)
+    except Exception:
+        pass
+
     if is_main_process:
         logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
@@ -407,8 +536,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
 
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
-        batch = next(dl_iter)
-        batch = preprocessor(batch)
+        raw_batch = next(dl_iter)
+        # Capture task ids BEFORE preprocessing; we only need CPU ints
+        task_ids = raw_batch.get("task_index") if isinstance(raw_batch, dict) else None
+        batch = preprocessor(raw_batch)
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
         train_tracker, output_dict = update_policy(
@@ -420,6 +551,16 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             accelerator=accelerator,
             lr_scheduler=lr_scheduler,
         )
+
+        # Accumulate per-task memory usage for this batch (main process only)
+        if is_main_process and task_ids is not None:
+            try:
+                _accumulate_task_usage_for_mixed_batch(
+                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                    task_ids=task_ids,
+                )
+            except Exception:
+                pass
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
@@ -470,6 +611,11 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                 update_last_checkpoint(checkpoint_dir)
                 if wandb_logger:
                     wandb_logger.log_policy(checkpoint_dir)
+                # Flush per-task memory usage snapshot
+                try:
+                    _flush_per_task_usage(cfg.output_dir, task_id=None, topk=5000)
+                except Exception:
+                    pass
 
             accelerator.wait_for_everyone()
 

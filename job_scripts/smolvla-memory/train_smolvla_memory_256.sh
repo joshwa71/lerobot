@@ -97,8 +97,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_90"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_90"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_95"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero_95"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -117,9 +117,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_256"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_95_memory_expert_vlm_memory_only_256"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_256"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_95_memory_expert_vlm_memory_only_256"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
@@ -127,7 +127,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_256 \
+  --policy.repo_id=outputs/train/smolvla_libero_95_memory_expert_vlm_memory_only_256 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -144,7 +144,7 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=smolvla_libero_90_memory_expert_vlm_memory_only_256 \
+  --job_name=smolvla_libero_95_memory_expert_vlm_memory_only_256 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \

@@ -126,7 +126,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_2 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf \
   --steps=2000 \
   --batch_size=64 \
   --num_workers=12 \
@@ -134,6 +134,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --eval.n_episodes=20 \
   --log_freq=200 \
   --wandb.enable=true \
+  --wandb.project=vla-memory \
   --job_name=smolvla_libero_10_mem_online_tfidf \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
   --online_steps_per_task=2000 \
@@ -144,7 +145,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --tfidf_enable=true \
   --tfidf_top_t=512 \
   --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/smolvla_libero_90_memory_expert_vlm_memory_only_512/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.02
+  --memory_value_lr=0.03
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model

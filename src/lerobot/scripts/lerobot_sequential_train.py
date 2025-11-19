@@ -17,7 +17,7 @@
 import logging
 import json
 import ast
-from collections import defaultdict
+from collections import defaultdict, Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -73,6 +73,10 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Steps to run per task during online adaptation
     online_steps_per_task: int = 200
 
+    # When true, use TF-only slot masking (no IDF stats required).
+    # If enabled, this overrides TF-IDF behavior.
+    tf_only: bool = False
+
     # Optional dataset->env task id mapping as a JSON string.
     # If empty and env.task == "libero_10", a default mapping is used.
     # Example CLI: --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}'
@@ -84,8 +88,19 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Rebuild optimizer each task (False keeps momentum/state across tasks)
     reinit_optimizer_each_task: bool = False
 
-    # Learning rate for memory value parameters (pk_value_param). Overrides any preset.
+    # Trainable subsets and learning rates for memory components
+    # Values
+    train_memory_value: bool = True
+    # Learning rate for memory value parameters (pk_value_param).
     memory_value_lr: float = 1e-3
+
+    # Keys
+    train_memory_keys: bool = False
+    memory_keys_lr: float = 1e-3
+
+    # Query projection (the memory query MLP linear projection)
+    train_query_proj: bool = False
+    query_proj_lr: float = 1e-3
 
     # TF-IDF gating to sparsify memory value updates
     tfidf_enable: bool = True
@@ -130,11 +145,23 @@ def _build_dataloader_for_task(
     )
 
 
-def _freeze_to_memory_values_only(policy: PreTrainedPolicy) -> int:
-    """Freeze all parameters except memory value tables (pk_value_param). Returns number of trainable params."""
+def _freeze_to_selected_memory_params(
+    policy: PreTrainedPolicy,
+    train_memory_value: bool,
+    train_memory_keys: bool,
+    train_query_proj: bool,
+) -> int:
+    """Freeze all parameters except selected memory-related parameters. Returns number of trainable params."""
     trainable = 0
     for p in policy.parameters():
-        p.requires_grad = bool(getattr(p, "pk_value_param", False))
+        if getattr(p, "pk_value_param", False) and train_memory_value:
+            p.requires_grad = True
+        elif getattr(p, "pk_keys_param", False) and train_memory_keys:
+            p.requires_grad = True
+        elif getattr(p, "pk_query_proj_param", False) and train_query_proj:
+            p.requires_grad = True
+        else:
+            p.requires_grad = False
         if p.requires_grad:
             trainable += p.numel()
     return trainable
@@ -205,6 +232,85 @@ def _enable_memory_batch_logging(unwrapped_policy: PreTrainedPolicy, enable: boo
             pass
 
 
+# In-memory accumulators for per-task memory slot usage (sequential adaptation)
+# module_key -> task_id -> Counter(slot_idx -> total_count)
+_per_task_totals = defaultdict(lambda: defaultdict(Counter))
+# module_key -> task_id -> Counter(slot_idx -> batch_count)
+_per_task_batches = defaultdict(lambda: defaultdict(Counter))
+
+
+def _accumulate_task_usage_for_batch(unwrapped_policy: PreTrainedPolicy, task_id: int):
+    """
+    Accumulate per-task slot usage for the current batch.
+    Assumes the current dataloader is filtered to a single dataset task id.
+    """
+    try:
+        for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+            idx = getattr(mem, "last_indices", None)
+            if idx is None:
+                continue
+            # idx: (B*T, heads, knn) effectively, since memory flattens time; here we only need slot counts
+            idx_flat = idx.reshape(-1).to(torch.long)
+            num_slots = int(getattr(mem, "size", 0))
+            if num_slots <= 0:
+                continue
+            counts = torch.bincount(idx_flat, minlength=num_slots)
+            used = counts > 0
+            if used.any():
+                slots = used.nonzero(as_tuple=False).view(-1).detach().cpu().tolist()
+                vals = counts[used].detach().cpu().tolist()
+                Tctr = _per_task_totals[json_key][int(task_id)]
+                Bctr = _per_task_batches[json_key][int(task_id)]
+                for s, v in zip(slots, vals):
+                    Tctr[int(s)] += int(v)
+                    Bctr[int(s)] += 1
+    except Exception:
+        # Never fail training due to optional logging
+        pass
+
+
+def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int = 5000):
+    """
+    Write JSON files under <out_dir>/memory_by_task/ summarizing per-task slot usage for each memory module.
+    Keeps only top-k slots per task (by total accesses) for compactness.
+    """
+    try:
+        out_dir = Path(out_dir) / "memory_by_task"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if task_id is not None:
+            task_ids = [int(task_id)]
+        else:
+            seen = set()
+            for by_task in _per_task_totals.values():
+                seen.update(by_task.keys())
+            task_ids = sorted(int(t) for t in seen)
+
+        for t in task_ids:
+            payload = {"per_module": {}}
+            for json_key, by_task in _per_task_totals.items():
+                tctr = by_task.get(int(t), Counter())
+                if not tctr:
+                    continue
+                # prune to top-k by total accesses
+                top = tctr.most_common(int(topk))
+                bctr = _per_task_batches.get(json_key, {}).get(int(t), Counter())
+                slots_dict = {}
+                for s, v in top:
+                    slots_dict[f"value_slot_{int(s)}"] = {
+                        "total_accesses": int(v),
+                        "batch_accesses": int(bctr.get(int(s), 0)),
+                    }
+                if slots_dict:
+                    # nest by task for clarity (module -> task -> slots)
+                    payload["per_module"][json_key] = {f"task_{int(t)}": slots_dict}
+            if payload["per_module"]:
+                with open(out_dir / f"memory_usage_task_{int(t)}.json", "w") as f:
+                    json.dump(payload, f)
+    except Exception:
+        # Don't crash if logging fails
+        pass
+
+
 def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPolicy):
     """
     Build per-module IDF vectors from a memory_usage.json file produced during pretraining.
@@ -272,11 +378,16 @@ def _validate_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[
         )
 
 
-def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], top_t: int) -> dict[torch.nn.Parameter, torch.Tensor]:
+def _compute_tfidf_top_indices_for_batch(
+    unwrapped_policy: PreTrainedPolicy,
+    idf_by_module: dict[str, torch.Tensor] | None,
+    top_t: int,
+    tf_only: bool,
+) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
-    For each memory module, compute TF-IDF over slots accessed in the current batch and
-    return a dict mapping values_param -> 1D LongTensor of allowed slot indices (top-t).
-    If idf is missing for a module, IDF defaults to 1 (i.e., TF only).
+    For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
+    return a dict mapping values_param -> 1D LongTensor of allowed slot indices (top-t per module).
+    If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
     for _, mem_module, values_param, json_key in _iter_memory_modules(unwrapped_policy):
@@ -294,12 +405,15 @@ def _compute_tfidf_top_indices_for_batch(unwrapped_policy: PreTrainedPolicy, idf
             if total_count <= 0:
                 continue
             tf = counts / total_count
-            idf = idf_by_module.get(json_key)
-            if idf is None:
-                raise RuntimeError(f"Missing IDF statistics for module: {json_key}")
-            if idf.numel() != num_slots:
-                raise RuntimeError(f"IDF size mismatch for module {json_key}: got {idf.numel()}, expected {num_slots}")
-            idf = idf.to(device=tf.device, dtype=torch.float32)
+            if tf_only:
+                idf = torch.ones(num_slots, dtype=torch.float32, device=tf.device)
+            else:
+                idf = (idf_by_module or {}).get(json_key)
+                if idf is None:
+                    raise RuntimeError(f"Missing IDF statistics for module: {json_key}")
+                if idf.numel() != num_slots:
+                    raise RuntimeError(f"IDF size mismatch for module {json_key}: got {idf.numel()}, expected {num_slots}")
+                idf = idf.to(device=tf.device, dtype=torch.float32)
             tfidf = tf * idf
             # Consider only slots with c(i) > 0
             used_mask = counts > 0
@@ -348,6 +462,7 @@ def _update_policy_with_tfidf(
     accelerator: Accelerator,
     idf_by_module: dict[str, torch.Tensor] | None,
     top_t: int,
+    tf_only: bool,
     lr_scheduler=None,
     lock=None,
 ):
@@ -383,9 +498,9 @@ def _update_policy_with_tfidf(
     mask_apply_s = 0.0
     try:
         unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-        if idf_by_module is not None and top_t > 0:
+        if (idf_by_module is not None or tf_only) and top_t > 0:
             t0 = time.perf_counter()
-            allowed = _compute_tfidf_top_indices_for_batch(unwrapped, idf_by_module, top_t)
+            allowed = _compute_tfidf_top_indices_for_batch(unwrapped, idf_by_module, top_t, tf_only=tf_only)
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
                 ev_mask.record()
@@ -534,8 +649,13 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         **postprocessor_kwargs,
     )
 
-    # Freeze everything except memory values
-    num_trainable = _freeze_to_memory_values_only(policy)
+    # Freeze everything except selected memory components
+    num_trainable = _freeze_to_selected_memory_params(
+        policy,
+        train_memory_value=cfg.train_memory_value,
+        train_memory_keys=cfg.train_memory_keys,
+        train_query_proj=cfg.train_query_proj,
+    )
     num_total = sum(p.numel() for p in policy.parameters())
     if is_main:
         logging.info(f"Trainable params (memory values only) = {num_trainable} / {num_total}")
@@ -546,9 +666,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     except Exception:
         pass
 
-    # Load IDF stats for TF-IDF gating (optional)
+    # Load IDF stats for TF-IDF gating (optional). Skipped when tf_only is True.
     idf_by_module = None
-    if cfg.tfidf_enable:
+    if cfg.tfidf_enable and not cfg.tf_only:
         # Resolve stats path
         candidate_paths: list[Path] = []
         if cfg.idf_stats_path:
@@ -584,15 +704,36 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     cfg.steps = max(1, sched_steps)
 
     if is_main:
-        logging.info("Creating optimizer (memory values only) with custom LR and no scheduler")
-    # Build optimizer that only updates params with requires_grad=True (memory values)
-    def _build_memory_optimizer(model: PreTrainedPolicy, lr: float) -> Optimizer:
-        params = [p for p in model.parameters() if p.requires_grad]
-        # TODO: Try SGD
-        # return optim.SGD(params, lr=lr, weight_decay=0.0)
-        return optim.AdamW(params, lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0)
+        logging.info("Creating optimizer (selected memory params) with custom LRs and no scheduler")
 
-    optimizer = _build_memory_optimizer(policy, cfg.memory_value_lr)
+    # Build optimizer with distinct param groups for values/keys/query_proj
+    def _build_memory_optimizer(model: PreTrainedPolicy, cfg_local: SequentialOnlineConfig) -> Optimizer:
+        vals: list[torch.nn.Parameter] = []
+        keys: list[torch.nn.Parameter] = []
+        qproj: list[torch.nn.Parameter] = []
+        for p in model.parameters():
+            if not p.requires_grad:
+                continue
+            if getattr(p, "pk_value_param", False):
+                vals.append(p)
+            elif getattr(p, "pk_keys_param", False):
+                keys.append(p)
+            elif getattr(p, "pk_query_proj_param", False):
+                qproj.append(p)
+        param_groups: list[dict] = []
+        if cfg_local.train_memory_value and len(vals) > 0:
+            param_groups.append({"params": vals, "lr": cfg_local.memory_value_lr, "weight_decay": 0.0})
+        if cfg_local.train_memory_keys and len(keys) > 0:
+            param_groups.append({"params": keys, "lr": cfg_local.memory_keys_lr, "weight_decay": 0.0})
+        if cfg_local.train_query_proj and len(qproj) > 0:
+            param_groups.append({"params": qproj, "lr": cfg_local.query_proj_lr, "weight_decay": 0.0})
+        if len(param_groups) == 0:
+            raise ValueError(
+                "No trainable parameters selected. Enable at least one of --train_memory_value, --train_memory_keys, or --train_query_proj."
+            )
+        return optim.AdamW(param_groups, betas=(0.9, 0.999), eps=1e-8)
+
+    optimizer = _build_memory_optimizer(policy, cfg)
     lr_scheduler = None
 
     # Prepare with accelerator
@@ -684,9 +825,14 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         # Optionally rebuild optimizer/scheduler per task
         if cfg.reinit_optimizer_each_task:
             # Re-freeze to be safe in case something toggled
-            _freeze_to_memory_values_only(policy)
+            _freeze_to_selected_memory_params(
+                policy,
+                train_memory_value=cfg.train_memory_value,
+                train_memory_keys=cfg.train_memory_keys,
+                train_query_proj=cfg.train_query_proj,
+            )
             # Recreate optimizer with the same custom LR, no scheduler
-            optimizer = _build_memory_optimizer(accelerator.unwrap_model(policy), cfg.memory_value_lr)
+            optimizer = _build_memory_optimizer(accelerator.unwrap_model(policy), cfg)
             lr_scheduler = None
             policy, optimizer, lr_scheduler = accelerator.prepare(policy, optimizer, lr_scheduler)
 
@@ -713,7 +859,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             t1 = time.perf_counter()
             batch = preprocessor(batch)
             train_tracker.preproc_s = time.perf_counter() - t1
-            if cfg.tfidf_enable:
+            if cfg.tfidf_enable or cfg.tf_only:
                 train_tracker, output_dict = _update_policy_with_tfidf(
                     train_metrics=train_tracker,
                     policy=policy,
@@ -723,6 +869,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     accelerator=accelerator,
                     idf_by_module=idf_by_module,
                     top_t=cfg.tfidf_top_t,
+                    tf_only=cfg.tf_only,
                     lr_scheduler=lr_scheduler,
                 )
             else:
@@ -749,6 +896,16 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     wandb_logger.log_dict(wandb_log_dict, global_step)
                 train_tracker.reset_averages()
 
+            # Accumulate per-task memory usage for this batch (main process only)
+            if is_main:
+                try:
+                    _accumulate_task_usage_for_batch(
+                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                        task_id=dataset_task_id,
+                    )
+                except Exception:
+                    pass
+
         # Save checkpoint after finishing this task
         if cfg.save_checkpoint and cfg.save_after_each_task and is_main:
             step_id = get_step_identifier(global_step, cfg.steps)
@@ -767,6 +924,16 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             update_last_checkpoint(checkpoint_dir)
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
+
+        # Flush per-task memory usage for this task and clear accumulators (main only)
+        if is_main:
+            try:
+                topk = int(cfg.tfidf_top_t) if (cfg.tfidf_enable or cfg.tf_only) else 5000
+                _flush_per_task_usage(cfg.output_dir, task_id=dataset_task_id, topk=topk)
+            except Exception:
+                pass
+            _per_task_totals.clear()
+            _per_task_batches.clear()
 
         # Cumulative evaluation up to this task
         if eval_envs_all is not None:
