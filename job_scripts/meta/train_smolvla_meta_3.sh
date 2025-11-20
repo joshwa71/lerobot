@@ -166,6 +166,7 @@ lerobot-meta-train \
   --job_name=reptile_smolvla_libero_3 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
+  --wandb.project=meta-vla \
   --save_freq=5000
 
 # Final copy of outputs back to permanent storage
