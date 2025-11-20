@@ -23,7 +23,7 @@ function finish {
     echo "Syncing outputs from scratch before cleanup..."
     if [ -n "$OUTPUT_SCRATCH" ] && [ -d "$OUTPUT_SCRATCH" ]; then
         mkdir -p "$FINAL_OUTPUT_DIR"
-        cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
+        cp -r "$OUTPUT_SCRAyTCH"/* "$FINAL_OUTPUT_DIR/" || true
     fi
     if [ -n "$WANDB_DIR" ] && [ -d "$WANDB_DIR" ]; then
         mkdir -p /SAN/vision/jo71_vla_wd/lerobot_memory/wandb

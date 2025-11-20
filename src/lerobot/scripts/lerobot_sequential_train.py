@@ -831,10 +831,31 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 train_memory_keys=cfg.train_memory_keys,
                 train_query_proj=cfg.train_query_proj,
             )
-            # Recreate optimizer with the same custom LR, no scheduler
-            optimizer = _build_memory_optimizer(accelerator.unwrap_model(policy), cfg)
-            lr_scheduler = None
-            policy, optimizer, lr_scheduler = accelerator.prepare(policy, optimizer, lr_scheduler)
+            # Reset optimizer state in-place to avoid large CUDA re-allocations/fragmentation.
+            try:
+                optimizer.zero_grad(set_to_none=True)
+                for group in optimizer.param_groups:
+                    for p in group.get("params", []):
+                        if p is None:
+                            continue
+                        if p.grad is not None:
+                            p.grad = None
+                        state = optimizer.state.get(p, None)
+                        if state:
+                            # Delete any tensor state (e.g., exp_avg, exp_avg_sq). They will be recreated lazily.
+                            for k in list(state.keys()):
+                                v = state[k]
+                                if isinstance(v, torch.Tensor):
+                                    del state[k]
+                            optimizer.state[p] = {}
+                # Optional: ensure LR groups remain as configured; no change to lrs by default.
+            except Exception:
+                pass
+            # Encourage allocator to release freed blocks and reduce fragmentation.
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         # One-task training loop
         policy.train()
