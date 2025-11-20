@@ -142,7 +142,7 @@ lerobot-meta-train \
   --policy.repo_id=outputs/train/reptile_smolvla_libero_3 \
   --lora.enable=true \
   --lora.r=8 \
-  --num_workers=4 \
+  --num_workers=8 \
   --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
@@ -167,7 +167,6 @@ lerobot-meta-train \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --save_freq=5000
-
 
 # Final copy of outputs back to permanent storage
 echo "Performing final copy of outputs to permanent storage..."
