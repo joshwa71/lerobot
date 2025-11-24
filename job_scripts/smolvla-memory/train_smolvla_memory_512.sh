@@ -20,6 +20,11 @@ echo "Job ID: $JOB_ID"
 # Setup finish trap: sync outputs then cleanup scratch
 function finish {
     set +e
+    echo "Stopping periodic backup process..."
+    if [ ! -z "$BACKUP_PID" ]; then
+        kill $BACKUP_PID 2>/dev/null || true
+        wait $BACKUP_PID 2>/dev/null || true
+    fi
     echo "Syncing outputs from scratch before cleanup..."
     if [ -n "$OUTPUT_SCRATCH" ] && [ -d "$OUTPUT_SCRATCH" ]; then
         mkdir -p "$FINAL_OUTPUT_DIR"
@@ -120,6 +125,31 @@ export TOKENIZERS_PARALLELISM=false
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_512"
 # Final output target (used by trap for sync-back)
 FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_512"
+
+# Periodic backup function (every 6 hours)
+function periodic_backup {
+    local scratch_dir="$1"
+    local final_dir="$2"
+    while true; do
+        sleep 21600  # 6 hours in seconds
+        if [ -d "$scratch_dir" ]; then
+            echo "[$(date)] Performing periodic backup of training outputs..."
+            mkdir -p "$final_dir"
+            if command -v rsync &> /dev/null; then
+                rsync -av --delete "$scratch_dir/" "$final_dir/" 2>&1 | head -20
+            else
+                cp -r "$scratch_dir"/* "$final_dir/"
+            fi
+            echo "[$(date)] Periodic backup completed"
+        fi
+    done
+}
+
+# Start periodic backup in background
+echo "Starting periodic backup process (every 6 hours)..."
+periodic_backup "$OUTPUT_SCRATCH" "$FINAL_OUTPUT_DIR" &
+BACKUP_PID=$!
+echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory

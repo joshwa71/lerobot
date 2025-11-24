@@ -2,7 +2,7 @@ cat > memory_libero_95_mem_mlp_512_2_layer.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
-#$ -l h_rt=96:00:00
+#$ -l h_rt=120:00:00
 #$ -l gpu=true,gpu_type=(h100|a100_80)
 #$ -pe gpu 1
 #$ -R y
@@ -20,6 +20,11 @@ echo "Job ID: $JOB_ID"
 # Setup finish trap: sync outputs then cleanup scratch
 function finish {
     set +e
+    echo "Stopping periodic backup process..."
+    if [ ! -z "$BACKUP_PID" ]; then
+        kill $BACKUP_PID 2>/dev/null || true
+        wait $BACKUP_PID 2>/dev/null || true
+    fi
     echo "Syncing outputs from scratch before cleanup..."
     if [ -n "$OUTPUT_SCRATCH" ] && [ -d "$OUTPUT_SCRATCH" ]; then
         mkdir -p "$FINAL_OUTPUT_DIR"
@@ -68,28 +73,6 @@ export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-memory
 
-# ## Test ##
-# # Force correct backend and GPU mapping for EGL
-# export MUJOCO_GL=egl
-# unset DISPLAY
-# FIRST_VISIBLE="$(echo "${CUDA_VISIBLE_DEVICES}" | cut -d',' -f1)"
-# export EGL_DEVICE_ID="${FIRST_VISIBLE}"
-# export MUJOCO_EGL_DEVICE_ID="${FIRST_VISIBLE}"
-
-# # Prefer system NVIDIA EGL over any conda-provided Mesa EGL
-# if [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ]; then
-#   export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-# fi
-# # Stronger vendor pin (optional)
-# if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
-#   export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
-# fi
-
-# echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
-# echo "EGL_DEVICE_ID=${EGL_DEVICE_ID}  MUJOCO_GL=${MUJOCO_GL}"
-
-# export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
-
 # Verify environment
 echo "Python: $(which python)"
 echo "Python version: $(python --version)"
@@ -120,6 +103,31 @@ export TOKENIZERS_PARALLELISM=false
 OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/memory_libero_95_mem_mlp_512_2_layer"
 # Final output target (used by trap for sync-back)
 FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/memory_libero_95_mem_mlp_512_2_layer"
+
+# Periodic backup function (every 6 hours)
+function periodic_backup {
+    local scratch_dir="$1"
+    local final_dir="$2"
+    while true; do
+        sleep 21600  # 6 hours in seconds
+        if [ -d "$scratch_dir" ]; then
+            echo "[$(date)] Performing periodic backup of training outputs..."
+            mkdir -p "$final_dir"
+            if command -v rsync &> /dev/null; then
+                rsync -av --delete "$scratch_dir/" "$final_dir/" 2>&1 | head -20
+            else
+                cp -r "$scratch_dir"/* "$final_dir/"
+            fi
+            echo "[$(date)] Periodic backup completed"
+        fi
+    done
+}
+
+# Start periodic backup in background
+echo "Starting periodic backup process (every 6 hours)..."
+periodic_backup "$OUTPUT_SCRATCH" "$FINAL_OUTPUT_DIR" &
+BACKUP_PID=$!
+echo "Periodic backup process started with PID: $BACKUP_PID"
 
 # Enter working directory
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
