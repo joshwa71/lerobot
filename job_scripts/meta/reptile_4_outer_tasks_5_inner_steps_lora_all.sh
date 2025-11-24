@@ -1,4 +1,4 @@
-cat > reptile_8_outer_tasks_5_inner_steps.sh << 'EOF'
+cat > reptile_4_outer_tasks_5_inner_steps_lora_all.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > reptile_8_outer_tasks_5_inner_steps.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N reptile_8_outer_tasks_5_inner_steps
+#$ -N reptile_4_outer_tasks_5_inner_steps_lora_all
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
@@ -101,8 +101,8 @@ export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_8_outer_tasks_5_inner_steps"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_8_outer_tasks_5_inner_steps"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_4_outer_tasks_5_inner_steps_lora_all"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_outer_tasks_5_inner_steps_lora_all"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -139,20 +139,29 @@ lerobot-meta-train \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
-  --policy.repo_id=outputs/train/reptile_8_outer_tasks_5_inner_steps \
+  --policy.repo_id=outputs/train/reptile_4_outer_tasks_5_inner_steps_lora_all \
   --lora.enable=true \
-  --lora.r=8 \
+  --lora.r=4 \
   --num_workers=8 \
   --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
-  --lora.target_modules_regex='["mlp\\.(up_proj|down_proj|gate_proj)$"]' \
+  --lora.target_modules_regex='[
+  "(?:^|\\.)self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)$",
+  "(?:^|\\.)mlp\\.(?:up_proj|down_proj|gate_proj)$",
+  "(?:^|\\.)mlp\\.(?:fc1|fc2)$",
+  "(?:^|\\.)state_proj$",
+  "(?:^|\\.)action_in_proj$",
+  "(?:^|\\.)action_out_proj$",
+  "(?:^|\\.)action_time_mlp_in$",
+  "(?:^|\\.)action_time_mlp_out$",
+  "(?:^|\\.)connector(\\.\\w+)?$"]' \
   --algo.type=reptile \
   --algo.meta_step_size=0.1 \
   --inner_steps=5 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
-  --tasks_per_outer_step=8 \
+  --tasks_per_outer_step=4 \
   --support_frames_per_task=50000 \
   --query_frames_per_task=512 \
   --train_tasks=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39] \
@@ -164,7 +173,7 @@ lerobot-meta-train \
   --eval_inner_steps=10 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
-  --job_name=reptile_8_outer_tasks_5_inner_steps \
+  --job_name=reptile_4_outer_tasks_5_inner_steps_lora_all \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=meta-vla \
