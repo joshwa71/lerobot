@@ -76,6 +76,9 @@ class MetaTrainConfig:
 
     # Loops
     inner_steps: int = 3
+    # Optional override for the number of inner adaptation steps used during eval;
+    # when None, fall back to `inner_steps`.
+    eval_inner_steps: int | None = None
     inner_opt: InnerOptConfig = field(default_factory=InnerOptConfig)
     algo: MetaAlgoConfig = field(default_factory=ReptileConfig)
 

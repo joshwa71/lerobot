@@ -388,6 +388,9 @@ class MetaEngine:
         # Per-task: clone meta-weights -> adapt -> build env -> eval
         per_task_results = {}
         inner_losses_eval: list[float] = []
+        # Determine number of inner adaptation steps to use during eval
+        eval_steps = self.cfg.eval_inner_steps if getattr(self.cfg, "eval_inner_steps", None) is not None else self.cfg.inner_steps
+
         for t in self.eval_tasks:
             theta = {n: p.detach().clone() for n, p in self.policy.named_parameters() if p.requires_grad}
 
@@ -395,7 +398,7 @@ class MetaEngine:
             res = self.algo.adapt(
                 model=self.policy,
                 support_iter=support_iters_eval[t],
-                steps=self.cfg.inner_steps,
+                steps=eval_steps,
                 inner_cfg=self.cfg.inner_opt,
                 preprocessor=self.preproc,
             )

@@ -1,13 +1,13 @@
-cat > train_smolvla_meta_libero_10_2.sh << 'EOF'
+cat > reptile_8_outer_tasks_5_inner_steps.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
-#$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|a40|h100|a100|rtx8000|rtx6000ada|rtx6000)
+#$ -l h_rt=96:00:00
+#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|h100|a100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_meta_libero_10_train_2
+#$ -N reptile_8_outer_tasks_5_inner_steps
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
@@ -65,6 +65,10 @@ source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-meta
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}
 
+export MUJOCO_GL=egl
+# pick the first (and usually only) visible GPU as the EGL device
+export MUJOCO_EGL_DEVICE_ID=$(cut -d',' -f1 <<< "${CUDA_VISIBLE_DEVICES:-0}")
+echo "MUJOCO_EGL_DEVICE_ID: $MUJOCO_EGL_DEVICE_ID"
 
 export HF_HOME="$SCRATCH_DIR/cache/hf_home"
 mkdir -p "$HF_HOME"
@@ -96,10 +100,9 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
-
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_smolvla_libero_2"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_smolvla_libero_2"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_8_outer_tasks_5_inner_steps"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_8_outer_tasks_5_inner_steps"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -136,10 +139,10 @@ lerobot-meta-train \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
-  --policy.repo_id=outputs/train/reptile_smolvla_libero_2 \
+  --policy.repo_id=outputs/train/reptile_8_outer_tasks_5_inner_steps \
   --lora.enable=true \
   --lora.r=8 \
-  --num_workers=4 \
+  --num_workers=8 \
   --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
@@ -149,22 +152,23 @@ lerobot-meta-train \
   --inner_steps=5 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
-  --tasks_per_outer_step=4 \
+  --tasks_per_outer_step=8 \
   --support_frames_per_task=50000 \
   --query_frames_per_task=512 \
   --train_tasks=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39] \
   --eval_tasks=[0,1,2,3,4] \
   --dataset_to_env_task_mapping='{"0":4,"1":6,"2":9,"3":2,"4":7}' \
-  --eval_freq=2000 \
+  --eval_freq=1000 \
   --eval.batch_size=1 \
   --eval.n_episodes=5 \
+  --eval_inner_steps=10 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
-  --job_name=reptile_smolvla_libero_2 \
+  --job_name=reptile_8_outer_tasks_5_inner_steps \
   --policy.push_to_hub=false \
   --wandb.enable=true \
-  --save_freq=5000
-
+  --wandb.project=meta-vla \
+  --save_freq=1000
 
 # Final copy of outputs back to permanent storage
 echo "Performing final copy of outputs to permanent storage..."
