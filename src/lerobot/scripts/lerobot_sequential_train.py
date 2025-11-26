@@ -93,14 +93,20 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     train_memory_value: bool = True
     # Learning rate for memory value parameters (pk_value_param).
     memory_value_lr: float = 1e-3
+    # End LR for linear decay schedule; if None, use static LR
+    memory_value_lr_end: float | None = None
 
     # Keys
     train_memory_keys: bool = False
     memory_keys_lr: float = 1e-3
+    # End LR for linear decay schedule; if None, use static LR
+    memory_keys_lr_end: float | None = None
 
     # Query projection (the memory query MLP linear projection)
     train_query_proj: bool = False
     query_proj_lr: float = 1e-3
+    # End LR for linear decay schedule; if None, use static LR
+    query_proj_lr_end: float | None = None
 
     # TF-IDF gating to sparsify memory value updates
     tfidf_enable: bool = True
@@ -108,10 +114,94 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     tfidf_top_t: int = 128
     # Optional path to pretraining memory usage stats JSON (memory_usage.json)
     idf_stats_path: str | None = None
+    # When true, ignore pretraining IDF stats and build IDF online from slot usage
+    # observed during sequential training (across all tasks seen so far).
+    use_online_idf_stats: bool = False
+
+    # Exponent applied to IDF scores. >1 increases exploration (penalizes frequent slots more),
+    # <1 decreases exploration. Default 1.0 = standard IDF.
+    idf_exponent: float = 1.0
 
 
 def _default_libero10_map() -> dict[int, int]:
     return {0: 4, 1: 6, 2: 9, 3: 2, 4: 7, 5: 0, 6: 8, 7: 1, 8: 3, 9: 5}
+
+
+def _build_memory_scheduler(
+    optimizer: Optimizer,
+    cfg: SequentialOnlineConfig,
+    total_steps: int,
+) -> torch.optim.lr_scheduler.LRScheduler | None:
+    """
+    Build a linear LR scheduler for memory param groups.
+
+    Each param group can have its own schedule (start_lr -> end_lr over total_steps).
+    If end_lr is None for a group, that group uses static LR.
+    Returns None if all param groups use static LR.
+
+    The scheduler resets LR to start values when created, so call this at the start of each task.
+    """
+    group_schedules: list[tuple[float, float]] = []
+
+    if cfg.train_memory_value:
+        start = cfg.memory_value_lr
+        end = cfg.memory_value_lr_end if cfg.memory_value_lr_end is not None else start
+        group_schedules.append((start, end))
+
+    if cfg.train_memory_keys:
+        start = cfg.memory_keys_lr
+        end = cfg.memory_keys_lr_end if cfg.memory_keys_lr_end is not None else start
+        group_schedules.append((start, end))
+
+    if cfg.train_query_proj:
+        start = cfg.query_proj_lr
+        end = cfg.query_proj_lr_end if cfg.query_proj_lr_end is not None else start
+        group_schedules.append((start, end))
+
+    if len(group_schedules) != len(optimizer.param_groups):
+        return None
+
+    all_static = all(abs(start - end) < 1e-12 for start, end in group_schedules)
+    if all_static:
+        return None
+
+    for i, (start_lr, _) in enumerate(group_schedules):
+        optimizer.param_groups[i]["lr"] = start_lr
+        optimizer.param_groups[i]["initial_lr"] = start_lr
+
+    def make_lr_lambda(start_lr: float, end_lr: float, total: int):
+        def lr_lambda(step: int) -> float:
+            if total <= 1 or abs(start_lr) < 1e-12:
+                return 1.0
+            progress = min(step / max(total - 1, 1), 1.0)
+            return 1.0 - progress * (1.0 - end_lr / start_lr)
+        return lr_lambda
+
+    lambdas = [make_lr_lambda(s, e, total_steps) for s, e in group_schedules]
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
+
+
+def _reset_scheduler_for_task(
+    optimizer: Optimizer,
+    cfg: SequentialOnlineConfig,
+    total_steps: int,
+) -> torch.optim.lr_scheduler.LRScheduler | None:
+    """
+    Reset optimizer LRs to start values and create a fresh scheduler for a new task.
+    """
+    group_lrs: list[float] = []
+    if cfg.train_memory_value:
+        group_lrs.append(cfg.memory_value_lr)
+    if cfg.train_memory_keys:
+        group_lrs.append(cfg.memory_keys_lr)
+    if cfg.train_query_proj:
+        group_lrs.append(cfg.query_proj_lr)
+
+    for i, lr in enumerate(group_lrs):
+        if i < len(optimizer.param_groups):
+            optimizer.param_groups[i]["lr"] = lr
+
+    return _build_memory_scheduler(optimizer, cfg, total_steps)
 
 
 def _build_dataloader_for_task(
@@ -311,11 +401,86 @@ def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int =
         pass
 
 
-def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPolicy):
+# Online IDF accumulators shared across tasks (per module)
+_online_idf_df_by_module: dict[str, torch.Tensor] = {}
+_online_idf_total_batches: dict[str, int] = {}
+
+
+def _init_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor]):
+    """
+    Initialize per-module DF and IDF vectors for online IDF computation.
+
+    DF counts and total batches are kept across tasks; IDF tensors are stored in idf_by_module
+    and updated in-place by _update_online_idf_stats.
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is None:
+            continue
+        num_slots = int(num_slots)
+        if json_key not in _online_idf_df_by_module:
+            _online_idf_df_by_module[json_key] = torch.zeros(num_slots, dtype=torch.float32)
+            _online_idf_total_batches[json_key] = 0
+        # Start with uniform IDF = 1.0 until enough usage has been observed.
+        if json_key not in idf_by_module or idf_by_module[json_key].numel() != num_slots:
+            idf_by_module[json_key] = torch.ones(num_slots, dtype=torch.float32)
+
+
+def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], idf_exponent: float = 1.0):
+    """
+    Update DF and IDF vectors for each memory module based on current batch usage.
+
+    Uses per-batch slot presence (batch-level DF) and recomputes IDF as:
+        idf_i = log((B + 1) / (DF_i + 1)) ^ idf_exponent
+    where B is the number of batches seen so far for the module.
+    idf_exponent > 1 increases exploration by penalizing frequent slots more.
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        idx = getattr(mem, "last_indices", None)
+        if idx is None:
+            continue
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is None:
+            continue
+        num_slots = int(num_slots)
+        if json_key not in _online_idf_df_by_module:
+            _online_idf_df_by_module[json_key] = torch.zeros(num_slots, dtype=torch.float32)
+            _online_idf_total_batches[json_key] = 0
+
+        df_vec = _online_idf_df_by_module[json_key]
+        if df_vec.numel() != num_slots:
+            df_vec = torch.zeros(num_slots, dtype=torch.float32)
+            _online_idf_df_by_module[json_key] = df_vec
+
+        idx_flat = idx.reshape(-1).to(torch.long).detach().cpu()
+        if idx_flat.numel() == 0:
+            continue
+        counts = torch.bincount(idx_flat, minlength=num_slots)
+        used = counts > 0
+        if used.any():
+            df_vec[used] += 1.0
+        _online_idf_total_batches[json_key] = _online_idf_total_batches.get(json_key, 0) + 1
+
+        B = float(_online_idf_total_batches[json_key])
+        # IDF = log((B + 1) / (DF + 1)) ^ idf_exponent
+        idf = torch.log((torch.tensor(B + 1.0) / (df_vec + 1.0)))
+        if idf_exponent != 1.0:
+            idf = idf ** idf_exponent
+        idf_by_module[json_key] = idf
+
+
+def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPolicy, idf_exponent: float = 1.0):
     """
     Build per-module IDF vectors from a memory_usage.json file produced during pretraining.
     Returns dict: json_key -> torch.FloatTensor[idf_per_slot] on CPU.
     If a module is missing in the JSON, it is omitted (callers should fallback to uniform IDF).
+    idf_exponent > 1 increases exploration by penalizing frequent slots more.
     """
     idf_by_module: dict[str, torch.Tensor] = {}
     try:
@@ -346,8 +511,10 @@ def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPoli
         # Guard against degenerate |B|
         if max_batches <= 0:
             continue
-        # IDF = log((|B| + 1)/(DF + 1))
+        # IDF = log((|B| + 1)/(DF + 1)) ^ idf_exponent
         idf = torch.log((torch.tensor(max_batches + 1.0) / (df + 1.0)))
+        if idf_exponent != 1.0:
+            idf = idf ** idf_exponent
         idf_by_module[json_key] = idf
     return idf_by_module
 
@@ -669,33 +836,45 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     # Load IDF stats for TF-IDF gating (optional). Skipped when tf_only is True.
     idf_by_module = None
     if cfg.tfidf_enable and not cfg.tf_only:
-        # Resolve stats path
-        candidate_paths: list[Path] = []
-        if cfg.idf_stats_path:
-            candidate_paths.append(Path(cfg.idf_stats_path))
-        # Try deriving from pretrained_path
-        try:
-            if cfg.policy.pretrained_path:
-                pp = Path(cfg.policy.pretrained_path)
-                candidate_paths.append(pp / "memory_usage.json")
-                candidate_paths.append(pp / "pretrained_model" / "memory_usage.json")
-        except Exception:
-            pass
-        chosen = None
-        for pth in candidate_paths:
-            if pth is not None and pth.exists():
-                chosen = pth
-                break
-        if chosen is None:
-            raise FileNotFoundError("TF-IDF is enabled but no memory_usage.json path was found.")
-        try:
-            idf_by_module = _load_idf_from_usage_json(chosen, accelerator.unwrap_model(policy, keep_fp32_wrapper=True))
-        except Exception as e:
-            raise RuntimeError(f"Failed to load IDF stats from {chosen}: {e}")
-        # Validate full coverage and shapes
-        _validate_idf_stats(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_by_module)
-        if is_main:
-            logging.info(f"Loaded IDF stats from: {chosen}")
+        if cfg.use_online_idf_stats:
+            # Online mode: initialize DF/IDF structures; no pretraining stats are used.
+            idf_by_module = {}
+            try:
+                _init_online_idf_stats(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_by_module)
+                if is_main:
+                    logging.info("Using online IDF statistics accumulated during sequential training.")
+            except Exception:
+                pass
+        else:
+            # Offline mode: load pretraining IDF stats from memory_usage.json.
+            candidate_paths: list[Path] = []
+            if cfg.idf_stats_path:
+                candidate_paths.append(Path(cfg.idf_stats_path))
+            # Try deriving from pretrained_path
+            try:
+                if cfg.policy.pretrained_path:
+                    pp = Path(cfg.policy.pretrained_path)
+                    candidate_paths.append(pp / "memory_usage.json")
+                    candidate_paths.append(pp / "pretrained_model" / "memory_usage.json")
+            except Exception:
+                pass
+            chosen = None
+            for pth in candidate_paths:
+                if pth is not None and pth.exists():
+                    chosen = pth
+                    break
+            if chosen is None:
+                raise FileNotFoundError("TF-IDF is enabled but no memory_usage.json path was found.")
+            try:
+                idf_by_module = _load_idf_from_usage_json(
+                    chosen, accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_exponent=cfg.idf_exponent
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to load IDF stats from {chosen}: {e}")
+            # Validate full coverage and shapes
+            _validate_idf_stats(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_by_module)
+            if is_main:
+                logging.info(f"Loaded IDF stats from: {chosen}")
 
     # Build optimizer/scheduler once, optionally reinit per task
     # Make the scheduler horizon equal to total steps across all tasks if we don't reinit per task.
@@ -704,7 +883,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     cfg.steps = max(1, sched_steps)
 
     if is_main:
-        logging.info("Creating optimizer (selected memory params) with custom LRs and no scheduler")
+        logging.info("Creating optimizer (selected memory params) with custom LRs")
 
     # Build optimizer with distinct param groups for values/keys/query_proj
     def _build_memory_optimizer(model: PreTrainedPolicy, cfg_local: SequentialOnlineConfig) -> Optimizer:
@@ -734,7 +913,12 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         return optim.AdamW(param_groups, betas=(0.9, 0.999), eps=1e-8)
 
     optimizer = _build_memory_optimizer(policy, cfg)
-    lr_scheduler = None
+    lr_scheduler = _build_memory_scheduler(optimizer, cfg, cfg.online_steps_per_task)
+    if is_main:
+        if lr_scheduler is not None:
+            logging.info("Linear LR schedule enabled (per-task reset)")
+        else:
+            logging.info("Using static LR (no schedule)")
 
     # Prepare with accelerator
     policy, optimizer, lr_scheduler = accelerator.prepare(policy, optimizer, lr_scheduler)
@@ -822,7 +1006,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             dataloader = accelerator.prepare(dataloader)
         dl_iter = cycle(dataloader)
 
-        # Optionally rebuild optimizer/scheduler per task
+        # Optionally rebuild optimizer state per task; always reset scheduler for fresh LR decay
         if cfg.reinit_optimizer_each_task:
             # Re-freeze to be safe in case something toggled
             _freeze_to_selected_memory_params(
@@ -848,7 +1032,6 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                                 if isinstance(v, torch.Tensor):
                                     del state[k]
                             optimizer.state[p] = {}
-                # Optional: ensure LR groups remain as configured; no change to lrs by default.
             except Exception:
                 pass
             # Encourage allocator to release freed blocks and reduce fragmentation.
@@ -856,6 +1039,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 torch.cuda.empty_cache()
             except Exception:
                 pass
+
+        # Reset scheduler per task so each task gets the full LR decay from start_lr to end_lr
+        lr_scheduler = _reset_scheduler_for_task(optimizer, cfg, cfg.online_steps_per_task)
 
         # One-task training loop
         policy.train()
@@ -927,6 +1113,17 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 except Exception:
                     pass
 
+            # Update online IDF statistics (all ranks) for future TF-IDF masking steps.
+            if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
+                try:
+                    _update_online_idf_stats(
+                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                        idf_by_module=idf_by_module if idf_by_module is not None else {},
+                        idf_exponent=cfg.idf_exponent,
+                    )
+                except Exception:
+                    pass
+
         # Save checkpoint after finishing this task
         if cfg.save_checkpoint and cfg.save_after_each_task and is_main:
             step_id = get_step_identifier(global_step, cfg.steps)
@@ -985,24 +1182,31 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 )
 
             if is_main:
-                # Log concise CL metrics to wandb
-                overall = eval_info.get("overall", {})
+                overall = eval_info.get("overall", {}) or {}
+                avg_sum = overall.get("avg_sum_reward", float("nan"))
+                avg_max = overall.get("avg_max_reward", float("nan"))
+                pc_succ = overall.get("pc_success", float("nan"))
+                logging.info(
+                    f"Eval overall | tasks_seen={len(seen_env_task_ids)} "
+                    f"avg_sum_reward={avg_sum:.3f} avg_max_reward={avg_max:.3f} pc_success={pc_succ:.2f}"
+                )
                 if wandb_logger:
                     log_dict = {
                         "num_tasks_seen": len(seen_env_task_ids),
-                        "avg_sum_reward_seen": float(overall.get("avg_sum_reward", float("nan"))),
-                        "avg_max_reward_seen": float(overall.get("avg_max_reward", float("nan"))),
-                        "avg_pc_success_seen": float(overall.get("pc_success", float("nan"))),
+                        "avg_sum_reward_seen": float(avg_sum),
+                        "avg_max_reward_seen": float(avg_max),
+                        "avg_pc_success_seen": float(pc_succ),
                     }
-                    # Per-task success (if available)
-                    per_tasks = eval_info.get(cfg.env.task, {}) if cfg.env else {}
-                    for tid, tinfo in per_tasks.items():
-                        if isinstance(tinfo, dict) and "pc_success" in tinfo:
-                            log_dict[f"success/task_{tid}"] = float(tinfo["pc_success"]) if tinfo["pc_success"] is not None else float("nan")
+                    per_group = eval_info.get("per_group", {}) or {}
+                    env_task_key = str(cfg.env.task) if cfg.env and cfg.env.task is not None else None
+                    if env_task_key and env_task_key in per_group:
+                        ginfo = per_group[env_task_key]
+                        if isinstance(ginfo, dict) and "pc_success" in ginfo:
+                            log_dict[f"success/{env_task_key}_overall"] = (
+                                float(ginfo["pc_success"]) if ginfo["pc_success"] is not None else float("nan")
+                            )
                     wandb_logger.log_dict(log_dict, global_step, mode="eval")
-                    # Log first video like in the standard pipeline, if present
-                    ov = eval_info.get("overall", {})
-                    vpaths = ov.get("video_paths") if isinstance(ov, dict) else None
+                    vpaths = overall.get("video_paths") if isinstance(overall, dict) else None
                     if vpaths:
                         wandb_logger.log_video(vpaths[0], global_step, mode="eval")
 

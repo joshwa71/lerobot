@@ -1,10 +1,9 @@
-
 python -m lerobot.scripts.lerobot_sequential_train \
   --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_256 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_idf_exponent_2 \
   --steps=2000 \
   --batch_size=64 \
   --num_workers=12 \
@@ -13,94 +12,24 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_tfidf_256 \
+  --job_name=smolvla_libero_10_mem_online_idf_exponent_2 \
   --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=3000 \
-  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
-  --save_after_each_task=true \
-  --policy.memory_layer.aggregate_usage=false \
-  --reinit_optimizer_each_task=true \
-  --tfidf_enable=true \
-  --tfidf_top_t=256 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.03
-
-
-python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model \
-  --dataset.repo_id=outputs/libero_10 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_512 \
-  --steps=2000 \
-  --batch_size=64 \
-  --num_workers=12 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=20 \
-  --log_freq=200 \
-  --wandb.enable=true \
-  --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_tfidf_512 \
-  --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=3000 \
-  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
-  --save_after_each_task=true \
-  --policy.memory_layer.aggregate_usage=false \
-  --reinit_optimizer_each_task=true \
-  --tfidf_enable=true \
-  --tfidf_top_t=512 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.03
-
-python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model \
-  --dataset.repo_id=outputs/libero_10 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_1024 \
-  --steps=2000 \
-  --batch_size=64 \
-  --num_workers=12 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=20 \
-  --log_freq=200 \
-  --wandb.enable=true \
-  --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_tfidf_1024 \
-  --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=3000 \
+  --online_steps_per_task=2000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
   --policy.memory_layer.aggregate_usage=false \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
   --tfidf_top_t=1024 \
+  --train_query_proj=true \
+  --query_proj_lr=0.02 \
+  --query_proj_lr_end=0.002 \
+  --train_memory_keys=true \
+  --memory_keys_lr=0.02 \
+  --memory_keys_lr_end=0.002 \
+  --train_memory_value=true \
   --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.03
-
-
-python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model \
-  --dataset.repo_id=outputs/libero_10 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_2048 \
-  --steps=2000 \
-  --batch_size=64 \
-  --num_workers=12 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=20 \
-  --log_freq=200 \
-  --wandb.enable=true \
-  --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_tfidf_2048 \
-  --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=3000 \
-  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
-  --save_after_each_task=true \
-  --policy.memory_layer.aggregate_usage=false \
-  --reinit_optimizer_each_task=true \
-  --tfidf_enable=true \
-  --tfidf_top_t=2048 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.03
+  --memory_value_lr=0.02 \
+  --memory_value_lr_end=0.002 \
+  --use_online_idf_stats=true \
+  --idf_exponent=1

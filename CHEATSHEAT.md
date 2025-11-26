@@ -145,7 +145,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --tfidf_enable=true \
   --tfidf_top_t=512 \
   --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.03
+  --memory_value_lr=0.02
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
