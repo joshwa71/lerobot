@@ -3,7 +3,7 @@ cat > reptile_4_outer_tasks_5_inner_steps_lora_all.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=96:00:00
-#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|h100|a100)
+#$ -l gpu=true,gpu_type=(a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
@@ -146,8 +146,7 @@ lerobot-meta-train \
   --prefetch_factor=4 \
   --lora.alpha=16 \
   --lora.dropout=0.05 \
-  --lora.target_modules_regex='[
-  "(?:^|\\.)self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)$",
+  --lora.target_modules_regex='["(?:^|\\.)self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)$",
   "(?:^|\\.)mlp\\.(?:up_proj|down_proj|gate_proj)$",
   "(?:^|\\.)mlp\\.(?:fc1|fc2)$",
   "(?:^|\\.)state_proj$",

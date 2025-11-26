@@ -3,7 +3,7 @@ cat > reptile_4_outer_tasks_5_inner_steps.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=96:00:00
-#$ -l gpu=true,gpu_type=(a100_dgx|a100_80|h100|a100)
+#$ -l gpu=true,gpu_type=(a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
