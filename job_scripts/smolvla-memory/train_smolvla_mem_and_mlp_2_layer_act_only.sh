@@ -160,7 +160,6 @@ lerobot-train \
   --policy.memory_layers=true \
   --policy.memory_layer.memory_only=false \
   --policy.memory_layer.layers="[14,15]" \
-  --policy.memory_layer.vlm_layers="[14,15]" \
   --policy.memory_layer.log_usage=true \
   --policy.memory_layer.enabled=true \
   --policy.memory_layer.aggregate_usage=true \
