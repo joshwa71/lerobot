@@ -353,7 +353,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             # never fail training due to optional logging
             pass
 
-    def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int = 5000):
+    def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int = 500000):
         """
         Write JSON files <out_dir>/memory_by_task/memory_usage_task_{tid}.json summarizing per-task slot usage.
         Keeps only top-k slots per task for compactness.
@@ -613,7 +613,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                     wandb_logger.log_policy(checkpoint_dir)
                 # Flush per-task memory usage snapshot
                 try:
-                    _flush_per_task_usage(cfg.output_dir, task_id=None, topk=5000)
+                    _flush_per_task_usage(cfg.output_dir, task_id=None, topk=500000)
                 except Exception:
                     pass
 
