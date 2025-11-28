@@ -1,4 +1,4 @@
-cat > train_smolvla_libero_10_100k.sh << 'EOF'
+cat > train_smolvla_libero_35_even.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > train_smolvla_libero_10_100k.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=100G
-#$ -N smolvla_train
+#$ -N smolvla_libero_35_even_train
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
@@ -71,8 +71,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_35_even"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero_35_even"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -84,8 +84,8 @@ cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_200k"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/libero_10_smolvla_200k"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/smolvla_libero_35_even"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/smolvla_libero_35_even"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -118,7 +118,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_10_smolvla_100k \
+  --policy.repo_id=outputs/train/smolvla_libero_35_even \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --output_dir="$OUTPUT_SCRATCH" \
   --steps=100000 \
@@ -128,11 +128,17 @@ lerobot-train \
   --env.task=libero_10 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
-  --eval_freq=5000 \
+  --eval_freq=1000 \
   --save_freq=20000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=1000 \
+  --policy.scheduler_decay_steps=80000 \
+  --policy.push_to_hub=false \
+  --job_name=smolvla_libero_35_even \
+  --wandb.enable=true \
+
 # Final copy of outputs back to permanent storage
 echo "Performing final copy of outputs to permanent storage..."
 mkdir -p "$FINAL_OUTPUT_DIR"
