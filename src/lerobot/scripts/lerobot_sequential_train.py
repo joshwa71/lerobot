@@ -406,37 +406,12 @@ _online_idf_df_by_module: dict[str, torch.Tensor] = {}
 _online_idf_total_batches: dict[str, int] = {}
 
 
-def _init_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor]):
+def _accumulate_online_idf_stats_batch(unwrapped_policy: PreTrainedPolicy):
     """
-    Initialize per-module DF and IDF vectors for online IDF computation.
+    Update per-module DF counts from the current batch.
 
-    DF counts and total batches are kept across tasks; IDF tensors are stored in idf_by_module
-    and updated in-place by _update_online_idf_stats.
-    """
-    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
-        try:
-            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
-        except Exception:
-            num_slots = getattr(mem, "size", None)
-        if num_slots is None:
-            continue
-        num_slots = int(num_slots)
-        if json_key not in _online_idf_df_by_module:
-            _online_idf_df_by_module[json_key] = torch.zeros(num_slots, dtype=torch.float32)
-            _online_idf_total_batches[json_key] = 0
-        # Start with uniform IDF = 1.0 until enough usage has been observed.
-        if json_key not in idf_by_module or idf_by_module[json_key].numel() != num_slots:
-            idf_by_module[json_key] = torch.ones(num_slots, dtype=torch.float32)
-
-
-def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], idf_exponent: float = 1.0):
-    """
-    Update DF and IDF vectors for each memory module based on current batch usage.
-
-    Uses per-batch slot presence (batch-level DF) and recomputes IDF as:
-        idf_i = log((B + 1) / (DF_i + 1)) ^ idf_exponent
-    where B is the number of batches seen so far for the module.
-    idf_exponent > 1 increases exploration by penalizing frequent slots more.
+    This only updates document-frequency statistics; IDF tensors used for TF-IDF
+    masking are recomputed separately (e.g. at task boundaries).
     """
     for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
         idx = getattr(mem, "last_indices", None)
@@ -467,7 +442,58 @@ def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: 
             df_vec[used] += 1.0
         _online_idf_total_batches[json_key] = _online_idf_total_batches.get(json_key, 0) + 1
 
-        B = float(_online_idf_total_batches[json_key])
+
+def _init_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor]):
+    """
+    Initialize per-module DF and IDF vectors for online IDF computation.
+
+    DF counts and total batches are kept across tasks; IDF tensors are stored in idf_by_module
+    and updated in-place by _update_online_idf_stats.
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is None:
+            continue
+        num_slots = int(num_slots)
+        if json_key not in _online_idf_df_by_module:
+            _online_idf_df_by_module[json_key] = torch.zeros(num_slots, dtype=torch.float32)
+            _online_idf_total_batches[json_key] = 0
+        # Start with uniform IDF = 1.0 until enough usage has been observed.
+        if json_key not in idf_by_module or idf_by_module[json_key].numel() != num_slots:
+            idf_by_module[json_key] = torch.ones(num_slots, dtype=torch.float32)
+
+
+def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[str, torch.Tensor], idf_exponent: float = 1.0):
+    """
+    Recompute IDF vectors for each memory module from accumulated DF stats.
+
+    Uses per-batch slot presence (batch-level DF) accumulated across all calls to
+    `_accumulate_online_idf_stats_batch` and recomputes IDF as:
+        idf_i = log((B + 1) / (DF_i + 1)) ^ idf_exponent
+    where B is the number of batches seen so far for the module.
+    idf_exponent > 1 increases exploration by penalizing frequent slots more.
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is None:
+            continue
+        num_slots = int(num_slots)
+        df_vec = _online_idf_df_by_module.get(json_key)
+        total_batches = _online_idf_total_batches.get(json_key, 0)
+        if df_vec is None or df_vec.numel() != num_slots or total_batches <= 0:
+            # No usage stats yet for this module; keep existing IDF if present,
+            # otherwise fall back to uniform IDF.
+            if json_key not in idf_by_module or idf_by_module[json_key].numel() != num_slots:
+                idf_by_module[json_key] = torch.ones(num_slots, dtype=torch.float32)
+            continue
+
+        B = float(total_batches)
         # IDF = log((B + 1) / (DF + 1)) ^ idf_exponent
         idf = torch.log((torch.tensor(B + 1.0) / (df_vec + 1.0)))
         if idf_exponent != 1.0:
@@ -1116,13 +1142,22 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             # Update online IDF statistics (all ranks) for future TF-IDF masking steps.
             if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
                 try:
-                    _update_online_idf_stats(
-                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
-                        idf_by_module=idf_by_module if idf_by_module is not None else {},
-                        idf_exponent=cfg.idf_exponent,
+                    _accumulate_online_idf_stats_batch(
+                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
                     )
                 except Exception:
                     pass
+
+        # After finishing this task, update IDF vectors from accumulated DF stats
+        if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
+            try:
+                _update_online_idf_stats(
+                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                    idf_by_module=idf_by_module if idf_by_module is not None else {},
+                    idf_exponent=cfg.idf_exponent,
+                )
+            except Exception:
+                pass
 
         # Save checkpoint after finishing this task
         if cfg.save_checkpoint and cfg.save_after_each_task and is_main:
