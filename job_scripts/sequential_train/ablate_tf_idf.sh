@@ -1,5 +1,5 @@
 python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/090000/pretrained_model \
+  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/last/pretrained_model \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
@@ -9,7 +9,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=20 \
-  --log_freq=200 \
+  --log_freq=100 \
   --wandb.enable=false \
   --wandb.project=vla-memory \
   --job_name=smolvla_libero_10_mem_online \
@@ -23,10 +23,6 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --tfidf_top_t=256 \
   --train_memory_value=true \
   --memory_value_lr=0.03 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/090000/pretrained_model/memory_usage.json \
+  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/last/pretrained_model/memory_usage.json \
   --use_online_idf_stats=true \
   --idf_exponent=1
-
-rsync -avp vic:/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/memory_libero_95_mem_mlp_512_2_layer_act_only /home/josh/phddev/lerobot/outputs/cluster_train/
-
-rsync -avp vic:/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/memory_libero_95_mem_mlp_512_2_layer /home/josh/phddev/lerobot/outputs/cluster_train/
