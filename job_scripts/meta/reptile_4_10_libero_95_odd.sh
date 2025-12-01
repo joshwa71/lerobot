@@ -138,7 +138,7 @@ lerobot-meta-train \
   --batch_size=64 \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
-  --policy.path=$MODEL_SCRATCH \
+  --policy.path=$MODEL_SCRATCH/checkpoints/last/pretrained_model \
   --policy.repo_id=outputs/train/reptile_4_10_libero_35_odd \
   --lora.enable=true \
   --lora.r=4 \
