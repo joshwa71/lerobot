@@ -255,6 +255,9 @@ def create_full_figure(
     n_tasks = len(task_names)
     grid_size = side * side
 
+    has_any_global = bool(global_arrays)
+    has_any_tasks = n_tasks > 0
+
     colorscale = [
         [0.0, "rgb(0,0,0)"],
         [1.0, "rgb(253,231,37)"],
@@ -271,9 +274,11 @@ def create_full_figure(
     margin_left = 60
     margin_right = 120
 
-    global_section_height = heatmap_px + stat_height_px + gap_px
-    iou_section_height = n_tasks * 24 + stat_height_px + gap_px if n_tasks > 0 else 0
-    task_section_height = task_rows * (heatmap_px + stat_height_px + gap_px) if task_rows > 0 else 0
+    global_section_height = heatmap_px + stat_height_px + gap_px if has_any_global else 0
+    iou_section_height = n_tasks * 24 + stat_height_px + gap_px if has_any_tasks else 0
+    task_section_height = (
+        task_rows * (heatmap_px + stat_height_px + gap_px) if has_any_tasks else 0
+    )
 
     total_content_height = global_section_height + iou_section_height + task_section_height
     fig_height = total_content_height + margin_top + margin_bottom
@@ -287,10 +292,13 @@ def create_full_figure(
     module_annotations: Dict[str, List[dict]] = {}
 
     for m_idx, module_name in enumerate(module_names):
-        global_arr = global_arrays[module_name]
-        task_arrs = module_arrays[module_name]
+        global_arr = global_arrays.get(module_name)
+        task_arrs = module_arrays.get(module_name, [])
 
-        all_arrs = [global_arr] + task_arrs
+        all_arrs: List[np.ndarray] = []
+        if global_arr is not None:
+            all_arrs.append(global_arr)
+        all_arrs.extend(task_arrs)
         padded_arrays: List[np.ndarray] = []
         transformed_arrays: List[np.ndarray] = []
         max_log_val = 0.0
@@ -327,74 +335,75 @@ def create_full_figure(
 
         y_cursor = 1.0 - (margin_top / fig_height)
 
-        global_y_top = y_cursor
-        global_y_bottom = y_cursor - (heatmap_px / fig_height)
-        global_x_left = margin_left / fig_width
-        global_x_right = global_x_left + (heatmap_px / fig_width)
+        if global_arr is not None:
+            global_y_top = y_cursor
+            global_y_bottom = y_cursor - (heatmap_px / fig_height)
+            global_x_left = margin_left / fig_width
+            global_x_right = global_x_left + (heatmap_px / fig_width)
 
-        xax, yax = axis_name(axis_counter)
-        xkey, ykey = axis_key(axis_counter)
-        axis_counter += 1
+            xax, yax = axis_name(axis_counter)
+            xkey, ykey = axis_key(axis_counter)
+            axis_counter += 1
 
-        layout_axes[xkey] = dict(
-            domain=[global_x_left, global_x_right],
-            anchor=yax,
-            showticklabels=False,
-            showgrid=False,
-        )
-        layout_axes[ykey] = dict(
-            domain=[global_y_bottom, global_y_top],
-            anchor=xax,
-            showticklabels=False,
-            showgrid=False,
-            scaleanchor=xax,
-            scaleratio=1,
-        )
-
-        padded_global = padded_arrays[0]
-        transformed_global = transformed_arrays[0].reshape(side, side)
-        counts_global = padded_global.reshape(side, side)
-        customdata_global = np.arange(grid_size, dtype=int).reshape(side, side)
-
-        global_heatmap = go.Heatmap(
-            z=transformed_global,
-            x=np.arange(side),
-            y=np.arange(side),
-            coloraxis="coloraxis",
-            visible=(m_idx == 0),
-            customdata=customdata_global,
-            text=counts_global,
-            hovertemplate=(
-                "Global | Slot %{customdata}<br>"
-                "Accesses %{text:.0f}<br>"
-                "log1p %{z:.3f}<extra></extra>"
-            ),
-            xaxis=xax,
-            yaxis=yax,
-        )
-        traces.append(global_heatmap)
-
-        g_total, g_slots, g_unique, g_gini, g_ent, g_sparsity = compute_stats(global_arr)
-        stat_y = global_y_bottom - (stat_height_px * 0.5 / fig_height)
-        annotations.append(
-            dict(
-                x=(global_x_left + global_x_right) / 2,
-                y=stat_y,
-                xref="paper",
-                yref="paper",
-                showarrow=False,
-                align="center",
-                font=dict(size=12),
-                text=(
-                    f"<b>Global</b> | Total Accesses {int(g_total):,} | Unique Slots {g_unique:,} / {g_slots:,}<br>"
-                    f"Gini {g_gini:.3f} | Ent {g_ent:.3f} | Unused {g_sparsity:.1f}%"
-                ),
+            layout_axes[xkey] = dict(
+                domain=[global_x_left, global_x_right],
+                anchor=yax,
+                showticklabels=False,
+                showgrid=False,
             )
-        )
+            layout_axes[ykey] = dict(
+                domain=[global_y_bottom, global_y_top],
+                anchor=xax,
+                showticklabels=False,
+                showgrid=False,
+                scaleanchor=xax,
+                scaleratio=1,
+            )
 
-        y_cursor = global_y_bottom - (stat_height_px + gap_px) / fig_height
+            padded_global = padded_arrays[0]
+            transformed_global = transformed_arrays[0].reshape(side, side)
+            counts_global = padded_global.reshape(side, side)
+            customdata_global = np.arange(grid_size, dtype=int).reshape(side, side)
 
-        if n_tasks > 0:
+            global_heatmap = go.Heatmap(
+                z=transformed_global,
+                x=np.arange(side),
+                y=np.arange(side),
+                coloraxis="coloraxis",
+                visible=(m_idx == 0),
+                customdata=customdata_global,
+                text=counts_global,
+                hovertemplate=(
+                    "Global | Slot %{customdata}<br>"
+                    "Accesses %{text:.0f}<br>"
+                    "log1p %{z:.3f}<extra></extra>"
+                ),
+                xaxis=xax,
+                yaxis=yax,
+            )
+            traces.append(global_heatmap)
+
+            g_total, g_slots, g_unique, g_gini, g_ent, g_sparsity = compute_stats(global_arr)
+            stat_y = global_y_bottom - (stat_height_px * 0.5 / fig_height)
+            annotations.append(
+                dict(
+                    x=(global_x_left + global_x_right) / 2,
+                    y=stat_y,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    align="center",
+                    font=dict(size=12),
+                    text=(
+                        f"<b>Global</b> | Total Accesses {int(g_total):,} | Unique Slots {g_unique:,} / {g_slots:,}<br>"
+                        f"Gini {g_gini:.3f} | Ent {g_ent:.3f} | Unused {g_sparsity:.1f}%"
+                    ),
+                )
+            )
+
+            y_cursor = global_y_bottom - (stat_height_px + gap_px) / fig_height
+
+        if n_tasks > 0 and task_arrs:
             iou_matrix = compute_iou_matrix(task_arrs)
             iou_size_px = n_tasks * 24
             iou_y_top = y_cursor
@@ -484,8 +493,9 @@ def create_full_figure(
                 scaleratio=1,
             )
 
-            padded_task = padded_arrays[1 + t_idx]
-            transformed_task = transformed_arrays[1 + t_idx].reshape(side, side)
+            task_index = t_idx + (1 if global_arr is not None else 0)
+            padded_task = padded_arrays[task_index]
+            transformed_task = transformed_arrays[task_index].reshape(side, side)
             counts_task = padded_task.reshape(side, side)
             customdata_task = np.arange(grid_size, dtype=int).reshape(side, side)
 
@@ -612,14 +622,22 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "global_json",
+        "--global_json",
+        "--global-stats",
+        "--global_stats",
+        dest="global_json",
         type=str,
-        help="Path to the global memory_usage.json file.",
+        default=None,
+        help="Optional: path to the global memory_usage.json file.",
     )
     parser.add_argument(
-        "task_json_dir",
+        "--task_json_dir",
+        "--task-stats",
+        "--task_stats",
+        dest="task_json_dir",
         type=str,
-        help="Path to a directory containing per-task memory_usage_*.json files.",
+        default=None,
+        help="Optional: path to a directory containing per-task memory_usage_*.json files.",
     )
     parser.add_argument(
         "--grid-side",
@@ -639,32 +657,52 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    global_path = Path(args.global_json)
-    if not global_path.is_file():
-        raise SystemExit(f"Global JSON file not found: {global_path}")
-
-    task_dir = Path(args.task_json_dir)
-    if not task_dir.is_dir():
-        raise SystemExit(f"Per-task JSON directory not found: {task_dir}")
-
-    global_arrays, global_n_slots = load_global_modules(global_path)
-    task_names, module_arrays, module_n_slots = load_per_task_modules(task_dir)
-
-    global_modules = set(global_arrays.keys())
-    task_modules = set(module_arrays.keys())
-    common_modules = sorted(global_modules & task_modules)
-
-    if not common_modules:
-        raise SystemExit(
-            "No overlapping modules between global JSON and per-task JSONs. "
-            "Ensure you used matching logs for both inputs."
+    if args.global_json is None and args.task_json_dir is None:
+        parser.error(
+            "At least one of --global_json/--global-stats or "
+            "--task_json_dir/--task-stats must be provided."
         )
 
-    max_slots = 0
-    for name in common_modules:
-        max_here = max(global_n_slots.get(name, 0), module_n_slots.get(name, 0))
-        if max_here > max_slots:
-            max_slots = max_here
+    global_arrays: Dict[str, np.ndarray] = {}
+    global_n_slots: Dict[str, int] = {}
+    task_names: List[str] = []
+    module_arrays: Dict[str, List[np.ndarray]] = {}
+    module_n_slots: Dict[str, int] = {}
+
+    if args.global_json is not None:
+        global_path = Path(args.global_json)
+        if not global_path.is_file():
+            raise SystemExit(f"Global JSON file not found: {global_path}")
+        global_arrays, global_n_slots = load_global_modules(global_path)
+
+    if args.task_json_dir is not None:
+        task_dir = Path(args.task_json_dir)
+        if not task_dir.is_dir():
+            raise SystemExit(f"Per-task JSON directory not found: {task_dir}")
+        task_names, module_arrays, module_n_slots = load_per_task_modules(task_dir)
+
+    if global_arrays and module_arrays:
+        global_modules = set(global_arrays.keys())
+        task_modules = set(module_arrays.keys())
+        module_names = sorted(global_modules & task_modules)
+
+        if not module_names:
+            raise SystemExit(
+                "No overlapping modules between global JSON and per-task JSONs. "
+                "Ensure you used matching logs for both inputs."
+            )
+
+        max_slots = 0
+        for name in module_names:
+            max_here = max(global_n_slots.get(name, 0), module_n_slots.get(name, 0))
+            if max_here > max_slots:
+                max_slots = max_here
+    elif global_arrays:
+        module_names = sorted(global_arrays.keys())
+        max_slots = max(global_n_slots.values())
+    else:
+        module_names = sorted(module_arrays.keys())
+        max_slots = max(module_n_slots.values())
 
     if max_slots <= 0:
         raise SystemExit("Computed maximum number of slots is non-positive.")
@@ -672,7 +710,7 @@ def main() -> None:
     side = determine_grid_side(max_slots, args.grid_side)
 
     fig = create_full_figure(
-        module_names=common_modules,
+        module_names=module_names,
         task_names=task_names,
         global_arrays=global_arrays,
         global_n_slots=global_n_slots,

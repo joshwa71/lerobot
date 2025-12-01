@@ -93,20 +93,26 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     train_memory_value: bool = True
     # Learning rate for memory value parameters (pk_value_param).
     memory_value_lr: float = 1e-3
-    # End LR for linear decay schedule; if None, use static LR
+    # End LR for LR schedule; if None, use static LR
     memory_value_lr_end: float | None = None
+    # LR scheduler type for memory values: "linear" or "cosine"
+    memory_value_scheduler_type: str = "linear"
 
     # Keys
     train_memory_keys: bool = False
     memory_keys_lr: float = 1e-3
-    # End LR for linear decay schedule; if None, use static LR
+    # End LR for LR schedule; if None, use static LR
     memory_keys_lr_end: float | None = None
+    # LR scheduler type for memory keys: "linear" or "cosine"
+    memory_keys_scheduler_type: str = "linear"
 
     # Query projection (the memory query MLP linear projection)
     train_query_proj: bool = False
     query_proj_lr: float = 1e-3
-    # End LR for linear decay schedule; if None, use static LR
+    # End LR for LR schedule; if None, use static LR
     query_proj_lr_end: float | None = None
+    # LR scheduler type for query projection: "linear" or "cosine"
+    query_proj_scheduler_type: str = "linear"
 
     # TF-IDF gating to sparsify memory value updates
     tfidf_enable: bool = True
@@ -133,51 +139,67 @@ def _build_memory_scheduler(
     total_steps: int,
 ) -> torch.optim.lr_scheduler.LRScheduler | None:
     """
-    Build a linear LR scheduler for memory param groups.
+    Build an LR scheduler for memory param groups.
 
-    Each param group can have its own schedule (start_lr -> end_lr over total_steps).
+    Each param group can have its own schedule (start_lr -> end_lr over total_steps),
+    and its own scheduler type ("linear" or "cosine").
     If end_lr is None for a group, that group uses static LR.
     Returns None if all param groups use static LR.
 
     The scheduler resets LR to start values when created, so call this at the start of each task.
     """
-    group_schedules: list[tuple[float, float]] = []
+    group_schedules: list[tuple[float, float, str]] = []
 
     if cfg.train_memory_value:
         start = cfg.memory_value_lr
         end = cfg.memory_value_lr_end if cfg.memory_value_lr_end is not None else start
-        group_schedules.append((start, end))
+        sched_type = getattr(cfg, "memory_value_scheduler_type", "linear")
+        group_schedules.append((start, end, sched_type))
 
     if cfg.train_memory_keys:
         start = cfg.memory_keys_lr
         end = cfg.memory_keys_lr_end if cfg.memory_keys_lr_end is not None else start
-        group_schedules.append((start, end))
+        sched_type = getattr(cfg, "memory_keys_scheduler_type", "linear")
+        group_schedules.append((start, end, sched_type))
 
     if cfg.train_query_proj:
         start = cfg.query_proj_lr
         end = cfg.query_proj_lr_end if cfg.query_proj_lr_end is not None else start
-        group_schedules.append((start, end))
+        sched_type = getattr(cfg, "query_proj_scheduler_type", "linear")
+        group_schedules.append((start, end, sched_type))
 
     if len(group_schedules) != len(optimizer.param_groups):
         return None
 
-    all_static = all(abs(start - end) < 1e-12 for start, end in group_schedules)
+    all_static = all(abs(start - end) < 1e-12 for start, end, _ in group_schedules)
     if all_static:
         return None
 
-    for i, (start_lr, _) in enumerate(group_schedules):
+    for i, (start_lr, _, _) in enumerate(group_schedules):
         optimizer.param_groups[i]["lr"] = start_lr
         optimizer.param_groups[i]["initial_lr"] = start_lr
 
-    def make_lr_lambda(start_lr: float, end_lr: float, total: int):
+    def make_lr_lambda(start_lr: float, end_lr: float, total: int, scheduler_type: str):
+        scheduler_type = (scheduler_type or "linear").lower()
+
         def lr_lambda(step: int) -> float:
             if total <= 1 or abs(start_lr) < 1e-12:
                 return 1.0
             progress = min(step / max(total - 1, 1), 1.0)
-            return 1.0 - progress * (1.0 - end_lr / start_lr)
+            if scheduler_type == "linear":
+                return 1.0 - progress * (1.0 - end_lr / start_lr)
+            if scheduler_type == "cosine":
+                cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+                ratio_end = end_lr / start_lr
+                return ratio_end + (1.0 - ratio_end) * cosine
+            raise ValueError(f"Unknown scheduler type: {scheduler_type}. Expected 'linear' or 'cosine'.")
+
         return lr_lambda
 
-    lambdas = [make_lr_lambda(s, e, total_steps) for s, e in group_schedules]
+    lambdas = [
+        make_lr_lambda(start, end, total_steps, sched_type)
+        for (start, end, sched_type) in group_schedules
+    ]
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
 
 
@@ -327,6 +349,10 @@ def _enable_memory_batch_logging(unwrapped_policy: PreTrainedPolicy, enable: boo
 _per_task_totals = defaultdict(lambda: defaultdict(Counter))
 # module_key -> task_id -> Counter(slot_idx -> batch_count)
 _per_task_batches = defaultdict(lambda: defaultdict(Counter))
+ # module_key -> task_id -> Counter(slot_idx -> total_update_count)
+_per_task_update_totals = defaultdict(lambda: defaultdict(Counter))
+# module_key -> task_id -> Counter(slot_idx -> batch_update_count)
+_per_task_update_batches = defaultdict(lambda: defaultdict(Counter))
 
 
 def _accumulate_task_usage_for_batch(unwrapped_policy: PreTrainedPolicy, task_id: int):
@@ -359,10 +385,43 @@ def _accumulate_task_usage_for_batch(unwrapped_policy: PreTrainedPolicy, task_id
         pass
 
 
-def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int = 5000):
+def _accumulate_task_updates_for_batch(unwrapped_policy: PreTrainedPolicy, task_id: int):
+    """
+    Accumulate per-task slot updates for the current batch.
+
+    A slot is considered updated for a batch if it was selected by the TF-IDF
+    gating as eligible to receive gradient updates in that step.
+    """
+    try:
+        for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+            idx = getattr(mem, "last_update_indices", None)
+            if idx is None:
+                continue
+            idx_flat = idx.view(-1).to(torch.long)
+            if idx_flat.numel() == 0:
+                continue
+            num_slots = int(getattr(mem, "size", 0))
+            if num_slots <= 0:
+                continue
+            counts = torch.bincount(idx_flat, minlength=num_slots)
+            used = counts > 0
+            if used.any():
+                slots = used.nonzero(as_tuple=False).view(-1).detach().cpu().tolist()
+                vals = counts[used].detach().cpu().tolist()
+                Tctr = _per_task_update_totals[json_key][int(task_id)]
+                Bctr = _per_task_update_batches[json_key][int(task_id)]
+                for s, v in zip(slots, vals):
+                    s_int = int(s)
+                    Tctr[s_int] += int(v)
+                    Bctr[s_int] += 1
+    except Exception:
+        # Never fail training due to optional logging
+        pass
+
+
+def _flush_per_task_usage(out_dir: Path, task_id: int | None = None):
     """
     Write JSON files under <out_dir>/memory_by_task/ summarizing per-task slot usage for each memory module.
-    Keeps only top-k slots per task (by total accesses) for compactness.
     """
     try:
         out_dir = Path(out_dir) / "memory_by_task"
@@ -379,16 +438,20 @@ def _flush_per_task_usage(out_dir: Path, task_id: int | None = None, topk: int =
             payload = {"per_module": {}}
             for json_key, by_task in _per_task_totals.items():
                 tctr = by_task.get(int(t), Counter())
-                if not tctr:
+                uctr = _per_task_update_totals.get(json_key, {}).get(int(t), Counter())
+                if not tctr and not uctr:
                     continue
-                # prune to top-k by total accesses
-                top = tctr.most_common(int(topk))
                 bctr = _per_task_batches.get(json_key, {}).get(int(t), Counter())
+                bubctr = _per_task_update_batches.get(json_key, {}).get(int(t), Counter())
                 slots_dict = {}
-                for s, v in top:
-                    slots_dict[f"value_slot_{int(s)}"] = {
-                        "total_accesses": int(v),
-                        "batch_accesses": int(bctr.get(int(s), 0)),
+                all_slots = set(tctr.keys()) | set(uctr.keys())
+                for s in sorted(all_slots):
+                    s_int = int(s)
+                    slots_dict[f"value_slot_{s_int}"] = {
+                        "total_accesses": int(tctr.get(s_int, 0)),
+                        "batch_accesses": int(bctr.get(s_int, 0)),
+                        "total_updates": int(uctr.get(s_int, 0)),
+                        "batch_updates": int(bubctr.get(s_int, 0)),
                     }
                 if slots_dict:
                     # nest by task for clarity (module -> task -> slots)
@@ -579,7 +642,9 @@ def _compute_tfidf_top_indices_for_batch(
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
-    return a dict mapping values_param -> 1D LongTensor of allowed slot indices (top-t per module).
+    return a dict mapping parameters -> 1D LongTensor of allowed row indices (top-t per module).
+    The mask is always defined over value-slot indices; when memory keys are trainable, their
+    gradients are masked using the corresponding key rows implied by these selected slots.
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
@@ -618,7 +683,51 @@ def _compute_tfidf_top_indices_for_batch(
                     continue
                 vals, top_pos = torch.topk(tfidf_used, k=k, largest=True, sorted=False)
                 top_indices = used_indices[top_pos]
+                try:
+                    # Record which slots are eligible for updates this step
+                    mem_module.last_update_indices = top_indices.detach().cpu()
+                except Exception:
+                    pass
+                # Always mask values by the selected slot indices
                 allowed_by_param[values_param] = top_indices.detach()
+
+                # If keys are trainable, mask their gradients to rows corresponding to the
+                # selected value slots. Each value slot index encodes a pair of sub-keys
+                # (i1, i2) for each head: i1 = slot // n_keys, i2 = slot % n_keys.
+                keys_param = getattr(mem_module, "keys", None)
+                if keys_param is not None and keys_param.requires_grad:
+                    try:
+                        n_keys = int(mem_module.n_keys)
+                        # idx: (B, heads, knn)
+                        idx = mem_module.last_indices
+                        selected_mask = torch.zeros(num_slots, dtype=torch.bool, device=idx.device)
+                        selected_mask[top_indices.to(device=idx.device)] = True
+                        # Mask over (B, heads, knn) positions whose slots are selected
+                        selected_per_bhk = selected_mask[idx]
+                        if selected_per_bhk.any():
+                            B, H, K = idx.shape
+                            key_rows_list: list[torch.Tensor] = []
+                            for h in range(H):
+                                mh = selected_per_bhk[:, h, :]
+                                if not mh.any():
+                                    continue
+                                s_h = idx[:, h, :][mh]
+                                if s_h.numel() == 0:
+                                    continue
+                                s_h = torch.unique(s_h)
+                                i1 = torch.div(s_h, n_keys, rounding_mode="floor")
+                                i2 = s_h % n_keys
+                                base = h * 2 * n_keys
+                                key1 = base + i1
+                                key2 = base + n_keys + i2
+                                key_rows_list.append(key1)
+                                key_rows_list.append(key2)
+                            if key_rows_list:
+                                key_rows = torch.unique(torch.cat(key_rows_list))
+                                allowed_by_param[keys_param] = key_rows.detach()
+                    except Exception:
+                        # If key masking fails for any reason, fall back to unmasked keys.
+                        pass
         except Exception:
             # Be robust: skip module on any failure
             raise
@@ -627,7 +736,7 @@ def _compute_tfidf_top_indices_for_batch(
 
 def _apply_gradient_mask_to_memory_values(allowed_by_param: dict[torch.nn.Parameter, torch.Tensor]):
     """
-    Zero Out gradients for all rows not in the allowed index set for each memory values parameter.
+    Zero out gradients for all rows not in the allowed index set for each masked parameter.
     Should be called after backward, before gradient clipping and optimizer.step().
     """
     for p, allowed_rows in allowed_by_param.items():
@@ -1132,8 +1241,13 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             # Accumulate per-task memory usage for this batch (main process only)
             if is_main:
                 try:
+                    unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
                     _accumulate_task_usage_for_batch(
-                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                        unwrapped,
+                        task_id=dataset_task_id,
+                    )
+                    _accumulate_task_updates_for_batch(
+                        unwrapped,
                         task_id=dataset_task_id,
                     )
                 except Exception:
@@ -1181,12 +1295,13 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         # Flush per-task memory usage for this task and clear accumulators (main only)
         if is_main:
             try:
-                topk = int(cfg.tfidf_top_t) if (cfg.tfidf_enable or cfg.tf_only) else 5000
-                _flush_per_task_usage(cfg.output_dir, task_id=dataset_task_id, topk=topk)
+                _flush_per_task_usage(cfg.output_dir, task_id=dataset_task_id)
             except Exception:
                 pass
             _per_task_totals.clear()
             _per_task_batches.clear()
+            _per_task_update_totals.clear()
+            _per_task_update_batches.clear()
 
         # Cumulative evaluation up to this task
         if eval_envs_all is not None:
