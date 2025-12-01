@@ -1,9 +1,9 @@
 python -m lerobot.scripts.lerobot_sequential_train \
-  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/last/pretrained_model \
+  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/100000/pretrained_model \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_5 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_6 \
   --steps=1000 \
   --batch_size=64 \
   --num_workers=12 \
@@ -23,6 +23,6 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --tfidf_top_t=256 \
   --train_memory_value=true \
   --memory_value_lr=0.03 \
-  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/last/pretrained_model/memory_usage.json \
+  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_2_layer_act_only/checkpoints/100000/pretrained_model/memory_usage.json \
   --use_online_idf_stats=true \
   --idf_exponent=1
