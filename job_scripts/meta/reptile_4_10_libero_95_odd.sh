@@ -1,4 +1,4 @@
-cat > reptile_4_outer_tasks_8_inner_steps_lora_all.sh << 'EOF'
+cat > reptile_4_10_libero_35_odd.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > reptile_4_outer_tasks_8_inner_steps_lora_all.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N reptile_4_outer_tasks_8_inner_steps_lora_all
+#$ -N reptile_4_10_libero_35_odd
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
@@ -89,8 +89,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/smolvla_base"
-MODEL_SCRATCH="$SCRATCH_DIR/smolvla_base"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/train/smolvla_libero_35_even"
+MODEL_SCRATCH="$SCRATCH_DIR/smolvla_libero_35_even"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -101,8 +101,8 @@ export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_4_outer_tasks_8_inner_steps_lora_all"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_outer_tasks_8_inner_steps_lora_all"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_4_10_libero_35_odd"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_10_libero_35_odd"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -139,7 +139,7 @@ lerobot-meta-train \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
-  --policy.repo_id=outputs/train/reptile_4_outer_tasks_8_inner_steps_lora_all \
+  --policy.repo_id=outputs/train/reptile_4_10_libero_35_odd \
   --lora.enable=true \
   --lora.r=4 \
   --num_workers=8 \
@@ -157,23 +157,23 @@ lerobot-meta-train \
   "(?:^|\\.)action_time_mlp_out$",
   "(?:^|\\.)connector(\\.\\w+)?$"]' \
   --algo.type=reptile \
-  --algo.meta_step_size=0.1 \
-  --inner_steps=8 \
+  --algo.meta_step_size=0.2 \
+  --inner_steps=10 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
   --tasks_per_outer_step=4 \
   --support_frames_per_task=50000 \
   --query_frames_per_task=512 \
-  --train_tasks=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39] \
+  --train_tasks=[5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39] \
   --eval_tasks=[0,1,2,3,4] \
   --dataset_to_env_task_mapping='{"0":4,"1":6,"2":9,"3":2,"4":7}' \
   --eval_freq=1000 \
   --eval.batch_size=1 \
-  --eval.n_episodes=5 \
-  --eval_inner_steps=10 \
+  --eval.n_episodes=10 \
+  --eval_inner_steps=20 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
-  --job_name=reptile_4_outer_tasks_8_inner_steps_lora_all \
+  --job_name=reptile_4_10_libero_35_odd \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=meta-vla \
