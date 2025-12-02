@@ -155,10 +155,21 @@ class MetaEngine:
             self.wandb_logger = None
 
         # Task split
-        if self.cfg.train_tasks is None or self.cfg.eval_tasks is None:
+        # Respect any user-specified train/eval task lists; only fall back to a random split
+        # when both are unspecified.
+        total_tasks = list(range(self.dataset.meta.total_tasks))
+        if self.cfg.train_tasks is None and self.cfg.eval_tasks is None:
             split = default_task_split(self.dataset)
             self.train_tasks = split.train
             self.eval_tasks = split.eval
+        elif self.cfg.train_tasks is None and self.cfg.eval_tasks is not None:
+            # Meta-eval style: user only cares about specific eval tasks.
+            self.eval_tasks = self.cfg.eval_tasks
+            self.train_tasks = [t for t in total_tasks if t not in self.eval_tasks]
+        elif self.cfg.train_tasks is not None and self.cfg.eval_tasks is None:
+            # Training style: user pins train tasks; derive eval as the remaining ones.
+            self.train_tasks = self.cfg.train_tasks
+            self.eval_tasks = [t for t in total_tasks if t not in self.train_tasks]
         else:
             self.train_tasks = self.cfg.train_tasks
             self.eval_tasks = self.cfg.eval_tasks
@@ -392,6 +403,28 @@ class MetaEngine:
         eval_steps = self.cfg.eval_inner_steps if getattr(self.cfg, "eval_inner_steps", None) is not None else self.cfg.inner_steps
 
         for t in self.eval_tasks:
+            dataset_lang = None
+            try:
+                tasks_df = getattr(self.dataset.meta, "tasks", None)
+                if tasks_df is not None and "task_index" in tasks_df.columns:
+                    matches = tasks_df[tasks_df["task_index"] == t]
+                    if len(matches) > 0:
+                        dataset_lang = str(matches.index[0])
+            except Exception as e:
+                logging.warning("Could not resolve dataset language for task_id=%s: %s", t, e)
+            if dataset_lang is not None:
+                logging.info(
+                    "[LANG-DEBUG][task_id=%s] dataset_command=%r",
+                    t,
+                    dataset_lang,
+                )
+                model_cmd = dataset_lang if dataset_lang.endswith("\n") else dataset_lang + "\n"
+                logging.info(
+                    "[LANG-DEBUG][task_id=%s] model_input_command=%r",
+                    t,
+                    model_cmd,
+                )
+
             theta = {n: p.detach().clone() for n, p in self.policy.named_parameters() if p.requires_grad}
 
             # Inner adaptation on held-out task
@@ -428,9 +461,28 @@ class MetaEngine:
             # Build a single-task LIBERO env for this task id
             # Restrict creation to the requested task_id to avoid unnecessary envs
             if self.cfg.env is not None and self.cfg.env.type == "libero":
-                from lerobot.envs.libero import create_libero_envs
+                from lerobot.envs.libero import _get_suite, create_libero_envs
                 import gymnasium as gym
                 env_cfg = self.cfg.env
+                try:
+                    suite = _get_suite(env_cfg.task)
+                    lib_task = suite.tasks[env_task_id]
+                    env_task_name = getattr(lib_task, "name", None)
+                    env_language = getattr(lib_task, "language", None)
+                    logging.info(
+                        "[LANG-DEBUG][task_id=%s] env_task_id=%s env_task_name=%r env_command=%r",
+                        t,
+                        env_task_id,
+                        env_task_name,
+                        env_language,
+                    )
+                except Exception as e:
+                    logging.warning(
+                        "Failed to resolve LIBERO env language for dataset task_id=%s env_task_id=%s: %s",
+                        t,
+                        env_task_id,
+                        e,
+                    )
                 envs_subset = create_libero_envs(
                     task=env_cfg.task,
                     n_envs=1,
