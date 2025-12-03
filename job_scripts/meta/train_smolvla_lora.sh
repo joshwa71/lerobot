@@ -162,8 +162,8 @@ echo "Final outputs copied to $FINAL_OUTPUT_DIR"
 # Copy wandb logs back
 if [ -d "$WANDB_DIR" ]; then
     echo "Copying wandb logs..."
-    mkdir -p /SAN/vision/jo71_vla_wd/lerobot/wandb
-    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot/wandb/ || true
+    mkdir -p /SAN/vision/jo71_vla_wd/lerobot_meta/wandb
+    cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_meta/wandb/ || true
 fi
 
 echo "Job completed at $(date)"
