@@ -28,7 +28,7 @@ from lerobot.configs.policies import PreTrainedConfig
 from lerobot.optim import OptimizerConfig
 from lerobot.optim.schedulers import LRSchedulerConfig
 from lerobot.utils.hub import HubMixin
-from lerobot.policies.adapters.lora import LoraAttachConfig
+from lerobot.configs.lora import LoraAttachConfig
 
 TRAIN_CONFIG_NAME = "train_config.json"
 

@@ -12,7 +12,7 @@ import draccus
 from lerobot import envs
 from lerobot.configs.default import DatasetConfig, EvalConfig, WandBConfig
 from lerobot.configs.policies import PreTrainedConfig
-from lerobot.policies.adapters.lora import LoraAttachConfig
+from lerobot.configs.lora import LoraAttachConfig
 
 
 @dataclass

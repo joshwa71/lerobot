@@ -8,9 +8,9 @@ cat > train_smolvla_libero_35_lora.sh << 'EOF'
 #$ -R y
 #$ -l tscratch=100G
 #$ -N smolvla_libero_35_lora_train
-#$ -wd /SAN/vision/jo71_vla_wd/lerobot
+#$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
-#$ -o /SAN/vision/jo71_vla_wd/lerobot/outputs/train/job_output_$JOB_ID.log
+#$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
 
 set -eo pipefail
 

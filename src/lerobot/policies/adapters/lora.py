@@ -12,32 +12,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from typing import Iterable
 
 import torch
 from torch import nn
 
-
-@dataclass
-class LoraAttachConfig:
-    enable: bool = False
-    r: int = 4
-    alpha: float = 16.0
-    dropout: float = 0.05
-    # When True, freeze all base model parameters and only train LoRA adapters.
-    # When False, train both LoRA adapters and any originally trainable base parameters.
-    train_lora_only: bool = True
-    # Regexes matched against module qualified names in the policy
-    # Example defaults cover attention and MLP projections plus small policy heads
-    target_modules_regex: list[str] = field(
-        default_factory=lambda: [
-            r"self_attn\.(q_proj|k_proj|v_proj|o_proj)$",
-            r"mlp\.(up_proj|down_proj|gate_proj)$",
-            r"(?:^|\.)state_proj$",
-            r"(?:^|\.)action_.*",
-        ]
-    )
+from lerobot.configs.lora import LoraAttachConfig
 
 
 class LoRALinear(nn.Module):

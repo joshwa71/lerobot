@@ -50,7 +50,8 @@ from lerobot.utils.utils import (
     has_method,
     init_logging,
 )
-from lerobot.policies.adapters.lora import LoraAttachConfig, attach_lora
+from lerobot.configs.lora import LoraAttachConfig
+from lerobot.policies.adapters.lora import attach_lora
 
 
 def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
