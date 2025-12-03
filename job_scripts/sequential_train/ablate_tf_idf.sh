@@ -3,7 +3,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/smolvla_libero_10_mem_online_10 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_11 \
   --steps=1000 \
   --batch_size=32 \
   --num_workers=12 \
@@ -12,7 +12,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=100 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_10 \
+  --job_name=smolvla_libero_10_mem_online_11 \
   --online_task_ids='[6,7,8,9]' \
   --online_steps_per_task=1000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
@@ -20,9 +20,9 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --policy.memory_layer.aggregate_usage=false \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
-  --tfidf_top_t=1024 \
+  --tfidf_top_t=512 \
   --train_memory_value=true \
   --memory_value_lr=0.02 \
   --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_4_layer_act_only/checkpoints/last/pretrained_model/memory_usage.json \
   --use_online_idf_stats=true \
-  --idf_exponent=1
+  --idf_exponent=2
