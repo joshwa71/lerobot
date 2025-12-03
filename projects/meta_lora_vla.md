@@ -90,3 +90,6 @@ If sim results are promising:
 - A compact, reusable **LoRA prior** $\theta^\star$ that enables **1–5-shot** adaptation on novel VLAs.  
 - Clear evidence that **meta-learning only adapters** yields faster/safer on-robot adaptation than plain fine-tuning, while staying within a modest compute budget.
 
+## 8) References
+- Efficient Continual Adaptation of Pretrained Robotic Policy with Online Meta-Learned Adapters
+

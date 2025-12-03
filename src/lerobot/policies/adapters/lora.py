@@ -25,6 +25,9 @@ class LoraAttachConfig:
     r: int = 4
     alpha: float = 16.0
     dropout: float = 0.05
+    # When True, freeze all base model parameters and only train LoRA adapters.
+    # When False, train both LoRA adapters and any originally trainable base parameters.
+    train_lora_only: bool = True
     # Regexes matched against module qualified names in the policy
     # Example defaults cover attention and MLP projections plus small policy heads
     target_modules_regex: list[str] = field(
@@ -138,21 +141,35 @@ def attach_lora(policy: nn.Module, cfg: LoraAttachConfig) -> nn.Module:
             _replace_module(parent, child_name, lora_layer)
             replaced += 1
 
-    # Freeze all parameters, then unfreeze LoRA-specific params only
-    for p in policy.parameters():
-        p.requires_grad = False
-    for _, mod in policy.named_modules():
-        if isinstance(mod, LoRALinear):
-            if hasattr(mod, "lora_A"):
-                mod.lora_A.requires_grad = True
-            if hasattr(mod, "lora_B"):
-                mod.lora_B.requires_grad = True
+    # Handle parameter freezing based on train_lora_only flag
+    if cfg.train_lora_only:
+        # Freeze all base parameters, only train LoRA adapters
+        for p in policy.parameters():
+            p.requires_grad = False
+        for _, mod in policy.named_modules():
+            if isinstance(mod, LoRALinear):
+                if hasattr(mod, "lora_A"):
+                    mod.lora_A.requires_grad = True
+                if hasattr(mod, "lora_B"):
+                    mod.lora_B.requires_grad = True
+    else:
+        # Keep original trainability of base parameters, also enable LoRA parameters
+        # LoRA parameters are already trainable by default from LoRALinear.__init__
+        # but base parameters inside LoRALinear are frozen; we need to respect original
+        # trainability which is handled by LoRALinear freezing only its own base
+        for _, mod in policy.named_modules():
+            if isinstance(mod, LoRALinear):
+                if hasattr(mod, "lora_A"):
+                    mod.lora_A.requires_grad = True
+                if hasattr(mod, "lora_B"):
+                    mod.lora_B.requires_grad = True
 
     if replaced == 0:
         # It is fine if no module matched, but warn via print to keep dependency-free
         print("[LoRA] No target modules matched. Check target_modules_regex patterns.")
     else:
-        print(f"[LoRA] Attached LoRA to {replaced} Linear modules.")
+        mode_str = "train_lora_only" if cfg.train_lora_only else "train_lora_and_base"
+        print(f"[LoRA] Attached LoRA to {replaced} Linear modules ({mode_str}).")
 
     return policy
 
