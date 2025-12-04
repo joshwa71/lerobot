@@ -12,7 +12,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=100 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=smolvla_libero_10_mem_online_11 \
+  --job_name=smolvla_online_4_wide \
   --online_task_ids='[6,7,8,9]' \
   --online_steps_per_task=1000 \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
@@ -25,4 +25,9 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --memory_value_lr=0.02 \
   --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_4_layer_act_only/checkpoints/last/pretrained_model/memory_usage.json \
   --use_online_idf_stats=true \
-  --idf_exponent=2
+  --idf_exponent=1
+
+rsync -avp vic:/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/ /home/josh/phddev/lerobot/outputs/cluster_train/memory/
+rsync -avp vic:/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/smolvla_libero_90_lora /home/josh/phddev/lerobot/outputs/cluster_train/meta/
+
+rsync -avp --exclude='checkpoints/[0-9]*/' --exclude='memory_by_task/' --exclude='wandb/' vic:/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/ /home/josh/phddev/lerobot/outputs/cluster_train/memory/
