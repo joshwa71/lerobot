@@ -133,6 +133,38 @@ def _default_libero10_map() -> dict[int, int]:
     return {0: 4, 1: 6, 2: 9, 3: 2, 4: 7, 5: 0, 6: 8, 7: 1, 8: 3, 9: 5}
 
 
+def _append_eval_results_jsonl(
+    output_dir: Path,
+    step: int,
+    eval_info: dict,
+):
+    """
+    Append a JSONL line with per-task success percentages to {output_dir}/eval/results.jsonl.
+    Format: {"step": step, "task_0": success%, "task_1": success%, ...}
+    """
+    import numpy as np
+
+    per_task = eval_info.get("per_task", [])
+    if not per_task:
+        return
+
+    record = {"step": step}
+    for entry in per_task:
+        task_id = entry.get("task_id")
+        metrics = entry.get("metrics", {})
+        successes = metrics.get("successes", [])
+        if successes:
+            pc_success = float(np.mean(successes) * 100)
+        else:
+            pc_success = float("nan")
+        record[f"task_{task_id}"] = pc_success
+
+    results_path = Path(output_dir) / "eval" / "results.jsonl"
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(results_path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 def _build_memory_scheduler(
     optimizer: Optimizer,
     cfg: SequentialOnlineConfig,
@@ -1359,6 +1391,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     vpaths = overall.get("video_paths") if isinstance(overall, dict) else None
                     if vpaths:
                         wandb_logger.log_video(vpaths[0], global_step, mode="eval")
+
+                _append_eval_results_jsonl(cfg.output_dir, global_step, eval_info)
 
     # Cleanup
     if eval_envs_all:
