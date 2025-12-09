@@ -24,6 +24,8 @@ from transformers import (
     SmolVLMForConditionalGeneration,
 )
 
+from lerobot.policies.modules.memory_lite import MLPPlusMemory
+
 
 def apply_rope(x, positions, max_wavelength=10_000):
     """
@@ -408,6 +410,7 @@ class SmolVLMWithExpertModel(nn.Module):
         inputs_embeds: list[torch.FloatTensor] = None,
         use_cache: bool | None = None,
         fill_kv_cache: bool | None = None,
+        task_emb: torch.Tensor | None = None,
     ):
         models = [self.get_vlm_model().text_model, self.lm_expert]
         model_layers = self.get_model_layers(models)
@@ -475,7 +478,10 @@ class SmolVLMWithExpertModel(nn.Module):
                     after_first_residual = out_emb.clone()
 
                     out_emb = layer.post_attention_layernorm(out_emb)
-                    out_emb = layer.mlp(out_emb)
+                    if isinstance(layer.mlp, MLPPlusMemory):
+                        out_emb = layer.mlp(out_emb, lang_emb=task_emb)
+                    else:
+                        out_emb = layer.mlp(out_emb)
 
                     out_emb += after_first_residual
 

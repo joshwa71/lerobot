@@ -1,13 +1,13 @@
-cat > train_smolvla_sequential_256.sh << 'EOF'
+cat > smolvla_sequential_train_8.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(rtx8000|a100|a100_80|h100|rtx6000ada|rtx6000)
+#$ -l gpu=true,gpu_type=(a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train_256
+#$ -N smolvla_sequential_train_8
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -87,8 +87,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/smolvla_libero_90_memory_expert_vlm_memory_only_256"
-MODEL_SCRATCH="$SCRATCH_DIR/smolvla_libero_90_memory_expert_vlm_memory_only_256"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/memory_libero_95_mem_mlp_512_8_layer"
+MODEL_SCRATCH="$SCRATCH_DIR/memory_libero_95_mem_mlp_512_8_layer"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -100,9 +100,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_sequential_256"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_10_smolvla_sequential_8"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_10_smolvla_sequential_256"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_10_smolvla_sequential_8"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -147,17 +147,19 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=libero_10_smolvla_sequential_256 \
-  --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
-  --online_steps_per_task=20000 \
+  --job_name=libero_10_smolvla_sequential_8 \
+  --online_task_ids='[6,7,8,9]' \
+  --online_steps_per_task=2000 \
   --policy.memory_layer.aggregate_usage=false \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
-  --tfidf_top_t=256 \
-  --idf_stats_path=$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json \
-  --memory_value_lr=0.001
+  --tfidf_top_t=512 \
+  --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
+  --use_online_idf_stats=true \
+  --idf_exponent=1 \
+  --memory_value_lr=0.02
 
 
 echo "Job completed at $(date)"

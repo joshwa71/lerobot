@@ -49,4 +49,10 @@ class MemoryLayerConfig:
     # Default False keeps residual addition (layer_out = mlp(x) + mem(x)).
     memory_only: bool = False
 
+    # Language-conditioned query projection: when True, concatenate task embedding
+    # to query input before projection, biasing each task toward distinct memory slots.
+    lang_to_query: bool = False
+    # Sentence-transformers model name for computing task embeddings.
+    embedding_model: str = "all-MiniLM-L6-v2"
+
 

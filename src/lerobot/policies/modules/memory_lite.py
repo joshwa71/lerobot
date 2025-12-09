@@ -10,14 +10,70 @@ from torch.nn import functional as F
 from .memory_config import MemoryLayerConfig
 
 
+EMBEDDING_DIM_MAP = {
+    "all-MiniLM-L6-v2": 384,
+    "all-mpnet-base-v2": 768,
+    "paraphrase-MiniLM-L6-v2": 384,
+    "paraphrase-mpnet-base-v2": 768,
+}
+
+
+class TaskEmbeddingCache:
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str = "cpu"):
+        self.model_name = model_name
+        self.device = device
+        self._encoder = None
+        self._cache: dict[str, torch.Tensor] = {}
+        self.embedding_dim = EMBEDDING_DIM_MAP.get(model_name, 384)
+
+    def _load_encoder(self):
+        if self._encoder is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
+                raise ImportError(
+                    "sentence-transformers is required for language-conditioned memory queries. "
+                    "Install it with: pip install sentence-transformers"
+                )
+            self._encoder = SentenceTransformer(self.model_name, device=self.device)
+            self.embedding_dim = self._encoder.get_sentence_embedding_dimension()
+        return self._encoder
+
+    def encode(self, task: str) -> torch.Tensor:
+        if task in self._cache:
+            return self._cache[task]
+        encoder = self._load_encoder()
+        with torch.no_grad():
+            emb = encoder.encode(task, convert_to_tensor=True, show_progress_bar=False)
+            emb = emb.to(dtype=torch.float32, device="cpu")
+        self._cache[task] = emb
+        return emb
+
+    def encode_batch(self, tasks: list[str]) -> torch.Tensor:
+        results = []
+        for t in tasks:
+            results.append(self.encode(t))
+        return torch.stack(results, dim=0)
+
+    def precompute_from_metadata(self, dataset_meta) -> None:
+        if dataset_meta.tasks is None:
+            return
+        for task_name in dataset_meta.tasks.index:
+            self.encode(str(task_name))
+
+    def get_by_indices(self, task_names: list[str]) -> torch.Tensor:
+        return self.encode_batch(task_names)
+
+
 class QueryMLPLite(nn.Module):
-    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True):
+    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True, lang_dim: int = 0):
         super().__init__()
         self.input_dim = input_dim
         self.heads = heads
         self.k_dim = k_dim
-        self.proj = nn.Linear(input_dim, heads * k_dim, bias=bias)
-        # Mark parameters so they can be selected for training during online adaptation
+        self.lang_dim = lang_dim
+        proj_input_dim = input_dim + lang_dim
+        self.proj = nn.Linear(proj_input_dim, heads * k_dim, bias=bias)
         try:
             self.proj.weight.pk_query_proj_param = True
             if self.proj.bias is not None:
@@ -25,10 +81,18 @@ class QueryMLPLite(nn.Module):
         except Exception:
             pass
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
-        x = x.view(-1, self.input_dim)
-        q = self.proj(x)  # (bs, heads*k_dim)
+        B_T = x.shape[0] if x.dim() == 2 else x.shape[0] * x.shape[1]
+        x_flat = x.view(-1, self.input_dim)
+        if lang_emb is not None and self.lang_dim > 0:
+            # lang_emb: (B, lang_dim) -> expand to (B*T, lang_dim)
+            B = lang_emb.shape[0]
+            T = B_T // B
+            lang_emb_expanded = lang_emb.unsqueeze(1).expand(B, T, -1).reshape(B_T, -1)
+            lang_emb_expanded = lang_emb_expanded.to(device=x_flat.device, dtype=x_flat.dtype)
+            x_flat = torch.cat([x_flat, lang_emb_expanded], dim=-1)
+        q = self.proj(x_flat)
         return q.view(q.shape[0] * self.heads, self.k_dim)
 
 
@@ -42,7 +106,7 @@ class HashingMemoryLite(nn.Module):
 
     EVAL_MEMORY = True
 
-    def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig):
+    def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0):
         super().__init__()
         assert cfg.mem_k_dim % 2 == 0
 
@@ -56,6 +120,7 @@ class HashingMemoryLite(nn.Module):
         self.size = self.n_keys ** 2
         self.log_usage = getattr(cfg, "log_usage", False)
         self.aggregate_usage = getattr(cfg, "aggregate_usage", False)
+        self.lang_dim = lang_dim
 
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
@@ -82,7 +147,7 @@ class HashingMemoryLite(nn.Module):
             self.swilu_projection = nn.Linear(self.input_dim, proj_in)
 
         self.gating = nn.Linear(input_dim, 1) if cfg.mem_gated else None
-        self.query_proj = QueryMLPLite(self.input_dim, self.heads, self.k_dim)
+        self.query_proj = QueryMLPLite(self.input_dim, self.heads, self.k_dim, lang_dim=lang_dim)
 
         self.reset_parameters()
 
@@ -104,8 +169,9 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
+        # lang_emb: (B, lang_dim) or None
         # Ensure module parameters/buffers match the input dtype/device without recreating Parameters
         dtype, device = x.dtype, x.device
         if getattr(self, "_param_dtype", None) is not dtype or getattr(self, "_param_device", None) is not device:
@@ -123,8 +189,8 @@ class HashingMemoryLite(nn.Module):
         x_flat = x.view(-1, C)
         bs = x_flat.shape[0]
 
-        # Query
-        query = self.query_proj(x_flat)  # (bs*heads, k_dim)
+        # Query (with optional language conditioning)
+        query = self.query_proj(x, lang_emb=lang_emb)  # (bs*heads, k_dim)
 
         # Indices and scores
         scores, indices = self._get_indices(query)  # (bs*heads, knn)
@@ -208,14 +274,15 @@ class HashingMemoryLite(nn.Module):
 
 
 class MLPPlusMemory(nn.Module):
-    def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig):
+    def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0):
         super().__init__()
         self.mlp = base_mlp
-        self.mem = HashingMemoryLite(dim, dim, cfg)
+        self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim)
         self.memory_only = getattr(cfg, "memory_only", False)
+        self.lang_dim = lang_dim
 
-    def forward(self, x: torch.Tensor):
-        mem_out = self.mem(x)
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None):
+        mem_out = self.mem(x, lang_emb=lang_emb)
         if self.memory_only:
             return mem_out
         return self.mlp(x) + mem_out
@@ -259,6 +326,13 @@ def _resolve_target_layers(num_expert_layers: int, layers: List[int] | str) -> L
     return []
 
 
+def _get_lang_dim(cfg: MemoryLayerConfig) -> int:
+    if not getattr(cfg, "lang_to_query", False):
+        return 0
+    model_name = getattr(cfg, "embedding_model", "all-MiniLM-L6-v2")
+    return EMBEDDING_DIM_MAP.get(model_name, 384)
+
+
 def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
     """
     Replace selected expert MLPs with MLPPlusMemory in-place.
@@ -271,6 +345,10 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
 
     print(f"Target EXPERT layers for memory: {target_layers}")
     target_set = set(target_layers)
+
+    lang_dim = _get_lang_dim(cfg)
+    if lang_dim > 0:
+        print(f"Language-conditioned query projection enabled with lang_dim={lang_dim}")
 
     # First, unwrap any previously wrapped layers that are not in the target set
     for li in range(num_layers):
@@ -287,7 +365,7 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
             continue
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
-        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg)
+        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
         # Align non-value memory params to base dtype/device; keep values in float32
         for name, p in layer.mlp.mem.named_parameters():
             if name.startswith("values"):
@@ -327,6 +405,8 @@ def attach_memory_to_backbones(smolvla_model, cfg: MemoryLayerConfig):
     print(f"Target VLM layers for memory: {target_vlm_layers}")
     target_vlm_set = set(target_vlm_layers)
 
+    lang_dim = _get_lang_dim(cfg)
+
     # Unwrap any previously wrapped VLM layers not in the target set
     for li in range(num_vlm_layers):
         layer = vlm_text_model.layers[li]
@@ -344,7 +424,7 @@ def attach_memory_to_backbones(smolvla_model, cfg: MemoryLayerConfig):
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
 
-        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg)
+        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
         for name, p in layer.mlp.mem.named_parameters():
             if name.startswith("values"):
                 p.data = p.data.to(device=base_device, dtype=torch.float32)

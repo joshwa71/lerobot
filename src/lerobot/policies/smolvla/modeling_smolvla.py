@@ -68,7 +68,7 @@ from lerobot.policies.utils import (
 )
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
 from lerobot.utils.utils import get_safe_dtype
-from lerobot.policies.modules.memory_lite import attach_memory_to_backbones, split_memory_params, MLPPlusMemory
+from lerobot.policies.modules.memory_lite import attach_memory_to_backbones, split_memory_params, MLPPlusMemory, TaskEmbeddingCache
 from huggingface_hub import hf_hub_download
 from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
 from huggingface_hub.errors import HfHubHTTPError
@@ -247,6 +247,13 @@ class SmolVLAPolicy(PreTrainedPolicy):
             or getattr(self.config.memory_layer, "enabled", False)
         ) and not getattr(self.config, "pretrained_path", None):
             attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
+
+        # Initialize task embedding cache for language-conditioned memory queries
+        self.task_embedding_cache = None
+        if getattr(self.config.memory_layer, "lang_to_query", False):
+            embedding_model = getattr(self.config.memory_layer, "embedding_model", "all-MiniLM-L6-v2")
+            self.task_embedding_cache = TaskEmbeddingCache(model_name=embedding_model, device="cpu")
+
         self.reset()
 
     def post_load_setup(self) -> None:
@@ -263,6 +270,15 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self._queues = {
             ACTION: deque(maxlen=self.config.n_action_steps),
         }
+
+    def precompute_task_embeddings(self, dataset_meta) -> None:
+        if self.task_embedding_cache is not None:
+            self.task_embedding_cache.precompute_from_metadata(dataset_meta)
+
+    def get_task_embeddings(self, task_names: list[str]) -> torch.Tensor | None:
+        if self.task_embedding_cache is None:
+            return None
+        return self.task_embedding_cache.get_by_indices(task_names)
 
     def get_optim_params(self) -> dict:
         # If memory layers are enabled, return grouped params so memory values can
@@ -446,7 +462,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         return self._queues[ACTION].popleft()
 
-    def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
+    def forward(self, batch: dict[str, Tensor], noise=None, time=None, task_emb: Tensor | None = None) -> dict[str, Tensor]:
         """Do a full training forward pass to compute the loss"""
         if self.config.adapt_to_pi_aloha:
             batch[OBS_STATE] = self._pi_aloha_decode_state(batch[OBS_STATE])
@@ -459,7 +475,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         actions = self.prepare_action(batch)
         actions_is_pad = batch.get("actions_is_pad")
         loss_dict = {}
-        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time, task_emb=task_emb)
         loss_dict["losses_after_forward"] = losses.clone()
 
         if actions_is_pad is not None:
@@ -911,7 +927,7 @@ class VLAFlowMatching(nn.Module):
         return embs, pad_masks, att_masks
 
     def forward(
-        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None
+        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None, task_emb=None
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
@@ -940,6 +956,7 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[prefix_embs, suffix_embs],
             use_cache=False,
             fill_kv_cache=False,
+            task_emb=task_emb,
         )
         suffix_out = suffix_out[:, -self.config.chunk_size :]
         # Original openpi code, upcast attention output
@@ -948,7 +965,7 @@ class VLAFlowMatching(nn.Module):
         losses = F.mse_loss(u_t, v_t, reduction="none")
         return losses
 
-    def sample_actions(self, images, img_masks, lang_tokens, lang_masks, state, noise=None) -> Tensor:
+    def sample_actions(self, images, img_masks, lang_tokens, lang_masks, state, noise=None, task_emb=None) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
         device = state.device
@@ -970,6 +987,7 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[prefix_embs, None],
             use_cache=self.config.use_cache,
             fill_kv_cache=True,
+            task_emb=task_emb,
         )
         dt = -1.0 / self.config.num_steps
         dt = torch.tensor(dt, dtype=torch.float32, device=device)
@@ -983,6 +1001,7 @@ class VLAFlowMatching(nn.Module):
                 past_key_values,
                 x_t,
                 expanded_time,
+                task_emb=task_emb,
             )
             # Euler step
             x_t += dt * v_t
@@ -995,6 +1014,7 @@ class VLAFlowMatching(nn.Module):
         past_key_values,
         x_t,
         timestep,
+        task_emb=None,
     ):
         """Apply one denoising step of the noise `x_t` at a given timestep."""
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, timestep)
@@ -1017,6 +1037,7 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[None, suffix_embs],
             use_cache=self.config.use_cache,
             fill_kv_cache=False,
+            task_emb=task_emb,
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.chunk_size :]

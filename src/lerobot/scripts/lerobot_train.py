@@ -87,6 +87,7 @@ def update_policy(
     accelerator: Accelerator,
     lr_scheduler=None,
     lock=None,
+    task_emb: torch.Tensor | None = None,
 ) -> tuple[MetricsTracker, dict]:
     """
     Performs a single training step to update the policy's weights.
@@ -103,6 +104,7 @@ def update_policy(
         accelerator: The Accelerator instance for distributed training and mixed precision.
         lr_scheduler: An optional learning rate scheduler.
         lock: An optional lock for thread-safe optimizer updates.
+        task_emb: Optional task embeddings for language-conditioned memory queries.
 
     Returns:
         A tuple containing:
@@ -114,7 +116,7 @@ def update_policy(
 
     # Let accelerator handle mixed precision
     with accelerator.autocast():
-        loss, output_dict = policy.forward(batch)
+        loss, output_dict = policy.forward(batch, task_emb=task_emb)
         # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
     # Use accelerator's backward method
@@ -269,6 +271,16 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         **processor_kwargs,
         **postprocessor_kwargs,
     )
+
+    # Precompute task embeddings for language-conditioned memory queries
+    if hasattr(policy, "precompute_task_embeddings"):
+        policy.precompute_task_embeddings(dataset.meta)
+
+    # Build task_index -> task_name mapping for embedding lookup during training
+    task_index_to_name: dict[int, str] = {}
+    if dataset.meta.tasks is not None:
+        for task_name, row in dataset.meta.tasks.iterrows():
+            task_index_to_name[int(row["task_index"])] = task_name
 
     # --- Memory logging helpers (per-batch indices) ---
     def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
@@ -542,6 +554,18 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         batch = preprocessor(raw_batch)
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
+        # Compute task embeddings for language-conditioned memory queries
+        task_emb = None
+        unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        if task_ids is not None and hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
+            try:
+                task_names = [task_index_to_name.get(int(tid), "") for tid in task_ids.tolist()]
+                task_emb = unwrapped_policy.get_task_embeddings(task_names)
+                if task_emb is not None:
+                    task_emb = task_emb.to(device=device)
+            except Exception:
+                task_emb = None
+
         train_tracker, output_dict = update_policy(
             train_tracker,
             policy,
@@ -550,6 +574,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             cfg.optimizer.grad_clip_norm,
             accelerator=accelerator,
             lr_scheduler=lr_scheduler,
+            task_emb=task_emb,
         )
 
         # Accumulate per-task memory usage for this batch (main process only)

@@ -799,6 +799,7 @@ def _update_policy_with_tfidf(
     tf_only: bool,
     lr_scheduler=None,
     lock=None,
+    task_emb: torch.Tensor | None = None,
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -819,7 +820,7 @@ def _update_policy_with_tfidf(
 
     policy.train()
     with accelerator.autocast():
-        loss, output_dict = policy.forward(batch)
+        loss, output_dict = policy.forward(batch, task_emb=task_emb)
     if use_cuda_events:
         ev_fwd.record()
 
@@ -982,6 +983,10 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         **processor_kwargs,
         **postprocessor_kwargs,
     )
+
+    # Precompute task embeddings for language-conditioned memory queries
+    if hasattr(policy, "precompute_task_embeddings"):
+        policy.precompute_task_embeddings(dataset.meta)
 
     # Freeze everything except selected memory components
     num_trainable = _freeze_to_selected_memory_params(
@@ -1233,6 +1238,22 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             t1 = time.perf_counter()
             batch = preprocessor(batch)
             train_tracker.preproc_s = time.perf_counter() - t1
+
+            # Compute task embeddings for language-conditioned memory queries
+            task_emb = None
+            unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+            if hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
+                try:
+                    task_name = task_index_to_name.get(dataset_task_id, "")
+                    # All samples in this batch belong to the same task
+                    B = batch[list(batch.keys())[0]].shape[0] if isinstance(batch, dict) else 1
+                    task_names = [task_name] * B
+                    task_emb = unwrapped_policy.get_task_embeddings(task_names)
+                    if task_emb is not None:
+                        task_emb = task_emb.to(device=device)
+                except Exception:
+                    task_emb = None
+
             if cfg.tfidf_enable or cfg.tf_only:
                 train_tracker, output_dict = _update_policy_with_tfidf(
                     train_metrics=train_tracker,
@@ -1245,6 +1266,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     top_t=cfg.tfidf_top_t,
                     tf_only=cfg.tf_only,
                     lr_scheduler=lr_scheduler,
+                    task_emb=task_emb,
                 )
             else:
                 train_tracker, output_dict = update_policy(
@@ -1255,6 +1277,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     cfg.optimizer.grad_clip_norm,
                     accelerator=accelerator,
                     lr_scheduler=lr_scheduler,
+                    task_emb=task_emb,
                 )
 
             global_step += 1
