@@ -1,4 +1,4 @@
-cat > smolvla_sequential_train_2_wide_lang_emb.sh << 'EOF'
+cat > smolvla_pretrain_train_2_wide_lang_emb.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_sequential_train_2_wide_lang_emb.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train_2_wide_lang_emb
+#$ -N smolvla_pretrain_train_2_wide_lang_emb
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log

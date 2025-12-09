@@ -280,6 +280,18 @@ class SmolVLAPolicy(PreTrainedPolicy):
             return None
         return self.task_embedding_cache.get_by_indices(task_names)
 
+    def get_task_embeddings_from_tokens(self, lang_tokens: torch.Tensor) -> torch.Tensor | None:
+        """Decode language tokens to text and compute task embeddings for inference."""
+        if self.task_embedding_cache is None:
+            return None
+        try:
+            tokenizer = self.model.vlm_with_expert.processor.tokenizer
+            texts = tokenizer.batch_decode(lang_tokens, skip_special_tokens=True)
+            texts = [t.strip() for t in texts]
+            return self.task_embedding_cache.get_by_indices(texts)
+        except Exception:
+            return None
+
     def get_optim_params(self) -> dict:
         # If memory layers are enabled, return grouped params so memory values can
         # have a separate LR/weight decay, otherwise default to all parameters.
@@ -412,7 +424,12 @@ class SmolVLAPolicy(PreTrainedPolicy):
         lang_tokens = batch[f"{OBS_LANGUAGE_TOKENS}"]
         lang_masks = batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
 
-        actions = self.model.sample_actions(images, img_masks, lang_tokens, lang_masks, state, noise=noise)
+        # Compute task embeddings for language-conditioned memory queries
+        task_emb = self.get_task_embeddings_from_tokens(lang_tokens)
+        if task_emb is not None:
+            task_emb = task_emb.to(device=state.device)
+
+        actions = self.model.sample_actions(images, img_masks, lang_tokens, lang_masks, state, noise=noise, task_emb=task_emb)
 
         # Unpad actions
         original_action_dim = self.config.action_feature.shape[0]
