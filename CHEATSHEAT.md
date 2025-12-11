@@ -118,6 +118,22 @@ lerobot-meta-train \
   --wandb.enable=true
 
 
+## Prior Test
+lerobot-meta-prior-test \
+    --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/meta_dec10/reptile_4_10_libero_35_odd/checkpoints/last/pretrained_model \
+    --dataset.repo_id=outputs/libero \
+    --batch_size=16 \
+    --task_ids=[0,1,2,3,4] \
+    --dataset_to_env_task_mapping='{"0":4,"1":6,"2":9,"3":2,"4":7}' \
+    --target_success_rate=0.1 \
+    --inner_steps_per_eval=500 \
+    --max_total_steps=10000 \
+    --env.type=libero \
+    --env.task=libero_10 \
+    --eval.n_episodes=30 \
+    --eval.batch_size=2 \
+    --output_dir=./outputs/prior_test
+
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
 
@@ -216,3 +232,54 @@ pick up the black bowl on the wooden cabinet and place it on the plate          
 7 → 1
 8 → 3
 9 → 5
+
+
+## Scratch
+
+lerobot-train \
+  --policy.path=/home/josh/phddev/lerobot/outputs/smolvla_base \
+  --policy.repo_id=outputs/train/smolvla_lora_libero_4 \
+  --dataset.repo_id=/home/josh/phddev/lerobot/outputs/libero_individual/libero_task_0 \
+  --output_dir=outputs/train/smolvla_lora_libero_4 \
+  --steps=20000 \
+  --batch_size=16 \
+  --num_workers=12 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=30 \
+  --env.task_ids='[4]' \
+  --eval_freq=500 \
+  --save_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=1000 \
+  --policy.scheduler_decay_steps=80000 \
+  --policy.push_to_hub=false \
+  --lora.enable=true \
+  --lora.r=4 \
+  --lora.alpha=16 \
+  --lora.dropout=0.05 \
+  --lora.target_modules_regex='[
+  "(?:^|\\.)self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)$",
+  "(?:^|\\.)mlp\\.(?:up_proj|down_proj|gate_proj)$",
+  "(?:^|\\.)mlp\\.(?:fc1|fc2)$",
+  "(?:^|\\.)state_proj$",
+  "(?:^|\\.)action_in_proj$",
+  "(?:^|\\.)action_out_proj$",
+  "(?:^|\\.)action_time_mlp_in$",
+  "(?:^|\\.)action_time_mlp_out$",
+  "(?:^|\\.)connector(\\.\\w+)?$"]' \
+  --job_name=outputs/train/smolvla_lora_libero_4 \
+  --wandb.enable=false 
+
+
+# Notes
+
+- The base smolvla model begins to get rewards from finetuning lora params at loss 0.08 and at step 3k
+- The meta trained prior lora params take 9k steps and achieve it at loss 0.018.
+- Why is the loss lower for meta trained params but reward is lower?
+- Why do the random initialised lora parameters converge faster?
+
+rsync -avP vic:/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_10_libero_35_odd /home/josh/phddev/lerobot/outputs/cluster_train/meta_dec10/
