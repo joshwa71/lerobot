@@ -254,8 +254,10 @@ lerobot-train \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=1000 \
+  --policy.optimizer_lr=3e-4 \
+  --policy.scheduler_warmup_steps=0 \
   --policy.scheduler_decay_steps=80000 \
+  --policy.scheduler_decay_lr=3e-4 \
   --policy.push_to_hub=false \
   --lora.enable=true \
   --lora.r=4 \
@@ -272,7 +274,7 @@ lerobot-train \
   "(?:^|\\.)action_time_mlp_out$",
   "(?:^|\\.)connector(\\.\\w+)?$"]' \
   --job_name=outputs/train/smolvla_lora_libero_4 \
-  --wandb.enable=false 
+  --wandb.enable=false
 
 
 # Notes
