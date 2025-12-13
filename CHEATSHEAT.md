@@ -238,9 +238,9 @@ pick up the black bowl on the wooden cabinet and place it on the plate          
 
 lerobot-train \
   --policy.path=/home/josh/phddev/lerobot/outputs/smolvla_base \
-  --policy.repo_id=outputs/train/smolvla_lora_libero_4 \
+  --policy.repo_id=outputs/train/smolvla_lora_libero_5 \
   --dataset.repo_id=/home/josh/phddev/lerobot/outputs/libero_individual/libero_task_0 \
-  --output_dir=outputs/train/smolvla_lora_libero_4 \
+  --output_dir=outputs/train/smolvla_lora_libero_5 \
   --steps=20000 \
   --batch_size=16 \
   --num_workers=12 \
@@ -273,8 +273,8 @@ lerobot-train \
   "(?:^|\\.)action_time_mlp_in$",
   "(?:^|\\.)action_time_mlp_out$",
   "(?:^|\\.)connector(\\.\\w+)?$"]' \
-  --job_name=outputs/train/smolvla_lora_libero_4 \
-  --wandb.enable=false
+  --job_name=outputs/train/smolvla_lora_libero_5 \
+  --wandb.enable=true
 
 
 # Notes
