@@ -490,13 +490,13 @@ class SmolVLAPolicy(PreTrainedPolicy):
         lang_tokens = batch[f"{OBS_LANGUAGE_TOKENS}"]
         lang_masks = batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
         actions = self.prepare_action(batch)
-        actions_is_pad = batch.get("actions_is_pad")
+        action_is_pad = batch.get("action_is_pad")
         loss_dict = {}
         losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time, task_emb=task_emb)
         loss_dict["losses_after_forward"] = losses.clone()
 
-        if actions_is_pad is not None:
-            in_episode_bound = ~actions_is_pad
+        if action_is_pad is not None:
+            in_episode_bound = ~action_is_pad
             losses = losses * in_episode_bound.unsqueeze(-1)
             loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
