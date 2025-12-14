@@ -121,6 +121,7 @@ class HashingMemoryLite(nn.Module):
         self.log_usage = getattr(cfg, "log_usage", False)
         self.aggregate_usage = getattr(cfg, "aggregate_usage", False)
         self.lang_dim = lang_dim
+        self.dropout_prob = getattr(cfg, "dropout_prob", 0.0)
 
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
@@ -210,6 +211,15 @@ class HashingMemoryLite(nn.Module):
         if self.training and self.log_usage:
             self.last_indices = indices.view(bs, self.heads, self.knn).detach()
             self.last_weights = weights.view(bs, self.heads, self.knn).detach()
+
+        # Apply dropout to retrieved slots during training
+        if self.training and self.dropout_prob > 0:
+            keep_mask = torch.bernoulli(
+                torch.full_like(weights, 1.0 - self.dropout_prob)
+            )
+            weights = weights * keep_mask
+            weight_sums = weights.sum(dim=-1, keepdim=True).clamp(min=1e-12)
+            weights = weights / weight_sums
 
         # Accumulate per-slot usage counts across training
         if self.training and self.aggregate_usage:

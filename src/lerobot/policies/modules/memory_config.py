@@ -55,4 +55,8 @@ class MemoryLayerConfig:
     # Sentence-transformers model name for computing task embeddings.
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # Dropout probability applied to retrieved memory slots during training.
+    # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
+    dropout_prob: float = 0.0
+
 
