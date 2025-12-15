@@ -394,7 +394,7 @@ class MetaEngine:
 
         # 2) and 3) Evaluate on held-out tasks: adapt on support, then roll out in LIBERO envs
         # Build support loaders for eval tasks
-        support_iters_eval = self.build_task_iters(self.eval_tasks, self.cfg.support_frames_per_task, batch_size=self.cfg.eval.batch_size, shuffle=True)
+        support_iters_eval = self.build_task_iters(self.eval_tasks, self.cfg.support_frames_per_task, batch_size=self.cfg.batch_size, shuffle=True)
 
         # Per-task: clone meta-weights -> adapt -> build env -> eval
         per_task_results = {}
