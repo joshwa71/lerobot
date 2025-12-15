@@ -66,14 +66,30 @@ class TaskEmbeddingCache:
 
 
 class QueryMLPLite(nn.Module):
-    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True, lang_dim: int = 0):
+    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True, lang_dim: int = 0, fuse_method: str = "concat"):
         super().__init__()
         self.input_dim = input_dim
         self.heads = heads
         self.k_dim = k_dim
         self.lang_dim = lang_dim
-        proj_input_dim = input_dim + lang_dim
-        self.proj = nn.Linear(proj_input_dim, heads * k_dim, bias=bias)
+        self.fuse_method = fuse_method
+
+        if fuse_method not in ("concat", "film"):
+            raise ValueError(f"Unknown fuse_method: {fuse_method}. Expected 'concat' or 'film'.")
+
+        if fuse_method == "concat":
+            proj_input_dim = input_dim + lang_dim
+            self.proj = nn.Linear(proj_input_dim, heads * k_dim, bias=bias)
+        else:
+            self.proj = nn.Linear(input_dim, heads * k_dim, bias=bias)
+            if lang_dim > 0:
+                hidden_dim = max(lang_dim, heads * k_dim) // 2
+                self.film_mlp = nn.Sequential(
+                    nn.Linear(lang_dim, hidden_dim),
+                    nn.SiLU(),
+                    nn.Linear(hidden_dim, 2 * heads * k_dim),
+                )
+
         try:
             self.proj.weight.pk_query_proj_param = True
             if self.proj.bias is not None:
@@ -81,18 +97,39 @@ class QueryMLPLite(nn.Module):
         except Exception:
             pass
 
+        if fuse_method == "film" and lang_dim > 0:
+            for p in self.film_mlp.parameters():
+                try:
+                    p.pk_query_proj_param = True
+                except Exception:
+                    pass
+
     def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
         B_T = x.shape[0] if x.dim() == 2 else x.shape[0] * x.shape[1]
         x_flat = x.view(-1, self.input_dim)
-        if lang_emb is not None and self.lang_dim > 0:
-            # lang_emb: (B, lang_dim) -> expand to (B*T, lang_dim)
-            B = lang_emb.shape[0]
-            T = B_T // B
-            lang_emb_expanded = lang_emb.unsqueeze(1).expand(B, T, -1).reshape(B_T, -1)
-            lang_emb_expanded = lang_emb_expanded.to(device=x_flat.device, dtype=x_flat.dtype)
-            x_flat = torch.cat([x_flat, lang_emb_expanded], dim=-1)
-        q = self.proj(x_flat)
+
+        if self.fuse_method == "concat":
+            if lang_emb is not None and self.lang_dim > 0:
+                B = lang_emb.shape[0]
+                T = B_T // B
+                lang_emb_expanded = lang_emb.unsqueeze(1).expand(B, T, -1).reshape(B_T, -1)
+                lang_emb_expanded = lang_emb_expanded.to(device=x_flat.device, dtype=x_flat.dtype)
+                x_flat = torch.cat([x_flat, lang_emb_expanded], dim=-1)
+            q = self.proj(x_flat)
+        else:
+            q = self.proj(x_flat)
+            if lang_emb is not None and self.lang_dim > 0:
+                B = lang_emb.shape[0]
+                T = B_T // B
+                lang_emb = lang_emb.to(device=q.device, dtype=q.dtype)
+                film_params = self.film_mlp(lang_emb)
+                gamma = film_params[:, : self.heads * self.k_dim]
+                beta = film_params[:, self.heads * self.k_dim :]
+                gamma = gamma.unsqueeze(1).expand(B, T, -1).reshape(B_T, -1)
+                beta = beta.unsqueeze(1).expand(B, T, -1).reshape(B_T, -1)
+                q = q * (1 + gamma) + beta
+
         return q.view(q.shape[0] * self.heads, self.k_dim)
 
 
@@ -148,7 +185,8 @@ class HashingMemoryLite(nn.Module):
             self.swilu_projection = nn.Linear(self.input_dim, proj_in)
 
         self.gating = nn.Linear(input_dim, 1) if cfg.mem_gated else None
-        self.query_proj = QueryMLPLite(self.input_dim, self.heads, self.k_dim, lang_dim=lang_dim)
+        fuse_method = getattr(cfg, "fuse_method", "concat")
+        self.query_proj = QueryMLPLite(self.input_dim, self.heads, self.k_dim, lang_dim=lang_dim, fuse_method=fuse_method)
 
         self.reset_parameters()
 

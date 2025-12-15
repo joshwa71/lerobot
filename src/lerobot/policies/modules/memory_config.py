@@ -54,6 +54,10 @@ class MemoryLayerConfig:
     lang_to_query: bool = False
     # Sentence-transformers model name for computing task embeddings.
     embedding_model: str = "all-MiniLM-L6-v2"
+    # Method for fusing language embeddings into query projection:
+    # - "concat": concatenate language embedding to hidden state before projection
+    # - "film": apply FiLM modulation (Feature-wise Linear Modulation) after projection
+    fuse_method: str = "concat"
 
     # Dropout probability applied to retrieved memory slots during training.
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
