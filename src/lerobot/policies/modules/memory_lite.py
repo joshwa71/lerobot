@@ -250,14 +250,16 @@ class HashingMemoryLite(nn.Module):
             self.last_indices = indices.view(bs, self.heads, self.knn).detach()
             self.last_weights = weights.view(bs, self.heads, self.knn).detach()
 
-        # Apply dropout to retrieved slots during training
+        # Apply dropout to retrieved slots during training (per-head normalization)
         if self.training and self.dropout_prob > 0:
+            weights_per_head = weights.view(bs, self.heads, self.knn)
             keep_mask = torch.bernoulli(
-                torch.full_like(weights, 1.0 - self.dropout_prob)
+                torch.full_like(weights_per_head, 1.0 - self.dropout_prob)
             )
-            weights = weights * keep_mask
-            weight_sums = weights.sum(dim=-1, keepdim=True).clamp(min=1e-12)
-            weights = weights / weight_sums
+            weights_per_head = weights_per_head * keep_mask
+            weight_sums = weights_per_head.sum(dim=-1, keepdim=True).clamp(min=1e-12)
+            weights_per_head = weights_per_head / weight_sums
+            weights = weights_per_head.view(bs, self.heads * self.knn)
 
         # Accumulate per-slot usage counts across training
         if self.training and self.aggregate_usage:
