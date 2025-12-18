@@ -1,4 +1,4 @@
-cat > smolvla_pretrain_train_2_wide_lang_emb.sh << 'EOF'
+cat > smolvla_pretrain_train_2_wide_dropout_film.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_pretrain_train_2_wide_lang_emb.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_pretrain_train_2_wide_lang_emb
+#$ -N smolvla_pretrain_train_2_wide_dropout_film
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -100,9 +100,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_2_wide_lang_emb"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_2_wide_dropout_film"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_lang_emb"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_dropout_film"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -135,7 +135,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_95_2_wide_lang_emb \
+  --policy.repo_id=outputs/train/libero_95_2_wide_dropout_film \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -152,7 +152,7 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_95_2_wide_lang_emb \
+  --job_name=libero_95_2_wide_dropout_film \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
@@ -170,7 +170,9 @@ lerobot-train \
   --policy.memory_layer.value_fixed_lr=0.001 \
   --policy.memory_layer.memory_lr=0.001 \
   --policy.memory_layer.lang_to_query=true \
-  --policy.memory_layer.embedding_model=all-mpnet-base-v2
+  --policy.memory_layer.fuse_method=film \
+  --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
+  --policy.memory_layer.dropout_prob=0.1 \
 
 
 echo "Job completed at $(date)"
