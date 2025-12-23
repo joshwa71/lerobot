@@ -175,8 +175,16 @@ class MetaEngine:
             self.eval_tasks = self.cfg.eval_tasks
         logging.info("Task split -> train=%s eval=%s", len(self.train_tasks), len(self.eval_tasks))
 
-    def build_task_iters(self, tasks: list[int], frames_per_task: int, batch_size: int, shuffle: bool) -> dict[int, Iterator]:
+    def build_task_iters(
+        self,
+        tasks: list[int],
+        frames_per_task: int,
+        batch_size: int,
+        shuffle: bool,
+        return_loaders: bool = False,
+    ) -> dict[int, Iterator] | tuple[dict[int, Iterator], dict[int, torch.utils.data.DataLoader]]:
         iters = {}
+        loaders = {}
         for t in tasks:
             ep_idxs = get_episode_indices_for_task(self.dataset, t)
             if len(ep_idxs) == 0:
@@ -199,7 +207,10 @@ class MetaEngine:
                 num_workers=self.cfg.num_workers,
                 prefetch_factor=self.cfg.prefetch_factor,
             )
+            loaders[t] = loader
             iters[t] = cycle(loader)
+        if return_loaders:
+            return iters, loaders
         return iters
 
     def _detect_devices(self) -> List[str]:
@@ -393,8 +404,10 @@ class MetaEngine:
         update_last_checkpoint(ckpt_dir)
 
         # 2) and 3) Evaluate on held-out tasks: adapt on support, then roll out in LIBERO envs
-        # Build support loaders for eval tasks
-        support_iters_eval = self.build_task_iters(self.eval_tasks, self.cfg.support_frames_per_task, batch_size=self.cfg.batch_size, shuffle=True)
+        # Build support loaders for eval tasks (return loaders for cleanup)
+        support_iters_eval, eval_loaders = self.build_task_iters(
+            self.eval_tasks, self.cfg.support_frames_per_task, batch_size=self.cfg.batch_size, shuffle=True, return_loaders=True
+        )
 
         # Per-task: clone meta-weights -> adapt -> build env -> eval
         per_task_results = {}
@@ -534,6 +547,14 @@ class MetaEngine:
             # Always log the step for eval timeline
             agg["outer_step"] = step
             self.wandb_logger.log_dict(agg, step=step, mode="eval")
+
+        # Cleanup eval DataLoaders to prevent file descriptor leaks
+        for loader in eval_loaders.values():
+            if hasattr(loader, "_iterator") and loader._iterator is not None:
+                loader._iterator._shutdown_workers()
+            del loader
+        eval_loaders.clear()
+        support_iters_eval.clear()
 
         # 6) Reload checkpoint: already restored meta-weights in loop, but ensure exact checkpoint state is preserved
         # Optimizer/scheduler states are already preserved in training loop; no mutation here
