@@ -88,8 +88,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_dropout_2"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_dropout_2"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_dropout"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_dropout"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
