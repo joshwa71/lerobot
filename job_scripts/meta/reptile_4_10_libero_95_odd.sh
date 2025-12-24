@@ -192,5 +192,4 @@ if [ -d "$WANDB_DIR" ]; then
     cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_meta/wandb/ || true
 fi
 
-echo "Job completed at $(date)"
-EOF
+echo "Job completed at $(date)"EOF

@@ -1,4 +1,4 @@
-cat > reptile_4_outer_tasks_10_inner_steps.sh << 'EOF'
+cat > reptile_4_outer_tasks_6_inner_steps.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > reptile_4_outer_tasks_10_inner_steps.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N reptile_4_outer_tasks_10_inner_steps
+#$ -N reptile_4_outer_tasks_6_inner_steps
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_meta
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/job_output_$JOB_ID.log
@@ -101,8 +101,8 @@ export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_4_outer_tasks_10_inner_steps"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_outer_tasks_10_inner_steps"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/reptile_4_outer_tasks_6_inner_steps"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_meta/outputs/train/reptile_4_outer_tasks_6_inner_steps"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -140,7 +140,7 @@ lerobot-meta-train \
   --log_freq=5 \
   --dataset.repo_id=$DATASET_SCRATCH \
   --policy.path=$MODEL_SCRATCH \
-  --policy.repo_id=outputs/train/reptile_4_outer_tasks_10_inner_steps \
+  --policy.repo_id=outputs/train/reptile_4_outer_tasks_6_inner_steps \
   --lora.enable=true \
   --lora.r=4 \
   --num_workers=8 \
@@ -159,7 +159,7 @@ lerobot-meta-train \
   "(?:^|\\.)connector(\\.\\w+)?$"]' \
   --algo.type=reptile \
   --algo.meta_step_size=0.2 \
-  --inner_steps=10 \
+  --inner_steps=6 \
   --inner_opt.lr=3e-4 \
   --inner_opt.grad_clip_norm=10 \
   --tasks_per_outer_step=4 \
@@ -174,7 +174,7 @@ lerobot-meta-train \
   --eval_inner_steps=20 \
   --env.type=libero \
   --output_dir=$OUTPUT_SCRATCH \
-  --job_name=reptile_4_outer_tasks_10_inner_steps \
+  --job_name=reptile_4_outer_tasks_6_inner_steps \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=meta-vla \
