@@ -3,7 +3,7 @@ cat > smolvla_sequential_train_2_wide_dropout.sh << 'EOF'
 #$ -S /bin/bash
 #$ -l tmem=64G
 #$ -l h_rt=72:00:00
-#$ -l gpu=true,gpu_type=(a100_80|h100)
+#$ -l gpu=true,gpu_type=(h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
