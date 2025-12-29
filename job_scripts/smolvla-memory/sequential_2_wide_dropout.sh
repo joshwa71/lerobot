@@ -150,7 +150,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --wandb.project=vla-memory \
   --job_name=sequential_libero_10_smolvla_2_wide_dropout \
   --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=2000 \
+  --online_steps_per_task=3000 \
   --policy.memory_layer.aggregate_usage=false \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
@@ -160,9 +160,9 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
   --use_online_idf_stats=true \
   --idf_exponent=1 \
-  --memory_value_lr=0.02
-
-
+  --memory_value_lr=0.02 \
+  --memory_value_lr_end=0.005 \
+  --memory_value_scheduler_type=linear
 
 echo "Job completed at $(date)"
 EOF
