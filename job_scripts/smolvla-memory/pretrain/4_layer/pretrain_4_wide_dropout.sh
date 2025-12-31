@@ -142,7 +142,7 @@ lerobot-train \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
   --steps=150000 \
-  --batch_size=64 \
+  --batch_size=32 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
