@@ -141,7 +141,7 @@ lerobot-train \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=10000 \
-  --steps=100000 \
+  --steps=150000 \
   --batch_size=32 \
   --num_workers=12 \
   --eval.batch_size=1 \
@@ -151,7 +151,7 @@ lerobot-train \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=80000 \
+  --policy.scheduler_decay_steps=120000 \
   --job_name=libero_95_4_wide_film \
   --policy.push_to_hub=false \
   --wandb.enable=true \
