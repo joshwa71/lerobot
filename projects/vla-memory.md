@@ -161,3 +161,49 @@ lerobot-train \
 --policy.memory_layer.mem_k_dim=256 \
 --policy.memory_layer.memory_lr=0.001
 ```
+
+---
+## 9) Anti-Forgetting Pretraining Features
+
+Two optional features can be enabled during pretraining to reduce catastrophic forgetting during sequential task adaptation.
+
+### Query Contrastive Loss
+
+**Motivation:** During sequential training, updating memory values for new tasks can interfere with slots that prior tasks depend on. Analysis shows 10-20% slot usage overlap between some task pairs.
+
+**Approach:** An auxiliary loss that pushes post-FiLM query centroids apart across tasks within each batch, encouraging the query projection network to route different tasks to different memory slot regions.
+
+**How it works:**
+1. Compute mean query vector (centroid) for each task present in the batch
+2. Apply pairwise cosine similarity penalty between centroids
+3. Hinge-style loss: `max(0, cos_sim - margin)`
+
+**Config:**
+```bash
+--policy.memory_layer.contrastive_loss_weight=0.1  # disabled if 0
+--policy.memory_layer.contrastive_margin=0.0       # optional margin
+```
+
+### Value Vector Corruption
+
+**Motivation:** When interference does occur during sequential training (slots updated for new tasks), we want downstream performance to degrade gracefully rather than catastrophically.
+
+**Approach:** Stochastic additive Gaussian noise applied to retrieved memory values during training, building robustness to value drift.
+
+**How it works:**
+1. After retrieving memory values but before weighted aggregation
+2. With probability `corruption_prob`, add Gaussian noise (std=`corruption_std`) to each slot's value
+3. Training only; no corruption at inference
+
+**Config:**
+```bash
+--policy.memory_layer.corruption_prob=0.1  # per-slot probability; disabled if 0
+--policy.memory_layer.corruption_std=0.1   # noise standard deviation
+```
+
+### Files Changed
+- `memory_config.py` - Added config fields
+- `memory_lite.py` - Core implementation in `HashingMemoryLite` and `MLPPlusMemory`
+- `smolvlm_with_expert.py` - Pass `task_ids` through to MLP layers
+- `modeling_smolvla.py` - Aggregate contrastive losses, add to total loss
+- `lerobot_train.py` - Pass `task_ids` through training loop
