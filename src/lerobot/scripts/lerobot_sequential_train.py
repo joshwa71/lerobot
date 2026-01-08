@@ -1269,6 +1269,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     task_emb=task_emb,
                 )
             else:
+                # Note: task_ids is not passed in sequential training since each batch
+                # contains only one task, making contrastive loss inapplicable
                 train_tracker, output_dict = update_policy(
                     train_tracker,
                     policy,
@@ -1278,6 +1280,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     accelerator=accelerator,
                     lr_scheduler=lr_scheduler,
                     task_emb=task_emb,
+                    task_ids=None,
                 )
 
             global_step += 1

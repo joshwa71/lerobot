@@ -1,13 +1,13 @@
-cat > memory_libero_95_mem_mlp_512_4_layer_wide.sh << 'EOF'
+cat > smolvla_pretrain_train_2_wide_film_corruption.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
-#$ -l h_rt=120:00:00
-#$ -l gpu=true,gpu_type=(h100|a100_80)
+#$ -l h_rt=72:00:00
+#$ -l gpu=true,gpu_type=(a100_80|h100)
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N memory_libero_95_mem_mlp_512_4_layer_wide
+#$ -N smolvla_pretrain_train_2_wide_film_corruption
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -55,7 +55,6 @@ if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
   export __EGL_VENDOR_LIBRARY_FILENAMES="/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
 fi
 
-
 echo "Created scratch directory: $SCRATCH_DIR"
 # Set cache directories to scratch space
 export TMPDIR="$SCRATCH_DIR/tmp"
@@ -72,6 +71,7 @@ mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_
 export PATH=/share/apps/miniconda3/bin:$PATH
 source /share/apps/miniconda3/etc/profile.d/conda.sh
 conda activate lerobot-memory
+
 
 # Verify environment
 echo "Python: $(which python)"
@@ -100,9 +100,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/memory_libero_95_mem_mlp_512_4_layer_wide"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_2_wide_film_corruption"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/memory_libero_95_mem_mlp_512_4_layer_wide"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_corruption"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -135,14 +135,14 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/memory_libero_95_mem_mlp_512_4_layer_wide \
+  --policy.repo_id=outputs/train/libero_95_2_wide_film_corruption \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=20000 \
   --steps=100000 \
-  --batch_size=32 \
+  --batch_size=64 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=3 \
@@ -152,14 +152,14 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=memory_libero_95_mem_mlp_512_4_layer_wide \
+  --job_name=libero_95_2_wide_film_corruption \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
   --wandb.disable_artifact=true \
   --policy.memory_layers=true \
   --policy.memory_layer.memory_only=false \
-  --policy.memory_layer.layers="[12,13,14,15]" \
+  --policy.memory_layer.layers="[14,15]" \
   --policy.memory_layer.log_usage=true \
   --policy.memory_layer.enabled=true \
   --policy.memory_layer.aggregate_usage=true \
@@ -168,7 +168,12 @@ lerobot-train \
   --policy.memory_layer.mem_knn=16 \
   --policy.memory_layer.mem_k_dim=512 \
   --policy.memory_layer.value_fixed_lr=0.001 \
-  --policy.memory_layer.memory_lr=0.001
+  --policy.memory_layer.memory_lr=0.001 \
+  --policy.memory_layer.lang_to_query=true \
+  --policy.memory_layer.fuse_method=film \
+  --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
+  --policy.memory_layer.corruption_prob=0.1 \
+  --policy.memory_layer.corruption_std=0.1 \
 
 
 echo "Job completed at $(date)"

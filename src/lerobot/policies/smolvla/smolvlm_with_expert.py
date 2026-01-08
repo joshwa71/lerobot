@@ -411,6 +411,7 @@ class SmolVLMWithExpertModel(nn.Module):
         use_cache: bool | None = None,
         fill_kv_cache: bool | None = None,
         task_emb: torch.Tensor | None = None,
+        task_ids: torch.Tensor | None = None,
     ):
         models = [self.get_vlm_model().text_model, self.lm_expert]
         model_layers = self.get_model_layers(models)
@@ -479,7 +480,7 @@ class SmolVLMWithExpertModel(nn.Module):
 
                     out_emb = layer.post_attention_layernorm(out_emb)
                     if isinstance(layer.mlp, MLPPlusMemory):
-                        out_emb = layer.mlp(out_emb, lang_emb=task_emb)
+                        out_emb = layer.mlp(out_emb, lang_emb=task_emb, task_ids=task_ids)
                     else:
                         out_emb = layer.mlp(out_emb)
 

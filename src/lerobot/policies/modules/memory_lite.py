@@ -160,6 +160,17 @@ class HashingMemoryLite(nn.Module):
         self.lang_dim = lang_dim
         self.dropout_prob = getattr(cfg, "dropout_prob", 0.0)
 
+        # Value corruption parameters
+        self.corruption_prob = getattr(cfg, "corruption_prob", 0.0)
+        self.corruption_std = getattr(cfg, "corruption_std", 0.1)
+
+        # Query contrastive loss parameters
+        self.contrastive_loss_weight = getattr(cfg, "contrastive_loss_weight", 0.0)
+        self.contrastive_margin = getattr(cfg, "contrastive_margin", 0.0)
+
+        # Store last contrastive loss for aggregation (set during forward)
+        self.last_contrastive_loss = None
+
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
         self.keys = nn.Parameter(torch.empty(2 * self.heads * self.n_keys, self.k_dim // 2))
@@ -208,9 +219,10 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
         # lang_emb: (B, lang_dim) or None
+        # task_ids: (B,) optional task indices for contrastive loss
         # Ensure module parameters/buffers match the input dtype/device without recreating Parameters
         dtype, device = x.dtype, x.device
         if getattr(self, "_param_dtype", None) is not dtype or getattr(self, "_param_device", None) is not device:
@@ -230,6 +242,11 @@ class HashingMemoryLite(nn.Module):
 
         # Query (with optional language conditioning)
         query = self.query_proj(x, lang_emb=lang_emb)  # (bs*heads, k_dim)
+
+        # Compute query contrastive loss if enabled and task_ids provided
+        self.last_contrastive_loss = None
+        if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
+            self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
 
         # Indices and scores
         scores, indices = self._get_indices(query)  # (bs*heads, knn)
@@ -277,15 +294,36 @@ class HashingMemoryLite(nn.Module):
                 batch_present = (batch_counts > 0).to(torch.long)
                 self.usage_batch_counts[: batch_present.shape[0]] += batch_present
 
-        # Weighted aggregation via embedding_bag
+        # Weighted aggregation with optional value corruption
         # embedding_bag backward with per_sample_weights is not implemented for bf16 on CUDA.
         # Perform the op in float32 and cast back to the model dtype afterwards.
-        out_fp32 = F.embedding_bag(
-            indices,
-            self.values.float(),
-            per_sample_weights=weights.float(),
-            mode="sum",
-        )
+        if self.training and self.corruption_prob > 0:
+            # Manual gather + corruption + weighted sum for value corruption
+            # indices: (bs, heads*knn), weights: (bs, heads*knn)
+            # Gather values: (bs, heads*knn, v_dim)
+            retrieved_values = self.values.float()[indices]  # (bs, heads*knn, v_dim)
+
+            # Apply per-slot corruption: Gaussian noise with probability corruption_prob
+            # Create per-slot mask: (bs, heads*knn)
+            corruption_mask = torch.bernoulli(
+                torch.full((bs, self.heads * self.knn), self.corruption_prob, device=device)
+            ).bool()
+
+            # Generate noise: (bs, heads*knn, v_dim)
+            noise = torch.randn_like(retrieved_values) * self.corruption_std
+
+            # Apply noise only to masked slots
+            retrieved_values = retrieved_values + corruption_mask.unsqueeze(-1).float() * noise
+
+            # Weighted sum: (bs, v_dim)
+            out_fp32 = (retrieved_values * weights.float().unsqueeze(-1)).sum(dim=1)
+        else:
+            out_fp32 = F.embedding_bag(
+                indices,
+                self.values.float(),
+                per_sample_weights=weights.float(),
+                mode="sum",
+            )
         out = out_fp32.to(dtype)
 
         if self.v_proj and not self.swilu_proj:
@@ -298,6 +336,68 @@ class HashingMemoryLite(nn.Module):
             gate = torch.sigmoid(self.gating(x_flat)).view(B, T, 1)
             out = gate * out
         return out
+
+    def _compute_contrastive_loss(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Compute contrastive loss to push query centroids apart across tasks.
+
+        Args:
+            query: Query vectors of shape (B*T*heads, k_dim)
+            B: Batch size
+            T: Sequence length
+            task_ids: Task indices of shape (B,)
+
+        Returns:
+            Scalar contrastive loss tensor
+        """
+        # Reshape query to (B, T*heads, k_dim) and compute per-sample mean
+        # query: (B*T*heads, k_dim) -> (B, T*heads, k_dim) -> (B, k_dim)
+        query_reshaped = query.view(B, T * self.heads, self.k_dim)
+        per_sample_query = query_reshaped.mean(dim=1)  # (B, k_dim)
+
+        # Get unique tasks in this batch
+        unique_tasks = torch.unique(task_ids)
+        num_tasks = unique_tasks.numel()
+
+        # If only one task, skip loss computation (return 0)
+        if num_tasks < 2:
+            return torch.tensor(0.0, device=query.device, dtype=query.dtype)
+
+        # Compute per-task centroids
+        centroids = []
+        for t in unique_tasks:
+            mask = (task_ids == t)
+            if mask.sum() > 0:
+                centroid = per_sample_query[mask].mean(dim=0)  # (k_dim,)
+                centroids.append(centroid)
+
+        # Stack centroids: (num_tasks, k_dim)
+        centroids = torch.stack(centroids, dim=0)
+
+        # Normalize centroids for cosine similarity
+        centroids_norm = F.normalize(centroids, p=2, dim=1)
+
+        # Compute pairwise cosine similarity: (num_tasks, num_tasks)
+        cos_sim = torch.mm(centroids_norm, centroids_norm.t())
+
+        # Extract upper triangle (excluding diagonal) for pairwise loss
+        num_pairs = 0
+        contrastive_loss = torch.tensor(0.0, device=query.device, dtype=torch.float32)
+
+        for i in range(num_tasks):
+            for j in range(i + 1, num_tasks):
+                sim = cos_sim[i, j]
+                # Hinge-style loss with margin: max(0, cos_sim - margin)
+                # If margin=0, this is just the cosine similarity
+                pair_loss = torch.clamp(sim - self.contrastive_margin, min=0.0)
+                contrastive_loss = contrastive_loss + pair_loss
+                num_pairs += 1
+
+        # Normalize by number of pairs
+        if num_pairs > 0:
+            contrastive_loss = contrastive_loss / num_pairs
+
+        return contrastive_loss
 
     def _get_indices(self, query: torch.Tensor):
         # query: (bs*heads, k_dim)
@@ -331,8 +431,8 @@ class MLPPlusMemory(nn.Module):
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None):
-        mem_out = self.mem(x, lang_emb=lang_emb)
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None):
+        mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids)
         if self.memory_only:
             return mem_out
         return self.mlp(x) + mem_out

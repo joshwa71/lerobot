@@ -479,11 +479,17 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         return self._queues[ACTION].popleft()
 
-    def forward(self, batch: dict[str, Tensor], noise=None, time=None, task_emb: Tensor | None = None) -> dict[str, Tensor]:
+    def forward(self, batch: dict[str, Tensor], noise=None, time=None, task_emb: Tensor | None = None, task_ids: Tensor | None = None) -> dict[str, Tensor]:
         """Do a full training forward pass to compute the loss"""
         if self.config.adapt_to_pi_aloha:
             batch[OBS_STATE] = self._pi_aloha_decode_state(batch[OBS_STATE])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
+
+        # Extract task_ids from batch if not provided explicitly
+        if task_ids is None and "task_index" in batch:
+            task_ids = batch["task_index"]
+            if task_ids is not None:
+                task_ids = task_ids.to(device=batch[OBS_STATE].device)
 
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
@@ -492,7 +498,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         actions = self.prepare_action(batch)
         action_is_pad = batch.get("action_is_pad")
         loss_dict = {}
-        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time, task_emb=task_emb)
+        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time, task_emb=task_emb, task_ids=task_ids)
         loss_dict["losses_after_forward"] = losses.clone()
 
         if action_is_pad is not None:
@@ -506,6 +512,46 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         # For backward pass
         loss = losses.mean()
+        loss_dict["mse_loss"] = loss.item()
+
+        # Aggregate contrastive losses from memory layers
+        contrastive_loss_weight = getattr(self.config.memory_layer, "contrastive_loss_weight", 0.0)
+        if contrastive_loss_weight > 0 and (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ):
+            try:
+                contrastive_losses = []
+                # Expert layers
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        mem = layer.mlp.mem
+                        if hasattr(mem, "last_contrastive_loss") and mem.last_contrastive_loss is not None:
+                            contrastive_losses.append(mem.last_contrastive_loss)
+                            loss_dict[f"contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
+                # VLM backbone layers (if any)
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            mem = layer.mlp.mem
+                            if hasattr(mem, "last_contrastive_loss") and mem.last_contrastive_loss is not None:
+                                contrastive_losses.append(mem.last_contrastive_loss)
+                                loss_dict[f"vlm_contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
+                except Exception:
+                    pass
+
+                if contrastive_losses:
+                    # Average contrastive loss across all memory layers
+                    total_contrastive = sum(contrastive_losses) / len(contrastive_losses)
+                    loss_dict["contrastive_loss_mean"] = total_contrastive.item()
+                    # Add weighted contrastive loss to total loss
+                    loss = loss + contrastive_loss_weight * total_contrastive
+            except Exception:
+                # Never fail training due to contrastive loss aggregation
+                pass
+
         # For backward pass
         loss_dict["loss"] = loss.item()
 
@@ -944,7 +990,7 @@ class VLAFlowMatching(nn.Module):
         return embs, pad_masks, att_masks
 
     def forward(
-        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None, task_emb=None
+        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None, task_emb=None, task_ids=None
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
@@ -974,6 +1020,7 @@ class VLAFlowMatching(nn.Module):
             use_cache=False,
             fill_kv_cache=False,
             task_emb=task_emb,
+            task_ids=task_ids,
         )
         suffix_out = suffix_out[:, -self.config.chunk_size :]
         # Original openpi code, upcast attention output

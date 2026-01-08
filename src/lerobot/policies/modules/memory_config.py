@@ -63,4 +63,18 @@ class MemoryLayerConfig:
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
     dropout_prob: float = 0.0
 
+    # Query Contrastive Loss: pushes query centroids apart across tasks in a batch
+    # to encourage task-specific memory slot usage.
+    # Weight λ for query contrastive loss; disabled if 0.
+    contrastive_loss_weight: float = 0.0
+    # Margin for cosine penalty (0 = no margin, hinge-style loss if > 0).
+    contrastive_margin: float = 0.0
+
+    # Value Vector Corruption: adds Gaussian noise to retrieved values during training
+    # to build robustness to value drift during sequential adaptation.
+    # Per-slot probability of corruption; disabled if 0.
+    corruption_prob: float = 0.0
+    # Standard deviation of additive Gaussian noise.
+    corruption_std: float = 0.1
+
 

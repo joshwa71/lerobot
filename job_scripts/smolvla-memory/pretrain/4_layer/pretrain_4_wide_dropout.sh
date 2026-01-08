@@ -140,7 +140,7 @@ lerobot-train \
   --env.type=libero \
   --env.task=libero_spatial \
   --output_dir="$OUTPUT_SCRATCH" \
-  --save_freq=10000 \
+  --save_freq=20000 \
   --steps=150000 \
   --batch_size=32 \
   --num_workers=12 \

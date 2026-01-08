@@ -88,6 +88,7 @@ def update_policy(
     lr_scheduler=None,
     lock=None,
     task_emb: torch.Tensor | None = None,
+    task_ids: torch.Tensor | None = None,
 ) -> tuple[MetricsTracker, dict]:
     """
     Performs a single training step to update the policy's weights.
@@ -105,6 +106,7 @@ def update_policy(
         lr_scheduler: An optional learning rate scheduler.
         lock: An optional lock for thread-safe optimizer updates.
         task_emb: Optional task embeddings for language-conditioned memory queries.
+        task_ids: Optional task indices for query contrastive loss computation.
 
     Returns:
         A tuple containing:
@@ -116,7 +118,7 @@ def update_policy(
 
     # Let accelerator handle mixed precision
     with accelerator.autocast():
-        loss, output_dict = policy.forward(batch, task_emb=task_emb)
+        loss, output_dict = policy.forward(batch, task_emb=task_emb, task_ids=task_ids)
         # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
     # Use accelerator's backward method
@@ -566,6 +568,14 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             except Exception:
                 task_emb = None
 
+        # Move task_ids to device for contrastive loss computation
+        task_ids_device = None
+        if task_ids is not None:
+            try:
+                task_ids_device = task_ids.to(device=device)
+            except Exception:
+                task_ids_device = task_ids
+
         train_tracker, output_dict = update_policy(
             train_tracker,
             policy,
@@ -575,6 +585,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             accelerator=accelerator,
             lr_scheduler=lr_scheduler,
             task_emb=task_emb,
+            task_ids=task_ids_device,
         )
 
         # Accumulate per-task memory usage for this batch (main process only)
