@@ -292,12 +292,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             expert = model.vlm_with_expert.lm_expert
             for li, layer in enumerate(expert.layers):
                 mlp = getattr(layer, "mlp", None)
-                mem = getattr(getattr(mlp, "mem", None), "values", None)
-                if mem is not None and hasattr(mlp, "mem"):
-                    mem_module = mlp.mem
-                    values_param = mlp.mem.values
+                mem_module = getattr(mlp, "mem", None)
+                if mem_module is not None:
                     json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
-                    mems.append((li, mem_module, values_param, json_key))
+                    mems.append((li, mem_module, json_key))
         except Exception:
             pass
         # VLM backbone
@@ -306,18 +304,16 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             vlm_text_model = model.vlm_with_expert.get_vlm_model().text_model
             for li, layer in enumerate(vlm_text_model.layers):
                 mlp = getattr(layer, "mlp", None)
-                mem = getattr(getattr(mlp, "mem", None), "values", None)
-                if mem is not None and hasattr(mlp, "mem"):
-                    mem_module = mlp.mem
-                    values_param = mlp.mem.values
+                mem_module = getattr(mlp, "mem", None)
+                if mem_module is not None:
                     json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
-                    mems.append((li, mem_module, values_param, json_key))
+                    mems.append((li, mem_module, json_key))
         except Exception:
             pass
         return mems
 
     def _enable_memory_batch_logging(unwrapped_policy: PreTrainedPolicy, enable: bool = True):
-        for _, mem_module, _, _ in _iter_memory_modules(unwrapped_policy):
+        for _, mem_module, _ in _iter_memory_modules(unwrapped_policy):
             try:
                 mem_module.log_usage = bool(enable)
             except Exception:
@@ -335,7 +331,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         try:
             task_ids = task_ids.to(torch.long).detach().cpu()
             B = int(task_ids.shape[0])
-            for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+            for _, mem, json_key in _iter_memory_modules(unwrapped_policy):
                 idx = getattr(mem, "last_indices", None)
                 if idx is None:
                     continue

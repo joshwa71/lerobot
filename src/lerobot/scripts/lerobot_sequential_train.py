@@ -323,10 +323,34 @@ def _subset_envs(envs_all: dict[str, dict[int, Any]], suite_name: str, env_task_
     return {suite_name: {tid: suite_envs[tid] for tid in env_task_ids if tid in suite_envs}}
 
 
+def _get_value_params(mem_module) -> list:
+    """
+    Get the value parameter(s) from a memory module.
+
+    For value_type="vector": returns [mem.values]
+    For value_type="lora": returns [mem.slot_down, mem.slot_up]
+    """
+    value_type = getattr(mem_module, "value_type", "vector")
+    if value_type == "vector":
+        return [mem_module.values] if hasattr(mem_module, "values") else []
+    elif value_type == "lora":
+        params = []
+        if hasattr(mem_module, "slot_down"):
+            params.append(mem_module.slot_down)
+        if hasattr(mem_module, "slot_up"):
+            params.append(mem_module.slot_up)
+        return params
+    return []
+
+
 def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
     """
-    Yield tuples of (layer_index, mem_module, values_param, json_key) for all attached memory layers
+    Yield tuples of (layer_index, mem_module, value_params, json_key) for all attached memory layers
     across the action expert and the VLM text backbone.
+
+    value_params is a list of parameters:
+      - For vector mode: [values]
+      - For lora mode: [slot_down, slot_up]
 
     json_key strings are aligned with memory_usage.json conventions:
       - Expert: "model.vlm_with_expert.lm_expert.layers.{i}"
@@ -338,13 +362,12 @@ def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
         expert = model.vlm_with_expert.lm_expert
         for li, layer in enumerate(expert.layers):
             mlp = getattr(layer, "mlp", None)
-            # Lazy import to avoid circulars; type check by attribute presence
-            mem = getattr(getattr(mlp, "mem", None), "values", None)
-            if mem is not None and hasattr(mlp, "mem"):
-                mem_module = mlp.mem
-                values_param = mlp.mem.values
-                json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
-                mems.append((li, mem_module, values_param, json_key))
+            mem_module = getattr(mlp, "mem", None)
+            if mem_module is not None:
+                value_params = _get_value_params(mem_module)
+                if value_params:
+                    json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
+                    mems.append((li, mem_module, value_params, json_key))
     except Exception:
         pass
 
@@ -354,12 +377,12 @@ def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
         vlm_text_model = model.vlm_with_expert.get_vlm_model().text_model
         for li, layer in enumerate(vlm_text_model.layers):
             mlp = getattr(layer, "mlp", None)
-            mem = getattr(getattr(mlp, "mem", None), "values", None)
-            if mem is not None and hasattr(mlp, "mem"):
-                mem_module = mlp.mem
-                values_param = mlp.mem.values
-                json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
-                mems.append((li, mem_module, values_param, json_key))
+            mem_module = getattr(mlp, "mem", None)
+            if mem_module is not None:
+                value_params = _get_value_params(mem_module)
+                if value_params:
+                    json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
+                    mems.append((li, mem_module, value_params, json_key))
     except Exception:
         pass
     return mems
@@ -680,7 +703,7 @@ def _compute_tfidf_top_indices_for_batch(
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
-    for _, mem_module, values_param, json_key in _iter_memory_modules(unwrapped_policy):
+    for _, mem_module, value_params, json_key in _iter_memory_modules(unwrapped_policy):
         # last_indices exists only when mem.log_usage == True
         if not hasattr(mem_module, "last_indices") or mem_module.last_indices is None:
             # Fallback: allow all accessed slots if we can reconstruct from usage_counts delta; otherwise skip
@@ -720,8 +743,10 @@ def _compute_tfidf_top_indices_for_batch(
                     mem_module.last_update_indices = top_indices.detach().cpu()
                 except Exception:
                     pass
-                # Always mask values by the selected slot indices
-                allowed_by_param[values_param] = top_indices.detach()
+                # Mask all value params by the selected slot indices
+                # For vector mode: [values], for lora mode: [slot_down, slot_up]
+                for vp in value_params:
+                    allowed_by_param[vp] = top_indices.detach()
 
                 # If keys are trainable, mask their gradients to rows corresponding to the
                 # selected value slots. Each value slot index encodes a pair of sub-keys

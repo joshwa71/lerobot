@@ -77,4 +77,12 @@ class MemoryLayerConfig:
     # Standard deviation of additive Gaussian noise.
     corruption_std: float = 0.1
 
+    # Value type: determines what each memory slot stores and how it's used.
+    # - "vector": each slot is a value vector (original behavior, weighted sum of vectors)
+    # - "lora": each slot is a tiny LoRA (low-rank transform), output is weighted sum of LoRA outputs
+    value_type: str = "vector"
+    # Rank for LoRA-style slots (only used when value_type="lora").
+    # Lower rank = fewer params but less capacity per slot.
+    lora_rank: int = 2
+
 

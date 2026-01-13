@@ -139,6 +139,10 @@ class HashingMemoryLite(nn.Module):
 
     Functionally mirrors the logic of the reference implementation (product keys,
     2-way PQ, kNN over subspaces, embedding_bag value aggregation), without Triton or DTensor.
+
+    Supports two value types:
+    - "vector": each slot is a value vector (original behavior, weighted sum of vectors)
+    - "lora": each slot is a tiny LoRA (low-rank transform), output is weighted sum of LoRA outputs
     """
 
     EVAL_MEMORY = True
@@ -160,6 +164,10 @@ class HashingMemoryLite(nn.Module):
         self.lang_dim = lang_dim
         self.dropout_prob = getattr(cfg, "dropout_prob", 0.0)
 
+        # Value type: "vector" (original) or "lora" (low-rank transform per slot)
+        self.value_type = getattr(cfg, "value_type", "vector")
+        self.lora_rank = getattr(cfg, "lora_rank", 2)
+
         # Value corruption parameters
         self.corruption_prob = getattr(cfg, "corruption_prob", 0.0)
         self.corruption_std = getattr(cfg, "corruption_std", 0.1)
@@ -174,17 +182,33 @@ class HashingMemoryLite(nn.Module):
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
         self.keys = nn.Parameter(torch.empty(2 * self.heads * self.n_keys, self.k_dim // 2))
-        # Tag keys param to allow selective training
         try:
             self.keys.pk_keys_param = True
         except Exception:
             pass
 
-        # Values (embedding table) kept in float32 for correct CUDA backward and stability
-        self.values = nn.Parameter(torch.empty(self.size, self.v_dim, dtype=torch.float32))
-        for p in [self.values]:
-            p.pk_value_param = True
-            p.fixed_lr = cfg.value_fixed_lr
+        # Value parameters depend on value_type
+        if self.value_type == "vector":
+            # Original: values (embedding table) kept in float32 for correct CUDA backward
+            self.values = nn.Parameter(torch.empty(self.size, self.v_dim, dtype=torch.float32))
+            self.values.pk_value_param = True
+            self.values.fixed_lr = cfg.value_fixed_lr
+        elif self.value_type == "lora":
+            # LoRA-style: each slot has a low-rank transform (down @ SiLU @ up)
+            # slot_down: (n_slots, input_dim, rank) - projects input to low-rank space
+            # slot_up: (n_slots, rank, v_dim) - projects back to output space
+            self.slot_down = nn.Parameter(
+                torch.empty(self.size, self.input_dim, self.lora_rank, dtype=torch.float32)
+            )
+            self.slot_up = nn.Parameter(
+                torch.empty(self.size, self.lora_rank, self.v_dim, dtype=torch.float32)
+            )
+            self.slot_down.pk_value_param = True
+            self.slot_down.fixed_lr = cfg.value_fixed_lr
+            self.slot_up.pk_value_param = True
+            self.slot_up.fixed_lr = cfg.value_fixed_lr
+        else:
+            raise ValueError(f"Unknown value_type: {self.value_type}. Expected 'vector' or 'lora'.")
 
         # Optional projection/gating
         self.swilu_proj = cfg.swilu_projection
@@ -210,7 +234,16 @@ class HashingMemoryLite(nn.Module):
     def reset_parameters(self):
         bound = 1 / math.sqrt(self.k_dim)
         nn.init.uniform_(self.keys, a=-bound, b=bound)
-        nn.init.normal_(self.values, mean=0, std=self.v_dim ** -0.5)
+
+        if self.value_type == "vector":
+            nn.init.normal_(self.values, mean=0, std=self.v_dim ** -0.5)
+        elif self.value_type == "lora":
+            # Initialize LoRA params similar to standard LoRA practice
+            # down projection: small random init
+            nn.init.normal_(self.slot_down, mean=0, std=0.02)
+            # up projection: zero init so LoRA starts as identity-ish
+            nn.init.zeros_(self.slot_up)
+
         nn.init.xavier_uniform_(self.query_proj.proj.weight)
         if self.v_proj:
             nn.init.normal_(self.value_proj.weight, mean=0, std=self.output_dim ** -0.5)
@@ -227,7 +260,8 @@ class HashingMemoryLite(nn.Module):
         dtype, device = x.dtype, x.device
         if getattr(self, "_param_dtype", None) is not dtype or getattr(self, "_param_device", None) is not device:
             for p in self.parameters(recurse=True):
-                if p is self.values:
+                # Keep value params (vectors or LoRA weights) in float32 for stable gradients
+                if getattr(p, "pk_value_param", False):
                     p.data = p.data.to(device=device, dtype=torch.float32)
                 else:
                     p.data = p.data.to(device=device, dtype=dtype)
@@ -297,33 +331,12 @@ class HashingMemoryLite(nn.Module):
         # Weighted aggregation with optional value corruption
         # embedding_bag backward with per_sample_weights is not implemented for bf16 on CUDA.
         # Perform the op in float32 and cast back to the model dtype afterwards.
-        if self.training and self.corruption_prob > 0:
-            # Manual gather + corruption + weighted sum for value corruption
-            # indices: (bs, heads*knn), weights: (bs, heads*knn)
-            # Gather values: (bs, heads*knn, v_dim)
-            retrieved_values = self.values.float()[indices]  # (bs, heads*knn, v_dim)
-
-            # Apply per-slot corruption: Gaussian noise with probability corruption_prob
-            # Create per-slot mask: (bs, heads*knn)
-            corruption_mask = torch.bernoulli(
-                torch.full((bs, self.heads * self.knn), self.corruption_prob, device=device)
-            ).bool()
-
-            # Generate noise: (bs, heads*knn, v_dim)
-            noise = torch.randn_like(retrieved_values) * self.corruption_std
-
-            # Apply noise only to masked slots
-            retrieved_values = retrieved_values + corruption_mask.unsqueeze(-1).float() * noise
-
-            # Weighted sum: (bs, v_dim)
-            out_fp32 = (retrieved_values * weights.float().unsqueeze(-1)).sum(dim=1)
+        if self.value_type == "vector":
+            out_fp32 = self._forward_vector_values(x_flat, indices, weights, device)
+        elif self.value_type == "lora":
+            out_fp32 = self._forward_lora_values(x_flat, indices, weights, device)
         else:
-            out_fp32 = F.embedding_bag(
-                indices,
-                self.values.float(),
-                per_sample_weights=weights.float(),
-                mode="sum",
-            )
+            raise ValueError(f"Unknown value_type: {self.value_type}")
         out = out_fp32.to(dtype)
 
         if self.v_proj and not self.swilu_proj:
@@ -336,6 +349,99 @@ class HashingMemoryLite(nn.Module):
             gate = torch.sigmoid(self.gating(x_flat)).view(B, T, 1)
             out = gate * out
         return out
+
+    def _forward_vector_values(
+        self, x_flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor, device: torch.device
+    ) -> torch.Tensor:
+        """
+        Original vector-based forward: weighted sum of value vectors.
+
+        Args:
+            x_flat: Flattened input (bs, C) - used only for corruption noise shape
+            indices: Selected slot indices (bs, heads*knn)
+            weights: Softmax weights (bs, heads*knn)
+            device: Target device
+
+        Returns:
+            Aggregated output (bs, v_dim) in float32
+        """
+        bs = indices.shape[0]
+        if self.training and self.corruption_prob > 0:
+            # Manual gather + corruption + weighted sum
+            retrieved_values = self.values.float()[indices]  # (bs, heads*knn, v_dim)
+
+            corruption_mask = torch.bernoulli(
+                torch.full((bs, self.heads * self.knn), self.corruption_prob, device=device)
+            ).bool()
+            noise = torch.randn_like(retrieved_values) * self.corruption_std
+            retrieved_values = retrieved_values + corruption_mask.unsqueeze(-1).float() * noise
+
+            out_fp32 = (retrieved_values * weights.float().unsqueeze(-1)).sum(dim=1)
+        else:
+            out_fp32 = F.embedding_bag(
+                indices,
+                self.values.float(),
+                per_sample_weights=weights.float(),
+                mode="sum",
+            )
+        return out_fp32
+
+    def _forward_lora_values(
+        self, x_flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor, device: torch.device
+    ) -> torch.Tensor:
+        """
+        LoRA-based forward: run input through selected tiny LoRAs, weighted sum of outputs.
+
+        Each slot is a low-rank transform: output_i = slot_up_i @ SiLU(slot_down_i @ x)
+        Final output = sum(weights_i * output_i)
+
+        Args:
+            x_flat: Flattened input (bs, input_dim)
+            indices: Selected slot indices (bs, heads*knn)
+            weights: Softmax weights (bs, heads*knn)
+            device: Target device
+
+        Returns:
+            Aggregated output (bs, v_dim) in float32
+        """
+        bs = indices.shape[0]
+        k = self.heads * self.knn
+
+        # x_flat: (bs, input_dim), indices: (bs, k)
+        x_fp32 = x_flat.float()
+
+        # Gather LoRA weights for selected slots
+        # slot_down: (n_slots, input_dim, rank) -> (bs, k, input_dim, rank)
+        # slot_up: (n_slots, rank, v_dim) -> (bs, k, rank, v_dim)
+        down_weights = self.slot_down[indices]  # (bs, k, input_dim, rank)
+        up_weights = self.slot_up[indices]  # (bs, k, rank, v_dim)
+
+        # Compute each slot's LoRA output:
+        # hidden = SiLU(x @ down) -> (bs, k, rank)
+        # output = hidden @ up -> (bs, k, v_dim)
+
+        # Expand x for broadcasting: (bs, 1, input_dim)
+        x_expanded = x_fp32.unsqueeze(1)
+
+        # down projection: (bs, 1, input_dim) @ (bs, k, input_dim, rank) -> (bs, k, rank)
+        hidden = torch.einsum('bni,bkir->bkr', x_expanded, down_weights)
+        hidden = F.silu(hidden)
+
+        # Apply corruption to hidden activations if enabled (analogous to value corruption)
+        if self.training and self.corruption_prob > 0:
+            corruption_mask = torch.bernoulli(
+                torch.full((bs, k), self.corruption_prob, device=device)
+            ).bool()
+            noise = torch.randn_like(hidden) * self.corruption_std
+            hidden = hidden + corruption_mask.unsqueeze(-1).float() * noise
+
+        # up projection: (bs, k, rank) @ (bs, k, rank, v_dim) -> (bs, k, v_dim)
+        slot_outputs = torch.einsum('bkr,bkro->bko', hidden, up_weights)
+
+        # Weighted sum: (bs, k, v_dim) * (bs, k, 1) -> sum -> (bs, v_dim)
+        out_fp32 = (slot_outputs * weights.float().unsqueeze(-1)).sum(dim=1)
+
+        return out_fp32
 
     def _compute_contrastive_loss(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor) -> torch.Tensor:
         """
@@ -516,9 +622,9 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
-        # Align non-value memory params to base dtype/device; keep values in float32
+        # Align non-value memory params to base dtype/device; keep value params in float32
         for name, p in layer.mlp.mem.named_parameters():
-            if name.startswith("values"):
+            if getattr(p, "pk_value_param", False):
                 p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
@@ -576,7 +682,7 @@ def attach_memory_to_backbones(smolvla_model, cfg: MemoryLayerConfig):
 
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
         for name, p in layer.mlp.mem.named_parameters():
-            if name.startswith("values"):
+            if getattr(p, "pk_value_param", False):
                 p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
