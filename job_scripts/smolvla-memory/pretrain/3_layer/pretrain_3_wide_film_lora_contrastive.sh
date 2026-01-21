@@ -1,4 +1,4 @@
-cat > smolvla_pretrain_train_2_wide_film_lora.sh << 'EOF'
+cat > smolvla_pretrain_train_3_wide_film_lora_contrastive.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_pretrain_train_2_wide_film_lora.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_pretrain_train_2_wide_film_lora
+#$ -N smolvla_pretrain_train_3_wide_film_lora_contrastive
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -100,9 +100,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_2_wide_film_lora"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_3_wide_film_lora_contrastive"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_lora"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_3_wide_film_lora_contrastive"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -135,7 +135,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_95_2_wide_film_lora \
+  --policy.repo_id=outputs/train/libero_95_3_wide_film_lora_contrastive \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -152,14 +152,14 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_95_2_wide_film_lora \
+  --job_name=libero_95_3_wide_film_lora_contrastive \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
   --wandb.disable_artifact=true \
   --policy.memory_layers=true \
   --policy.memory_layer.memory_only=false \
-  --policy.memory_layer.layers="[14,15]" \
+  --policy.memory_layer.layers="[12,13,14]" \
   --policy.memory_layer.log_usage=true \
   --policy.memory_layer.enabled=true \
   --policy.memory_layer.aggregate_usage=true \
@@ -173,7 +173,9 @@ lerobot-train \
   --policy.memory_layer.fuse_method=film \
   --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
   --policy.memory_layer.value_type=lora \
-  --policy.memory_layer.lora_rank=2
+  --policy.memory_layer.lora_rank=2 \
+  --policy.memory_layer.contrastive_loss_weight=0.1 \
+  --policy.memory_layer.contrastive_margin=0.0
 
 
 echo "Job completed at $(date)"

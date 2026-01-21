@@ -1,4 +1,4 @@
-cat > smolvla_pretrain_train_2_wide_film_lora.sh << 'EOF'
+cat > smolvla_sequential_train_2_wide_film_lora_contrastive.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_pretrain_train_2_wide_film_lora.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_pretrain_train_2_wide_film_lora
+#$ -N smolvla_sequential_train_2_wide_film_lora_contrastive
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -80,15 +80,16 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_95"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero_95"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_10"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero_10"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
+
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/smolvla_base"
-MODEL_SCRATCH="$SCRATCH_DIR/smolvla_base"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_lora_contrastive"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_film_lora_contrastive"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -100,9 +101,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_2_wide_film_lora"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_2_wide_film_lora_contrastive"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_lora"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_2_wide_film_lora_contrastive"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -133,47 +134,35 @@ echo "Periodic backup process started with PID: $BACKUP_PID"
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
 
 # Run training
-lerobot-train \
-  --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_95_2_wide_film_lora \
+python -m lerobot.scripts.lerobot_sequential_train \
+  --policy.path="$MODEL_SCRATCH/checkpoints/last/pretrained_model" \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
-  --env.task=libero_spatial \
+  --env.task=libero_10 \
   --output_dir="$OUTPUT_SCRATCH" \
-  --save_freq=20000 \
-  --steps=100000 \
-  --batch_size=32 \
-  --num_workers=12 \
+  --steps=200000 \
+  --batch_size=64 \
+  --num_workers=8 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
-  --eval_freq=20000 \
-  --policy.freeze_vision_encoder=false \
-  --policy.train_expert_only=false \
-  --policy.train_state_proj=true \
-  --policy.scheduler_warmup_steps=10000 \
-  --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_95_2_wide_film_lora \
-  --policy.push_to_hub=false \
+  --eval.n_episodes=20 \
+  --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --wandb.disable_artifact=true \
-  --policy.memory_layers=true \
-  --policy.memory_layer.memory_only=false \
-  --policy.memory_layer.layers="[14,15]" \
-  --policy.memory_layer.log_usage=true \
-  --policy.memory_layer.enabled=true \
-  --policy.memory_layer.aggregate_usage=true \
-  --policy.memory_layer.mem_n_keys=384 \
-  --policy.memory_layer.mem_heads=4 \
-  --policy.memory_layer.mem_knn=16 \
-  --policy.memory_layer.mem_k_dim=512 \
-  --policy.memory_layer.value_fixed_lr=0.001 \
-  --policy.memory_layer.memory_lr=0.001 \
-  --policy.memory_layer.lang_to_query=true \
-  --policy.memory_layer.fuse_method=film \
-  --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
-  --policy.memory_layer.value_type=lora \
-  --policy.memory_layer.lora_rank=2
+  --job_name=sequential_libero_10_smolvla_2_wide_film_lora_contrastive \
+  --online_task_ids='[6,7,8,9]' \
+  --online_steps_per_task=3000 \
+  --policy.memory_layer.aggregate_usage=false \
+  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
+  --save_after_each_task=true \
+  --reinit_optimizer_each_task=true \
+  --tfidf_enable=true \
+  --tfidf_top_t=512 \
+  --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
+  --use_online_idf_stats=true \
+  --idf_exponent=1 \
+  --memory_value_lr=0.005 \
+  --memory_value_lr_end=0.001 \
+  --memory_value_scheduler_type=linear
 
 
 echo "Job completed at $(date)"
