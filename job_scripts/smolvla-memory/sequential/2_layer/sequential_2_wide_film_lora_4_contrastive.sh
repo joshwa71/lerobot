@@ -160,8 +160,8 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
   --use_online_idf_stats=true \
   --idf_exponent=1 \
-  --memory_value_lr=0.02 \
-  --memory_value_lr_end=0.005 \
+  --memory_value_lr=0.001 \
+  --memory_value_lr_end=0.0001 \
   --memory_value_scheduler_type=linear
 
 

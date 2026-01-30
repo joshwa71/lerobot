@@ -1,4 +1,4 @@
-cat > smolvla_sequential_train_2_wide_film_lora_low_lr.sh << 'EOF'
+cat > smolvla_sequential_train_film_dropout_lora_4.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_sequential_train_2_wide_film_lora_low_lr.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train_2_wide_film_lora_low_lr
+#$ -N smolvla_sequential_train_film_dropout_lora_4
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -88,8 +88,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_lora"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_film_lora"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_film_dropout_lora_4"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_film_dropout_lora_4"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -101,9 +101,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_2_wide_film_lora_low_lr"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_film_dropout_lora_4"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_2_wide_film_lora_low_lr"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_film_dropout_lora_4"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -148,7 +148,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=sequential_libero_10_smolvla_2_wide_film_lora_low_lr \
+  --job_name=sequential_libero_10_smolvla_film_dropout_lora_4 \
   --online_task_ids='[6,7,8,9]' \
   --online_steps_per_task=3000 \
   --policy.memory_layer.aggregate_usage=false \
