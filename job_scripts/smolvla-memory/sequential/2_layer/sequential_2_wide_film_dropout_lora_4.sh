@@ -7,7 +7,8 @@ cat > smolvla_sequential_train_2_wide_film_dropout_lora_4.sh << 'EOF'
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train_2_wide_film_dropout_lora_4#$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
+#$ -N smolvla_sequential_train_2_wide_film_dropout_lora_4
+#$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
 
