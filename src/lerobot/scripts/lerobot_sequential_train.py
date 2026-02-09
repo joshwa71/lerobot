@@ -128,6 +128,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # <1 decreases exploration. Default 1.0 = standard IDF.
     idf_exponent: float = 1.0
 
+    # Denominator applied to pretraining DF stats when seeding online IDF.
+    # Only used when both --use_online_idf_stats=true and --idf_stats_path are set.
+    # Divides pretrain DF counts and total_batches by this value before seeding,
+    # controlling how quickly sequential training overrides the pretraining prior.
+    # E.g. if pretraining ran 100K batches and each sequential task is 3K steps,
+    # setting denom=33 makes the pretrain prior "worth" ~one sequential task.
+    idf_stats_denom: float = 1.0
+
     # ---- Optional visualization logging (WandB) ----
     # When enabled, build an interactive Plotly HTML visualization of:
     # - global memory usage (from pretraining memory_usage.json, if available)
@@ -630,6 +638,64 @@ def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: 
         idf_by_module[json_key] = idf
 
 
+def _seed_online_idf_from_pretrain(
+    stats_path: Path,
+    unwrapped_policy: PreTrainedPolicy,
+    denom: float = 1.0,
+) -> bool:
+    """
+    Seed the online IDF DF accumulators with pretraining batch_accesses stats,
+    divided by ``denom`` to control relative weight vs. sequential training stats.
+
+    Populates the module-level ``_online_idf_df_by_module`` and
+    ``_online_idf_total_batches`` dicts so that ``_init_online_idf_stats``
+    (which skips modules already present) preserves the seeded values, and a
+    subsequent ``_update_online_idf_stats`` call computes a non-uniform initial IDF.
+
+    Returns True if at least one module was seeded.
+    """
+    try:
+        with open(stats_path, "r") as f:
+            data = json.load(f)
+        per_module = data.get("per_module", {})
+    except Exception:
+        return False
+
+    present: dict[str, int] = {}
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is not None:
+            present[json_key] = int(num_slots)
+
+    denom = max(denom, 1e-12)
+    seeded_any = False
+
+    for json_key, num_slots in present.items():
+        module_dict = per_module.get(json_key)
+        if not isinstance(module_dict, dict):
+            continue
+        df = torch.zeros(num_slots, dtype=torch.float32)
+        max_batches = 0.0
+        for slot_idx in range(num_slots):
+            slot_key = f"value_slot_{slot_idx}"
+            slot_info = module_dict.get(slot_key)
+            if isinstance(slot_info, dict):
+                bacc = float(slot_info.get("batch_accesses", 0))
+                df[slot_idx] = bacc
+                if bacc > max_batches:
+                    max_batches = bacc
+        if max_batches <= 0:
+            continue
+        _online_idf_df_by_module[json_key] = df / denom
+        _online_idf_total_batches[json_key] = max_batches / denom
+        seeded_any = True
+
+    return seeded_any
+
+
 def _load_idf_from_usage_json(stats_path: Path, unwrapped_policy: PreTrainedPolicy, idf_exponent: float = 1.0):
     """
     Build per-module IDF vectors from a memory_usage.json file produced during pretraining.
@@ -1045,10 +1111,35 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     idf_by_module = None
     if cfg.tfidf_enable and not cfg.tf_only:
         if cfg.use_online_idf_stats:
-            # Online mode: initialize DF/IDF structures; no pretraining stats are used.
+            # Online mode: initialize DF/IDF structures, optionally seeded from
+            # pretraining stats so that task 1 starts with a non-uniform IDF.
             idf_by_module = {}
+            unwrapped_for_idf = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+
+            # Seed from pretraining stats if both flags are set
+            seeded = False
+            if cfg.idf_stats_path:
+                seed_path = Path(cfg.idf_stats_path)
+                if seed_path.exists():
+                    seeded = _seed_online_idf_from_pretrain(
+                        seed_path, unwrapped_for_idf, denom=cfg.idf_stats_denom,
+                    )
+                    if is_main and seeded:
+                        logging.info(
+                            f"Seeded online IDF from pretraining stats: {seed_path} "
+                            f"(denom={cfg.idf_stats_denom})"
+                        )
+
             try:
-                _init_online_idf_stats(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), idf_by_module)
+                # _init_online_idf_stats skips modules already in the global
+                # accumulators (i.e. those just seeded) and fills in the rest.
+                _init_online_idf_stats(unwrapped_for_idf, idf_by_module)
+                # If seeded, recompute IDF from the seeded DF so task 1 starts
+                # with a meaningful (non-uniform) IDF vector.
+                if seeded:
+                    _update_online_idf_stats(
+                        unwrapped_for_idf, idf_by_module, idf_exponent=cfg.idf_exponent,
+                    )
                 if is_main:
                     logging.info("Using online IDF statistics accumulated during sequential training.")
             except Exception:
@@ -1463,33 +1554,39 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     if is_main:
         # --- Build + log full memory usage visualization (optional) ---
         if wandb_logger is not None and getattr(cfg, "log_full_memory_usage_viz", True):
+            # Per-task JSONs generated by this sequential run
+            task_json_dir = Path(cfg.output_dir) / "memory_by_task"
+
+            # Global JSON (typically from the pretrained checkpoint)
+            global_json = None
             try:
-                from lerobot.utils.memory_usage_viz import write_full_memory_usage_html
-
-                # Per-task JSONs generated by this sequential run
-                task_json_dir = Path(cfg.output_dir) / "memory_by_task"
-
-                # Global JSON (typically from the pretrained checkpoint)
+                if cfg.idf_stats_path:
+                    p = Path(str(cfg.idf_stats_path))
+                    if p.is_file():
+                        global_json = p
+            except Exception:
                 global_json = None
+            if global_json is None:
                 try:
-                    if cfg.idf_stats_path:
-                        p = Path(str(cfg.idf_stats_path))
-                        if p.is_file():
-                            global_json = p
+                    pp = getattr(cfg.policy, "pretrained_path", None)
+                    if pp:
+                        cand = Path(pp) / "memory_usage.json"
+                        if cand.is_file():
+                            global_json = cand
                 except Exception:
                     global_json = None
-                if global_json is None:
-                    try:
-                        pp = getattr(cfg.policy, "pretrained_path", None)
-                        if pp:
-                            cand = Path(pp) / "memory_usage.json"
-                            if cand.is_file():
-                                global_json = cand
-                    except Exception:
-                        global_json = None
 
-                # Only attempt if we have per-task JSONs (otherwise there's nothing useful to show)
-                if task_json_dir.is_dir():
+            if not task_json_dir.is_dir():
+                logging.warning(
+                    f"Skipping memory usage visualization: per-task JSON directory not found at {task_json_dir}"
+                )
+            else:
+                wandb = wandb_logger._wandb
+
+                # ---- 1) Interactive Plotly HTML (best-effort) ----
+                try:
+                    from lerobot.utils.memory_usage_viz import write_full_memory_usage_html
+
                     viz_dir = Path(cfg.output_dir) / "visualizations"
                     html_path = viz_dir / "full_memory_usage_viz.html"
                     html_path = write_full_memory_usage_html(
@@ -1499,13 +1596,13 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                         grid_side=getattr(cfg, "full_memory_usage_viz_grid_side", None),
                         include_plotlyjs=getattr(cfg, "full_memory_usage_viz_include_plotlyjs", "cdn"),
                     )
+                    logging.info(f"Wrote memory usage HTML to {html_path}")
 
-                    wandb = wandb_logger._wandb
                     # Attach the file to the run for easy download (Files tab)
                     try:
                         wandb.save(str(html_path), base_path=str(cfg.output_dir))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.warning(f"wandb.save for memory viz HTML failed: {e}")
 
                     # Embed directly in the run (Media panel) when supported
                     try:
@@ -1518,26 +1615,51 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                                 {"eval/full_memory_usage_viz": wandb_html},
                                 step=global_step,
                             )
+                            logging.info("Logged interactive memory viz HTML to wandb")
                         elif hasattr(wandb, "Plotly"):
-                            # Fallback: log as a Plotly object if available.
-                            try:
-                                from lerobot.utils.memory_usage_viz import build_full_memory_usage_figure
+                            from lerobot.utils.memory_usage_viz import build_full_memory_usage_figure
 
-                                fig = build_full_memory_usage_figure(
-                                    global_json=global_json,
-                                    task_json_dir=task_json_dir,
-                                    grid_side=getattr(cfg, "full_memory_usage_viz_grid_side", None),
-                                )
-                                wandb.log(
-                                    {"eval/full_memory_usage_viz": wandb.Plotly(fig)},
-                                    step=global_step,
-                                )
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-            except Exception as e:
-                logging.warning(f"Failed to build/log full memory usage visualization: {e}")
+                            fig = build_full_memory_usage_figure(
+                                global_json=global_json,
+                                task_json_dir=task_json_dir,
+                                grid_side=getattr(cfg, "full_memory_usage_viz_grid_side", None),
+                            )
+                            wandb.log(
+                                {"eval/full_memory_usage_viz": wandb.Plotly(fig)},
+                                step=global_step,
+                            )
+                            logging.info("Logged interactive memory viz Plotly to wandb")
+                    except Exception as e:
+                        logging.warning(f"Failed to embed interactive memory viz in wandb: {e}")
+                except Exception as e:
+                    logging.warning(f"Failed to build interactive Plotly memory visualization: {e}")
+
+                # ---- 2) Matplotlib IoU heatmaps + scalar metrics (robust fallback) ----
+                try:
+                    from lerobot.utils.memory_usage_viz import build_iou_images_and_metrics
+
+                    iou_images, iou_metrics = build_iou_images_and_metrics(
+                        global_json=global_json,
+                        task_json_dir=task_json_dir,
+                    )
+
+                    if iou_images:
+                        img_log = {}
+                        for key, fig in iou_images.items():
+                            img_log[key] = wandb.Image(fig)
+                            import matplotlib.pyplot as plt
+                            plt.close(fig)
+                        wandb.log(img_log, step=global_step)
+                        logging.info(f"Logged {len(iou_images)} IoU heatmap image(s) to wandb")
+
+                    if iou_metrics:
+                        wandb.log(iou_metrics, step=global_step)
+                        logging.info(
+                            f"Logged {len(iou_metrics)} memory IoU metrics to wandb. "
+                            f"Overall mean IoU: {iou_metrics.get('memory_iou/all_modules_mean', 'N/A')}"
+                        )
+                except Exception as e:
+                    logging.warning(f"Failed to build/log IoU heatmap images and metrics: {e}")
 
         logging.info("End of sequential online training")
 

@@ -720,3 +720,93 @@ def write_full_memory_usage_html(
     fig.write_html(str(output_path), include_plotlyjs=include_plotlyjs)  # type: ignore[attr-defined]
     return output_path
 
+
+def build_iou_images_and_metrics(
+    *,
+    global_json: Path | None = None,
+    task_json_dir: Path | None = None,
+) -> tuple[dict[str, Any], dict[str, float]]:
+    """
+    Build per-module IoU heatmap images (matplotlib) and scalar metrics.
+
+    Returns:
+        images: dict mapping "memory_iou/{module_short_name}" -> matplotlib Figure
+        metrics: dict mapping metric keys -> float values (mean/max IoU per module, etc.)
+
+    This is a lightweight alternative to the full Plotly visualization that is
+    reliable when logged to wandb as wandb.Image / wandb.log scalars.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    if task_json_dir is None or not task_json_dir.is_dir():
+        return {}, {}
+
+    task_names, module_arrays, _module_n_slots = load_per_task_modules(task_json_dir)
+    n_tasks = len(task_names)
+    if n_tasks < 2:
+        return {}, {}
+
+    short_task_names = [t.replace("task_", "").replace("memory_usage_", "") for t in task_names]
+
+    images: dict[str, Any] = {}
+    metrics: dict[str, float] = {}
+
+    for module_name, task_arrs in module_arrays.items():
+        if len(task_arrs) < 2:
+            continue
+
+        iou_matrix = compute_iou_matrix(task_arrs)
+        triu_indices = np.triu_indices(n_tasks, k=1)
+        triu_vals = iou_matrix[triu_indices]
+
+        mean_iou = float(np.mean(triu_vals))
+        max_iou = float(np.max(triu_vals))
+        min_iou = float(np.min(triu_vals))
+
+        # Short module name for wandb keys (e.g. "layers.22" from full dotted path)
+        parts = module_name.split(".")
+        short_module = ".".join(parts[-2:]) if len(parts) >= 2 else module_name
+
+        metrics[f"memory_iou/{short_module}_mean"] = mean_iou
+        metrics[f"memory_iou/{short_module}_max"] = max_iou
+        metrics[f"memory_iou/{short_module}_min"] = min_iou
+
+        # Per-task stats
+        for t_idx, arr in enumerate(task_arrs):
+            _total, _n_slots, unique_slots, gini, ent, sparsity = compute_stats(arr)
+            metrics[f"memory_stats/{short_module}/{short_task_names[t_idx]}_unique_slots"] = float(unique_slots)
+            metrics[f"memory_stats/{short_module}/{short_task_names[t_idx]}_gini"] = gini
+            metrics[f"memory_stats/{short_module}/{short_task_names[t_idx]}_entropy"] = ent
+            metrics[f"memory_stats/{short_module}/{short_task_names[t_idx]}_unused_pct"] = sparsity
+
+        # Build matplotlib heatmap
+        fig, ax = plt.subplots(figsize=(max(4, n_tasks * 0.8), max(4, n_tasks * 0.8)))
+        im = ax.imshow(iou_matrix, cmap="Blues", vmin=0.0, vmax=1.0, aspect="equal")
+        ax.set_xticks(range(n_tasks))
+        ax.set_yticks(range(n_tasks))
+        ax.set_xticklabels(short_task_names, rotation=45, ha="right", fontsize=8)
+        ax.set_yticklabels(short_task_names, fontsize=8)
+
+        # Annotate cells with IoU values
+        for i in range(n_tasks):
+            for j in range(n_tasks):
+                val = iou_matrix[i, j]
+                color = "white" if val > 0.5 else "black"
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=7, color=color)
+
+        fig.colorbar(im, ax=ax, label="IoU", shrink=0.8)
+        ax.set_title(f"Task Interference IoU — {short_module}\nMean={mean_iou:.3f}  Max={max_iou:.3f}", fontsize=10)
+        fig.tight_layout()
+
+        images[f"memory_iou/{short_module}"] = fig
+
+    # Aggregate across modules
+    module_means = [v for k, v in metrics.items() if k.endswith("_mean")]
+    if module_means:
+        metrics["memory_iou/all_modules_mean"] = float(np.mean(module_means))
+
+    return images, metrics
+
