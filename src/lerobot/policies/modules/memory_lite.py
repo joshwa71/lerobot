@@ -175,6 +175,7 @@ class HashingMemoryLite(nn.Module):
         # Query contrastive loss parameters
         self.contrastive_loss_weight = getattr(cfg, "contrastive_loss_weight", 0.0)
         self.contrastive_margin = getattr(cfg, "contrastive_margin", 0.0)
+        self.contrastive_method = getattr(cfg, "contrastive_method", "centroid")
 
         # Store last contrastive loss for aggregation (set during forward)
         self.last_contrastive_loss = None
@@ -280,7 +281,10 @@ class HashingMemoryLite(nn.Module):
         # Compute query contrastive loss if enabled and task_ids provided
         self.last_contrastive_loss = None
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
-            self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
+            if self.contrastive_method == "sample":
+                self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
+            else:
+                self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
 
         # Indices and scores
         scores, indices = self._get_indices(query)  # (bs*heads, knn)
@@ -504,6 +508,94 @@ class HashingMemoryLite(nn.Module):
             contrastive_loss = contrastive_loss / num_pairs
 
         return contrastive_loss
+
+    def _compute_sample_contrastive_loss(
+        self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Supervised contrastive loss (SupCon, Khosla et al. 2020) on per-sample
+        query vectors.
+
+        For every sample *i* in the batch, all other samples sharing the same
+        task_id are positives and the rest are negatives.  The loss pulls
+        same-task queries together and pushes cross-task queries apart in the
+        normalized cosine-similarity space.
+
+        L = - (1 / |P(i)|) * sum_{p in P(i)} log(
+                exp(sim(z_i, z_p) / tau) /
+                sum_{a != i} exp(sim(z_i, z_a) / tau)
+            )
+
+        averaged over all samples *i* that have at least one positive.
+
+        `contrastive_margin` is repurposed as a temperature offset: the
+        effective temperature is ``max(0.07, contrastive_margin)`` when
+        ``contrastive_margin > 0``, otherwise a sensible default of 0.07 is
+        used.
+
+        Args:
+            query: Query vectors of shape (B*T*heads, k_dim)
+            B: Batch size
+            T: Sequence length
+            task_ids: Task indices of shape (B,)
+
+        Returns:
+            Scalar contrastive loss tensor
+        """
+        # ---- per-sample representation: mean over T*heads -> (B, k_dim) ----
+        query_reshaped = query.view(B, T * self.heads, self.k_dim)
+        z = query_reshaped.mean(dim=1)  # (B, k_dim)
+
+        # Need at least 2 samples
+        if B < 2:
+            return torch.tensor(0.0, device=query.device, dtype=query.dtype)
+
+        # Unique tasks check — need at least 2 distinct tasks for negatives
+        unique_tasks = torch.unique(task_ids)
+        if unique_tasks.numel() < 2:
+            return torch.tensor(0.0, device=query.device, dtype=query.dtype)
+
+        # Temperature
+        tau = max(0.07, self.contrastive_margin) if self.contrastive_margin > 0 else 0.07
+
+        # L2-normalize
+        z_norm = F.normalize(z.float(), p=2, dim=1)  # (B, k_dim), float32
+
+        # Pairwise cosine similarity: (B, B)
+        sim_matrix = torch.mm(z_norm, z_norm.t()) / tau
+
+        # Mask: positive pairs (same task, excluding self)
+        # task_ids: (B,)
+        labels = task_ids.view(-1)
+        pos_mask = labels.unsqueeze(0) == labels.unsqueeze(1)  # (B, B)
+        self_mask = torch.eye(B, dtype=torch.bool, device=query.device)
+        pos_mask = pos_mask & ~self_mask  # exclude self-pairs
+
+        # For numerical stability, subtract max per row before exp
+        logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
+        logits = sim_matrix - logits_max.detach()
+
+        # Denominator: sum over all a != i
+        neg_mask = ~self_mask  # all pairs except self
+        exp_logits = torch.exp(logits) * neg_mask.float()
+        log_denom = torch.log(exp_logits.sum(dim=1, keepdim=True).clamp(min=1e-12))
+
+        # Log-prob of each positive pair
+        log_prob = logits - log_denom  # (B, B)
+
+        # Average log-prob over positives for each anchor
+        num_pos = pos_mask.float().sum(dim=1)  # (B,)
+        has_pos = num_pos > 0
+
+        # Avoid division by zero for samples with no positives in the batch
+        mean_log_prob = (log_prob * pos_mask.float()).sum(dim=1) / num_pos.clamp(min=1.0)
+
+        # Loss = -mean over anchors that have positives
+        loss = -mean_log_prob[has_pos].mean() if has_pos.any() else torch.tensor(
+            0.0, device=query.device, dtype=torch.float32
+        )
+
+        return loss
 
     def _get_indices(self, query: torch.Tensor):
         # query: (bs*heads, k_dim)

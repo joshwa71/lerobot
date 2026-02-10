@@ -63,12 +63,19 @@ class MemoryLayerConfig:
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
     dropout_prob: float = 0.0
 
-    # Query Contrastive Loss: pushes query centroids apart across tasks in a batch
-    # to encourage task-specific memory slot usage.
+    # Query Contrastive Loss: pushes query representations apart across tasks in a
+    # batch to encourage task-specific memory slot usage.
     # Weight λ for query contrastive loss; disabled if 0.
     contrastive_loss_weight: float = 0.0
     # Margin for cosine penalty (0 = no margin, hinge-style loss if > 0).
     contrastive_margin: float = 0.0
+    # Method for computing the contrastive loss:
+    # - "centroid": compute per-task query centroid, penalize pairwise cosine similarity
+    #   between centroids (cheap, stable, captures average routing direction)
+    # - "sample": supervised contrastive loss (Khosla et al.) on per-sample query vectors,
+    #   pulling same-task samples together and pushing cross-task samples apart
+    #   (tighter intra-task clusters, tail-overlap reduction, quadratic in batch size)
+    contrastive_method: str = "centroid"
 
     # Value Vector Corruption: adds Gaussian noise to retrieved values during training
     # to build robustness to value drift during sequential adaptation.
