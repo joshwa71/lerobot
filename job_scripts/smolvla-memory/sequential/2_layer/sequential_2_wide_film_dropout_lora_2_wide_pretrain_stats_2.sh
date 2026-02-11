@@ -1,4 +1,4 @@
-cat > smolvla_sequential_train_2_wide_film_contrastive_dropout_lora_4.sh << 'EOF'
+cat > smolvla_sequential_train_2_wide_film_dropout_lora_2_wide_pretrain_stats_2.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > smolvla_sequential_train_2_wide_film_contrastive_dropout_lora_4.sh << 'EOF
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N smolvla_sequential_train_2_wide_film_contrastive_dropout_lora_4
+#$ -N smolvla_sequential_train_2_wide_film_dropout_lora_2_wide_pretrain_stats_2
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -88,8 +88,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_contrastive_dropout_lora_4"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_film_contrastive_dropout_lora_4"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_2_wide_film_dropout_lora_2_wide"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_2_wide_film_dropout_lora_2_wide"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -101,9 +101,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_2_wide_film_contrastive_dropout_lora_4"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_2_wide_film_dropout_lora_2_wide_pretrain_stats_2"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_2_wide_film_contrastive_dropout_lora_4"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_2_wide_film_dropout_lora_2_wide_pretrain_stats_2"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -148,9 +148,9 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=sequential_libero_10_smolvla_2_wide_film_contrastive_dropout_lora_4 \
+  --job_name=sequential_libero_10_smolvla_2_wide_film_dropout_lora_2_wide_pretrain_stats_2 \
   --online_task_ids='[6,7,8,9]' \
-  --online_steps_per_task=3000 \
+  --online_steps_per_task=4000 \
   --policy.memory_layer.aggregate_usage=false \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
   --save_after_each_task=true \
@@ -159,7 +159,8 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --tfidf_top_t=512 \
   --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
   --use_online_idf_stats=true \
-  --idf_exponent=1 \
+  --idf_stats_denom=33 \
+  --idf_exponent=2 \
   --memory_value_lr=0.001 \
   --memory_value_lr_end=0.0001 \
   --memory_value_scheduler_type=linear
