@@ -156,7 +156,6 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --reinit_optimizer_each_task=true \
   --tfidf_enable=true \
   --tfidf_top_t=512 \
-  --idf_stats_path="$MODEL_SCRATCH/checkpoints/last/pretrained_model/memory_usage.json" \
   --use_online_idf_stats=true \
   --idf_exponent=1 \
   --memory_value_lr=0.02
