@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.optim as optim
 import math
@@ -146,6 +147,66 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     full_memory_usage_viz_grid_side: int | None = None
     # How to include Plotly JS in the HTML. "cdn" keeps the file small.
     full_memory_usage_viz_include_plotlyjs: str = "cdn"
+
+
+def _render_cumulative_eval_bar_chart(
+    eval_history: list[dict],
+) -> "matplotlib.figure.Figure":
+    """
+    Render a grouped bar chart of per-task success rates across eval loops.
+
+    eval_history: list of dicts, one per eval loop, each with:
+        {"trained_task_idx": int, "per_task": {task_id: success_pct, ...}}
+
+    Returns a matplotlib Figure.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    n_groups = len(eval_history)
+    all_task_ids = sorted({tid for entry in eval_history for tid in entry["per_task"]})
+    n_tasks = len(all_task_ids)
+    task_id_to_pos = {tid: i for i, tid in enumerate(all_task_ids)}
+
+    bar_width = 0.8 / max(n_tasks, 1)
+    cmap = plt.get_cmap("tab10")
+    colors = {tid: cmap(i % 10) for i, tid in enumerate(all_task_ids)}
+
+    fig, ax = plt.subplots(figsize=(max(6, n_groups * 1.5), 5))
+
+    for group_idx, entry in enumerate(eval_history):
+        for tid, success_pct in entry["per_task"].items():
+            pos = task_id_to_pos[tid]
+            x = group_idx + (pos - (n_tasks - 1) / 2) * bar_width
+            ax.bar(x, success_pct, width=bar_width * 0.9, color=colors[tid],
+                   label=f"Task {tid}" if group_idx == 0 or tid not in {
+                       t for e in eval_history[:group_idx] for t in e["per_task"]
+                   } else "")
+
+    # Build x-tick labels
+    x_labels = [f"After Task {entry['trained_task_idx']}" for entry in eval_history]
+    ax.set_xticks(range(n_groups))
+    ax.set_xticklabels(x_labels, rotation=30, ha="right", fontsize=9)
+    ax.set_ylabel("Success %")
+    ax.set_ylim(0, 105)
+    ax.set_title("Cumulative Eval: Per-Task Success After Each Training Stage")
+
+    # De-duplicate legend
+    handles, labels = ax.get_legend_handles_labels()
+    seen = set()
+    unique_handles, unique_labels = [], []
+    for h, l in zip(handles, labels):
+        if l and l not in seen:
+            seen.add(l)
+            unique_handles.append(h)
+            unique_labels.append(l)
+    if unique_labels:
+        ax.legend(unique_handles, unique_labels, loc="upper left",
+                  fontsize=8, ncol=max(1, len(unique_labels) // 5 + 1))
+
+    fig.tight_layout()
+    return fig
 
 
 def _default_libero10_map() -> dict[int, int]:
@@ -1282,6 +1343,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
     # Pre-create a dict that will accumulate successes per env task for CL metrics
     seen_env_task_ids: list[int] = []
+    # Accumulator for the cumulative eval bar chart (one entry per eval loop)
+    eval_bar_history: list[dict] = []
 
     # Iterate sequentially over dataset tasks
     for idx, dataset_task_id in enumerate(cfg.online_task_ids):
@@ -1546,6 +1609,28 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                         wandb_logger.log_video(vpaths[0], global_step, mode="eval")
 
                 _append_eval_results_jsonl(cfg.output_dir, global_step, eval_info)
+
+                # Accumulate and log the cumulative eval bar chart
+                per_task_results = {}
+                for entry in (eval_info.get("per_task") or []):
+                    tid = entry.get("task_id")
+                    successes = (entry.get("metrics") or {}).get("successes", [])
+                    if tid is not None and successes:
+                        per_task_results[tid] = float(np.mean(successes) * 100)
+                if per_task_results:
+                    eval_bar_history.append({
+                        "trained_task_idx": dataset_task_id,
+                        "per_task": per_task_results,
+                    })
+                    if wandb_logger:
+                        try:
+                            import matplotlib.pyplot as plt
+                            fig = _render_cumulative_eval_bar_chart(eval_bar_history)
+                            wandb = wandb_logger._wandb
+                            wandb.log({"eval/cumulative_success_chart": wandb.Image(fig)}, step=global_step)
+                            plt.close(fig)
+                        except Exception as e:
+                            logging.warning(f"Failed to log cumulative eval bar chart: {e}")
 
     # Cleanup
     if eval_envs_all:
