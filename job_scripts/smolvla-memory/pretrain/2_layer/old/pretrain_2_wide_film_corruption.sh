@@ -30,10 +30,6 @@ function finish {
         mkdir -p "$FINAL_OUTPUT_DIR"
         cp -r "$OUTPUT_SCRATCH"/* "$FINAL_OUTPUT_DIR/" || true
     fi
-    if [ -n "$WANDB_DIR" ] && [ -d "$WANDB_DIR" ]; then
-        mkdir -p /SAN/vision/jo71_vla_wd/lerobot_memory/wandb
-        cp -r "$WANDB_DIR"/* /SAN/vision/jo71_vla_wd/lerobot_memory/wandb/ || true
-    fi
     echo "Cleaning up scratch space..."
     rm -rf "$SCRATCH_DIR"
     echo "Cleanup completed at $(date)"
