@@ -661,6 +661,78 @@ class SmolVLAPolicy(PreTrainedPolicy):
         except Exception:
             # Never fail training due to logging
             pass
+
+        # Log query similarity, gate, and per-task slot diagnostics
+        try:
+            if (
+                getattr(self.config, "memory_layers", False)
+                or getattr(self.config.memory_layer, "enabled", False)
+            ) and getattr(self.config.memory_layer, "log_usage", False):
+                intra_sims: list[float] = []
+                inter_sims: list[float] = []
+                gate_means: list[float] = []
+                all_per_task_unique: dict[int, list[int]] = {}
+                all_per_task_entropy: dict[int, list[float]] = {}
+
+                def _collect_diagnostics(mem, layer_prefix: str, li: int):
+                    # Query similarity
+                    if getattr(mem, "last_query_intra_sim", None) is not None:
+                        loss_dict[f"{layer_prefix}query_intra_sim_L{li}"] = mem.last_query_intra_sim
+                        intra_sims.append(mem.last_query_intra_sim)
+                    if getattr(mem, "last_query_inter_sim", None) is not None:
+                        loss_dict[f"{layer_prefix}query_inter_sim_L{li}"] = mem.last_query_inter_sim
+                        inter_sims.append(mem.last_query_inter_sim)
+                    # Gate value
+                    if getattr(mem, "last_gate_mean", None) is not None:
+                        loss_dict[f"{layer_prefix}gate_mean_L{li}"] = mem.last_gate_mean
+                        gate_means.append(mem.last_gate_mean)
+                    # Per-task unique slots
+                    pt_unique = getattr(mem, "last_per_task_unique_slots", None)
+                    if pt_unique:
+                        for tid, count in pt_unique.items():
+                            loss_dict[f"{layer_prefix}unique_slots_L{li}_task{tid}"] = float(count)
+                            all_per_task_unique.setdefault(tid, []).append(count)
+                    # Per-task entropy
+                    pt_entropy = getattr(mem, "last_per_task_entropy", None)
+                    if pt_entropy:
+                        for tid, ent in pt_entropy.items():
+                            loss_dict[f"{layer_prefix}slot_entropy_L{li}_task{tid}"] = ent
+                            all_per_task_entropy.setdefault(tid, []).append(ent)
+
+                # Expert layers
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        _collect_diagnostics(layer.mlp.mem, "mem_", li)
+                # VLM backbone layers
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            _collect_diagnostics(layer.mlp.mem, "vlm_mem_", li)
+                except Exception:
+                    pass
+
+                # Aggregated means
+                if intra_sims:
+                    loss_dict["query_intra_sim_mean"] = float(sum(intra_sims) / len(intra_sims))
+                if inter_sims:
+                    loss_dict["query_inter_sim_mean"] = float(sum(inter_sims) / len(inter_sims))
+                if intra_sims and inter_sims:
+                    loss_dict["query_sim_gap"] = loss_dict["query_intra_sim_mean"] - loss_dict["query_inter_sim_mean"]
+                if gate_means:
+                    loss_dict["gate_mean"] = float(sum(gate_means) / len(gate_means))
+                if all_per_task_unique:
+                    # Mean unique slots across tasks (averaged over layers)
+                    per_task_means = [sum(v) / len(v) for v in all_per_task_unique.values()]
+                    loss_dict["per_task_unique_slots_mean"] = float(sum(per_task_means) / len(per_task_means))
+                if all_per_task_entropy:
+                    per_task_ent_means = [sum(v) / len(v) for v in all_per_task_entropy.values()]
+                    loss_dict["per_task_slot_entropy_mean"] = float(sum(per_task_ent_means) / len(per_task_ent_means))
+        except Exception:
+            # Never fail training due to diagnostic logging
+            pass
+
         return loss, loss_dict
 
     def prepare_images(self, batch):

@@ -76,6 +76,11 @@ class MemoryLayerConfig:
     #   pulling same-task samples together and pushing cross-task samples apart
     #   (tighter intra-task clusters, tail-overlap reduction, quadratic in batch size)
     contrastive_method: str = "centroid"
+    # When True and contrastive_method="sample", the SupCon denominator only
+    # sums over cross-task (negative) pairs instead of all non-self pairs.
+    # This removes the intra-class uniformity pressure that can cause
+    # representation collapse at high contrastive_loss_weight values.
+    contrastive_negatives_only: bool = False
 
     # Value Vector Corruption: adds Gaussian noise to retrieved values during training
     # to build robustness to value drift during sequential adaptation.

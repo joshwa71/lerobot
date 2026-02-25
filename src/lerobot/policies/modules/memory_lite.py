@@ -176,9 +176,15 @@ class HashingMemoryLite(nn.Module):
         self.contrastive_loss_weight = getattr(cfg, "contrastive_loss_weight", 0.0)
         self.contrastive_margin = getattr(cfg, "contrastive_margin", 0.0)
         self.contrastive_method = getattr(cfg, "contrastive_method", "centroid")
+        self.contrastive_negatives_only = getattr(cfg, "contrastive_negatives_only", False)
 
-        # Store last contrastive loss for aggregation (set during forward)
+        # Store last contrastive loss and diagnostic metrics for aggregation (set during forward)
         self.last_contrastive_loss = None
+        self.last_query_intra_sim = None  # mean cosine sim within same-task pairs
+        self.last_query_inter_sim = None  # mean cosine sim across different-task pairs
+        self.last_gate_mean = None  # mean sigmoid gate value
+        self.last_per_task_unique_slots = None  # dict: task_id -> unique slot count
+        self.last_per_task_entropy = None  # dict: task_id -> slot access entropy
 
         # Keys: (2 * heads * n_keys, k_dim // 2)
         # Keep dtype lightweight (bf16 if default is bf16), otherwise defaults to fp32.
@@ -280,6 +286,8 @@ class HashingMemoryLite(nn.Module):
 
         # Compute query contrastive loss if enabled and task_ids provided
         self.last_contrastive_loss = None
+        self.last_query_intra_sim = None
+        self.last_query_inter_sim = None
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
             if self.contrastive_method == "sample":
                 self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
@@ -304,6 +312,28 @@ class HashingMemoryLite(nn.Module):
         if self.training and self.log_usage:
             self.last_indices = indices.view(bs, self.heads, self.knn).detach()
             self.last_weights = weights.view(bs, self.heads, self.knn).detach()
+
+            # Per-task slot diagnostics (unique count and entropy)
+            if task_ids is not None:
+                with torch.no_grad():
+                    self.last_per_task_unique_slots = {}
+                    self.last_per_task_entropy = {}
+                    idx_by_sample = indices.view(B, T, self.heads * self.knn)
+                    for t in torch.unique(task_ids).tolist():
+                        mask = (task_ids == int(t))
+                        if not mask.any():
+                            continue
+                        t_idx = idx_by_sample[mask].reshape(-1).to(torch.long)
+                        self.last_per_task_unique_slots[int(t)] = int(torch.unique(t_idx).numel())
+                        counts = torch.bincount(t_idx, minlength=self.size).float()
+                        total = counts.sum()
+                        if total > 0:
+                            p = counts[counts > 0] / total
+                            H = -(p * p.log()).sum()
+                            self.last_per_task_entropy[int(t)] = float(H.item())
+            else:
+                self.last_per_task_unique_slots = None
+                self.last_per_task_entropy = None
 
         # Apply dropout to retrieved slots during training (per-head normalization)
         if self.training and self.dropout_prob > 0:
@@ -351,6 +381,8 @@ class HashingMemoryLite(nn.Module):
         out = out.view(B, T, -1)
         if self.gating is not None:
             gate = torch.sigmoid(self.gating(x_flat)).view(B, T, 1)
+            if self.training and self.log_usage:
+                self.last_gate_mean = float(gate.mean().item())
             out = gate * out
         return out
 
@@ -490,6 +522,16 @@ class HashingMemoryLite(nn.Module):
         # Compute pairwise cosine similarity: (num_tasks, num_tasks)
         cos_sim = torch.mm(centroids_norm, centroids_norm.t())
 
+        # Log intra-task vs inter-task cosine similarity diagnostics (per-sample level)
+        with torch.no_grad():
+            z_norm = F.normalize(per_sample_query.float(), p=2, dim=1)
+            raw_sim = torch.mm(z_norm, z_norm.t())
+            self_mask = torch.eye(B, dtype=torch.bool, device=query.device)
+            same_task = (task_ids.unsqueeze(0) == task_ids.unsqueeze(1)) & ~self_mask
+            diff_task = (task_ids.unsqueeze(0) != task_ids.unsqueeze(1))
+            self.last_query_intra_sim = float(raw_sim[same_task].mean().item()) if same_task.any() else None
+            self.last_query_inter_sim = float(raw_sim[diff_task].mean().item()) if diff_task.any() else None
+
         # Extract upper triangle (excluding diagonal) for pairwise loss
         num_pairs = 0
         contrastive_loss = torch.tensor(0.0, device=query.device, dtype=torch.float32)
@@ -523,10 +565,15 @@ class HashingMemoryLite(nn.Module):
 
         L = - (1 / |P(i)|) * sum_{p in P(i)} log(
                 exp(sim(z_i, z_p) / tau) /
-                sum_{a != i} exp(sim(z_i, z_a) / tau)
+                sum_{a in D(i)} exp(sim(z_i, z_a) / tau)
             )
 
         averaged over all samples *i* that have at least one positive.
+
+        When ``contrastive_negatives_only=False`` (default, standard SupCon),
+        D(i) = all samples except i. When ``contrastive_negatives_only=True``,
+        D(i) = only cross-task samples, removing the intra-class uniformity
+        pressure that can cause representation collapse at high loss weights.
 
         `contrastive_margin` is repurposed as a temperature offset: the
         effective temperature is ``max(0.07, contrastive_margin)`` when
@@ -561,8 +608,8 @@ class HashingMemoryLite(nn.Module):
         # L2-normalize
         z_norm = F.normalize(z.float(), p=2, dim=1)  # (B, k_dim), float32
 
-        # Pairwise cosine similarity: (B, B)
-        sim_matrix = torch.mm(z_norm, z_norm.t()) / tau
+        # Pairwise cosine similarity (raw, without temperature scaling)
+        raw_sim = torch.mm(z_norm, z_norm.t())  # (B, B)
 
         # Mask: positive pairs (same task, excluding self)
         # task_ids: (B,)
@@ -570,13 +617,31 @@ class HashingMemoryLite(nn.Module):
         pos_mask = labels.unsqueeze(0) == labels.unsqueeze(1)  # (B, B)
         self_mask = torch.eye(B, dtype=torch.bool, device=query.device)
         pos_mask = pos_mask & ~self_mask  # exclude self-pairs
+        inter_mask = (~pos_mask) & (~self_mask)  # cross-task pairs
+
+        # Log intra-task vs inter-task cosine similarity diagnostics
+        with torch.no_grad():
+            if pos_mask.any():
+                self.last_query_intra_sim = float(raw_sim[pos_mask].mean().item())
+            else:
+                self.last_query_intra_sim = None
+            if inter_mask.any():
+                self.last_query_inter_sim = float(raw_sim[inter_mask].mean().item())
+            else:
+                self.last_query_inter_sim = None
+
+        # Apply temperature scaling for loss computation
+        sim_matrix = raw_sim / tau
 
         # For numerical stability, subtract max per row before exp
         logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
         logits = sim_matrix - logits_max.detach()
 
-        # Denominator: sum over all a != i
-        neg_mask = ~self_mask  # all pairs except self
+        # Denominator: sum over negatives (cross-task) only, or all non-self pairs
+        if self.contrastive_negatives_only:
+            neg_mask = (~pos_mask) & (~self_mask)  # only cross-task pairs
+        else:
+            neg_mask = ~self_mask  # all pairs except self (standard SupCon)
         exp_logits = torch.exp(logits) * neg_mask.float()
         log_denom = torch.log(exp_logits.sum(dim=1, keepdim=True).clamp(min=1e-12))
 
