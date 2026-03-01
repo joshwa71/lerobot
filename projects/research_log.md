@@ -38,3 +38,27 @@
   - Stronger separation objective: `contrastive_method=sample`, `contrastive_loss_weight=0.5`
 
 ---
+
+## Entry 2 - 25 Feb 26 (Simplified Experiments)
+
+### Summary of the problem
+Previously I was not systematically investigating the effects of each new feature on the performance. I have now run ablations across:
+- Contrastive loss type (centroid vs sample-wise)
+- Contrastive loss weight (0.5, 1, 2)
+- Dropout probability (0.05, 0.1, 0.2)
+
+Expirments run with Lora=4 and layers 12 and 14.
+
+### Observations
+- **Contrastive loss type:** No clear winner here. Centroid contrastive appears to exhibit less interference at later layers (e.g. layer 14) but slighly more in earlier layers. This is interesting - I thought we'd expect strictly more intersection from centroid.
+- **Contrastive loss weight:** We appear to see the largest intersection for 0.5 (as expected), then significantly reduced intersection for 1.0, then oddly increased intersection for 2.0. Non-monotonic increase is confusing.
+- **Dropout probability:** 0.05 experiment still running, but 0.2 performs better than 0.1 in terms of interference. Appears less degredation in previous task per, less intersection. This makes sense as some attempts to access slots important for previous tasks will be nullified by higher dropout.
+
+### Thoughts
+- Claude tells me that for sample-wise contrastive loss we are including some terms which encourage uniformity of the queries inside a given task **as well** as distance across tasks. This could be problematic if we saturate the query space. Could explain the non-monotonic behaviour of the sample contrastive loss weight. To test we are trying a loss that removes the positive pairs from the denominator.
+- I also want to test the change caused by the lora r. Testing 2 to see if it makes any difference.
+- I also want to test the effect of initialising the idf stats with the pretraining stats with different weights. Testing denom = 16 (e.g. 2x a single sequential task), 33 (1x seq task), 66 (0.5x seq task)
+
+### Future
+- In future I should test the effect of batch size. Due to memory constraints I'm limited in the batch size I can use for lora=4 which could affect the training dynamics of the query projections if not all the tasks are in the batch. Perhaps worth adding gradient checkpointing or something so I can increase batch size.
+- Test corruption again. Seemed promising.
