@@ -177,6 +177,14 @@ class HashingMemoryLite(nn.Module):
         self.contrastive_margin = getattr(cfg, "contrastive_margin", 0.0)
         self.contrastive_method = getattr(cfg, "contrastive_method", "centroid")
         self.contrastive_negatives_only = getattr(cfg, "contrastive_negatives_only", False)
+        self.contrastive_query_queue = max(0, int(getattr(cfg, "contrastive_query_queue", 0)))
+
+        # Optional cross-batch FIFO queue for sample-wise contrastive.
+        # Kept as plain attrs (not buffers) to avoid dtype casting side effects.
+        self._contrastive_queue_z = None
+        self._contrastive_queue_labels = None
+        self._contrastive_queue_ptr = 0
+        self._contrastive_queue_count = 0
 
         # Store last contrastive loss and diagnostic metrics for aggregation (set during forward)
         self.last_contrastive_loss = None
@@ -237,6 +245,73 @@ class HashingMemoryLite(nn.Module):
         self.usage_counts = None
         # Accumulator for per-batch (binary) slot usage across training steps (CPU tensor).
         self.usage_batch_counts = None
+
+    def _ensure_contrastive_queue(self, device: torch.device, dtype: torch.dtype) -> None:
+        cap = self.contrastive_query_queue
+        if cap <= 0:
+            return
+        queue_shape = (cap, self.k_dim)
+        need_init = (
+            self._contrastive_queue_z is None
+            or self._contrastive_queue_labels is None
+            or self._contrastive_queue_z.shape != queue_shape
+            or self._contrastive_queue_z.device != device
+            or self._contrastive_queue_z.dtype != dtype
+            or self._contrastive_queue_labels.shape[0] != cap
+            or self._contrastive_queue_labels.device != device
+        )
+        if need_init:
+            self._contrastive_queue_z = torch.empty(queue_shape, device=device, dtype=dtype)
+            self._contrastive_queue_labels = torch.empty((cap,), device=device, dtype=torch.long)
+            self._contrastive_queue_ptr = 0
+            self._contrastive_queue_count = 0
+
+    def _get_contrastive_queue(
+        self, device: torch.device, dtype: torch.dtype
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        cap = self.contrastive_query_queue
+        if cap <= 0:
+            return None, None
+        self._ensure_contrastive_queue(device, dtype)
+        count = int(self._contrastive_queue_count)
+        if count <= 0:
+            return None, None
+        return self._contrastive_queue_z[:count], self._contrastive_queue_labels[:count]
+
+    @torch.no_grad()
+    def _enqueue_contrastive_queries(self, z: torch.Tensor, labels: torch.Tensor) -> None:
+        cap = self.contrastive_query_queue
+        if cap <= 0 or z.numel() == 0:
+            return
+        self._ensure_contrastive_queue(z.device, z.dtype)
+        z_detached = z.detach()
+        labels_detached = labels.detach().to(device=z.device, dtype=torch.long)
+        n = int(z_detached.shape[0])
+        if n <= 0:
+            return
+
+        if n >= cap:
+            self._contrastive_queue_z.copy_(z_detached[-cap:])
+            self._contrastive_queue_labels.copy_(labels_detached[-cap:])
+            self._contrastive_queue_ptr = 0
+            self._contrastive_queue_count = cap
+            return
+
+        ptr = int(self._contrastive_queue_ptr)
+        end = ptr + n
+        if end <= cap:
+            self._contrastive_queue_z[ptr:end] = z_detached
+            self._contrastive_queue_labels[ptr:end] = labels_detached
+        else:
+            first = cap - ptr
+            self._contrastive_queue_z[ptr:] = z_detached[:first]
+            self._contrastive_queue_labels[ptr:] = labels_detached[:first]
+            rem = end - cap
+            self._contrastive_queue_z[:rem] = z_detached[first:]
+            self._contrastive_queue_labels[:rem] = labels_detached[first:]
+
+        self._contrastive_queue_ptr = end % cap
+        self._contrastive_queue_count = min(cap, int(self._contrastive_queue_count) + n)
 
     def reset_parameters(self):
         bound = 1 / math.sqrt(self.k_dim)
@@ -592,73 +667,76 @@ class HashingMemoryLite(nn.Module):
         # ---- per-sample representation: mean over T*heads -> (B, k_dim) ----
         query_reshaped = query.view(B, T * self.heads, self.k_dim)
         z = query_reshaped.mean(dim=1)  # (B, k_dim)
+        labels = task_ids.view(-1).to(device=query.device, dtype=torch.long)
 
-        # Need at least 2 samples
-        if B < 2:
-            return torch.tensor(0.0, device=query.device, dtype=query.dtype)
-
-        # Unique tasks check — need at least 2 distinct tasks for negatives
-        unique_tasks = torch.unique(task_ids)
-        if unique_tasks.numel() < 2:
-            return torch.tensor(0.0, device=query.device, dtype=query.dtype)
-
-        # Temperature
-        tau = max(0.07, self.contrastive_margin) if self.contrastive_margin > 0 else 0.07
-
-        # L2-normalize
-        z_norm = F.normalize(z.float(), p=2, dim=1)  # (B, k_dim), float32
-
-        # Pairwise cosine similarity (raw, without temperature scaling)
-        raw_sim = torch.mm(z_norm, z_norm.t())  # (B, B)
-
-        # Mask: positive pairs (same task, excluding self)
-        # task_ids: (B,)
-        labels = task_ids.view(-1)
-        pos_mask = labels.unsqueeze(0) == labels.unsqueeze(1)  # (B, B)
-        self_mask = torch.eye(B, dtype=torch.bool, device=query.device)
-        pos_mask = pos_mask & ~self_mask  # exclude self-pairs
-        inter_mask = (~pos_mask) & (~self_mask)  # cross-task pairs
-
-        # Log intra-task vs inter-task cosine similarity diagnostics
-        with torch.no_grad():
-            if pos_mask.any():
-                self.last_query_intra_sim = float(raw_sim[pos_mask].mean().item())
-            else:
-                self.last_query_intra_sim = None
-            if inter_mask.any():
-                self.last_query_inter_sim = float(raw_sim[inter_mask].mean().item())
-            else:
-                self.last_query_inter_sim = None
-
-        # Apply temperature scaling for loss computation
-        sim_matrix = raw_sim / tau
-
-        # For numerical stability, subtract max per row before exp
-        logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
-        logits = sim_matrix - logits_max.detach()
-
-        # Denominator: sum over negatives (cross-task) only, or all non-self pairs
-        if self.contrastive_negatives_only:
-            neg_mask = (~pos_mask) & (~self_mask)  # only cross-task pairs
+        # Build key set = current batch (+ optional queue entries from previous batches).
+        queue_z, queue_labels = self._get_contrastive_queue(device=query.device, dtype=z.dtype)
+        if queue_z is not None and queue_labels is not None:
+            key_z = torch.cat([z, queue_z], dim=0)
+            key_labels = torch.cat([labels, queue_labels], dim=0)
         else:
-            neg_mask = ~self_mask  # all pairs except self (standard SupCon)
-        exp_logits = torch.exp(logits) * neg_mask.float()
-        log_denom = torch.log(exp_logits.sum(dim=1, keepdim=True).clamp(min=1e-12))
+            key_z = z
+            key_labels = labels
 
-        # Log-prob of each positive pair
-        log_prob = logits - log_denom  # (B, B)
+        loss = torch.tensor(0.0, device=query.device, dtype=torch.float32)
 
-        # Average log-prob over positives for each anchor
-        num_pos = pos_mask.float().sum(dim=1)  # (B,)
-        has_pos = num_pos > 0
+        # Keep original semantics: require at least 2 in-batch anchors and at least 2 tasks
+        # in the contrastive set (batch + queue).
+        if B >= 2 and torch.unique(key_labels).numel() >= 2:
+            # Temperature
+            tau = max(0.07, self.contrastive_margin) if self.contrastive_margin > 0 else 0.07
 
-        # Avoid division by zero for samples with no positives in the batch
-        mean_log_prob = (log_prob * pos_mask.float()).sum(dim=1) / num_pos.clamp(min=1.0)
+            # Anchors are current batch only; keys include optional queue.
+            anchors = F.normalize(z.float(), p=2, dim=1)  # (B, k_dim)
+            keys = F.normalize(key_z.float(), p=2, dim=1)  # (N, k_dim)
+            raw_sim = torch.mm(anchors, keys.t())  # (B, N)
 
-        # Loss = -mean over anchors that have positives
-        loss = -mean_log_prob[has_pos].mean() if has_pos.any() else torch.tensor(
-            0.0, device=query.device, dtype=torch.float32
-        )
+            # Positive pairs are same-task keys except the anchor itself (first B keys).
+            pos_mask = labels.unsqueeze(1) == key_labels.unsqueeze(0)  # (B, N)
+            self_mask = torch.zeros((B, key_z.shape[0]), dtype=torch.bool, device=query.device)
+            self_mask[:, :B] = torch.eye(B, dtype=torch.bool, device=query.device)
+            pos_mask = pos_mask & ~self_mask
+            inter_mask = labels.unsqueeze(1) != key_labels.unsqueeze(0)
+
+            # Log intra-task vs inter-task cosine similarity diagnostics.
+            with torch.no_grad():
+                if pos_mask.any():
+                    self.last_query_intra_sim = float(raw_sim[pos_mask].mean().item())
+                else:
+                    self.last_query_intra_sim = None
+                if inter_mask.any():
+                    self.last_query_inter_sim = float(raw_sim[inter_mask].mean().item())
+                else:
+                    self.last_query_inter_sim = None
+
+            # Apply temperature scaling for loss computation.
+            sim_matrix = raw_sim / tau
+            logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
+            logits = sim_matrix - logits_max.detach()
+
+            # Denominator: negatives-only (cross-task keys) or all non-self keys.
+            if self.contrastive_negatives_only:
+                denom_mask = inter_mask
+            else:
+                denom_mask = ~self_mask
+            exp_logits = torch.exp(logits) * denom_mask.float()
+            log_denom = torch.log(exp_logits.sum(dim=1, keepdim=True).clamp(min=1e-12))
+
+            # Log-probabilities and per-anchor averaging over positive keys.
+            log_prob = logits - log_denom
+            num_pos = pos_mask.float().sum(dim=1)  # (B,)
+            denom_count = denom_mask.float().sum(dim=1)  # (B,)
+            valid = (num_pos > 0) & (denom_count > 0)
+            mean_log_prob = (log_prob * pos_mask.float()).sum(dim=1) / num_pos.clamp(min=1.0)
+            if valid.any():
+                loss = -mean_log_prob[valid].mean()
+        else:
+            self.last_query_intra_sim = None
+            self.last_query_inter_sim = None
+
+        # Update FIFO queue after computing loss so current samples are available
+        # to future batches (without self-double-counting in this step).
+        self._enqueue_contrastive_queries(z=z, labels=labels)
 
         return loss
 
@@ -856,5 +934,3 @@ def split_memory_params(module: nn.Module):
     for p in module.parameters():
         (mem_vals if getattr(p, "pk_value_param", False) else others).append(p)
     return mem_vals, others
-
-

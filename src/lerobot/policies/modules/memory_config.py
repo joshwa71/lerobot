@@ -81,6 +81,12 @@ class MemoryLayerConfig:
     # This removes the intra-class uniformity pressure that can cause
     # representation collapse at high contrastive_loss_weight values.
     contrastive_negatives_only: bool = False
+    # Optional cross-batch FIFO queue size for sample-wise contrastive.
+    # When > 0 and contrastive_method="sample", each layer keeps the latest
+    # detached per-sample query vectors and task_ids to increase the pool of
+    # negatives/positives without increasing the micro-batch size.
+    # 0 preserves the original in-batch-only behavior.
+    contrastive_query_queue: int = 0
 
     # Value Vector Corruption: adds Gaussian noise to retrieved values during training
     # to build robustness to value drift during sequential adaptation.
@@ -96,5 +102,4 @@ class MemoryLayerConfig:
     # Rank for LoRA-style slots (only used when value_type="lora").
     # Lower rank = fewer params but less capacity per slot.
     lora_rank: int = 2
-
 
