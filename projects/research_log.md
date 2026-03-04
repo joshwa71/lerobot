@@ -62,3 +62,45 @@ Expirments run with Lora=4 and layers 12 and 14.
 ### Future
 - In future I should test the effect of batch size. Due to memory constraints I'm limited in the batch size I can use for lora=4 which could affect the training dynamics of the query projections if not all the tasks are in the batch. Perhaps worth adding gradient checkpointing or something so I can increase batch size.
 - Test corruption again. Seemed promising.
+
+---
+
+## Entry 3 - 4 Mar 26 (Small Test: Cross-Batch Contrastive Queue)
+
+- Added a small pretraining test to increase effective contrastive pool without increasing micro-batch memory: cross-batch query FIFO (`contrastive_query_queue=2048`).
+- Goal: improve sample-wise contrastive negatives/positives under `batch_size=32` by reusing recent query embeddings from prior batches.
+- Using layers **[12,14]** in the new script:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/contrastive_accumulation/pretrain_12_14_film_lora_2_sample_contrastive_1.sh`
+- Added matching sequential script for this run family (same sequential setup pattern):
+  - `job_scripts/smolvla-memory/sequential/2_layer/contrastive_accumulation/sequential_12_14_film_lora_4_sample_contrastive_1.sh`
+
+---
+
+## Entry 4 - 4 Mar 26 (Dynamics Notes + Next Test: r=1 with More Slots)
+
+### Updated dynamics interpretation
+- There is a consistent tradeoff between expressivity and stability in the value parameterization:
+  - **Static value vectors** gave lower interference but lower ceiling performance.
+  - **LoRA values** increased current-task performance but also increased forgetting.
+- Working hypothesis: LoRA slot overlap is more destructive than vector overlap because each slot is a **transform** of the hidden state, not just an additive template. When shared slots are updated by a later task, those updates can alter behavior broadly for prior tasks.
+- This is compatible with the observed pattern where TF-IDF reduces direct write overlap but forgetting still appears once additional tasks are introduced (especially by task 4): the model still reads overlapping regions, and overlapping LoRA slots are high-impact.
+
+### Why TF-IDF may still be insufficient
+- Current online masking is based on **frequency of slot access per batch** (TF over counts), which can still repeatedly prioritize globally frequent shared slots.
+- IDF helps, but if TF dominance is strong, medium-importance task-specific slots may still be under-updated.
+- In other words, masking reduces some overwrite, but not necessarily enough to prevent drift in shared high-impact LoRA slots.
+
+### Suggested mitigation directions (non-EWC / non-replay / non-hard-mask)
+- Use **contribution-weighted TF** (weight by retrieval weights) instead of pure access counts so low-weight incidental touches do not dominate slot selection.
+- Use a **saturating TF transform** (e.g., sqrt/log scaling) before TF-IDF ranking to reduce repeated wins by the same hot slots.
+- Consider **per-head update budgeting** to reduce global head collapse where dominant heads consume most of the update budget.
+- Add **soft plasticity decay** per slot (continuous reduction in update magnitude for heavily updated slots, not hard exclusion).
+- Keep query/router adaptation offline (pretraining) and avoid online query updates if they destabilize old-task routing.
+
+### New experiment being launched
+- We are now testing **LoRA rank 1 with more memory slots** to probe whether many weaker experts are more stable than fewer stronger experts.
+- To approximately double slot count relative to `mem_n_keys=384` (slots = `n_keys^2`), we set:
+  - `mem_n_keys=544` (`544^2` is ~2x `384^2`)
+- New scripts:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
+  - `job_scripts/smolvla-memory/sequential/2_layer/lora_r_exp/sequential_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
