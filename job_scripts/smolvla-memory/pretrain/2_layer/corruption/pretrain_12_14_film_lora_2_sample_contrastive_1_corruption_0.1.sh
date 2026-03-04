@@ -1,4 +1,4 @@
-cat > pretrain_12_14_film_lora_4_sample_contrastive_1_corruption_0.05.sh << 'EOF'
+cat > pretrain_12_14_film_lora_2_sample_contrastive_1_corruption_0.1.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > pretrain_12_14_film_lora_4_sample_contrastive_1_corruption_0.05.sh << 'EOF
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N pretrain_12_14_film_lora_4_sample_contrastive_1_corruption_0.05
+#$ -N pretrain_12_14_film_lora_2_sample_contrastive_1_corruption_0.1
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -96,9 +96,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_12_14_film_lora_4_sample_contrastive_1_corruption_0.05"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_corruption_0.1"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_4_sample_contrastive_1_corruption_0.05"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_corruption_0.1"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -131,7 +131,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_95_12_14_film_lora_4_sample_contrastive_1_corruption_0.05 \
+  --policy.repo_id=outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_corruption_0.1 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -148,7 +148,7 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_95_12_14_film_lora_4_sample_contrastive_1_corruption_0.05 \
+  --job_name=libero_95_12_14_film_lora_2_sample_contrastive_1_corruption_0.1 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
@@ -169,11 +169,11 @@ lerobot-train \
   --policy.memory_layer.fuse_method=film \
   --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
   --policy.memory_layer.value_type=lora \
-  --policy.memory_layer.lora_rank=4 \
+  --policy.memory_layer.lora_rank=2 \
   --policy.memory_layer.contrastive_method=sample \
   --policy.memory_layer.contrastive_loss_weight=1.0 \
   --policy.memory_layer.contrastive_margin=0.0 \
-  --policy.memory_layer.corruption_prob=0.05 \
+  --policy.memory_layer.corruption_prob=0.1 \
   --policy.memory_layer.corruption_std=0.1 \
 
 
