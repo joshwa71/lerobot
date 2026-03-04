@@ -1,4 +1,4 @@
-cat > pretrain_12_14_film_lora_2_sample_contrastive_1.sh << 'EOF'
+cat > pretrain_12_14_film_lora_2_sample_contrastive_1_queue_2048.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
