@@ -1,4 +1,4 @@
-cat > sequential_12_14_film_lora_4_sample_contrastive_1.sh << 'EOF'
+cat > sequential_12_14_film_lora_4_sample_contrastive_1_queue_2048.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -84,8 +84,8 @@ echo "Dataset copied to $DATASET_SCRATCH"
 
 # Copy pretrained model to scratch
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_4_sample_contrastive_1"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_95_12_14_film_lora_4_sample_contrastive_1"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_queue_2048"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_12_14_film_lora_2_sample_contrastive_1_queue_2048"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -97,9 +97,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_12_14_film_lora_4_sample_contrastive_1_queue_2048"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_queue_2048"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_12_14_film_lora_4_sample_contrastive_1_queue_2048"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_queue_2048"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -144,7 +144,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=sequential_libero_10_smolvla_12_14_film_lora_4_sample_contrastive_1_queue_2048 \
+  --job_name=sequential_libero_10_smolvla_12_14_film_lora_2_sample_contrastive_1_queue_2048 \
   --online_task_ids='[6,7,8,9]' \
   --online_steps_per_task=3000 \
   --policy.memory_layer.aggregate_usage=false \
