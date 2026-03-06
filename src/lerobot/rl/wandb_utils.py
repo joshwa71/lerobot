@@ -115,6 +115,26 @@ class WandBLogger:
         artifact.add_file(checkpoint_dir / PRETRAINED_MODEL_DIR / SAFETENSORS_SINGLE_FILE)
         self._wandb.log_artifact(artifact)
 
+    def log_memory_stats(self, output_dir: Path, step_id: str):
+        """Upload memory usage JSON files as a wandb artifact."""
+        if self.cfg.disable_artifact:
+            return
+
+        memory_dir = output_dir / "memory_by_task"
+        if not memory_dir.is_dir():
+            return
+
+        json_files = list(memory_dir.glob("*.json"))
+        if not json_files:
+            return
+
+        artifact_name = f"{self._group}-memory_stats-{step_id}"
+        artifact_name = get_safe_wandb_artifact_name(artifact_name)
+        artifact = self._wandb.Artifact(artifact_name, type="memory_stats")
+        for f in json_files:
+            artifact.add_file(str(f))
+        self._wandb.log_artifact(artifact)
+
     def log_dict(
         self, d: dict, step: int | None = None, mode: str = "train", custom_step_key: str | None = None
     ):

@@ -1537,15 +1537,15 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 postprocessor=postprocessor,
             )
             update_last_checkpoint(checkpoint_dir)
-            if wandb_logger:
-                wandb_logger.log_policy(checkpoint_dir)
-
         # Flush per-task memory usage for this task and clear accumulators (main only)
         if is_main:
             try:
                 _flush_per_task_usage(cfg.output_dir, task_id=dataset_task_id)
             except Exception:
                 pass
+            if wandb_logger:
+                mem_step_id = get_step_identifier(global_step, cfg.steps)
+                wandb_logger.log_memory_stats(cfg.output_dir, mem_step_id)
             _per_task_totals.clear()
             _per_task_batches.clear()
             _per_task_update_totals.clear()

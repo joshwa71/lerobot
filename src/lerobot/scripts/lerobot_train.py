@@ -641,13 +641,14 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                     postprocessor=postprocessor,
                 )
                 update_last_checkpoint(checkpoint_dir)
-                if wandb_logger:
-                    wandb_logger.log_policy(checkpoint_dir)
                 # Flush per-task memory usage snapshot
                 try:
                     _flush_per_task_usage(cfg.output_dir, task_id=None, topk=500000)
                 except Exception:
                     pass
+                if wandb_logger:
+                    step_id = get_step_identifier(step, cfg.steps)
+                    wandb_logger.log_memory_stats(cfg.output_dir, step_id)
 
             accelerator.wait_for_everyone()
 
