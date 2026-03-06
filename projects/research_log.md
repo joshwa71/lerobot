@@ -122,4 +122,12 @@ Expirments run with Lora=4 and layers 12 and 14.
   - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_1.sh`
   - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_2.sh`
   - with matching sequential scripts under `job_scripts/smolvla-memory/sequential/2_layer/routing_compactness_exp/`
+- After further discussion, the more important anti-forgetting term is **routing separation**, not compactness alone:
+  - compactness says each task should route locally
+  - separation says different tasks should route to different regions
+- So compactness is now being treated as a **secondary control ablation**, while the main next test is a routing-separation sweep at weights **0.5, 1, 2**:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_0.5.sh`
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_1.sh`
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_2.sh`
+  - with matching sequential scripts under `job_scripts/smolvla-memory/sequential/2_layer/routing_separation_exp/`
 - Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**, which is a better match to the failure mode we want to test than corrupting the low-rank hidden activations.
