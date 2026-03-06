@@ -88,6 +88,15 @@ class MemoryLayerConfig:
     # 0 preserves the original in-batch-only behavior.
     contrastive_query_queue: int = 0
 
+    # Routing regularizers operate on the task-conditioned PQ sub-key
+    # distributions rather than directly on query embeddings.
+    # - compactness: penalize task distributions that are too diffuse
+    # - separation: penalize overlap between different task distributions
+    # - global_balance: penalize collapse of the aggregate distribution
+    routing_compactness_weight: float = 0.0
+    routing_separation_weight: float = 0.0
+    routing_global_balance_weight: float = 0.0
+
     # Value Vector Corruption: adds Gaussian noise to retrieved values during training
     # to build robustness to value drift during sequential adaptation.
     # Per-slot probability of corruption; disabled if 0.
@@ -102,4 +111,3 @@ class MemoryLayerConfig:
     # Rank for LoRA-style slots (only used when value_type="lora").
     # Lower rank = fewer params but less capacity per slot.
     lora_rank: int = 2
-

@@ -178,6 +178,9 @@ class HashingMemoryLite(nn.Module):
         self.contrastive_method = getattr(cfg, "contrastive_method", "centroid")
         self.contrastive_negatives_only = getattr(cfg, "contrastive_negatives_only", False)
         self.contrastive_query_queue = max(0, int(getattr(cfg, "contrastive_query_queue", 0)))
+        self.routing_compactness_weight = getattr(cfg, "routing_compactness_weight", 0.0)
+        self.routing_separation_weight = getattr(cfg, "routing_separation_weight", 0.0)
+        self.routing_global_balance_weight = getattr(cfg, "routing_global_balance_weight", 0.0)
 
         # Optional cross-batch FIFO queue for sample-wise contrastive.
         # Kept as plain attrs (not buffers) to avoid dtype casting side effects.
@@ -190,6 +193,11 @@ class HashingMemoryLite(nn.Module):
         self.last_contrastive_loss = None
         self.last_query_intra_sim = None  # mean cosine sim within same-task pairs
         self.last_query_inter_sim = None  # mean cosine sim across different-task pairs
+        self.last_routing_compactness_loss = None
+        self.last_routing_separation_loss = None
+        self.last_routing_global_balance_loss = None
+        self.last_routing_task_entropy = None
+        self.last_routing_global_entropy = None
         self.last_gate_mean = None  # mean sigmoid gate value
         self.last_per_task_unique_slots = None  # dict: task_id -> unique slot count
         self.last_per_task_entropy = None  # dict: task_id -> slot access entropy
@@ -363,14 +371,33 @@ class HashingMemoryLite(nn.Module):
         self.last_contrastive_loss = None
         self.last_query_intra_sim = None
         self.last_query_inter_sim = None
+        self.last_routing_compactness_loss = None
+        self.last_routing_separation_loss = None
+        self.last_routing_global_balance_loss = None
+        self.last_routing_task_entropy = None
+        self.last_routing_global_entropy = None
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
             if self.contrastive_method == "sample":
                 self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
             else:
                 self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
 
+        s1_full, s2_full = self._compute_subkey_scores(query)
+        if self.training and task_ids is not None and (
+            self.routing_compactness_weight > 0
+            or self.routing_separation_weight > 0
+            or self.routing_global_balance_weight > 0
+        ):
+            (
+                self.last_routing_compactness_loss,
+                self.last_routing_separation_loss,
+                self.last_routing_global_balance_loss,
+                self.last_routing_task_entropy,
+                self.last_routing_global_entropy,
+            ) = self._compute_routing_losses(s1_full, s2_full, B, T, task_ids)
+
         # Indices and scores
-        scores, indices = self._get_indices(query)  # (bs*heads, knn)
+        scores, indices = self._get_indices_from_subkey_scores(s1_full, s2_full)  # (bs*heads, knn)
 
         # Record selected indices/scores for analysis during eval
         if not self.training and self.EVAL_MEMORY:
@@ -538,16 +565,16 @@ class HashingMemoryLite(nn.Module):
         hidden = torch.einsum('bni,bkir->bkr', x_expanded, down_weights)
         hidden = F.silu(hidden)
 
-        # Apply corruption to hidden activations if enabled (analogous to value corruption)
+        # up projection: (bs, k, rank) @ (bs, k, rank, v_dim) -> (bs, k, v_dim)
+        slot_outputs = torch.einsum('bkr,bkro->bko', hidden, up_weights)
+
+        # Corrupt each adapter output before the shared gating path.
         if self.training and self.corruption_prob > 0:
             corruption_mask = torch.bernoulli(
                 torch.full((bs, k), self.corruption_prob, device=device)
             ).bool()
-            noise = torch.randn_like(hidden) * self.corruption_std
-            hidden = hidden + corruption_mask.unsqueeze(-1).float() * noise
-
-        # up projection: (bs, k, rank) @ (bs, k, rank, v_dim) -> (bs, k, v_dim)
-        slot_outputs = torch.einsum('bkr,bkro->bko', hidden, up_weights)
+            noise = torch.randn_like(slot_outputs) * self.corruption_std
+            slot_outputs = slot_outputs + corruption_mask.unsqueeze(-1).float() * noise
 
         # Weighted sum: (bs, k, v_dim) * (bs, k, 1) -> sum -> (bs, v_dim)
         out_fp32 = (slot_outputs * weights.float().unsqueeze(-1)).sum(dim=1)
@@ -740,7 +767,7 @@ class HashingMemoryLite(nn.Module):
 
         return loss
 
-    def _get_indices(self, query: torch.Tensor):
+    def _compute_subkey_scores(self, query: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # query: (bs*heads, k_dim)
         bs = query.shape[0] // self.heads
         query = query.view(bs, self.heads, self.k_dim)
@@ -752,9 +779,81 @@ class HashingMemoryLite(nn.Module):
         q1, q2 = query[..., :half], query[..., half:]
         s1 = torch.einsum("blh,lkh->blk", q1, k1)  # (bs, heads, n_keys)
         s2 = torch.einsum("blh,lkh->blk", q2, k2)
+        return s1, s2
 
-        s1, i1 = s1.topk(self.knn, dim=2, largest=True)
-        s2, i2 = s2.topk(self.knn, dim=2, largest=True)
+    def _compute_routing_losses(
+        self,
+        s1_full: torch.Tensor,
+        s2_full: torch.Tensor,
+        B: int,
+        T: int,
+        task_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, float | None]:
+        eps = 1e-12
+        log_n = math.log(max(self.n_keys, 2))
+        target_support = min(self.n_keys, max(2 * self.knn, int(round(math.sqrt(self.n_keys)))))
+        target_entropy = math.log(max(target_support, 1)) / log_n
+        score_scale = math.sqrt(max(self.k_dim // 2, 1))
+        unique_tasks = torch.unique(task_ids)
+
+        compactness_terms: list[torch.Tensor] = []
+        separation_terms: list[torch.Tensor] = []
+        global_terms: list[torch.Tensor] = []
+        task_entropy_terms: list[float] = []
+        global_entropy_terms: list[float] = []
+
+        for scores in (s1_full, s2_full):
+            probs = F.softmax(scores.float() / score_scale, dim=-1).view(B, T, self.heads, self.n_keys)
+            task_distributions = []
+            for task_id in unique_tasks.tolist():
+                mask = task_ids == int(task_id)
+                if not mask.any():
+                    continue
+                task_prob = probs[mask].mean(dim=(0, 1))
+                task_prob = task_prob / task_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
+                task_distributions.append(task_prob)
+
+            if not task_distributions:
+                continue
+
+            task_stack = torch.stack(task_distributions, dim=0)  # (num_tasks, heads, n_keys)
+            task_entropy = -(task_stack * (task_stack + eps).log()).sum(dim=-1) / log_n
+            if self.routing_compactness_weight > 0:
+                compactness_terms.append(F.relu(task_entropy - target_entropy).pow(2).mean())
+            task_entropy_terms.append(float(task_entropy.mean().item()))
+
+            if task_stack.shape[0] >= 2:
+                if self.routing_separation_weight > 0:
+                    pair_sims: list[torch.Tensor] = []
+                    task_norm = F.normalize(task_stack, p=2, dim=-1)
+                    for i in range(task_stack.shape[0]):
+                        for j in range(i + 1, task_stack.shape[0]):
+                            pair_sims.append((task_norm[i] * task_norm[j]).sum(dim=-1).mean())
+                    if pair_sims:
+                        separation_terms.append(torch.stack(pair_sims).mean())
+
+                if self.routing_global_balance_weight > 0:
+                    global_prob = task_stack.mean(dim=0)
+                    global_prob = global_prob / global_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
+                    global_entropy = -(global_prob * (global_prob + eps).log()).sum(dim=-1) / log_n
+                    global_terms.append((1.0 - global_entropy).mean())
+                    global_entropy_terms.append(float(global_entropy.mean().item()))
+
+        compactness = torch.stack(compactness_terms).mean() if compactness_terms else None
+        separation = torch.stack(separation_terms).mean() if separation_terms else None
+        global_balance = torch.stack(global_terms).mean() if global_terms else None
+        task_entropy_mean = (
+            float(sum(task_entropy_terms) / len(task_entropy_terms)) if task_entropy_terms else None
+        )
+        global_entropy_mean = (
+            float(sum(global_entropy_terms) / len(global_entropy_terms)) if global_entropy_terms else None
+        )
+        return compactness, separation, global_balance, task_entropy_mean, global_entropy_mean
+
+    def _get_indices_from_subkey_scores(self, s1_full: torch.Tensor, s2_full: torch.Tensor):
+        bs = s1_full.shape[0]
+        s1, i1 = s1_full.topk(self.knn, dim=2, largest=True)
+        s2, i2 = s2_full.topk(self.knn, dim=2, largest=True)
 
         all_s = (s1.unsqueeze(3) + s2.unsqueeze(2)).reshape(bs, self.heads, -1)
         all_i = (i1.unsqueeze(3) * self.n_keys + i2.unsqueeze(2)).reshape(bs, self.heads, -1)

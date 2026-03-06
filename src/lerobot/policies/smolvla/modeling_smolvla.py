@@ -516,6 +516,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         # Aggregate contrastive losses from memory layers
         contrastive_loss_weight = getattr(self.config.memory_layer, "contrastive_loss_weight", 0.0)
+        routing_compactness_weight = getattr(self.config.memory_layer, "routing_compactness_weight", 0.0)
+        routing_separation_weight = getattr(self.config.memory_layer, "routing_separation_weight", 0.0)
+        routing_global_balance_weight = getattr(self.config.memory_layer, "routing_global_balance_weight", 0.0)
         if contrastive_loss_weight > 0 and (
             getattr(self.config, "memory_layers", False)
             or getattr(self.config.memory_layer, "enabled", False)
@@ -550,6 +553,72 @@ class SmolVLAPolicy(PreTrainedPolicy):
                     loss = loss + contrastive_loss_weight * total_contrastive
             except Exception:
                 # Never fail training due to contrastive loss aggregation
+                pass
+
+        # Aggregate routing regularizers from memory layers
+        if (
+            routing_compactness_weight > 0
+            or routing_separation_weight > 0
+            or routing_global_balance_weight > 0
+        ) and (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ):
+            try:
+                compactness_losses = []
+                separation_losses = []
+                global_balance_losses = []
+                routing_task_entropies = []
+                routing_global_entropies = []
+
+                def _collect_routing(mem, layer_prefix: str, li: int):
+                    if getattr(mem, "last_routing_compactness_loss", None) is not None:
+                        compactness_losses.append(mem.last_routing_compactness_loss)
+                        loss_dict[f"{layer_prefix}routing_compactness_L{li}"] = mem.last_routing_compactness_loss.item()
+                    if getattr(mem, "last_routing_separation_loss", None) is not None:
+                        separation_losses.append(mem.last_routing_separation_loss)
+                        loss_dict[f"{layer_prefix}routing_separation_L{li}"] = mem.last_routing_separation_loss.item()
+                    if getattr(mem, "last_routing_global_balance_loss", None) is not None:
+                        global_balance_losses.append(mem.last_routing_global_balance_loss)
+                        loss_dict[f"{layer_prefix}routing_global_balance_L{li}"] = mem.last_routing_global_balance_loss.item()
+                    if getattr(mem, "last_routing_task_entropy", None) is not None:
+                        routing_task_entropies.append(mem.last_routing_task_entropy)
+                        loss_dict[f"{layer_prefix}routing_task_entropy_L{li}"] = mem.last_routing_task_entropy
+                    if getattr(mem, "last_routing_global_entropy", None) is not None:
+                        routing_global_entropies.append(mem.last_routing_global_entropy)
+                        loss_dict[f"{layer_prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
+
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        _collect_routing(layer.mlp.mem, "", li)
+
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            _collect_routing(layer.mlp.mem, "vlm_", li)
+                except Exception:
+                    pass
+
+                if compactness_losses:
+                    total_compactness = sum(compactness_losses) / len(compactness_losses)
+                    loss_dict["routing_compactness_mean"] = total_compactness.item()
+                    loss = loss + routing_compactness_weight * total_compactness
+                if separation_losses:
+                    total_separation = sum(separation_losses) / len(separation_losses)
+                    loss_dict["routing_separation_mean"] = total_separation.item()
+                    loss = loss + routing_separation_weight * total_separation
+                if global_balance_losses:
+                    total_global_balance = sum(global_balance_losses) / len(global_balance_losses)
+                    loss_dict["routing_global_balance_mean"] = total_global_balance.item()
+                    loss = loss + routing_global_balance_weight * total_global_balance
+                if routing_task_entropies:
+                    loss_dict["routing_task_entropy_mean"] = float(sum(routing_task_entropies) / len(routing_task_entropies))
+                if routing_global_entropies:
+                    loss_dict["routing_global_entropy_mean"] = float(sum(routing_global_entropies) / len(routing_global_entropies))
+            except Exception:
+                # Never fail training due to routing loss aggregation
                 pass
 
         # For backward pass

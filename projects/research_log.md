@@ -104,3 +104,22 @@ Expirments run with Lora=4 and layers 12 and 14.
 - New scripts:
   - `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
   - `job_scripts/smolvla-memory/sequential/2_layer/lora_r_exp/sequential_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
+
+---
+
+## Entry 5 - 6 Mar 26 (Routing Compactness + Corruption Fix)
+
+- Recent discussion clarified two separate ideas:
+  - **Weighted TF-IDF** for sequential updates: rank slots by retrieval-weighted contribution rather than raw access counts.
+  - **Routing regularization** during pretraining: act on actual PQ sub-key usage, not just query embeddings.
+- Key point: more diverse queries do **not** necessarily imply more diverse slot accesses. Different queries can still route into the same hot late-layer region, so query contrastive is only an indirect proxy for what we care about.
+- Current hypothesis:
+  - within a task, routing should stay fairly localized
+  - across tasks, those localized routing regions should differ
+- To test this, I added a new **routing compactness** loss on PQ marginals with CLI control via `routing_compactness_weight` (default `0.0`).
+- New ablation family now being run at weights **0.5, 1, 2**:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_0.5.sh`
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_1.sh`
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_2.sh`
+  - with matching sequential scripts under `job_scripts/smolvla-memory/sequential/2_layer/routing_compactness_exp/`
+- Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**, which is a better match to the failure mode we want to test than corrupting the low-rank hidden activations.
