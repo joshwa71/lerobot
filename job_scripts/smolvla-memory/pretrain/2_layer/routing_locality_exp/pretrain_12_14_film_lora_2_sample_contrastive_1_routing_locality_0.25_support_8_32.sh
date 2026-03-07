@@ -112,7 +112,51 @@ echo "Periodic backup process started with PID: $BACKUP_PID"
 
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
 
-lerobot-train   --policy.path="$MODEL_SCRATCH"   --policy.repo_id=outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32   --dataset.repo_id="$DATASET_SCRATCH"   --env.type=libero   --env.task=libero_spatial   --output_dir="$OUTPUT_SCRATCH"   --save_freq=20000   --steps=100000   --batch_size=32   --num_workers=12   --eval.batch_size=1   --eval.n_episodes=4   --eval_freq=20000   --policy.freeze_vision_encoder=false   --policy.train_expert_only=false   --policy.train_state_proj=true   --policy.scheduler_warmup_steps=10000   --policy.scheduler_decay_steps=80000   --job_name=libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32   --policy.push_to_hub=false   --wandb.enable=true   --wandb.project=vla-memory   --wandb.disable_artifact=true   --policy.memory_layers=true   --policy.memory_layer.memory_only=false   --policy.memory_layer.layers="[12,14]"   --policy.memory_layer.log_usage=true   --policy.memory_layer.enabled=true   --policy.memory_layer.aggregate_usage=true   --policy.memory_layer.mem_n_keys=384   --policy.memory_layer.mem_heads=4   --policy.memory_layer.mem_knn=16   --policy.memory_layer.mem_k_dim=512   --policy.memory_layer.value_fixed_lr=0.001   --policy.memory_layer.memory_lr=0.001   --policy.memory_layer.lang_to_query=true   --policy.memory_layer.fuse_method=film   --policy.memory_layer.embedding_model=all-mpnet-base-v2   --policy.memory_layer.value_type=lora   --policy.memory_layer.lora_rank=2   --policy.memory_layer.contrastive_method=sample   --policy.memory_layer.contrastive_loss_weight=1.0   --policy.memory_layer.contrastive_margin=0.0   --policy.memory_layer.routing_intra_task_locality_weight=0.25 \
+lerobot-train \
+  --policy.path="$MODEL_SCRATCH" \
+  --policy.repo_id=outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32 \
+  --dataset.repo_id="$DATASET_SCRATCH" \
+  --env.type=libero \
+  --env.task=libero_spatial \
+  --output_dir="$OUTPUT_SCRATCH" \
+  --save_freq=20000 \
+  --steps=100000 \
+  --batch_size=32 \
+  --num_workers=12 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=4 \
+  --eval_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=80000 \
+  --job_name=libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32 \
+  --policy.push_to_hub=false \
+  --wandb.enable=true \
+  --wandb.project=vla-memory \
+  --wandb.disable_artifact=true \
+  --policy.memory_layers=true \
+  --policy.memory_layer.memory_only=false \
+  --policy.memory_layer.layers="[12,14]" \
+  --policy.memory_layer.log_usage=true \
+  --policy.memory_layer.enabled=true \
+  --policy.memory_layer.aggregate_usage=true \
+  --policy.memory_layer.mem_n_keys=384 \
+  --policy.memory_layer.mem_heads=4 \
+  --policy.memory_layer.mem_knn=16 \
+  --policy.memory_layer.mem_k_dim=512 \
+  --policy.memory_layer.value_fixed_lr=0.001 \
+  --policy.memory_layer.memory_lr=0.001 \
+  --policy.memory_layer.lang_to_query=true \
+  --policy.memory_layer.fuse_method=film \
+  --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
+  --policy.memory_layer.value_type=lora \
+  --policy.memory_layer.lora_rank=2 \
+  --policy.memory_layer.contrastive_method=sample \
+  --policy.memory_layer.contrastive_loss_weight=1.0 \
+  --policy.memory_layer.contrastive_margin=0.0 \
+  --policy.memory_layer.routing_intra_task_locality_weight=0.25 \
   --policy.memory_layer.routing_intra_task_min_support=8 \
   --policy.memory_layer.routing_intra_task_max_support=32
 

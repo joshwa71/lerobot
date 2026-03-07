@@ -112,7 +112,34 @@ echo "Periodic backup process started with PID: $BACKUP_PID"
 
 cd /SAN/vision/jo71_vla_wd/lerobot_memory
 
-python -m lerobot.scripts.lerobot_sequential_train   --policy.path="$MODEL_SCRATCH/checkpoints/last/pretrained_model"   --dataset.repo_id="$DATASET_SCRATCH"   --env.type=libero   --env.task=libero_10   --output_dir="$OUTPUT_SCRATCH"   --steps=200000   --batch_size=64   --num_workers=8   --eval.batch_size=1   --eval.n_episodes=50   --log_freq=200   --wandb.enable=true   --wandb.project=vla-memory   --job_name=sequential_libero_10_smolvla_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32   --online_task_ids='[6,7,8,9]'   --online_steps_per_task=3000   --policy.memory_layer.aggregate_usage=false   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}'   --save_after_each_task=true   --reinit_optimizer_each_task=true   --tfidf_enable=true   --tfidf_top_t=512   --use_online_idf_stats=true   --idf_exponent=1   --memory_value_lr=0.001   --memory_value_lr_end=0.0001   --memory_value_scheduler_type=linear
+python -m lerobot.scripts.lerobot_sequential_train \
+  --policy.path="$MODEL_SCRATCH/checkpoints/last/pretrained_model" \
+  --dataset.repo_id="$DATASET_SCRATCH" \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --output_dir="$OUTPUT_SCRATCH" \
+  --steps=200000 \
+  --batch_size=64 \
+  --num_workers=8 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=50 \
+  --log_freq=200 \
+  --wandb.enable=true \
+  --wandb.project=vla-memory \
+  --job_name=sequential_libero_10_smolvla_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32 \
+  --online_task_ids='[6,7,8,9]' \
+  --online_steps_per_task=3000 \
+  --policy.memory_layer.aggregate_usage=false \
+  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
+  --save_after_each_task=true \
+  --reinit_optimizer_each_task=true \
+  --tfidf_enable=true \
+  --tfidf_top_t=512 \
+  --use_online_idf_stats=true \
+  --idf_exponent=1 \
+  --memory_value_lr=0.001 \
+  --memory_value_lr_end=0.0001 \
+  --memory_value_scheduler_type=linear
 
 echo "Job completed at $(date)"
 INNER_EOF
