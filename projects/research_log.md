@@ -116,18 +116,38 @@ Expirments run with Lora=4 and layers 12 and 14.
 - Current hypothesis:
   - within a task, routing should stay fairly localized
   - across tasks, those localized routing regions should differ
-- To test this, I added a new **routing compactness** loss on PQ marginals with CLI control via `routing_compactness_weight` (default `0.0`).
-- New ablation family now being run at weights **0.5, 1, 2**:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_0.5.sh`
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_1.sh`
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_compactness_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_compactness_2.sh`
-  - with matching sequential scripts under `job_scripts/smolvla-memory/sequential/2_layer/routing_compactness_exp/`
+- To test this, I initially added a one-sided **routing compactness** loss on PQ marginals with CLI control via `routing_compactness_weight` (default `0.0`).
+- Initial compactness-control scripts were created under:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
+  - `job_scripts/smolvla-memory/sequential/2_layer/routing_locality_exp/`
 - After further discussion, the more important anti-forgetting term is **routing separation**, not compactness alone:
   - compactness says each task should route locally
   - separation says different tasks should route to different regions
-- So compactness is now being treated as a **secondary control ablation**, while the main next test is a routing-separation sweep at weights **0.5, 1, 2**:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_0.5.sh`
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_1.sh`
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_separation_exp/pretrain_12_14_film_lora_2_sample_contrastive_1_routing_separation_2.sh`
-  - with matching sequential scripts under `job_scripts/smolvla-memory/sequential/2_layer/routing_separation_exp/`
+- So compactness is now being treated as a **secondary control ablation**, while the main next test is a routing-separation sweep.
+- Initial routing-separation scripts were created under:
+  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
+  - `job_scripts/smolvla-memory/sequential/2_layer/routing_inter_task_separation_exp/`
 - Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**, which is a better match to the failure mode we want to test than corrupting the low-rank hidden activations.
+
+---
+
+## Entry 6 - 7 Mar 26 (Routing Loss Interpretation + New Sweep)
+
+- We discovered that the logged `routing_separation_mean` metric was actually the **mean pairwise cosine similarity** between task routing distributions, not a higher-is-better separation score.
+  - `~0.998` means tasks are routing almost identically.
+  - `~0.02` means tasks are routing very differently.
+- In the first routing-separation sweep, `0.1` was too weak to change routing much, while `0.5` and `1.0` drove the similarity way down but also collapsed **intra-task routing entropy** to about `0.10` and `0.06`.
+- That means the separation term was working, but it was achieving separation by pushing each task toward an almost one-hot PQ subkey pattern. This is too sharp for the intended behavior.
+- Main adjustment:
+  - replace the old one-sided “compactness” term with an explicit **intra-task locality** loss
+  - define locality as a **support/entropy band**, so it penalizes routing that is both too diffuse and too concentrated
+  - keep **inter-task separation** as a separate objective
+- CLI has been updated to reflect this distinction:
+  - `routing_intra_task_locality_weight`
+  - `routing_inter_task_separation_weight`
+  - `routing_intra_task_min_support`
+  - `routing_intra_task_max_support`
+- New planned sweeps:
+  - **Intra-task locality sweep** with support band `8-32` and locality weights `0.1 / 0.25 / 0.5`
+  - **Inter-task separation sweep** with locality fixed on (`weight=0.25`, support band `8-32`) and separation weights `0.15 / 0.25 / 0.35`
+- Goal of the new sweep: find a regime where tasks separate in routing space **without** collapsing each task onto 1-2 subkeys per PQ half.

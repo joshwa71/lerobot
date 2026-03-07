@@ -178,9 +178,19 @@ class HashingMemoryLite(nn.Module):
         self.contrastive_method = getattr(cfg, "contrastive_method", "centroid")
         self.contrastive_negatives_only = getattr(cfg, "contrastive_negatives_only", False)
         self.contrastive_query_queue = max(0, int(getattr(cfg, "contrastive_query_queue", 0)))
-        self.routing_compactness_weight = getattr(cfg, "routing_compactness_weight", 0.0)
-        self.routing_separation_weight = getattr(cfg, "routing_separation_weight", 0.0)
+        self.routing_intra_task_locality_weight = float(
+            getattr(cfg, "routing_intra_task_locality_weight", 0.0)
+        )
+        if self.routing_intra_task_locality_weight <= 0:
+            self.routing_intra_task_locality_weight = float(getattr(cfg, "routing_compactness_weight", 0.0))
+        self.routing_inter_task_separation_weight = float(
+            getattr(cfg, "routing_inter_task_separation_weight", 0.0)
+        )
+        if self.routing_inter_task_separation_weight <= 0:
+            self.routing_inter_task_separation_weight = float(getattr(cfg, "routing_separation_weight", 0.0))
         self.routing_global_balance_weight = getattr(cfg, "routing_global_balance_weight", 0.0)
+        self.routing_intra_task_min_support = max(0, int(getattr(cfg, "routing_intra_task_min_support", 0)))
+        self.routing_intra_task_max_support = max(0, int(getattr(cfg, "routing_intra_task_max_support", 0)))
 
         # Optional cross-batch FIFO queue for sample-wise contrastive.
         # Kept as plain attrs (not buffers) to avoid dtype casting side effects.
@@ -193,11 +203,15 @@ class HashingMemoryLite(nn.Module):
         self.last_contrastive_loss = None
         self.last_query_intra_sim = None  # mean cosine sim within same-task pairs
         self.last_query_inter_sim = None  # mean cosine sim across different-task pairs
+        self.last_routing_intra_task_locality_loss = None
+        self.last_routing_inter_task_similarity_loss = None
+        self.last_routing_global_balance_loss = None
+        self.last_routing_intra_task_entropy = None
+        self.last_routing_intra_task_support = None
+        self.last_routing_global_entropy = None
         self.last_routing_compactness_loss = None
         self.last_routing_separation_loss = None
-        self.last_routing_global_balance_loss = None
         self.last_routing_task_entropy = None
-        self.last_routing_global_entropy = None
         self.last_gate_mean = None  # mean sigmoid gate value
         self.last_per_task_unique_slots = None  # dict: task_id -> unique slot count
         self.last_per_task_entropy = None  # dict: task_id -> slot access entropy
@@ -371,11 +385,15 @@ class HashingMemoryLite(nn.Module):
         self.last_contrastive_loss = None
         self.last_query_intra_sim = None
         self.last_query_inter_sim = None
+        self.last_routing_intra_task_locality_loss = None
+        self.last_routing_inter_task_similarity_loss = None
+        self.last_routing_global_balance_loss = None
+        self.last_routing_intra_task_entropy = None
+        self.last_routing_intra_task_support = None
+        self.last_routing_global_entropy = None
         self.last_routing_compactness_loss = None
         self.last_routing_separation_loss = None
-        self.last_routing_global_balance_loss = None
         self.last_routing_task_entropy = None
-        self.last_routing_global_entropy = None
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
             if self.contrastive_method == "sample":
                 self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
@@ -384,17 +402,21 @@ class HashingMemoryLite(nn.Module):
 
         s1_full, s2_full = self._compute_subkey_scores(query)
         if self.training and task_ids is not None and (
-            self.routing_compactness_weight > 0
-            or self.routing_separation_weight > 0
+            self.routing_intra_task_locality_weight > 0
+            or self.routing_inter_task_separation_weight > 0
             or self.routing_global_balance_weight > 0
         ):
             (
-                self.last_routing_compactness_loss,
-                self.last_routing_separation_loss,
+                self.last_routing_intra_task_locality_loss,
+                self.last_routing_inter_task_similarity_loss,
                 self.last_routing_global_balance_loss,
-                self.last_routing_task_entropy,
+                self.last_routing_intra_task_entropy,
+                self.last_routing_intra_task_support,
                 self.last_routing_global_entropy,
             ) = self._compute_routing_losses(s1_full, s2_full, B, T, task_ids)
+            self.last_routing_compactness_loss = self.last_routing_intra_task_locality_loss
+            self.last_routing_separation_loss = self.last_routing_inter_task_similarity_loss
+            self.last_routing_task_entropy = self.last_routing_intra_task_entropy
 
         # Indices and scores
         scores, indices = self._get_indices_from_subkey_scores(s1_full, s2_full)  # (bs*heads, knn)
@@ -788,18 +810,27 @@ class HashingMemoryLite(nn.Module):
         B: int,
         T: int,
         task_ids: torch.Tensor,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, float | None]:
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, float | None, float | None]:
         eps = 1e-12
         log_n = math.log(max(self.n_keys, 2))
-        target_support = min(self.n_keys, max(2 * self.knn, int(round(math.sqrt(self.n_keys)))))
-        target_entropy = math.log(max(target_support, 1)) / log_n
+        default_min_support = max(2, self.knn // 2)
+        default_max_support = min(self.n_keys, max(2 * self.knn, int(round(math.sqrt(self.n_keys)))))
+        min_support = self.routing_intra_task_min_support or default_min_support
+        max_support = self.routing_intra_task_max_support or default_max_support
+        min_support = min(self.n_keys, max(1, min_support))
+        max_support = min(self.n_keys, max(1, max_support))
+        if min_support > max_support:
+            min_support, max_support = max_support, min_support
+        min_entropy = math.log(max(min_support, 1)) / log_n
+        max_entropy = math.log(max(max_support, 1)) / log_n
         score_scale = math.sqrt(max(self.k_dim // 2, 1))
         unique_tasks = torch.unique(task_ids)
 
-        compactness_terms: list[torch.Tensor] = []
-        separation_terms: list[torch.Tensor] = []
+        locality_terms: list[torch.Tensor] = []
+        similarity_terms: list[torch.Tensor] = []
         global_terms: list[torch.Tensor] = []
         task_entropy_terms: list[float] = []
+        task_support_terms: list[float] = []
         global_entropy_terms: list[float] = []
 
         for scores in (s1_full, s2_full):
@@ -818,19 +849,26 @@ class HashingMemoryLite(nn.Module):
 
             task_stack = torch.stack(task_distributions, dim=0)  # (num_tasks, heads, n_keys)
             task_entropy = -(task_stack * (task_stack + eps).log()).sum(dim=-1) / log_n
-            if self.routing_compactness_weight > 0:
-                compactness_terms.append(F.relu(task_entropy - target_entropy).pow(2).mean())
+            if self.routing_intra_task_locality_weight > 0:
+                locality_terms.append(
+                    (
+                        F.relu(min_entropy - task_entropy).pow(2)
+                        + F.relu(task_entropy - max_entropy).pow(2)
+                    ).mean()
+                )
             task_entropy_terms.append(float(task_entropy.mean().item()))
+            task_support = torch.exp(task_entropy * log_n)
+            task_support_terms.append(float(task_support.mean().item()))
 
             if task_stack.shape[0] >= 2:
-                if self.routing_separation_weight > 0:
+                if self.routing_inter_task_separation_weight > 0:
                     pair_sims: list[torch.Tensor] = []
                     task_norm = F.normalize(task_stack, p=2, dim=-1)
                     for i in range(task_stack.shape[0]):
                         for j in range(i + 1, task_stack.shape[0]):
                             pair_sims.append((task_norm[i] * task_norm[j]).sum(dim=-1).mean())
                     if pair_sims:
-                        separation_terms.append(torch.stack(pair_sims).mean())
+                        similarity_terms.append(torch.stack(pair_sims).mean())
 
                 if self.routing_global_balance_weight > 0:
                     global_prob = task_stack.mean(dim=0)
@@ -839,16 +877,19 @@ class HashingMemoryLite(nn.Module):
                     global_terms.append((1.0 - global_entropy).mean())
                     global_entropy_terms.append(float(global_entropy.mean().item()))
 
-        compactness = torch.stack(compactness_terms).mean() if compactness_terms else None
-        separation = torch.stack(separation_terms).mean() if separation_terms else None
+        locality = torch.stack(locality_terms).mean() if locality_terms else None
+        similarity = torch.stack(similarity_terms).mean() if similarity_terms else None
         global_balance = torch.stack(global_terms).mean() if global_terms else None
         task_entropy_mean = (
             float(sum(task_entropy_terms) / len(task_entropy_terms)) if task_entropy_terms else None
         )
+        task_support_mean = (
+            float(sum(task_support_terms) / len(task_support_terms)) if task_support_terms else None
+        )
         global_entropy_mean = (
             float(sum(global_entropy_terms) / len(global_entropy_terms)) if global_entropy_terms else None
         )
-        return compactness, separation, global_balance, task_entropy_mean, global_entropy_mean
+        return locality, similarity, global_balance, task_entropy_mean, task_support_mean, global_entropy_mean
 
     def _get_indices_from_subkey_scores(self, s1_full: torch.Tensor, s2_full: torch.Tensor):
         bs = s1_full.shape[0]

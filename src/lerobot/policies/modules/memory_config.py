@@ -90,9 +90,18 @@ class MemoryLayerConfig:
 
     # Routing regularizers operate on the task-conditioned PQ sub-key
     # distributions rather than directly on query embeddings.
-    # - compactness: penalize task distributions that are too diffuse
-    # - separation: penalize overlap between different task distributions
+    # - intra-task locality: keep each task's routing support in a target range
+    # - inter-task separation: penalize overlap between different task distributions
     # - global_balance: penalize collapse of the aggregate distribution
+    routing_intra_task_locality_weight: float = 0.0
+    routing_inter_task_separation_weight: float = 0.0
+    # Effective support bounds for the intra-task locality loss.
+    # 0 means "use a heuristic default":
+    # - min_support -> max(2, mem_knn // 2)
+    # - max_support -> max(2 * mem_knn, round(sqrt(mem_n_keys)))
+    routing_intra_task_min_support: int = 0
+    routing_intra_task_max_support: int = 0
+    # Deprecated aliases preserved for backward compatibility with existing scripts.
     routing_compactness_weight: float = 0.0
     routing_separation_weight: float = 0.0
     routing_global_balance_weight: float = 0.0

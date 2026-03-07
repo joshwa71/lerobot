@@ -516,8 +516,16 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         # Aggregate contrastive losses from memory layers
         contrastive_loss_weight = getattr(self.config.memory_layer, "contrastive_loss_weight", 0.0)
-        routing_compactness_weight = getattr(self.config.memory_layer, "routing_compactness_weight", 0.0)
-        routing_separation_weight = getattr(self.config.memory_layer, "routing_separation_weight", 0.0)
+        routing_intra_task_locality_weight = getattr(
+            self.config.memory_layer, "routing_intra_task_locality_weight", 0.0
+        )
+        if routing_intra_task_locality_weight <= 0:
+            routing_intra_task_locality_weight = getattr(self.config.memory_layer, "routing_compactness_weight", 0.0)
+        routing_inter_task_separation_weight = getattr(
+            self.config.memory_layer, "routing_inter_task_separation_weight", 0.0
+        )
+        if routing_inter_task_separation_weight <= 0:
+            routing_inter_task_separation_weight = getattr(self.config.memory_layer, "routing_separation_weight", 0.0)
         routing_global_balance_weight = getattr(self.config.memory_layer, "routing_global_balance_weight", 0.0)
         if contrastive_loss_weight > 0 and (
             getattr(self.config, "memory_layers", False)
@@ -557,33 +565,43 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         # Aggregate routing regularizers from memory layers
         if (
-            routing_compactness_weight > 0
-            or routing_separation_weight > 0
+            routing_intra_task_locality_weight > 0
+            or routing_inter_task_separation_weight > 0
             or routing_global_balance_weight > 0
         ) and (
             getattr(self.config, "memory_layers", False)
             or getattr(self.config.memory_layer, "enabled", False)
         ):
             try:
-                compactness_losses = []
-                separation_losses = []
+                locality_losses = []
+                similarity_losses = []
                 global_balance_losses = []
-                routing_task_entropies = []
+                routing_intra_task_entropies = []
+                routing_intra_task_supports = []
                 routing_global_entropies = []
 
                 def _collect_routing(mem, layer_prefix: str, li: int):
-                    if getattr(mem, "last_routing_compactness_loss", None) is not None:
-                        compactness_losses.append(mem.last_routing_compactness_loss)
-                        loss_dict[f"{layer_prefix}routing_compactness_L{li}"] = mem.last_routing_compactness_loss.item()
-                    if getattr(mem, "last_routing_separation_loss", None) is not None:
-                        separation_losses.append(mem.last_routing_separation_loss)
-                        loss_dict[f"{layer_prefix}routing_separation_L{li}"] = mem.last_routing_separation_loss.item()
+                    if getattr(mem, "last_routing_intra_task_locality_loss", None) is not None:
+                        locality_losses.append(mem.last_routing_intra_task_locality_loss)
+                        locality_val = mem.last_routing_intra_task_locality_loss.item()
+                        loss_dict[f"{layer_prefix}routing_intra_task_locality_L{li}"] = locality_val
+                        loss_dict[f"{layer_prefix}routing_compactness_L{li}"] = locality_val
+                    if getattr(mem, "last_routing_inter_task_similarity_loss", None) is not None:
+                        similarity_losses.append(mem.last_routing_inter_task_similarity_loss)
+                        similarity_val = mem.last_routing_inter_task_similarity_loss.item()
+                        loss_dict[f"{layer_prefix}routing_inter_task_similarity_L{li}"] = similarity_val
+                        loss_dict[f"{layer_prefix}routing_inter_task_separation_L{li}"] = 1.0 - similarity_val
+                        loss_dict[f"{layer_prefix}routing_separation_L{li}"] = similarity_val
                     if getattr(mem, "last_routing_global_balance_loss", None) is not None:
                         global_balance_losses.append(mem.last_routing_global_balance_loss)
                         loss_dict[f"{layer_prefix}routing_global_balance_L{li}"] = mem.last_routing_global_balance_loss.item()
-                    if getattr(mem, "last_routing_task_entropy", None) is not None:
-                        routing_task_entropies.append(mem.last_routing_task_entropy)
-                        loss_dict[f"{layer_prefix}routing_task_entropy_L{li}"] = mem.last_routing_task_entropy
+                    if getattr(mem, "last_routing_intra_task_entropy", None) is not None:
+                        routing_intra_task_entropies.append(mem.last_routing_intra_task_entropy)
+                        loss_dict[f"{layer_prefix}routing_intra_task_entropy_L{li}"] = mem.last_routing_intra_task_entropy
+                        loss_dict[f"{layer_prefix}routing_task_entropy_L{li}"] = mem.last_routing_intra_task_entropy
+                    if getattr(mem, "last_routing_intra_task_support", None) is not None:
+                        routing_intra_task_supports.append(mem.last_routing_intra_task_support)
+                        loss_dict[f"{layer_prefix}routing_intra_task_support_L{li}"] = mem.last_routing_intra_task_support
                     if getattr(mem, "last_routing_global_entropy", None) is not None:
                         routing_global_entropies.append(mem.last_routing_global_entropy)
                         loss_dict[f"{layer_prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
@@ -601,20 +619,31 @@ class SmolVLAPolicy(PreTrainedPolicy):
                 except Exception:
                     pass
 
-                if compactness_losses:
-                    total_compactness = sum(compactness_losses) / len(compactness_losses)
-                    loss_dict["routing_compactness_mean"] = total_compactness.item()
-                    loss = loss + routing_compactness_weight * total_compactness
-                if separation_losses:
-                    total_separation = sum(separation_losses) / len(separation_losses)
-                    loss_dict["routing_separation_mean"] = total_separation.item()
-                    loss = loss + routing_separation_weight * total_separation
+                if locality_losses:
+                    total_locality = sum(locality_losses) / len(locality_losses)
+                    locality_val = total_locality.item()
+                    loss_dict["routing_intra_task_locality_mean"] = locality_val
+                    loss_dict["routing_compactness_mean"] = locality_val
+                    loss = loss + routing_intra_task_locality_weight * total_locality
+                if similarity_losses:
+                    total_similarity = sum(similarity_losses) / len(similarity_losses)
+                    similarity_val = total_similarity.item()
+                    loss_dict["routing_inter_task_similarity_mean"] = similarity_val
+                    loss_dict["routing_inter_task_separation_mean"] = 1.0 - similarity_val
+                    loss_dict["routing_separation_mean"] = similarity_val
+                    loss = loss + routing_inter_task_separation_weight * total_similarity
                 if global_balance_losses:
                     total_global_balance = sum(global_balance_losses) / len(global_balance_losses)
                     loss_dict["routing_global_balance_mean"] = total_global_balance.item()
                     loss = loss + routing_global_balance_weight * total_global_balance
-                if routing_task_entropies:
-                    loss_dict["routing_task_entropy_mean"] = float(sum(routing_task_entropies) / len(routing_task_entropies))
+                if routing_intra_task_entropies:
+                    entropy_mean = float(sum(routing_intra_task_entropies) / len(routing_intra_task_entropies))
+                    loss_dict["routing_intra_task_entropy_mean"] = entropy_mean
+                    loss_dict["routing_task_entropy_mean"] = entropy_mean
+                if routing_intra_task_supports:
+                    loss_dict["routing_intra_task_support_mean"] = float(
+                        sum(routing_intra_task_supports) / len(routing_intra_task_supports)
+                    )
                 if routing_global_entropies:
                     loss_dict["routing_global_entropy_mean"] = float(sum(routing_global_entropies) / len(routing_global_entropies))
             except Exception:
