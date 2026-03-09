@@ -189,6 +189,7 @@ class HashingMemoryLite(nn.Module):
         if self.routing_inter_task_separation_weight <= 0:
             self.routing_inter_task_separation_weight = float(getattr(cfg, "routing_separation_weight", 0.0))
         self.routing_global_balance_weight = getattr(cfg, "routing_global_balance_weight", 0.0)
+        self.routing_loss_topk = max(0, int(getattr(cfg, "routing_loss_topk", 0)))
         self.routing_intra_task_min_support = max(0, int(getattr(cfg, "routing_intra_task_min_support", 0)))
         self.routing_intra_task_max_support = max(0, int(getattr(cfg, "routing_intra_task_max_support", 0)))
 
@@ -811,21 +812,66 @@ class HashingMemoryLite(nn.Module):
         T: int,
         task_ids: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, float | None, float | None]:
+        """Compute routing losses on the joint product-key candidate distribution.
+
+        Instead of operating on the two PQ half-marginals independently,
+        this takes top-M subkeys per half, forms the M*M Cartesian product
+        candidates (matching what retrieval actually does), softmaxes over
+        the joint candidate scores, scatters per-task distributions into a
+        compact slot histogram, and computes locality/separation losses on
+        those full-slot distributions.
+        """
         eps = 1e-12
-        log_n = math.log(max(self.n_keys, 2))
-        default_min_support = max(2, self.knn // 2)
-        default_max_support = min(self.n_keys, max(2 * self.knn, int(round(math.sqrt(self.n_keys)))))
+        M = self.routing_loss_topk if self.routing_loss_topk > 0 else self.knn
+        candidate_pool = M * M
+        device = s1_full.device
+
+        # Support bounds for the final joint slot distribution
+        default_min_support = max(self.knn, 8)
+        default_max_support = max(8 * self.knn, candidate_pool // 2)
         min_support = self.routing_intra_task_min_support or default_min_support
         max_support = self.routing_intra_task_max_support or default_max_support
-        min_support = min(self.n_keys, max(1, min_support))
-        max_support = min(self.n_keys, max(1, max_support))
+        min_support = max(1, min_support)
+        max_support = max(1, max_support)
         if min_support > max_support:
             min_support, max_support = max_support, min_support
-        min_entropy = math.log(max(min_support, 1)) / log_n
-        max_entropy = math.log(max(max_support, 1)) / log_n
+
+        # Normalize entropy by log of the full slot space
+        log_norm = math.log(max(self.size, 2))
+        min_entropy = math.log(max(min_support, 1)) / log_norm
+        max_entropy = math.log(max(max_support, 1)) / log_norm
         score_scale = math.sqrt(max(self.k_dim // 2, 1))
+
+        bs = s1_full.shape[0]  # B * T
+
+        # Top-M subkeys in each half
+        s1_top, i1_top = s1_full.topk(M, dim=2)  # (bs, heads, M)
+        s2_top, i2_top = s2_full.topk(M, dim=2)  # (bs, heads, M)
+
+        # Joint candidate scores and slot IDs via Cartesian product
+        joint_scores = (
+            s1_top.unsqueeze(3) + s2_top.unsqueeze(2)
+        ).reshape(bs, self.heads, candidate_pool)
+        joint_ids = (
+            i1_top.unsqueeze(3) * self.n_keys + i2_top.unsqueeze(2)
+        ).reshape(bs, self.heads, candidate_pool)
+
+        # Softmax over the M^2 joint candidates per sample per head
+        joint_probs = F.softmax(joint_scores.float() / score_scale, dim=-1)
+
+        # Reshape for task grouping: (B, T, heads, M^2)
+        joint_probs = joint_probs.view(B, T, self.heads, candidate_pool)
+        joint_ids = joint_ids.view(B, T, self.heads, candidate_pool)
+
+        # Compact the slot ID space: map the unique slot IDs that appear
+        # in this batch to a dense [0, n_compact) range to save memory.
+        all_unique = joint_ids.reshape(-1).unique()  # sorted
+        n_compact = all_unique.numel()
+        compact_ids = torch.searchsorted(all_unique, joint_ids)  # (B, T, heads, M^2)
+
         unique_tasks = torch.unique(task_ids)
 
+        task_distributions: list[torch.Tensor] = []
         locality_terms: list[torch.Tensor] = []
         similarity_terms: list[torch.Tensor] = []
         global_terms: list[torch.Tensor] = []
@@ -833,49 +879,71 @@ class HashingMemoryLite(nn.Module):
         task_support_terms: list[float] = []
         global_entropy_terms: list[float] = []
 
-        for scores in (s1_full, s2_full):
-            probs = F.softmax(scores.float() / score_scale, dim=-1).view(B, T, self.heads, self.n_keys)
-            task_distributions = []
-            for task_id in unique_tasks.tolist():
-                mask = task_ids == int(task_id)
-                if not mask.any():
-                    continue
-                task_prob = probs[mask].mean(dim=(0, 1))
-                task_prob = task_prob / task_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
-                task_distributions.append(task_prob)
+        # Head offsets for vectorised scatter across heads
+        head_offsets = torch.arange(self.heads, device=device).view(1, self.heads, 1) * n_compact
 
-            if not task_distributions:
+        for task_id in unique_tasks.tolist():
+            mask = task_ids == int(task_id)  # (B,)
+            if not mask.any():
                 continue
 
-            task_stack = torch.stack(task_distributions, dim=0)  # (num_tasks, heads, n_keys)
-            task_entropy = -(task_stack * (task_stack + eps).log()).sum(dim=-1) / log_n
+            # This task's candidate probs and compact IDs
+            t_probs = joint_probs[mask]    # (n_b, T, heads, M^2)
+            t_cids = compact_ids[mask]     # (n_b, T, heads, M^2)
+
+            n_samples = t_probs.shape[0] * t_probs.shape[1]
+            t_probs_flat = t_probs.reshape(n_samples, self.heads, candidate_pool)
+            t_cids_flat = t_cids.reshape(n_samples, self.heads, candidate_pool).long()
+
+            # Scatter into compact histogram, vectorised across heads
+            ids_offset = (t_cids_flat + head_offsets).reshape(-1)
+            probs_src = t_probs_flat.reshape(-1)
+
+            hist = torch.zeros(
+                self.heads * n_compact, device=device, dtype=torch.float32
+            ).scatter_add(0, ids_offset, probs_src).view(self.heads, n_compact)
+
+            # Normalise to a probability distribution per head
+            hist = hist / hist.sum(dim=-1, keepdim=True).clamp(min=eps)
+            task_distributions.append(hist)
+
+            # Entropy over the full slot distribution (per head).
+            # Use clamp before log instead of torch.where to avoid NaN
+            # gradients from the unused log(0) branch.
+            task_H = -(hist * hist.clamp(min=eps).log()).sum(dim=-1)  # (heads,)
+            task_H_norm = task_H / log_norm
+
+            task_entropy_terms.append(float(task_H_norm.mean().item()))
+            task_support = torch.exp(task_H)
+            task_support_terms.append(float(task_support.mean().item()))
+
             if self.routing_intra_task_locality_weight > 0:
                 locality_terms.append(
                     (
-                        F.relu(min_entropy - task_entropy).pow(2)
-                        + F.relu(task_entropy - max_entropy).pow(2)
+                        F.relu(min_entropy - task_H_norm).pow(2)
+                        + F.relu(task_H_norm - max_entropy).pow(2)
                     ).mean()
                 )
-            task_entropy_terms.append(float(task_entropy.mean().item()))
-            task_support = torch.exp(task_entropy * log_n)
-            task_support_terms.append(float(task_support.mean().item()))
 
-            if task_stack.shape[0] >= 2:
-                if self.routing_inter_task_separation_weight > 0:
-                    pair_sims: list[torch.Tensor] = []
-                    task_norm = F.normalize(task_stack, p=2, dim=-1)
-                    for i in range(task_stack.shape[0]):
-                        for j in range(i + 1, task_stack.shape[0]):
-                            pair_sims.append((task_norm[i] * task_norm[j]).sum(dim=-1).mean())
-                    if pair_sims:
-                        similarity_terms.append(torch.stack(pair_sims).mean())
+        # Inter-task separation: cosine similarity between task slot distributions
+        if len(task_distributions) >= 2 and self.routing_inter_task_separation_weight > 0:
+            task_stack = torch.stack(task_distributions)  # (num_tasks, heads, n_compact)
+            task_norm = F.normalize(task_stack, p=2, dim=-1)
+            pair_sims: list[torch.Tensor] = []
+            for i in range(len(task_distributions)):
+                for j in range(i + 1, len(task_distributions)):
+                    pair_sims.append((task_norm[i] * task_norm[j]).sum(dim=-1).mean())
+            if pair_sims:
+                similarity_terms.append(torch.stack(pair_sims).mean())
 
-                if self.routing_global_balance_weight > 0:
-                    global_prob = task_stack.mean(dim=0)
-                    global_prob = global_prob / global_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
-                    global_entropy = -(global_prob * (global_prob + eps).log()).sum(dim=-1) / log_n
-                    global_terms.append((1.0 - global_entropy).mean())
-                    global_entropy_terms.append(float(global_entropy.mean().item()))
+        # Global balance
+        if len(task_distributions) >= 2 and self.routing_global_balance_weight > 0:
+            task_stack = torch.stack(task_distributions)
+            global_prob = task_stack.mean(dim=0)
+            global_prob = global_prob / global_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
+            global_H = -(global_prob * global_prob.clamp(min=eps).log()).sum(dim=-1) / log_norm
+            global_terms.append((1.0 - global_H).mean())
+            global_entropy_terms.append(float(global_H.mean().item()))
 
         locality = torch.stack(locality_terms).mean() if locality_terms else None
         similarity = torch.stack(similarity_terms).mean() if similarity_terms else None

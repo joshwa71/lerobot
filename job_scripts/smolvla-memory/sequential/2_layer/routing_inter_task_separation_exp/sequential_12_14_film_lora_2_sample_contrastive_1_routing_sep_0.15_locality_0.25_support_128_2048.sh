@@ -1,4 +1,4 @@
-cat > sequential_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32.sh << 'INNER_EOF'
+cat > sequential_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048.sh << 'INNER_EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > sequential_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_su
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32
+#$ -N sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -74,8 +74,8 @@ cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
 echo "Copying pretrained model to scratch space..."
-MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32"
-MODEL_SCRATCH="$SCRATCH_DIR/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32"
+MODEL_SOURCE="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048"
+MODEL_SCRATCH="$SCRATCH_DIR/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048"
 cp -r "$MODEL_SOURCE" "$MODEL_SCRATCH"
 echo "Model copied to $MODEL_SCRATCH"
 
@@ -84,8 +84,8 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/sequential_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048"
 
 function periodic_backup {
     local scratch_dir="$1"
@@ -126,7 +126,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --log_freq=200 \
   --wandb.enable=true \
   --wandb.project=vla-memory \
-  --job_name=sequential_libero_10_smolvla_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_locality_0.25_support_8_32 \
+  --job_name=sequential_libero_10_smolvla_libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_128_2048 \
   --online_task_ids='[6,7,8,9]' \
   --online_steps_per_task=3000 \
   --policy.memory_layer.aggregate_usage=false \

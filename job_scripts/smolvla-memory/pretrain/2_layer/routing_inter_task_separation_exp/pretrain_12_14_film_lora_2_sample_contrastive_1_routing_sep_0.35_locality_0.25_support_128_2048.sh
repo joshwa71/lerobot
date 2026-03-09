@@ -1,4 +1,4 @@
-cat > pretrain_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32.sh << 'INNER_EOF'
+cat > pretrain_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048.sh << 'INNER_EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -7,7 +7,7 @@ cat > pretrain_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_
 #$ -pe gpu 1
 #$ -R y
 #$ -l tscratch=200G
-#$ -N libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32
+#$ -N libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048
 #$ -wd /SAN/vision/jo71_vla_wd/lerobot_memory
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/job_output_$JOB_ID.log
@@ -84,8 +84,8 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_P2P_DISABLE=1
 export TOKENIZERS_PARALLELISM=false
 
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32"
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048"
 
 function periodic_backup {
     local scratch_dir="$1"
@@ -114,7 +114,7 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32 \
+  --policy.repo_id=outputs/train/libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048 \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -131,7 +131,7 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.15_locality_0.25_support_8_32 \
+  --job_name=libero_95_12_14_film_lora_2_sample_contrastive_1_routing_sep_0.35_locality_0.25_support_128_2048 \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \
@@ -157,9 +157,9 @@ lerobot-train \
   --policy.memory_layer.contrastive_loss_weight=1.0 \
   --policy.memory_layer.contrastive_margin=0.0 \
   --policy.memory_layer.routing_intra_task_locality_weight=0.25 \
-  --policy.memory_layer.routing_intra_task_min_support=8 \
-  --policy.memory_layer.routing_intra_task_max_support=32 \
-  --policy.memory_layer.routing_inter_task_separation_weight=0.15
+  --policy.memory_layer.routing_intra_task_min_support=128 \
+  --policy.memory_layer.routing_intra_task_max_support=2048 \
+  --policy.memory_layer.routing_inter_task_separation_weight=0.35
 
 echo "Job completed at $(date)"
 INNER_EOF

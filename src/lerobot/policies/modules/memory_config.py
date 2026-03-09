@@ -88,17 +88,30 @@ class MemoryLayerConfig:
     # 0 preserves the original in-batch-only behavior.
     contrastive_query_queue: int = 0
 
-    # Routing regularizers operate on the task-conditioned PQ sub-key
-    # distributions rather than directly on query embeddings.
-    # - intra-task locality: keep each task's routing support in a target range
-    # - inter-task separation: penalize overlap between different task distributions
+    # Routing regularizers operate on the joint product-key candidate distribution:
+    # 1. Take top-M subkeys in each PQ half (M = routing_loss_topk or mem_knn)
+    # 2. Form the M×M Cartesian-product candidate slots (matching retrieval)
+    # 3. Softmax over those M² joint candidate scores per sample per head
+    # 4. Scatter per-task distributions into the full slot space (n_keys²)
+    # 5. Compute locality/separation losses on those full-slot distributions
+    #
+    # This directly regularizes the slot distribution that retrieval actually
+    # uses, rather than the dense PQ-half marginals which can be satisfied by
+    # moving tail mass without affecting the retrieved slots.
+    #
+    # - intra-task locality: keep each task's effective final-slot support in a target range
+    # - inter-task separation: penalize overlap between different task slot distributions
     # - global_balance: penalize collapse of the aggregate distribution
     routing_intra_task_locality_weight: float = 0.0
     routing_inter_task_separation_weight: float = 0.0
-    # Effective support bounds for the intra-task locality loss.
+    # Number of top subkeys per PQ half used to form joint candidates for the
+    # routing loss. 0 means use mem_knn (matching retrieval exactly).
+    routing_loss_topk: int = 0
+    # Effective support bounds for the intra-task locality loss, measured over
+    # actual final product-key slot ids (in the n_keys² space) per head.
     # 0 means "use a heuristic default":
-    # - min_support -> max(2, mem_knn // 2)
-    # - max_support -> max(2 * mem_knn, round(sqrt(mem_n_keys)))
+    # - min_support -> max(mem_knn, 8)
+    # - max_support -> max(8 * mem_knn, candidate_pool // 2)
     routing_intra_task_min_support: int = 0
     routing_intra_task_max_support: int = 0
     # Deprecated aliases preserved for backward compatibility with existing scripts.
