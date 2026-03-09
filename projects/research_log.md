@@ -151,3 +151,64 @@ Expirments run with Lora=4 and layers 12 and 14.
   - **Intra-task locality sweep** with support band `8-32` and locality weights `0.1 / 0.25 / 0.5`
   - **Inter-task separation sweep** with locality fixed on (`weight=0.25`, support band `8-32`) and separation weights `0.15 / 0.25 / 0.35`
 - Goal of the new sweep: find a regime where tasks separate in routing space **without** collapsing each task onto 1-2 subkeys per PQ half.
+
+---
+
+## Entry 7 - 9 Mar 26 (Routing Loss Misalignment Diagnosis + Joint-Slot Fix)
+
+### Findings from the Entry 6 sweep
+
+Ran 3 locality sweeps (`locality_weight` 0.1 / 0.25 / 0.5, support band `[8, 32]`) and 3 separation sweeps (`sep_weight` 0.15 / 0.25 / 0.35, locality 0.25, support `[8, 32]`). Results:
+
+1. **Sequential training performance did not improve.** Best separation run (sep=0.15) tied with corruption baseline at ~16.5% success.
+2. **The routing loss was operating on the wrong distribution.** The `_compute_routing_losses` method computed soft distributions over all `n_keys=384` subkeys per PQ half, then measured entropy and pairwise similarity on those half-marginals. But retrieval only uses the **top-k** subkeys and forms **Cartesian-product joint slots**. The loss could be satisfied by moving tail mass in the half-distributions without changing the top subkeys or the final retrieved slots.
+3. **Evidence of misalignment:**
+   - Half-level support was broad (routing_intra_task_support_mean ~216–384) even as the **actual final-slot effective number** in layer 14 was very concentrated (effnum ~30–82 for sep 0.15/0.25).
+   - sep=0.25 drove half-similarity down, but layer-14 weighted access IoU between tasks stayed at ~0.316. It achieved "separation" by peeling one task off onto a different tiny hot core, while the other 3 tasks still shared.
+4. **Task 7 "zero overlap" anomaly:** In sep=0.25, task 7 was isolated onto a different layer-14 core (weighted IoUs ~1e-5 against other tasks) while tasks 6/8/9 still shared heavily (IoUs 0.60–0.69). This is a pathological asymmetric solution allowed because the pairwise loss has no global-balance pressure.
+5. **Last-task slot-usage instability:** Task 9's slot-usage metric oscillated between ~0.020–0.037 across steps. Since the router is frozen during sequential training, this is **batch/episode heterogeneity** within task 9, not learning instability.
+6. **Logging note:** The sequential `train/loss` includes routing auxiliary terms even though they have no gradient path to the trainable value params. `mse_loss` is the meaningful optimisation signal.
+
+### Root cause
+
+The routing regulariser operated on the two PQ half-distributions separately (`s1_full`, `s2_full`, each `n_keys`-way). But:
+- Retrieval takes top-k in each half, forms the k×k Cartesian product, then selects top-k final slots.
+- The loss on soft half-marginals is a **weak proxy**: it can be cheaply satisfied by reshuffling tail mass while the actual top subkeys (and final slots) stay shared.
+- The support band `[8, 32]` targeted half-subkey support, not final-slot support. With `n_keys=384`, these are completely different scales.
+
+### Solution implemented
+
+Rewrote `_compute_routing_losses` in `memory_lite.py` to operate on the **joint product-key candidate distribution**:
+1. Take top-M subkeys per PQ half (M = `routing_loss_topk` or `knn`, default matches retrieval)
+2. Form M×M Cartesian-product candidate scores and slot IDs
+3. Softmax over those M² joint candidates per sample per head
+4. Scatter per-task distributions into a compact slot histogram (slot IDs remapped via `searchsorted` for memory efficiency)
+5. Compute locality (entropy band) and separation (cosine similarity) on those **full-slot distributions**
+
+This directly regularises the distribution retrieval actually uses. Gradient flows through: loss → histogram → joint softmax → joint scores → top-k values → PQ half scores → query projection + keys.
+
+Also fixed a NaN gradient bug: `torch.where(p > eps, p.log(), 0)` computes `log(0)` gradients for the unused branch. Replaced with `p.clamp(min=eps).log()`.
+
+Added `routing_loss_topk` config param (default 0 = use `knn`). Support bounds now refer to **effective final slots** in the `n_keys²` space, not half-subkey support.
+
+### Support band rationale
+
+Old band `[8, 32]` was in half-subkey space over 384 subkeys. New band is in final-slot space over 147,456 (`384²`) slots. With 35 pretrain tasks:
+- Want to allow **generalist slots** (shared priors across tasks), so don't need complete separation
+- Want to prevent **collapse** onto a tiny hot core (the pathology we observed)
+- Uniform partition: 147K / 35 ≈ 4,200 slots/task, so even max_support=2048 is well within budget
+
+### Next experiments
+
+**Locality sweep** (locality_weight=0.25, no separation loss):
+- `[64, 512]` — moderate band
+- `[64, 1024]` — recommended default
+- `[128, 2048]` — broad, allows generous generalist core
+
+**Separation sweep** (locality_weight=0.25, support `[128, 2048]`):
+- `sep_weight` = 0.15 / 0.25 / 0.35
+
+Scripts under:
+- `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
+- `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
+- Matching sequential scripts in `sequential/2_layer/` directories
