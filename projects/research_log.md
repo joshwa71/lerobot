@@ -212,3 +212,79 @@ Scripts under:
 - `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
 - `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
 - Matching sequential scripts in `sequential/2_layer/` directories
+
+---
+
+## Entry 8 - 12 Mar 26 (Joint-Slot Separation Results + Next Steps)
+
+### Results from Entry 7 experiments
+
+Ran 6 pretraining runs (3 locality-only, 3 locality+separation) and 5 sequential runs (sep_0.25 sequential added later). All use layers [12,14], LoRA rank 2, support band [128, 2048], locality_weight=0.25.
+
+#### Pretraining eval success (libero_spatial, 4 episodes):
+
+| Run | Eval % | MSE (final) |
+|-----|--------|-------------|
+| loc [64,512] | 77.5 | 0.0133 |
+| loc [64,1024] | 70.0 | 0.0117 |
+| loc [128,2048] | 77.5 | 0.0119 |
+| sep=0.15 | 80.0 | 0.0117 |
+| **sep=0.25** | **90.0** | **0.0112** |
+| sep=0.35 | 80.0 | 0.0133 |
+
+sep=0.25 is the best pretrained model by a clear margin.
+
+#### Sequential training (tasks 6-9, avg_pc_success_seen after 4 tasks):
+
+| Run | Success % | Weighted IoU | Task 9 reads from 8's updates (L12/L14) |
+|-----|-----------|--------------|------------------------------------------|
+| loc [64,512] | 12.0 | 0.263 | — |
+| loc [64,1024] | 10.0 | 0.242 | — |
+| loc [128,2048] | 16.5 | 0.204 | 37% / 72% |
+| sep=0.15 | 30.5 | 0.057 | 18% / 16% |
+| **sep=0.25** | **34.5** | **0.044** | **15% / 13%** |
+| sep=0.35 | 26.5 | 0.041 | 15% / 13% |
+
+### Key findings
+
+**1. The joint-slot routing fix (Entry 7) works.** Unlike the half-distribution approach (Entry 6) which achieved spurious separation by reshuffling tail mass, the joint-slot loss produces genuine routing differences that translate to less forgetting. sep=0.25 achieves 34.5% vs 16.5% for the best locality-only run.
+
+**2. Separation loss fixes the L14 collapse.** Without separation, L14 concentrates into ~400 effective slots (effnum) vs L12's ~2500. With separation, both layers equalize at ~3000-4000. The L14/L12 effnum ratio goes from 0.16 to ~1.10. This was the key pathology from Entry 7 — now resolved.
+
+**3. Write overlap is essentially solved.** TF-IDF masking (top_t=512) combined with separation gives near-zero write overlap between tasks. Pairwise update-set IoU is 0-2% for sep runs (vs up to 53% of task 6's updated slots overwritten by task 8 in locality-only at L14).
+
+**4. The remaining interference is read-time.** Task 9 reads 13-16% of its retrieval weight through slots that task 8 modified. The tasks read from different slot regions (weighted IoU ~0.044), but LoRA value updates to any shared-read slot change the transform seen by all tasks that read from it. This is the dominant remaining forgetting channel.
+
+**5. Binary slot overlap vs weighted overlap — a subtlety.** Raw set overlap is high for sep runs (~80-90% of slots touched by every task) because routing is diffuse. But the access weight distribution is highly concentrated: 50% of all retrieval weight sits in ~1,400 slots (0.94% of total) for sep_0.15 L14. The weighted IoU (which uses access counts, not binary presence) is the meaningful interference metric. The long tail of incidentally-touched slots carries negligible weight.
+
+**6. Per-task expressivity is the other bottleneck.** Sequential per-task MSE converges to 0.058-0.091 vs pretrain MSE of 0.011. Each LoRA slot is a rank-2 transform of the 720-dim expert hidden state. With top_t=512 and ~2,000-3,000 unique slots updated per task, effective capacity is ~7.2M params per task — but the rank-2 constraint severely limits per-slot expressivity. Task 8 is consistently the hardest (MSE ~0.089-0.091 across all runs).
+
+**7. sep=0.25 is the sweet spot.** Higher separation (0.35) achieves even lower IoU (0.041 vs 0.044) but lower performance (26.5% vs 34.5%) due to worse pretrain quality. Lower separation (0.15) has slightly higher IoU but also lower pretrain quality (80% vs 90%). sep=0.25 balances routing separation with pretrain fit.
+
+### Challenges remaining
+
+Two distinct problems limit performance:
+1. **Forgetting (read-time interference):** 13-16% of read weight flows through modified slots. Separation + TF-IDF solved write overlap but can't prevent tasks from reading modified slots.
+2. **Per-task fit (expressivity ceiling):** Rank-2 LoRA at 2 layers gives each task ~7.2M effective params. Per-task MSE is 5-8x higher than pretrain. More capacity is needed.
+
+### Next experiments
+
+**Batch 1 — Isolation of forgetting vs capacity interventions (2-layer pretrains):**
+
+3 pretraining runs combining sep=0.25 with corruption noise to address read-time robustness:
+- `corruption_prob=0.05, 0.1, 0.2` (all with `corruption_std=0.1`)
+- Corruption adds Gaussian noise to retrieved LoRA outputs during pretraining, teaching the model to tolerate the kind of value drift that occurs when other tasks update shared-read slots.
+- The 0.1 corruption_prob is calibrated to roughly match the ~13% read-from-written interference measured at L14.
+- Scripts: `job_scripts/smolvla-memory/pretrain/2_layer/sep_and_corruption/`
+
+**Batch 2 — Capacity via depth (3-layer pretrains):**
+
+3 pretraining runs adding layer 10 to the existing [12,14] setup, with sep=0.25:
+- Adds ~50% more effective capacity per task (3 layers × ~2,500 unique updated slots each)
+- Interference budget is per-layer, so a third layer doesn't compound interference
+- Will test whether the per-task MSE gap (0.06-0.09 vs pretrain 0.011) narrows with more depth
+- Scripts: `job_scripts/smolvla-memory/pretrain/3_layer/separation/`
+
+**Quick test — IDF seeding from pretrain stats:**
+
+1 sequential run using the existing sep=0.25 pretrained checkpoint with `idf_stats_path` pointing to its `memory_usage.json` and `idf_stats_denom=33` (pretrain prior worth ~1 sequential task). This tests whether down-weighting globally popular pretrain slots in TF-IDF reduces the remaining write-to-read interference. No new pretraining needed.
