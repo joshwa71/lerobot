@@ -1,3 +1,4 @@
+cat > sequential_10_12_14_film_lora_2_sep_0.25_top_t_768.sh << 'EOF'
 #!/bin/bash
 #$ -S /bin/bash
 #$ -l tmem=64G
@@ -160,3 +161,4 @@ python -m lerobot.scripts.lerobot_sequential_train \
 
 
 echo "Job completed at $(date)"
+EOF
