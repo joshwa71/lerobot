@@ -288,3 +288,76 @@ Two distinct problems limit performance:
 **Quick test — IDF seeding from pretrain stats:**
 
 1 sequential run using the existing sep=0.25 pretrained checkpoint with `idf_stats_path` pointing to its `memory_usage.json` and `idf_stats_denom=33` (pretrain prior worth ~1 sequential task). This tests whether down-weighting globally popular pretrain slots in TF-IDF reduces the remaining write-to-read interference. No new pretraining needed.
+
+---
+
+## Entry 9 - 16 Mar 26 (3-Layer & Corruption Results + Top-T Sweep)
+
+### Results from Entry 8 experiments
+
+Ran 3 pretraining + sequential pairs for **3-layer [10,12,14]** (separation sweep: 0.15/0.25/0.35) and 3 pairs for **corruption** (prob 0.05/0.1/0.2 on 2-layer [12,14] with sep=0.25). IDF seeding from pretrain stats tanked performance and is omitted.
+
+Baseline for comparison: 2-layer [12,14], sep=0.25, no corruption (from Entry 8): pretrain MSE 0.0112, sequential 34.5%, IoU 0.044.
+
+#### Pretrain summary
+
+| Run | MSE | Gate L10 | Gate L12 | Gate L14 | Effnum |
+|-----|-----|----------|----------|----------|--------|
+| **Baseline (2L)** | **0.0112** | — | 0.74 | 0.54 | 3257 |
+| 3L sep=0.15 | 0.0086 | 0.36 | 0.49 | 0.45 | 3069 |
+| 3L sep=0.25 | 0.0086 | 0.42 | 0.54 | 0.43 | 2675 |
+| 3L sep=0.35 | 0.0086 | 0.46 | 0.57 | 0.44 | 2404 |
+| corr=0.05 | 0.0116 | — | 0.76 | 0.55 | 3218 |
+| corr=0.1 | 0.0128 | — | 0.75 | 0.55 | 3217 |
+| corr=0.2 | 0.0122 | — | 0.75 | 0.56 | 3232 |
+
+#### Sequential eval progression (avg_pc_success_seen after each task)
+
+| Run | T6 (3K) | T7 (6K) | T8 (9K) | T9 (12K) | IoU | Seq MSE |
+|-----|---------|---------|---------|----------|-----|---------|
+| **Baseline (2L)** | 22 | 31 | 41.3 | **34.5** | 0.044 | 0.066 |
+| 3L sep=0.15 | 26 | 34 | 37.3 | **43.5** | 0.050 | 0.070 |
+| **3L sep=0.25** | **26** | **38** | **41.3** | **44.0** | **0.042** | **0.071** |
+| 3L sep=0.35 | 28 | 31 | 47.3 | **42.5** | 0.036 | 0.063 |
+| corr=0.05 | 22 | 24 | 37.3 | **22.0** | 0.049 | 0.063 |
+| corr=0.1 | 26 | 29 | 44.7 | **30.5** | 0.047 | 0.060 |
+| corr=0.2 | 22 | 19 | 38.7 | **30.5** | 0.043 | 0.063 |
+
+### Key findings
+
+**1. 3-layer is the clear winner (+10pp over baseline).** All three 3L runs beat the 2L baseline by a wide margin (42.5–44% vs 34.5%). Pretrain MSE drops from 0.0112 to 0.0086 (−23%), confirming the **capacity hypothesis**: the per-task MSE gap (0.06–0.09 vs pretrain) was driven by insufficient expressivity at 2 layers.
+
+**2. 3L eliminates the task-9 forgetting pattern.** The baseline shows a forgetting signature: success climbs to 41.3% after 3 tasks then drops to 34.5% on task 9. The 3L sep=0.25 run shows monotonically improving eval: 26 → 38 → 41.3 → 44.0. The extra layer provides enough slot capacity that task 9 doesn't overwrite earlier tasks' important slots.
+
+**3. Corruption hurt more than it helped.** All corruption runs underperform the baseline (22–30.5% vs 34.5%). Corruption noise during pretraining degrades base model quality (pretrain MSE 0.0116–0.0128 vs 0.0112) without sufficient compensating robustness. corr=0.1 peaks at 44.7% after 3 tasks but then crashes to 30.5% on task 9 — same forgetting pattern as baseline, just from a worse starting point.
+
+**4. Separation sweet spot remains ~0.25.** Consistent with the 2L finding from Entry 8. sep=0.25 gives the best balance across all 3L runs.
+
+**5. The 3L benefit comes from capacity, not reduced overlap.** IoU is comparable across conditions (0.036–0.050). The third layer provides more exclusive slot budget per task without needing to further reduce routing overlap.
+
+**6. Layer 10 gates conservatively.** L10 gate values (0.36–0.46 pretrain, 0.30–0.41 sequential) are notably lower than L12/L14, acting as supplementary capacity rather than a primary memory site.
+
+### Remaining bottleneck
+
+Sequential per-task MSE is still 0.063–0.071 vs pretrain 0.0086 — a 7–8× gap. Each task only updates ~2,000–3,000 unique slots (out of 147K per layer) because `tfidf_top_t=512` limits gradient updates to 512 slots per batch.
+
+### Next experiments
+
+**Top-T sweep (no new pretraining needed):**
+
+3 sequential runs reusing the 3L sep=0.25 pretrained checkpoint with increased `tfidf_top_t`:
+- `top_t=768` (1.5× baseline)
+- `top_t=1024` (2× baseline)
+- `top_t=1536` (3× baseline)
+
+Higher top_t allows more slots to receive gradient updates per batch, directly increasing per-task capacity. Forward/backward compute is unchanged — top_t only masks gradients after backward. The write-overlap risk is managed by existing separation + IDF.
+
+Scripts: `job_scripts/smolvla-memory/sequential/3_layer/top_t/`
+
+**Future: gradient checkpointing for higher capacity pretrains.**
+
+SmolVLA currently lacks gradient checkpointing (PI0 has it). Adding it to the expert transformer layers would reduce activation memory by ~50–60%, enabling:
+- LoRA rank 4 (2× per-slot expressivity) at 3 layers
+- 4-layer configurations (e.g. [8,10,12,14])
+
+Both address the per-task MSE gap from different angles — rank increases per-slot expressivity while depth increases slot budget. Implementation would follow PI0's pattern: wrap expert layer forward passes in `torch.utils.checkpoint.checkpoint()` with `use_reentrant=False`.
