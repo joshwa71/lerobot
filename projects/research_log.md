@@ -361,3 +361,22 @@ SmolVLA currently lacks gradient checkpointing (PI0 has it). Adding it to the ex
 - 4-layer configurations (e.g. [8,10,12,14])
 
 Both address the per-task MSE gap from different angles — rank increases per-slot expressivity while depth increases slot budget. Implementation would follow PI0's pattern: wrap expert layer forward passes in `torch.utils.checkpoint.checkpoint()` with `use_reentrant=False`.
+
+---
+
+## Entry 10 - 17 Mar 26 (Gradient Checkpointing + Capacity Pretrains)
+
+Implemented gradient checkpointing for SmolVLA (`--policy.gradient_checkpointing=true`). Checkpoints each full transformer layer (attention + MLP/memory) during training, freeing intermediate activations. No change to inference.
+
+**3 new pretraining runs launched** — all use sep=0.25, loc=0.25, support [128,2048], and gradient checkpointing enabled:
+
+| Run | Layers | LoRA rank | Rationale |
+|-----|--------|-----------|-----------|
+| 2L r=8 | [12,14] | 8 | 4× per-slot expressivity at baseline depth |
+| 3L r=4 | [10,12,14] | 4 | 2× expressivity + 3-layer slot budget (best depth from Entry 9) |
+| 4L r=2 | [8,10,12,14] | 2 | Maximum slot budget, baseline expressivity |
+
+Scripts:
+- `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_8_..._sep_0.25_...`
+- `job_scripts/smolvla-memory/pretrain/3_layer/lora_r/pretrain_10_12_14_film_lora_4_..._sep_0.25_...`
+- `job_scripts/smolvla-memory/pretrain/4_layer/sep/pretrain_8_10_12_14_film_lora_2_..._sep_0.25_...`
