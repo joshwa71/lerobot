@@ -248,6 +248,10 @@ class SmolVLAPolicy(PreTrainedPolicy):
         ) and not getattr(self.config, "pretrained_path", None):
             attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
 
+        # Enable gradient checkpointing if configured
+        if getattr(self.config, "gradient_checkpointing", False):
+            self.model.vlm_with_expert.gradient_checkpointing_enable()
+
         # Initialize task embedding cache for language-conditioned memory queries
         self.task_embedding_cache = None
         if getattr(self.config.memory_layer, "lang_to_query", False):

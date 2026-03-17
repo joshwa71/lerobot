@@ -108,6 +108,10 @@ class SmolVLAConfig(PreTrainedConfig):
     memory_layers: bool = False
     memory_layer: MemoryLayerConfig = field(default_factory=MemoryLayerConfig)
 
+    # Gradient checkpointing: trade ~25-33% more compute for ~30-40% less activation memory.
+    # Enables training with larger batch sizes, more memory layers, or higher LoRA rank.
+    gradient_checkpointing: bool = False
+
     def __post_init__(self):
         super().__post_init__()
 
