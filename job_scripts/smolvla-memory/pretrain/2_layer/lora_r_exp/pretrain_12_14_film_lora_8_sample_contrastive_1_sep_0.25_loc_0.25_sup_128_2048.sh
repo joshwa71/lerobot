@@ -121,7 +121,8 @@ lerobot-train \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=20000 \
   --steps=100000 \
-  --batch_size=32 \
+  --batch_size=16 \
+  --gradient_accumulation_steps=2 \
   --num_workers=12 \
   --eval.batch_size=1 \
   --eval.n_episodes=4 \

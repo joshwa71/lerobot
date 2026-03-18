@@ -832,6 +832,7 @@ def _compute_tfidf_top_indices_for_batch(
     idf_by_module: dict[str, torch.Tensor] | None,
     top_t: int,
     tf_only: bool,
+    override_indices: dict[str, torch.Tensor] | None = None,
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -842,12 +843,15 @@ def _compute_tfidf_top_indices_for_batch(
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
     for _, mem_module, value_params, json_key in _iter_memory_modules(unwrapped_policy):
-        # last_indices exists only when mem.log_usage == True
-        if not hasattr(mem_module, "last_indices") or mem_module.last_indices is None:
-            # Fallback: allow all accessed slots if we can reconstruct from usage_counts delta; otherwise skip
+        # Use override indices (accumulated across micro-batches) if provided,
+        # otherwise fall back to the module's last_indices from the most recent forward.
+        if override_indices is not None and json_key in override_indices:
+            idx = override_indices[json_key]
+        elif hasattr(mem_module, "last_indices") and mem_module.last_indices is not None:
+            idx = mem_module.last_indices
+        else:
             continue
         try:
-            idx = mem_module.last_indices  # (B, heads, knn) on device
             idx_flat = idx.reshape(-1).to(torch.long)
             num_slots = mem_module.size
             # c(i): per-batch counts (TF numerator)
@@ -893,8 +897,8 @@ def _compute_tfidf_top_indices_for_batch(
                 if keys_param is not None and keys_param.requires_grad:
                     try:
                         n_keys = int(mem_module.n_keys)
-                        # idx: (B, heads, knn)
-                        idx = mem_module.last_indices
+                        # Use the same idx that was used for value selection (may be override_indices)
+                        # idx shape: (B, heads, knn)
                         selected_mask = torch.zeros(num_slots, dtype=torch.bool, device=idx.device)
                         selected_mask[top_indices.to(device=idx.device)] = True
                         # Mask over (B, heads, knn) positions whose slots are selected
@@ -963,6 +967,7 @@ def _update_policy_with_tfidf(
     lr_scheduler=None,
     lock=None,
     task_emb: torch.Tensor | None = None,
+    accum_indices_bufs: dict[str, list[torch.Tensor]] | None = None,
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -991,14 +996,37 @@ def _update_policy_with_tfidf(
     if use_cuda_events:
         ev_bwd.record()
 
-    # Compute and apply TF-IDF gradient masks before clipping and step
+    # Only apply TF-IDF masking, clip, step, and zero_grad on the sync step
+    # (last micro-batch of gradient accumulation). On intermediate micro-batches
+    # gradients just accumulate.
     mask_build_s = 0.0
     mask_apply_s = 0.0
-    try:
+    if accelerator.sync_gradients:
+        # Before TF-IDF masking: build concatenated indices from accumulated buffers
+        # + current last_indices, so TF-IDF sees the full logical batch.
+        # We pass these as override_indices rather than modifying modules, to avoid
+        # polluting last_indices (which the outer loop uses for per-micro-batch stats).
+        override_indices = None
+        if accum_indices_bufs is not None:
+            unwrapped_flush = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+            override_indices = {}
+            for _, mem, _, json_key in _iter_memory_modules(unwrapped_flush):
+                bufs = accum_indices_bufs.get(json_key, [])
+                cur = getattr(mem, "last_indices", None)
+                if bufs and cur is not None:
+                    override_indices[json_key] = torch.cat(bufs + [cur], dim=0)
+                elif cur is not None:
+                    override_indices[json_key] = cur
+            accum_indices_bufs.clear()
+
+        # Compute and apply TF-IDF gradient masks before clipping and step
         unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
         if (idf_by_module is not None or tf_only) and top_t > 0:
             t0 = time.perf_counter()
-            allowed = _compute_tfidf_top_indices_for_batch(unwrapped, idf_by_module, top_t, tf_only=tf_only)
+            allowed = _compute_tfidf_top_indices_for_batch(
+                unwrapped, idf_by_module, top_t, tf_only=tf_only,
+                override_indices=override_indices,
+            )
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
                 ev_mask.record()
@@ -1008,33 +1036,30 @@ def _update_policy_with_tfidf(
                 mask_apply_s = time.perf_counter() - t1
                 if use_cuda_events:
                     ev_apply.record()
-    except Exception:
-        # Be conservative: if masking fails, continue without masking
-        pass
 
-    if grad_clip_norm > 0:
-        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
-    else:
-        grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), float("inf"), error_if_nonfinite=False)
-    if use_cuda_events:
-        ev_clip.record()
+        if grad_clip_norm > 0:
+            grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
+        else:
+            grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), float("inf"), error_if_nonfinite=False)
+        if use_cuda_events:
+            ev_clip.record()
 
-    from contextlib import nullcontext
-    with (lock if lock is not None else nullcontext()):
-        optimizer.step()
-    optimizer.zero_grad()
-    if use_cuda_events:
-        ev_opt.record()
+        from contextlib import nullcontext
+        with (lock if lock is not None else nullcontext()):
+            optimizer.step()
+        optimizer.zero_grad()
+        if use_cuda_events:
+            ev_opt.record()
 
-    if lr_scheduler is not None:
-        lr_scheduler.step()
-    if use_cuda_events:
-        ev_sched.record()
+        if lr_scheduler is not None:
+            lr_scheduler.step()
+        if use_cuda_events:
+            ev_sched.record()
 
-    # No special update hook beyond policy.update
-    unwrapped_for_update = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-    if hasattr(unwrapped_for_update, "update") and callable(getattr(unwrapped_for_update, "update")):
-        unwrapped_for_update.update()
+        # No special update hook beyond policy.update
+        unwrapped_for_update = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        if hasattr(unwrapped_for_update, "update") and callable(getattr(unwrapped_for_update, "update")):
+            unwrapped_for_update.update()
 
     # Timing aggregation
     step_wall_s = time.perf_counter() - wall0
@@ -1043,32 +1068,38 @@ def _update_policy_with_tfidf(
         torch.cuda.synchronize()
         fwd_s = ev0.elapsed_time(ev_fwd) / 1000.0
         bwd_s = ev_fwd.elapsed_time(ev_bwd) / 1000.0
-        # mask_build_s and mask_apply_s measured by wall clock (may include host ops)
-        clip_s = ev_bwd.elapsed_time(ev_clip) / 1000.0
-        opt_s = ev_clip.elapsed_time(ev_opt) / 1000.0
-        sched_s = ev_opt.elapsed_time(ev_sched) / 1000.0 if lr_scheduler is not None else 0.0
+        if accelerator.sync_gradients:
+            clip_s = ev_bwd.elapsed_time(ev_clip) / 1000.0
+            opt_s = ev_clip.elapsed_time(ev_opt) / 1000.0
+            sched_s = ev_opt.elapsed_time(ev_sched) / 1000.0 if lr_scheduler is not None else 0.0
+        else:
+            clip_s = 0.0
+            opt_s = 0.0
+            sched_s = 0.0
         update_s = ev0.elapsed_time(ev_end) / 1000.0
     else:
-        # Fallback to wall time breakdown (coarser but informative)
-        fwd_s = float("nan")
-        bwd_s = float("nan")
-        clip_s = float("nan")
-        opt_s = float("nan")
-        sched_s = 0.0 if lr_scheduler is not None else 0.0
+        fwd_s = 0.0
+        bwd_s = 0.0
+        clip_s = 0.0
+        opt_s = 0.0
+        sched_s = 0.0
         update_s = step_wall_s
 
-    train_metrics.loss = loss.item()
-    train_metrics.grad_norm = grad_norm.item()
-    train_metrics.lr = optimizer.param_groups[0]["lr"]
-    train_metrics.update_s = update_s
-    train_metrics.fwd_s = fwd_s
-    train_metrics.bwd_s = bwd_s
-    train_metrics.mask_s = mask_build_s
-    train_metrics.apply_mask_s = mask_apply_s
-    train_metrics.clip_s = clip_s
-    train_metrics.opt_s = opt_s
-    train_metrics.sched_s = sched_s
-    train_metrics.step_wall_s = step_wall_s
+    # Only update metrics on sync steps to avoid diluting averages with
+    # intermediate micro-batch zeros.
+    if accelerator.sync_gradients:
+        train_metrics.loss = loss.item()
+        train_metrics.grad_norm = grad_norm.item()
+        train_metrics.lr = optimizer.param_groups[0]["lr"]
+        train_metrics.update_s = update_s
+        train_metrics.fwd_s = fwd_s
+        train_metrics.bwd_s = bwd_s
+        train_metrics.mask_s = mask_build_s
+        train_metrics.apply_mask_s = mask_apply_s
+        train_metrics.clip_s = clip_s
+        train_metrics.opt_s = opt_s
+        train_metrics.sched_s = sched_s
+        train_metrics.step_wall_s = step_wall_s
     return train_metrics, output_dict
 
 
@@ -1080,7 +1111,11 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         from accelerate.utils import DistributedDataParallelKwargs
 
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-        accelerator = Accelerator(step_scheduler_with_optimizer=False, kwargs_handlers=[ddp_kwargs])
+        accelerator = Accelerator(
+            gradient_accumulation_steps=getattr(cfg, "gradient_accumulation_steps", 1),
+            step_scheduler_with_optimizer=False,
+            kwargs_handlers=[ddp_kwargs],
+        )
 
     init_logging(accelerator=accelerator)
 
@@ -1407,8 +1442,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
         # One-task training loop
         policy.train()
-        # Effective batch info for tracker display
-        effective_bs = cfg.batch_size * accelerator.num_processes
+        grad_accum_steps = getattr(cfg, "gradient_accumulation_steps", 1)
+        # Per-process effective batch size; MetricsTracker.step() multiplies by num_processes
+        effective_bs = cfg.batch_size * grad_accum_steps
         train_tracker = MetricsTracker(
             effective_bs,
             dataset.num_frames,
@@ -1418,60 +1454,98 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             accelerator=accelerator,
         )
 
+        # Buffer for accumulating memory indices across micro-batches.
+        # Passed to _update_policy_with_tfidf so TF-IDF top_t sees the full logical batch.
+        _seq_accum_indices: dict[str, list[torch.Tensor]] = defaultdict(list)
+
+        def _seq_snapshot_indices(unwrapped):
+            """Snapshot last_indices into accumulation buffer for TF-IDF."""
+            for _, mem, _, json_key in _iter_memory_modules(unwrapped):
+                idx = getattr(mem, "last_indices", None)
+                if idx is not None:
+                    _seq_accum_indices[json_key].append(idx.clone())
+
         for _ in range(cfg.online_steps_per_task):
-            # Dataloading timing (wall clock)
-            t0 = time.perf_counter()
-            batch = next(dl_iter)
-            train_tracker.dataloading_s = time.perf_counter() - t0
+            output_dict = None
 
-            # Preprocessing timing (wall clock)
-            t1 = time.perf_counter()
-            batch = preprocessor(batch)
-            train_tracker.preproc_s = time.perf_counter() - t1
+            for _micro in range(grad_accum_steps):
+                with accelerator.accumulate(policy):
+                    t0 = time.perf_counter()
+                    batch = next(dl_iter)
+                    train_tracker.dataloading_s = time.perf_counter() - t0
 
-            # Compute task embeddings for language-conditioned memory queries
-            task_emb = None
-            unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-            if hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
-                try:
-                    task_name = task_index_to_name.get(dataset_task_id, "")
-                    # All samples in this batch belong to the same task
-                    B = batch[list(batch.keys())[0]].shape[0] if isinstance(batch, dict) else 1
-                    task_names = [task_name] * B
-                    task_emb = unwrapped_policy.get_task_embeddings(task_names)
-                    if task_emb is not None:
-                        task_emb = task_emb.to(device=device)
-                except Exception:
+                    t1 = time.perf_counter()
+                    batch = preprocessor(batch)
+                    train_tracker.preproc_s = time.perf_counter() - t1
+
+                    # Compute task embeddings for language-conditioned memory queries
                     task_emb = None
+                    unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+                    if hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
+                        try:
+                            task_name = task_index_to_name.get(dataset_task_id, "")
+                            B = batch[list(batch.keys())[0]].shape[0] if isinstance(batch, dict) else 1
+                            task_names = [task_name] * B
+                            task_emb = unwrapped_policy.get_task_embeddings(task_names)
+                            if task_emb is not None:
+                                task_emb = task_emb.to(device=device)
+                        except Exception:
+                            task_emb = None
 
-            if cfg.tfidf_enable or cfg.tf_only:
-                train_tracker, output_dict = _update_policy_with_tfidf(
-                    train_metrics=train_tracker,
-                    policy=policy,
-                    batch=batch,
-                    optimizer=optimizer,
-                    grad_clip_norm=cfg.optimizer.grad_clip_norm,
-                    accelerator=accelerator,
-                    idf_by_module=idf_by_module,
-                    top_t=cfg.tfidf_top_t,
-                    tf_only=cfg.tf_only,
-                    lr_scheduler=lr_scheduler,
-                    task_emb=task_emb,
-                )
-            else:
-                # Note: task_ids is not passed in sequential training since each batch
-                # contains only one task, making contrastive loss inapplicable
-                train_tracker, output_dict = update_policy(
-                    train_tracker,
-                    policy,
-                    batch,
-                    optimizer,
-                    cfg.optimizer.grad_clip_norm,
-                    accelerator=accelerator,
-                    lr_scheduler=lr_scheduler,
-                    task_emb=task_emb,
-                    task_ids=None,
-                )
+                    # Snapshot indices BEFORE update so the buffer includes this micro-batch
+                    # when _update_policy_with_tfidf reads it on the sync step.
+                    unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+
+                    if cfg.tfidf_enable or cfg.tf_only:
+                        # Forward sets last_indices; snapshot it for TF-IDF accumulation.
+                        # We do forward+backward inside the update call, then snapshot.
+                        train_tracker, output_dict = _update_policy_with_tfidf(
+                            train_metrics=train_tracker,
+                            policy=policy,
+                            batch=batch,
+                            optimizer=optimizer,
+                            grad_clip_norm=cfg.optimizer.grad_clip_norm,
+                            accelerator=accelerator,
+                            idf_by_module=idf_by_module,
+                            top_t=cfg.tfidf_top_t,
+                            tf_only=cfg.tf_only,
+                            lr_scheduler=lr_scheduler,
+                            task_emb=task_emb,
+                            accum_indices_bufs=_seq_accum_indices if grad_accum_steps > 1 else None,
+                        )
+                    else:
+                        train_tracker, output_dict = update_policy(
+                            train_tracker,
+                            policy,
+                            batch,
+                            optimizer,
+                            cfg.optimizer.grad_clip_norm,
+                            accelerator=accelerator,
+                            lr_scheduler=lr_scheduler,
+                            task_emb=task_emb,
+                            task_ids=None,
+                        )
+
+                # After each micro-batch forward: snapshot indices for TF-IDF accumulation
+                # and accumulate task usage stats (main only, for JSON logging).
+                # On sync steps with TF-IDF: buffer was consumed+cleared inside
+                # _update_policy_with_tfidf, don't re-add.
+                # On sync steps without TF-IDF or on non-sync steps: snapshot normally.
+                # Clear on sync when TF-IDF is off to prevent unbounded growth.
+                if accelerator.sync_gradients:
+                    if not (cfg.tfidf_enable or cfg.tf_only):
+                        _seq_accum_indices.clear()
+                else:
+                    _seq_snapshot_indices(unwrapped)
+                if is_main:
+                    _accumulate_task_usage_for_batch(unwrapped, task_id=dataset_task_id)
+                    # Only accumulate update indices on sync steps (when TF-IDF actually ran)
+                    if accelerator.sync_gradients:
+                        _accumulate_task_updates_for_batch(unwrapped, task_id=dataset_task_id)
+
+                # Accumulate online IDF stats per micro-batch (all ranks)
+                if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
+                    _accumulate_online_idf_stats_batch(unwrapped)
 
             global_step += 1
             train_tracker.step()
@@ -1485,30 +1559,6 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                         wandb_log_dict.update(_sanitize_wandb_dict(output_dict))
                     wandb_logger.log_dict(wandb_log_dict, global_step)
                 train_tracker.reset_averages()
-
-            # Accumulate per-task memory usage for this batch (main process only)
-            if is_main:
-                try:
-                    unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-                    _accumulate_task_usage_for_batch(
-                        unwrapped,
-                        task_id=dataset_task_id,
-                    )
-                    _accumulate_task_updates_for_batch(
-                        unwrapped,
-                        task_id=dataset_task_id,
-                    )
-                except Exception:
-                    pass
-
-            # Update online IDF statistics (all ranks) for future TF-IDF masking steps.
-            if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
-                try:
-                    _accumulate_online_idf_stats_batch(
-                        accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-                    )
-                except Exception:
-                    pass
 
         # After finishing this task, update IDF vectors from accumulated DF stats
         if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:

@@ -61,6 +61,7 @@ class TrainPipelineConfig(HubMixin):
     # Number of workers for the dataloader.
     num_workers: int = 4
     batch_size: int = 8
+    gradient_accumulation_steps: int = 1
     steps: int = 100_000
     epochs: int | None = None
     eval_freq: int = 20_000
@@ -79,6 +80,11 @@ class TrainPipelineConfig(HubMixin):
         self.checkpoint_path = None
 
     def validate(self):
+        if self.gradient_accumulation_steps < 1:
+            raise ValueError(
+                f"gradient_accumulation_steps must be >= 1, got {self.gradient_accumulation_steps}"
+            )
+
         # HACK: We parse again the cli args here to get the pretrained paths if there was some.
         policy_path = parser.get_path_arg("policy")
         if policy_path:

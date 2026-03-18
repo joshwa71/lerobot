@@ -96,6 +96,10 @@ def update_policy(
     This function executes the forward and backward passes, clips gradients, and steps the optimizer and
     learning rate scheduler. Accelerator handles mixed-precision training automatically.
 
+    When gradient accumulation is enabled on the Accelerator, this function should be called
+    inside an ``accelerator.accumulate(policy)`` context so that optimizer.step() and
+    zero_grad() are automatically no-oped on intermediate micro-batches.
+
     Args:
         train_metrics: A MetricsTracker instance to record training statistics.
         policy: The policy model to be trained.
@@ -124,32 +128,38 @@ def update_policy(
     # Use accelerator's backward method
     accelerator.backward(loss)
 
-    # Clip gradients if specified
-    if grad_clip_norm > 0:
-        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
-    else:
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            policy.parameters(), float("inf"), error_if_nonfinite=False
-        )
+    # Only clip/step/zero_grad on the sync step (last micro-batch of accumulation).
+    # When not using accumulation, sync_gradients is always True.
+    if accelerator.sync_gradients:
+        # Clip gradients if specified
+        if grad_clip_norm > 0:
+            grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
+        else:
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                policy.parameters(), float("inf"), error_if_nonfinite=False
+            )
 
-    # Optimizer step
-    with lock if lock is not None else nullcontext():
-        optimizer.step()
+        # Optimizer step
+        with lock if lock is not None else nullcontext():
+            optimizer.step()
 
-    optimizer.zero_grad()
+        optimizer.zero_grad()
 
-    # Step through pytorch scheduler at every batch instead of epoch
-    if lr_scheduler is not None:
-        lr_scheduler.step()
+        # Step through pytorch scheduler at every batch instead of epoch
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
-    # Update internal buffers if policy has update method
-    if has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
-        accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
+        # Update internal buffers if policy has update method
+        if has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
+            accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
 
-    train_metrics.loss = loss.item()
-    train_metrics.grad_norm = grad_norm.item()
-    train_metrics.lr = optimizer.param_groups[0]["lr"]
-    train_metrics.update_s = time.perf_counter() - start_time
+    # Only update metrics on sync steps to avoid diluting averages with
+    # intermediate micro-batch zeros (grad_norm=0, etc.)
+    if accelerator.sync_gradients:
+        train_metrics.loss = loss.item()
+        train_metrics.grad_norm = grad_norm.item()
+        train_metrics.lr = optimizer.param_groups[0]["lr"]
+        train_metrics.update_s = time.perf_counter() - start_time
     return train_metrics, output_dict
 
 
@@ -180,7 +190,11 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         from accelerate.utils import DistributedDataParallelKwargs
 
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-        accelerator = Accelerator(step_scheduler_with_optimizer=False, kwargs_handlers=[ddp_kwargs])
+        accelerator = Accelerator(
+            gradient_accumulation_steps=getattr(cfg, "gradient_accumulation_steps", 1),
+            step_scheduler_with_optimizer=False,
+            kwargs_handlers=[ddp_kwargs],
+        )
 
     init_logging(accelerator=accelerator)
 
@@ -220,8 +234,9 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         dataset = make_dataset(cfg)
 
     if cfg.epochs is not None:
-        cfg.steps = int(cfg.epochs * dataset.num_frames / cfg.batch_size)
-        logging.info(f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / {cfg.batch_size} batch_size = {cfg.steps} steps")
+        grad_accum = getattr(cfg, "gradient_accumulation_steps", 1)
+        cfg.steps = int(cfg.epochs * dataset.num_frames / (cfg.batch_size * grad_accum))
+        logging.info(f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / ({cfg.batch_size} batch_size * {grad_accum} accum) = {cfg.steps} steps")
 
 
     # Create environment used for evaluating checkpoints during training on simulation data.
@@ -427,8 +442,12 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
         logging.info(f"{dataset.num_episodes=}")
         num_processes = accelerator.num_processes
-        effective_bs = cfg.batch_size * num_processes
-        logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} = {effective_bs}")
+        grad_accum = getattr(cfg, "gradient_accumulation_steps", 1)
+        effective_bs = cfg.batch_size * num_processes * grad_accum
+        if grad_accum > 1:
+            logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} x {grad_accum} (accum) = {effective_bs}")
+        else:
+            logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} = {effective_bs}")
         logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
         logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
@@ -530,8 +549,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         "dataloading_s": AverageMeter("data_s", ":.3f"),
     }
 
-    # Use effective batch size for proper epoch calculation in distributed training
-    effective_batch_size = cfg.batch_size * accelerator.num_processes
+    grad_accum_steps = getattr(cfg, "gradient_accumulation_steps", 1)
+
+    # Per-process effective batch size; MetricsTracker.step() multiplies by num_processes
+    effective_batch_size = cfg.batch_size * grad_accum_steps
     train_tracker = MetricsTracker(
         effective_batch_size,
         dataset.num_frames,
@@ -545,54 +566,56 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         logging.info("Start offline training on a fixed dataset")
 
     for _ in range(step, cfg.steps):
-        start_time = time.perf_counter()
-        raw_batch = next(dl_iter)
-        # Capture task ids BEFORE preprocessing; we only need CPU ints
-        task_ids = raw_batch.get("task_index") if isinstance(raw_batch, dict) else None
-        batch = preprocessor(raw_batch)
-        train_tracker.dataloading_s = time.perf_counter() - start_time
+        output_dict = None
 
-        # Compute task embeddings for language-conditioned memory queries
-        task_emb = None
-        unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
-        if task_ids is not None and hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
-            try:
-                task_names = [task_index_to_name.get(int(tid), "") for tid in task_ids.tolist()]
-                task_emb = unwrapped_policy.get_task_embeddings(task_names)
-                if task_emb is not None:
-                    task_emb = task_emb.to(device=device)
-            except Exception:
+        for _micro in range(grad_accum_steps):
+            with accelerator.accumulate(policy):
+                start_time = time.perf_counter()
+                raw_batch = next(dl_iter)
+                task_ids = raw_batch.get("task_index") if isinstance(raw_batch, dict) else None
+                batch = preprocessor(raw_batch)
+                train_tracker.dataloading_s = time.perf_counter() - start_time
+
+                # Compute task embeddings for language-conditioned memory queries
                 task_emb = None
+                unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+                if task_ids is not None and hasattr(unwrapped_policy, "get_task_embeddings") and task_index_to_name:
+                    try:
+                        task_names = [task_index_to_name.get(int(tid), "") for tid in task_ids.tolist()]
+                        task_emb = unwrapped_policy.get_task_embeddings(task_names)
+                        if task_emb is not None:
+                            task_emb = task_emb.to(device=device)
+                    except Exception:
+                        task_emb = None
 
-        # Move task_ids to device for contrastive loss computation
-        task_ids_device = None
-        if task_ids is not None:
-            try:
-                task_ids_device = task_ids.to(device=device)
-            except Exception:
-                task_ids_device = task_ids
+                # Move task_ids to device for contrastive loss computation
+                task_ids_device = None
+                if task_ids is not None:
+                    try:
+                        task_ids_device = task_ids.to(device=device)
+                    except Exception:
+                        task_ids_device = task_ids
 
-        train_tracker, output_dict = update_policy(
-            train_tracker,
-            policy,
-            batch,
-            optimizer,
-            cfg.optimizer.grad_clip_norm,
-            accelerator=accelerator,
-            lr_scheduler=lr_scheduler,
-            task_emb=task_emb,
-            task_ids=task_ids_device,
-        )
+                train_tracker, output_dict = update_policy(
+                    train_tracker,
+                    policy,
+                    batch,
+                    optimizer,
+                    cfg.optimizer.grad_clip_norm,
+                    accelerator=accelerator,
+                    lr_scheduler=lr_scheduler,
+                    task_emb=task_emb,
+                    task_ids=task_ids_device,
+                )
 
-        # Accumulate per-task memory usage for this batch (main process only)
-        if is_main_process and task_ids is not None:
-            try:
+            # Accumulate per-task memory slot usage after every micro-batch (main process only).
+            # JSON task usage counters see every forward pass; wandb diversity metrics
+            # in output_dict reflect only the last micro-batch (acceptable approximation).
+            if is_main_process and task_ids is not None:
                 _accumulate_task_usage_for_mixed_batch(
                     accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
                     task_ids=task_ids,
                 )
-            except Exception:
-                pass
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
