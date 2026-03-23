@@ -78,6 +78,18 @@ def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
     return sanitized
 
 
+def _flush_staged_contrastive_queues(module: torch.nn.Module) -> None:
+    """Flush staged contrastive queue entries on all memory modules."""
+    try:
+        for submodule in module.modules():
+            flush_fn = getattr(submodule, "flush_staged_contrastive_queries", None)
+            if callable(flush_fn):
+                flush_fn()
+    except Exception:
+        # Never fail training due to optional queue flushing.
+        pass
+
+
 def update_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
@@ -150,8 +162,10 @@ def update_policy(
             lr_scheduler.step()
 
         # Update internal buffers if policy has update method
-        if has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
-            accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
+        unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        if has_method(unwrapped_policy, "update"):
+            unwrapped_policy.update()
+        _flush_staged_contrastive_queues(unwrapped_policy)
 
     # Only update metrics on sync steps to avoid diluting averages with
     # intermediate micro-batch zeros (grad_norm=0, etc.)

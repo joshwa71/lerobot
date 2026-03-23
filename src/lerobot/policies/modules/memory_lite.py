@@ -1,6 +1,8 @@
-import math
 import ast
+import contextlib
 import json
+import math
+import threading
 from typing import List
 
 import torch
@@ -16,6 +18,28 @@ EMBEDDING_DIM_MAP = {
     "paraphrase-MiniLM-L6-v2": 384,
     "paraphrase-mpnet-base-v2": 768,
 }
+
+
+_CHECKPOINT_RECOMPUTE_STATE = threading.local()
+
+
+def _is_checkpoint_recompute() -> bool:
+    return bool(getattr(_CHECKPOINT_RECOMPUTE_STATE, "active", False))
+
+
+@contextlib.contextmanager
+def _checkpoint_recompute_context():
+    prev = _is_checkpoint_recompute()
+    _CHECKPOINT_RECOMPUTE_STATE.active = True
+    try:
+        yield
+    finally:
+        _CHECKPOINT_RECOMPUTE_STATE.active = prev
+
+
+def checkpoint_recompute_context_fn():
+    """Return forward/recompute contexts for non-reentrant activation checkpointing."""
+    return contextlib.nullcontext(), _checkpoint_recompute_context()
 
 
 class TaskEmbeddingCache:
@@ -199,6 +223,9 @@ class HashingMemoryLite(nn.Module):
         self._contrastive_queue_labels = None
         self._contrastive_queue_ptr = 0
         self._contrastive_queue_count = 0
+        # Stage current-step entries outside the live queue so checkpointed
+        # recomputation does not observe a different contrastive key set.
+        self._pending_contrastive_batches: list[tuple[torch.Tensor, torch.Tensor]] = []
 
         # Store last contrastive loss and diagnostic metrics for aggregation (set during forward)
         self.last_contrastive_loss = None
@@ -335,6 +362,23 @@ class HashingMemoryLite(nn.Module):
 
         self._contrastive_queue_ptr = end % cap
         self._contrastive_queue_count = min(cap, int(self._contrastive_queue_count) + n)
+
+    @torch.no_grad()
+    def _stage_contrastive_queries(self, z: torch.Tensor, labels: torch.Tensor) -> None:
+        cap = self.contrastive_query_queue
+        if cap <= 0 or z.numel() == 0 or _is_checkpoint_recompute():
+            return
+        z_detached = z.detach()
+        labels_detached = labels.detach().to(device=z.device, dtype=torch.long)
+        self._pending_contrastive_batches.append((z_detached, labels_detached))
+
+    @torch.no_grad()
+    def flush_staged_contrastive_queries(self) -> None:
+        if not self._pending_contrastive_batches:
+            return
+        for z, labels in self._pending_contrastive_batches:
+            self._enqueue_contrastive_queries(z=z, labels=labels)
+        self._pending_contrastive_batches.clear()
 
     def reset_parameters(self):
         bound = 1 / math.sqrt(self.k_dim)
@@ -784,9 +828,9 @@ class HashingMemoryLite(nn.Module):
             self.last_query_intra_sim = None
             self.last_query_inter_sim = None
 
-        # Update FIFO queue after computing loss so current samples are available
-        # to future batches (without self-double-counting in this step).
-        self._enqueue_contrastive_queries(z=z, labels=labels)
+        # Stage FIFO queue updates and flush them after the optimizer sync step.
+        # This keeps the live queue stable across checkpoint recomputation.
+        self._stage_contrastive_queries(z=z, labels=labels)
 
         return loss
 

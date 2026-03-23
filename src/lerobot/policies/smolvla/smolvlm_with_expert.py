@@ -25,7 +25,7 @@ from transformers import (
     SmolVLMForConditionalGeneration,
 )
 
-from lerobot.policies.modules.memory_lite import MLPPlusMemory
+from lerobot.policies.modules.memory_lite import MLPPlusMemory, checkpoint_recompute_context_fn
 
 
 def apply_rope(x, positions, max_wavelength=10_000):
@@ -560,6 +560,7 @@ class SmolVLMWithExpertModel(nn.Module):
                     batch_size, head_dim, task_emb, task_ids,
                     use_reentrant=False,
                     preserve_rng_state=False,
+                    context_fn=checkpoint_recompute_context_fn,
                     model_layers=model_layers,
                 )
                 inputs_embeds = [vlm_out, expert_out]
