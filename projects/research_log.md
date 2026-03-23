@@ -381,4 +381,43 @@ Scripts:
 - `job_scripts/smolvla-memory/pretrain/3_layer/lora_r/pretrain_10_12_14_film_lora_4_..._sep_0.25_...`
 - `job_scripts/smolvla-memory/pretrain/4_layer/sep/pretrain_8_10_12_14_film_lora_2_..._sep_0.25_...`
 
+---
 **Update 18 Mar 26:** r=4 and r=8 OOMed despite gradient checkpointing. Added gradient accumulation support (`--gradient_accumulation_steps=N`) to both `lerobot-train` and `lerobot-sequential-train`, using Accelerate's `accumulate()` context. Memory usage stats, TF-IDF masking, and online IDF all accumulate correctly across micro-batches. The r=4 and r=8 scripts now use `batch_size=16, gradient_accumulation_steps=2` (effective batch=32). Rerunning.
+
+---
+
+## Entry 11 - 23 Mar 26 (Contrastive Pool Confound in Capacity Comparison)
+
+### Observations and analysis
+
+- Reviewed the latest `22_3_26` runs against the original baseline runs from `16_3_26` using the local wandb parser and the per-task memory-slot JSON dumps.
+- The main empirical picture still looks consistent:
+  - **4-layer [8,10,12,14], rank 2** is the strongest capacity result so far in sequential training (~55% final seen-task success vs 44% baseline).
+  - **LoRA rank 4 at [10,12,14]** underperforms the baseline sequentially (~37.5% final), despite fitting the current task well.
+  - The **top_t sweep** mostly changes write breadth, not routing/read overlap: larger `top_t` increases how many slots get updated and how much later tasks read through previously updated slots, which explains the non-monotonic retention pattern.
+- From the slot JSONs, the most useful distinction is:
+  - **read overlap / read-through-updated-slots** tracks forgetting
+  - **write breadth / updated-slot count** tracks plasticity
+- The 4-layer result improves because it adds lower-overlap adaptation capacity. The extra layer provides additional slot budget without increasing read overlap as much as rank-4 does.
+
+### Code issue discovered
+
+- While checking the fairness of the rank-4 comparison, I verified a training-loop detail in code:
+  - `accelerator.accumulate(...)` delays optimizer stepping, but the **contrastive loss is still computed independently on each microbatch**
+  - with `contrastive_query_queue=0`, the sample contrastive pool is therefore only the **current microbatch**, not the effective accumulated batch
+- Relevant code paths:
+  - `src/lerobot/scripts/lerobot_train.py`
+  - `src/lerobot/policies/modules/memory_lite.py`
+- This matters because the **rank-4 pretrain used `batch_size=16` with `gradient_accumulation_steps=2`**, whereas the baseline and 4-layer pretrains used a real batch size of 32.
+- Therefore the current rank-4 result is **confounded**: its contrastive objective had a smaller effective pool than the baseline/4-layer runs. This weakens the claim that rank 4 is intrinsically worse.
+- The 4-layer result is still more trustworthy under this specific issue because its pretrain did not rely on gradient accumulation.
+
+### Decision / next step
+
+- To remove this confound, we are rerunning the two capacity-expansion pretrains from this experiment family with a **contrastive query queue** enabled:
+  - **3-layer [10,12,14], LoRA rank 4**
+  - **4-layer [8,10,12,14], LoRA rank 2**
+- For these reruns, `contrastive_query_queue=128` has been added to the job scripts so later microbatches can at least reuse recent queries when the real batch must stay small.
+- After these reruns complete, we can re-evaluate whether:
+  - rank-4 is genuinely worse than baseline / 4-layer
+  - the earlier conclusion should instead be that rank-4 was mainly hurt by a contrastive-pool mismatch during pretraining

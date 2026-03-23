@@ -158,6 +158,7 @@ lerobot-train \
   --policy.memory_layer.contrastive_method=sample \
   --policy.memory_layer.contrastive_loss_weight=1.0 \
   --policy.memory_layer.contrastive_margin=0.0 \
+  --policy.memory_layer.contrastive_query_queue=128 \
   --policy.memory_layer.routing_intra_task_locality_weight=0.25 \
   --policy.memory_layer.routing_intra_task_min_support=128 \
   --policy.memory_layer.routing_intra_task_max_support=2048 \
