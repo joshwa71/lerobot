@@ -421,3 +421,53 @@ Scripts:
 - After these reruns complete, we can re-evaluate whether:
   - rank-4 is genuinely worse than baseline / 4-layer
   - the earlier conclusion should instead be that rank-4 was mainly hurt by a contrastive-pool mismatch during pretraining
+
+---
+
+## Entry 12 - 27 Mar 26 (Global Balance Sweep — Targeting Read-Time Interference)
+
+### Motivation
+
+The dominant remaining forgetting channel is **read-time interference**: tasks read 13–16% of their retrieval weight through slots that a later task has updated. Write overlap is already near zero (TF-IDF + separation solved that in Entry 8), and the weighted TF-IDF variant barely moved the read-share numbers — strong evidence that sequential-side write heuristics are too blunt for this problem.
+
+The existing pairwise separation loss (`routing_inter_task_separation_weight`) reduces cosine similarity between per-task routing distributions, but it can be satisfied asymmetrically (e.g., the "task 7 anomaly" from Entry 7 where one task split off while the rest still shared a hot core). It does not directly penalize **aggregate slot collapse** — the failure mode where all tasks concentrate reads onto a small shared core.
+
+### Intervention
+
+`routing_global_balance_weight` is an existing but previously untested loss term. It computes the task-averaged joint-slot probability distribution and penalizes low entropy via `(1 - normalized_entropy)`. Unlike pairwise separation, it directly requires the full slot table to be utilized across tasks, preventing the shared hot-core collapse.
+
+This term works in conjunction with sep and loc — they are independent additive terms in the total loss:
+- **Locality** keeps each task's routing compact
+- **Separation** pushes task-pair routing apart
+- **Global balance** spreads aggregate slot usage, preventing the shared core
+
+### Experiment design
+
+**3-point pretrain sweep** on the 4-layer [8,10,12,14] configuration (the best capacity result from Entry 9/11), adding global balance on top of the existing sep=0.25, loc=0.25 setup:
+
+| Run | `routing_global_balance_weight` | Everything else |
+|-----|---|----|
+| gb=0.05 | 0.05 | sep=0.25, loc=0.25, sup [128,2048], lora_rank=2, contrastive_query_queue=128 |
+| gb=0.1 | 0.1 | same |
+| gb=0.2 | 0.2 | same |
+
+Each pretrain has a matching sequential run (same sequential config as the 4-layer baseline: tfidf_top_t=512, online IDF, tasks [6,7,8,9]).
+
+### What to watch
+
+1. **Pretrain success** — stronger anti-collapse can hurt fit; need to confirm it doesn't degrade below the 4-layer baseline
+2. **`eval/avg_pc_success_seen`** after 4 sequential tasks — the primary metric
+3. **Task-9 read share through task-8-updated slots**, especially L12/L14 — the direct measure of read-time interference
+4. **Weighted access IoU** (not binary overlap) — the meaningful interference metric per Entry 8 finding 5
+5. **`routing_global_entropy`** during pretraining — should increase with higher weight; watch for saturation or training instability
+
+### Scripts
+
+- Pretrain: `job_scripts/smolvla-memory/pretrain/4_layer/routing_global_balance/`
+- Sequential: `job_scripts/smolvla-memory/sequential/4_layer/routing_global_balance/`
+
+### What we are not doing
+
+- More weighted-TF variants (already showed weak leverage)
+- Online query/key training during sequential (risks changing routing for old tasks)
+- Stronger pairwise separation alone (doesn't address aggregate collapse)
