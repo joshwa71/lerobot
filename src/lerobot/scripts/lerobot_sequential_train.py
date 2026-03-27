@@ -119,6 +119,10 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     tfidf_enable: bool = True
     # Number of memory value slots per module allowed to receive gradients each step
     tfidf_top_t: int = 128
+    # How to compute the TF term before applying IDF.
+    # "raw": count every retrieved slot equally.
+    # "weighted": accumulate retrieval weights per slot.
+    tf_idf_weighting_method: str = "raw"
     # Optional path to pretraining memory usage stats JSON (memory_usage.json)
     idf_stats_path: str | None = None
     # When true, ignore pretraining IDF stats and build IDF online from slot usage
@@ -147,6 +151,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     full_memory_usage_viz_grid_side: int | None = None
     # How to include Plotly JS in the HTML. "cdn" keeps the file small.
     full_memory_usage_viz_include_plotlyjs: str = "cdn"
+
+    def validate(self):
+        super().validate()
+        if self.tf_idf_weighting_method not in {"raw", "weighted"}:
+            raise ValueError(
+                "tf_idf_weighting_method must be one of {'raw', 'weighted'}, "
+                f"got {self.tf_idf_weighting_method!r}"
+            )
 
 
 def _render_cumulative_eval_bar_chart(
@@ -833,6 +845,8 @@ def _compute_tfidf_top_indices_for_batch(
     top_t: int,
     tf_only: bool,
     override_indices: dict[str, torch.Tensor] | None = None,
+    override_weights: dict[str, torch.Tensor] | None = None,
+    weighting_method: str = "raw",
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -854,8 +868,28 @@ def _compute_tfidf_top_indices_for_batch(
         try:
             idx_flat = idx.reshape(-1).to(torch.long)
             num_slots = mem_module.size
-            # c(i): per-batch counts (TF numerator)
-            counts = torch.bincount(idx_flat, minlength=num_slots).to(torch.float32)
+            if weighting_method == "weighted":
+                if override_weights is not None and json_key in override_weights:
+                    slot_weights = override_weights[json_key]
+                else:
+                    slot_weights = getattr(mem_module, "last_weights", None)
+                if slot_weights is None:
+                    raise RuntimeError(
+                        f"Missing retrieval weights for weighted TF-IDF in module: {json_key}"
+                    )
+                weights_flat = slot_weights.reshape(-1).to(device=idx_flat.device, dtype=torch.float32)
+                if weights_flat.numel() != idx_flat.numel():
+                    raise RuntimeError(
+                        f"Weight/index size mismatch for module {json_key}: "
+                        f"{weights_flat.numel()} vs {idx_flat.numel()}"
+                    )
+                # c(i): per-batch retrieval mass assigned to slot i
+                counts = torch.bincount(idx_flat, weights=weights_flat, minlength=num_slots).to(
+                    torch.float32
+                )
+            else:
+                # c(i): per-batch raw access counts (TF numerator)
+                counts = torch.bincount(idx_flat, minlength=num_slots).to(torch.float32)
             total_count = counts.sum()
             if total_count <= 0:
                 continue
@@ -968,6 +1002,8 @@ def _update_policy_with_tfidf(
     lock=None,
     task_emb: torch.Tensor | None = None,
     accum_indices_bufs: dict[str, list[torch.Tensor]] | None = None,
+    accum_weights_bufs: dict[str, list[torch.Tensor]] | None = None,
+    weighting_method: str = "raw",
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -1007,9 +1043,12 @@ def _update_policy_with_tfidf(
         # We pass these as override_indices rather than modifying modules, to avoid
         # polluting last_indices (which the outer loop uses for per-micro-batch stats).
         override_indices = None
+        override_weights = None
         if accum_indices_bufs is not None:
             unwrapped_flush = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
             override_indices = {}
+            if weighting_method == "weighted":
+                override_weights = {}
             for _, mem, _, json_key in _iter_memory_modules(unwrapped_flush):
                 bufs = accum_indices_bufs.get(json_key, [])
                 cur = getattr(mem, "last_indices", None)
@@ -1017,7 +1056,16 @@ def _update_policy_with_tfidf(
                     override_indices[json_key] = torch.cat(bufs + [cur], dim=0)
                 elif cur is not None:
                     override_indices[json_key] = cur
+                if weighting_method == "weighted":
+                    weight_bufs = accum_weights_bufs.get(json_key, []) if accum_weights_bufs is not None else []
+                    cur_w = getattr(mem, "last_weights", None)
+                    if weight_bufs and cur_w is not None:
+                        override_weights[json_key] = torch.cat(weight_bufs + [cur_w], dim=0)
+                    elif cur_w is not None:
+                        override_weights[json_key] = cur_w
             accum_indices_bufs.clear()
+            if accum_weights_bufs is not None:
+                accum_weights_bufs.clear()
 
         # Compute and apply TF-IDF gradient masks before clipping and step
         unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
@@ -1026,6 +1074,8 @@ def _update_policy_with_tfidf(
             allowed = _compute_tfidf_top_indices_for_batch(
                 unwrapped, idf_by_module, top_t, tf_only=tf_only,
                 override_indices=override_indices,
+                override_weights=override_weights,
+                weighting_method=weighting_method,
             )
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
@@ -1457,13 +1507,18 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         # Buffer for accumulating memory indices across micro-batches.
         # Passed to _update_policy_with_tfidf so TF-IDF top_t sees the full logical batch.
         _seq_accum_indices: dict[str, list[torch.Tensor]] = defaultdict(list)
+        _seq_accum_weights: dict[str, list[torch.Tensor]] = defaultdict(list)
 
         def _seq_snapshot_indices(unwrapped):
-            """Snapshot last_indices into accumulation buffer for TF-IDF."""
+            """Snapshot last_indices/last_weights into accumulation buffers for TF-IDF."""
             for _, mem, _, json_key in _iter_memory_modules(unwrapped):
                 idx = getattr(mem, "last_indices", None)
                 if idx is not None:
                     _seq_accum_indices[json_key].append(idx.clone())
+                if cfg.tf_idf_weighting_method == "weighted":
+                    weights = getattr(mem, "last_weights", None)
+                    if weights is not None:
+                        _seq_accum_weights[json_key].append(weights.clone())
 
         for _ in range(cfg.online_steps_per_task):
             output_dict = None
@@ -1512,6 +1567,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             lr_scheduler=lr_scheduler,
                             task_emb=task_emb,
                             accum_indices_bufs=_seq_accum_indices if grad_accum_steps > 1 else None,
+                            accum_weights_bufs=_seq_accum_weights if grad_accum_steps > 1 else None,
+                            weighting_method=cfg.tf_idf_weighting_method,
                         )
                     else:
                         train_tracker, output_dict = update_policy(
@@ -1535,6 +1592,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 if accelerator.sync_gradients:
                     if not (cfg.tfidf_enable or cfg.tf_only):
                         _seq_accum_indices.clear()
+                        _seq_accum_weights.clear()
                 else:
                     _seq_snapshot_indices(unwrapped)
                 if is_main:
@@ -1805,5 +1863,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
