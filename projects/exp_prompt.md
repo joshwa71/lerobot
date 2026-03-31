@@ -4,13 +4,31 @@ Project docs: @projects/vla-memory.md
 
 Experiment history and conclusions: @projects/research_log.md
 
-I have downloaded the most recent set of experiments (tfidf_top_t sweep, 4 layers, and lora=4) to here: /home/josh/phddev/
-lerobot/outputs/22_3_26/
+Make sure to read this document in full. It traces the research decisions, expirements and results.
 
-Note the current best config has been saved to baseline_pretrain and baseline_sequential in the above folder. Full runs can be found at:
-/home/josh/phddev/lerobot/outputs/16_3_26/libero_95_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048
-/home/josh/phddev/lerobot/outputs/16_3_26/sequential_libero_95_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048
+Make special attention to the most recent entires as they are the most informative about the current experiment set.
 
+I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/
+lerobot/outputs/31_3_26/
+
+You can read the evolution of a given task's performace over a run by reading the raw logs (not metrics) for sequential runs. The relevant lines look like this:
+
+17:39
+INFO 2026-03-31 01:17:39 l_train.py:1635 Checkpoint policy after task 4 | step 12000
+2026-03-31 01:18:28
+INFO 2026-03-31 01:18:28 l_train.py:1672 Evaluate on env tasks: [8, 1, 3, 5]
+2026-03-31 01:18:28
+Stepping through eval batches: 100%|██████████| 50/50 [12:05<00:00, 14.52s/it, running_success_rate=10.0%]
+2026-03-31 01:18:32
+Stepping through eval batches: 100%|██████████| 50/50 [11:51<00:00, 14.23s/it, running_success_rate=46.0%]            
+2026-03-31 01:30:36
+Stepping through eval batches: 100%|██████████| 50/50 [08:55<00:00, 10.72s/it, running_success_rate=78.0%]            
+2026-03-31 01:42:27
+Stepping through eval batches: 100%|██████████| 50/50 [09:20<00:00, 11.21s/it, running_success_rate=68.0%]          
+
+By finding these blocks in the logs you can see how the model does on a task when it has just been trained, then how it performs later when other tasks have also been trained.
+
+Note the current best config has been saved to baseline_pretrain and baseline_sequential in the above folder.
 Analyse the memory slot jsons and the wandb logs using this utility:
 
 @scripts/parse_wandb.py

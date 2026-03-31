@@ -471,3 +471,118 @@ Each pretrain has a matching sequential run (same sequential config as the 4-lay
 - More weighted-TF variants (already showed weak leverage)
 - Online query/key training during sequential (risks changing routing for old tasks)
 - Stronger pairwise separation alone (doesn't address aggregate collapse)
+
+---
+
+## Entry 13 - 31 Mar 26 (Global Balance Results + Interpretation)
+
+### Results from Entry 12 experiments
+
+Ran the full 4-layer [8,10,12,14] `routing_global_balance_weight` sweep with matching sequential runs. One important comparison note:
+
+- The saved `baseline_pretrain` / `baseline_sequential` runs in `31_3_26` are the older **3-layer [10,12,14]** best config.
+- The **clean control** for this sweep is therefore the 4-layer rerun with the same settings and **`routing_global_balance_weight=0`**.
+- Historical baseline is still useful for context, but it mixes layer-count / queue effects with global balance.
+
+#### 4-layer global-balance sweep summary
+
+| Run | Pretrain eval % | Pretrain effnum | Pretrain support | Final seq seen % | Seq weighted IoU | Task 9 reads from 8's updates (L12 / L14) |
+|-----|-----------------|-----------------|------------------|------------------|------------------|-------------------------------------------|
+| gb=0.0 | 82.5 | 2910 | 1727 | 46.0 | 0.041 | 7.8% / 6.0% |
+| **gb=0.05** | **72.5** | **3932** | **2188** | **50.5** | **0.060** | **6.6% / 6.1%** |
+| gb=0.1 | 72.5 | 4832 | 2553 | 39.0 | 0.073 | 7.2% / 6.1% |
+| gb=0.2 | 75.0 | 6585 | 3084 | 39.0 | 0.099 | 7.1% / 6.2% |
+
+Historical reference:
+- saved 3-layer baseline pretrain = **87.5%**
+- saved 3-layer baseline sequential = **44.0%**
+
+So the best run from this sweep is **gb=0.05**:
+- `+4.5pp` over the proper 4-layer control (`50.5` vs `46.0`)
+- `+6.5pp` over the saved 3-layer baseline (`50.5` vs `44.0`)
+
+### What global balance actually did
+
+The global-balance term behaved exactly as intended in one narrow sense: it **reduced aggregate collapse**.
+
+As `routing_global_balance_weight` increased:
+- `routing_global_entropy_mean` increased monotonically
+- `mem_usage_effnum_mean` increased strongly
+- `mem_used_frac_mean` increased
+- `mem_usage_top1_share_mean` decreased
+
+This means the model was using a broader portion of the table and relying less on a tiny shared hot core.
+
+However, the more important finding is that this did **not** translate into cleaner task-specific read subsets.
+
+As global balance increased:
+- per-task support expanded substantially (`1727 -> 2188 -> 2553 -> 3084` in pretraining)
+- sequential weighted access overlap **increased**, not decreased (`0.041 -> 0.060 -> 0.073 -> 0.099`)
+- gate usage dropped (`0.425 -> 0.406 -> 0.375 -> 0.374` in pretraining)
+
+Interpretation:
+- **Global balance spreads aggregate usage**
+- but it also makes each task's routing footprint broader
+- and those broader footprints overlap more at read time
+
+So global balance is solving **aggregate load imbalance**, but it is not directly solving **harmful pairwise read overlap**.
+
+### Performance interpretation
+
+The best point, `gb=0.05`, improved final sequential success, but the task trajectory shows that it did **not** solve oldest-task forgetting.
+
+Final per-env success on `[8, 1, 3, 5]`:
+- gb=0.0: `30 / 48 / 48 / 58`
+- **gb=0.05: `10 / 46 / 78 / 68`**
+- gb=0.1: `16 / 28 / 50 / 62`
+- gb=0.2: `10 / 34 / 44 / 68`
+
+This means the `gb=0.05` gain came mainly from stronger performance on the newer / middle tasks (especially envs `3` and `5`), not from improved retention of the oldest task (`8`).
+
+The strongest evidence that high global balance is the wrong extreme is `gb=0.2`:
+- it starts with the strongest first-task score (`36%`)
+- then forgets that task hardest (`10%` final)
+
+That is the signature of a model with broad, shared routing that remains plastic for new tasks but does not preserve older task-specific reads.
+
+### Main conclusions
+
+**1. Global balance and anti-interference are different objectives.**
+- Preventing aggregate hot-core collapse is not the same as reducing harmful pairwise read overlap.
+
+**2. Mild global balance helps, but only in a narrow regime.**
+- `gb=0.05` is the only useful point in this sweep.
+- It gives a modest gain in final average seen-task success.
+
+**3. Stronger global balance overshoots.**
+- `gb >= 0.1` spreads routing too broadly, increases read overlap, lowers gate trust, and hurts final sequential performance.
+
+**4. Read-time interference is still not solved.**
+- The oldest-task problem remains.
+- The right target metric is not aggregate entropy or mean table usage alone; it is harmful read overlap through updated slots, especially worst-case task pairs.
+
+### Next steps
+
+The result of this sweep is that we should **not** keep pushing global balance upward.
+
+The clean next experiment is to test a knob that changes **actual retrieval breadth** rather than aggregate entropy:
+
+- **`mem_knn` sweep on the 4-layer sep=0.25 control**
+  - `mem_knn = 8 / 12 / 16`
+  - this directly changes how many slots each query reads
+  - unlike global balance, it attacks read breadth itself rather than trying to de-hotspot the whole table
+
+To keep this sweep as controlled as possible, the pretrain scripts fix:
+- `routing_loss_topk=16`
+
+so changing `mem_knn` changes the actual retrieval set while leaving the routing-regularizer candidate pool fixed.
+
+Scripts prepared under:
+- `job_scripts/smolvla-memory/pretrain/4_layer/mem_knn/`
+- `job_scripts/smolvla-memory/sequential/4_layer/mem_knn/`
+
+### What we are not doing next
+
+- More broad `routing_global_balance_weight` sweeps; the response is already clearly non-monotonic
+- Another wider `routing_inter_task_separation_weight` sweep; higher separation already showed the tradeoff between lower overlap and worse useful sharing
+- More sequential weighted-TF variants; they remain weak leverage against read-time interference
