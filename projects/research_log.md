@@ -586,3 +586,154 @@ Scripts prepared under:
 - More broad `routing_global_balance_weight` sweeps; the response is already clearly non-monotonic
 - Another wider `routing_inter_task_separation_weight` sweep; higher separation already showed the tradeoff between lower overlap and worse useful sharing
 - More sequential weighted-TF variants; they remain weak leverage against read-time interference
+
+---
+
+## Entry 14 - 3 Apr 26 (mem_knn Results + Next Isolated Robustness Tests)
+
+### Results from Entry 13 experiments
+
+Ran the planned 4-layer [8,10,12,14] `mem_knn` sweep with:
+- `mem_knn = 8 / 12 / 16`
+- `routing_loss_topk = 16` fixed
+- same sep=0.25 / loc=0.25 / support [128,2048] / LoRA rank 2 / queue 128 setup as the current 4-layer control
+
+#### Pretrain summary
+
+| Run | Pretrain eval % | Pretrain MSE | Gate mean | Active effnum | Active used frac |
+|-----|-----------------|--------------|-----------|---------------|------------------|
+| knn=8 | 67.5 | 0.0175 | 0.323 | 1579 | 0.0447 |
+| knn=12 | 77.5 | 0.0162 | 0.383 | 2289 | 0.0679 |
+| **knn=16** | **90.0** | **0.0150** | **0.422** | **2949** | **0.0909** |
+
+#### Sequential summary
+
+| Run | Final seq seen % | Seq MSE | Gate mean | Weighted access IoU | Avg task-9 read share through task-8 updates |
+|-----|------------------|---------|-----------|----------------------|----------------------------------------------|
+| knn=8 | 42.5 | 0.0776 | 0.452 | 0.0390 | 7.84% |
+| knn=12 | 43.5 | 0.0728 | 0.487 | 0.0447 | 7.37% |
+| **knn=16** | **45.5** | **0.0728** | **0.535** | **0.0406** | **4.97%** |
+
+Final per-env success after 4 tasks:
+- knn=8: `12 / 40 / 50 / 68`
+- knn=12: `20 / 36 / 50 / 68`
+- knn=16: `24 / 38 / 54 / 66`
+
+### Main findings
+
+**1. Lowering `mem_knn` did not reduce the harmful interference channel enough to offset the loss in fit.**
+- `knn=16` remains the strongest run in both pretraining and final sequential performance.
+- Pretrain quality drops monotonically as `knn` is reduced (`90.0 -> 77.5 -> 67.5`).
+- Sequential final seen-task success also drops (`45.5 -> 43.5 -> 42.5`).
+
+**2. Smaller `knn` reduces useful mixture capacity faster than it reduces forgetting.**
+- Lower `knn` gives lower gate usage and lower active effnum.
+- This indicates the model is relying on memory less confidently and using a smaller effective set of high-weight slots.
+- For LoRA values, this is especially costly because each query is assembling a weighted mixture of transforms rather than additive vectors.
+
+**3. Plain read/read overlap is not the right target by itself.**
+- `knn=8` actually has slightly lower weighted access IoU than `knn=16` (`0.039` vs `0.041`), but performs worse.
+- The more useful metric is **read share through later-updated slots**.
+- On that metric, `knn=16` is clearly best:
+  - avg `8 reads 7 updates`: `1.56%` vs `2.37%` (`knn=8`) and `2.77%` (`knn=12`)
+  - avg `9 reads 8 updates`: `4.97%` vs `7.84%` (`knn=8`) and `7.37%` (`knn=12`)
+
+**4. The failure mode from smaller `knn` looks like concentration, not clean task separation.**
+- As `knn` decreases, retrieval becomes more peaked and the model depends more on a narrower set of high-weight slots.
+- That makes any shared updated slot more behaviorally important.
+- So reducing retrieval breadth directly does not solve the overwrite problem; it can make the same overlap more damaging.
+
+**5. There is a possible loss-mismatch confound for `knn < 16`, but it likely does not explain the whole result.**
+- `routing_loss_topk` was held fixed at 16 while actual retrieval used 8 or 12 slots.
+- That means the routing regularizer was not perfectly aligned to the real retrieval set for those runs.
+- However, the consistent degradation in pretrain fit, gate usage, and harmful read-through suggests the main story is still that smaller `knn` is simply a worse operating point here.
+
+### Interpretation
+
+The original hypothesis was that reducing `mem_knn` might reduce interference by shrinking the read set. The sweep suggests the opposite tradeoff dominates:
+- lower `knn` reduces the richness of the LoRA mixture
+- this lowers pretrain fit and memory trust
+- and it concentrates behavior onto fewer high-weight slots
+- so shared overwritten slots matter **more**, not less
+
+In other words, the current 4-layer system appears to benefit from a fairly rich mixture at read time. The next move should not be another lower-`knn` run.
+
+### New experiments
+
+To isolate the next directions cleanly, we are launching **three new pretrain + sequential pairs**, each with exactly one change from the current 4-layer `knn=16` control.
+
+#### 1. `knn=24` pair
+
+Goal:
+- test whether **more** retrieval breadth improves fit and reduces the importance of any one overwritten slot
+
+Reasoning:
+- The `mem_knn` sweep indicates that decreasing read breadth hurts more than it helps.
+- If the main problem is concentration of behavioral weight on a small number of shared slots, then increasing `knn` may help by spreading the LoRA mixture over more slot outputs.
+- This should improve pretrain fit almost automatically; the key question is whether sequential retention also improves or whether read footprints become too broad.
+
+Expected result:
+- likely better pretrain fit than `knn=16`
+- sequential outcome could be a modest win or a wash
+- if it helps, it will probably do so by reducing the effective importance of shared overwritten slots rather than by lowering raw overlap
+
+Scripts:
+- `job_scripts/smolvla-memory/pretrain/4_layer/mem_knn/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_24.sh`
+- `job_scripts/smolvla-memory/sequential/4_layer/mem_knn/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_24.sh`
+
+#### 2. `dropout_prob=0.1` pair
+
+Goal:
+- test robustness to **missing retrieved slots**
+
+Reasoning:
+- Dropout zeroes some retrieved slot contributions during training and renormalizes the remaining weights.
+- This trains the policy to succeed when some normally-important slots are unavailable.
+- That is not exactly the same failure mode as overwrite, but it is a cheap way to reduce dependence on a brittle small subset of slots.
+
+Expected result:
+- mild hit to pretrain fit
+- possible retention gain if it reduces over-reliance on a few shared slots
+- effect is likely smaller and gentler than corruption
+
+Scripts:
+- `job_scripts/smolvla-memory/pretrain/4_layer/dropout/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_dropout_0.1.sh`
+- `job_scripts/smolvla-memory/sequential/4_layer/dropout/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_dropout_0.1.sh`
+
+#### 3. `corruption_prob=0.05` pair
+
+Goal:
+- test robustness to **drifted / overwritten slot outputs**
+
+Reasoning:
+- Corruption is a closer match to the real failure mode than dropout: later tasks do not delete shared slots, they change the retrieved LoRA outputs seen by earlier tasks.
+- In the current `knn=16` control, harmful read-through is about `5-6%`, so `corruption_prob=0.05` is a better-calibrated starting point than the earlier `0.1` corruption setting used in the 2-layer experiments.
+- This keeps the intervention milder than the older corruption sweep, which appeared to over-regularize.
+
+Expected result:
+- more targeted than dropout, but also riskier
+- if it works, the win should come mainly from better oldest-task retention rather than higher current-task fit
+- if it fails, it will likely fail by degrading pretrain quality without sufficiently reducing later forgetting
+
+Scripts:
+- `job_scripts/smolvla-memory/pretrain/4_layer/corruption/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_corruption_0.05.sh`
+- `job_scripts/smolvla-memory/sequential/4_layer/corruption/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_corruption_0.05.sh`
+
+### What these runs will tell us
+
+This batch is designed to separate three hypotheses:
+
+1. **`knn=24` wins**:
+   read-time interference is best addressed by reducing concentration and increasing mixture expressivity, not by shrinking the read set
+
+2. **dropout wins**:
+   the model is too dependent on a brittle subset of slots, and simple missing-slot robustness is enough to help retention
+
+3. **corruption wins**:
+   the main remaining problem is specifically value drift in shared-read slots, and robustness to overwritten LoRA outputs is the right target
+
+### What we are not doing next
+
+- another lower-`knn` sweep below 16; the direction already looks wrong
+- combined dropout+corruption or `knn`+robustness runs yet; first isolate the effects
+- another broad global-balance or separation sweep; the new question is robustness to shared-slot drift, not routing entropy
