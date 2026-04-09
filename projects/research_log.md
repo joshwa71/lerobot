@@ -737,3 +737,132 @@ This batch is designed to separate three hypotheses:
 - another lower-`knn` sweep below 16; the direction already looks wrong
 - combined dropout+corruption or `knn`+robustness runs yet; first isolate the effects
 - another broad global-balance or separation sweep; the new question is robustness to shared-slot drift, not routing entropy
+
+---
+
+## Entry 15 - 9 Apr 26 (Isolated Robustness Results + Next Aligned Higher-`knn` Sweep)
+
+### Results from the `9_4_26` batch
+
+This batch compared the current 4-layer `[8,10,12,14]` control against three isolated changes:
+- `knn=24`
+- `dropout_prob=0.1`
+- `corruption_prob=0.05`
+
+Important comparison note:
+- the saved `baseline_pretrain` / `baseline_sequential` runs in `9_4_26` are the current 4-layer control
+- config: LoRA rank 2, `mem_knn=16`, `routing_loss_topk=16`, `sep=0.25`, `loc=0.25`, support `[128,2048]`, `contrastive_query_queue=128`
+
+#### Pretraining summary
+
+| Run | Eval % | MSE | Gate mean | Used frac | Effnum |
+|-----|--------|-----|-----------|-----------|--------|
+| **baseline (`knn=16`)** | **90.0** | 0.0150 | 0.422 | 0.0909 | 2949 |
+| `knn=24` | 72.5 | **0.0145** | **0.492** | **0.1352** | **4383** |
+| `dropout=0.1` | 67.5 | 0.0162 | 0.493 | 0.0956 | 3052 |
+| `corruption=0.05` | 72.5 | 0.0161 | 0.416 | 0.0913 | 2874 |
+
+#### Sequential summary
+
+| Run | Final seen % | Seq MSE | Gate mean | Weighted access IoU | Avg `9 reads 8 updates` |
+|-----|--------------|---------|-----------|----------------------|-------------------------|
+| **baseline (`knn=16`)** | 45.5 | 0.0728 | 0.535 | **0.0406** | **4.97%** |
+| **`knn=24`** | **49.5** | **0.0716** | **0.588** | 0.0437 | 5.41% |
+| `dropout=0.1` | 42.5 | 0.0708 | 0.617 | 0.0480 | 6.60% |
+| `corruption=0.05` | 43.5 | 0.0730 | 0.510 | 0.0467 | 7.00% |
+
+Sequential eval progression (`avg_pc_success_seen`):
+- baseline: `30.0 -> 32.0 -> 44.7 -> 45.5`
+- `knn=24`: `24.0 -> 32.0 -> 40.0 -> 49.5`
+- `dropout=0.1`: `28.0 -> 30.0 -> 46.0 -> 42.5`
+- `corruption=0.05`: `28.0 -> 41.0 -> 47.3 -> 43.5`
+
+Final per-env success after 4 tasks:
+- baseline: `24 / 38 / 54 / 66`
+- `knn=24`: `22 / 38 / 68 / 70`
+- `dropout=0.1`: `12 / 36 / 60 / 62`
+- `corruption=0.05`: `26 / 34 / 54 / 60`
+
+### Main findings
+
+**1. `knn=24` is the best result in this batch.**
+- It improves final sequential performance from `45.5%` to `49.5%`.
+- The gain comes mainly from stronger later-task / current-task performance, especially envs `3` and `5`, rather than from rescuing the oldest task.
+- Oldest-task retention is slightly worse than baseline at the end (`22` vs `24` on env `8`), but the newer-task gains are larger.
+
+**2. Higher `knn` helped by reducing concentration, not by reducing raw overlap.**
+- In pretraining, `knn=24` substantially broadened memory usage:
+  - used fraction `0.0909 -> 0.1352`
+  - effnum `2949 -> 4383`
+  - gate mean `0.422 -> 0.492`
+- In sequential training it kept this pattern:
+  - used fraction `0.095 -> 0.139`
+  - effnum `2179 -> 3380`
+  - gate mean `0.535 -> 0.588`
+- Access overlap did **not** decrease overall (`0.0406 -> 0.0437`), so the improvement is not a “cleaner separation” story.
+- The more plausible mechanism is that larger `knn` creates a richer LoRA mixture, spreading behavior over more slot outputs and improving effective per-task capacity.
+
+**3. There is a loss-misalignment confound in the `knn=24` result, but it strengthens the case for testing larger `knn`, not weaker.**
+- The `knn=24` pretrain kept `routing_loss_topk=16`, so the routing regularizer was still aligned to a 16-candidate retrieval objective while the actual read path used 24 slots.
+- Despite this mismatch, `knn=24` was still the strongest sequential run.
+- This means the direction looks promising even under a partially misaligned setup.
+
+**4. `dropout_prob=0.1` is the wrong robustness mechanism here.**
+- It hurts final sequential performance (`42.5%`).
+- It also produces the clearest oldest-task collapse:
+  - env `8`: `28 -> 18 -> 16 -> 12`
+- Read-time interference worsens substantially:
+  - avg `9 reads 8 updates`: `4.97% -> 6.60%`
+  - weighted access IoU: `0.0406 -> 0.0480`
+- Interpretation: making the model robust to **missing** slots is not helping with the real failure mode, which is **drifted shared slots**.
+
+**5. `corruption_prob=0.05` gives a small retention-style effect, but not enough to beat the baseline.**
+- It is the best run on the oldest task at the final checkpoint (`26` on env `8` vs baseline `24`).
+- It is also strongest after task 2 and task 3 in average seen-task success.
+- But it gives back too much current-task / newer-task performance by the end, finishing at `43.5%`.
+- This looks more like a mild robustness-to-drift effect than a routing improvement.
+
+**6. Rollout metrics are more informative than MSE alone in this regime.**
+- `knn=24` has slightly better pretrain MSE than the baseline while much worse pretrain eval success.
+- `dropout=0.1` has slightly better sequential MSE than the baseline while worse final success.
+- This reinforces that eval rollouts plus overlap / read-through metrics are the right decision signals, not loss alone.
+
+### Updated interpretation
+
+The current picture is:
+- reducing `knn` below 16 was the wrong direction
+- increasing `knn` above 16 looks promising
+- the benefit is coming from **less concentrated, more expressive read-time mixtures**
+- not from cleaner routing overlap in the simple pairwise-IoU sense
+
+This means the next bottleneck to probe is the tradeoff between:
+- more expressive / less concentrated retrieval mixtures
+- versus eventually over-broad read footprints if `knn` gets too large
+
+### Next experiments
+
+We are now moving to a **higher-`knn` sweep with aligned routing loss**.
+
+Configs prepared:
+- `knn=24`, `routing_loss_topk=24`
+- `knn=36`, `routing_loss_topk=36`
+- `knn=48`, `routing_loss_topk=48`
+
+Rationale:
+- `knn=24` already won despite the `routing_loss_topk=16` mismatch
+- aligning the routing loss to the actual retrieval set is the cleanest next test
+- if the main benefit is reduced concentration / richer LoRA mixtures, increasing `knn` further may continue to help
+- if read footprints become too broad, the larger `knn` runs should reveal where that tradeoff turns over
+
+What to watch:
+1. `eval/avg_pc_success_seen` after 4 tasks
+2. final per-env success, especially oldest task (`8`) versus newer tasks (`3`, `5`)
+3. avg `9 reads 8 updates`
+4. `memory_iou/all_modules_mean`
+5. gate mean, top-1 share, used fraction, and effnum
+
+### What we are not doing next
+
+- we are **not** reintroducing corruption yet
+- first we want to establish the best `knn` operating point under aligned routing loss
+- if the higher-`knn` sweep confirms a new best setting, corruption can be revisited later on top of that stronger base

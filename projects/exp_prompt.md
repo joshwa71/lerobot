@@ -4,12 +4,11 @@ Project docs: @projects/vla-memory.md
 
 Experiment history and conclusions: @projects/research_log.md
 
-Make sure to read this document in full. It traces the research decisions, expirements and results.
+Make sure to read these document in full, every line. It traces the research decisions, expirements and results.
 
 Make special attention to the most recent entires as they are the most informative about the current experiment set.
 
-I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/
-lerobot/outputs/31_3_26/
+I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/lerobot/outputs/9_4_26/
 
 You can read the evolution of a given task's performace over a run by reading the raw logs (not metrics) for sequential runs. The relevant lines look like this:
 
@@ -33,11 +32,11 @@ Analyse the memory slot jsons and the wandb logs using this utility:
 
 @scripts/parse_wandb.py
 
-Then help me understand the following:
+Your task is primarily to help me understand the findings and results of these experiments in the context of the research thus far, then help me reason about a good next set of experiments to run.
+Some pointer questions:
 1. How is the pretrain and sequential train memory usage for the runs compared to baseline?
 2. How is perf compared to baseline?
 3. What is driving perf compared to baseline in terms of internal dynamics of the model and training?
 4. What should we try next?
 
-Please be thorough, read the wandb logs and metrics carefully, as well as the memory slot jsons to understand the internal
-dynamics of the model and training.
+Please be thorough, read the wandb logs and metrics carefully, as well as the memory slot jsons to understand the internal dynamics of the model and training. Last time we discussed read time overlap between slots, prompting us to revisit dropout and corruption. We also tested varying knn, noticing that reducing knn reduced performance, so we decided to try increased knn.
