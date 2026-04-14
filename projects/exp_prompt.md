@@ -8,7 +8,7 @@ Make sure to read these document in full, every line. It traces the research dec
 
 Make special attention to the most recent entires as they are the most informative about the current experiment set.
 
-I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/lerobot/outputs/9_4_26/
+I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/lerobot/outputs/14_4_26/
 
 You can read the evolution of a given task's performace over a run by reading the raw logs (not metrics) for sequential runs. The relevant lines look like this:
 
@@ -39,4 +39,4 @@ Some pointer questions:
 3. What is driving perf compared to baseline in terms of internal dynamics of the model and training?
 4. What should we try next?
 
-Please be thorough, read the wandb logs and metrics carefully, as well as the memory slot jsons to understand the internal dynamics of the model and training. Last time we discussed read time overlap between slots, prompting us to revisit dropout and corruption. We also tested varying knn, noticing that reducing knn reduced performance, so we decided to try increased knn.
+Please be thorough, read the wandb logs and metrics carefully, as well as the memory slot jsons to understand the internal dynamics of the model and training. Last time we discussed read time overlap between slots and noticed that increased knn seemed to help performance, so we tested higher knn with aligned routing. You can see the full research trajectory from the research log.

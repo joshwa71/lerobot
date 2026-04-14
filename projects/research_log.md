@@ -866,3 +866,132 @@ What to watch:
 - we are **not** reintroducing corruption yet
 - first we want to establish the best `knn` operating point under aligned routing loss
 - if the higher-`knn` sweep confirms a new best setting, corruption can be revisited later on top of that stronger base
+
+---
+
+## Entry 16 - 14 Apr 26 (Aligned Higher-`knn` Results + Write-Budget Diagnosis)
+
+### Results from the `14_4_26` batch
+
+This batch reran the higher-`knn` sweep with the routing loss aligned to the actual retrieval set:
+- `knn=24`, `routing_loss_topk=24`
+- `knn=36`, `routing_loss_topk=36`
+- `knn=48`, `routing_loss_topk=48`
+
+Important comparison note:
+- the saved `baseline_pretrain` / `baseline_sequential` runs in `14_4_26` are the earlier `knn=24`, `routing_loss_topk=16` control
+- so the cleanest comparison for the aligned `knn=24` rerun is against that saved `24/16` baseline
+
+#### Pretraining summary
+
+| Run | Eval % | MSE | Gate mean | Used frac | Effnum | Routing support |
+|-----|--------|-----|-----------|-----------|--------|-----------------|
+| baseline `24/16` | 72.5 | 0.0145 | 0.492 | 0.135 | 4383 | 1747 |
+| **aligned `24/24`** | **80.0** | 0.0149 | **0.516** | 0.110 | 4223 | 2937 |
+| `36/36` | 77.5 | 0.0154 | 0.601 | 0.142 | 6041 | 4945 |
+| `48/48` | 80.0 | 0.0148 | 0.637 | 0.176 | 7723 | 7100 |
+
+#### Sequential summary
+
+| Run | T6 | T7 | T8 | T9 | Final seen % | Seq MSE | Mean IoU |
+|-----|----|----|----|----|--------------|---------|----------|
+| baseline `24/16` | 24.0 | 32.0 | 40.0 | 49.5 | 49.5 | 0.0716 | 0.0437 |
+| **aligned `24/24`** | **38.0** | 29.0 | **42.0** | **51.5** | **51.5** | **0.0616** | 0.0332 |
+| `36/36` | 38.0 | **34.0** | 41.3 | 46.0 | 46.0 | 0.0646 | 0.0255 |
+| `48/48` | 32.0 | 33.0 | 42.0 | 46.5 | 46.5 | 0.0627 | 0.0223 |
+
+Final per-env success after 4 tasks:
+- baseline `24/16`: `22 / 38 / 68 / 70`
+- **aligned `24/24`: `36 / 40 / 66 / 64`**
+- `36/36`: `26 / 34 / 68 / 56`
+- `48/48`: `26 / 34 / 52 / 74`
+
+### Main findings
+
+**1. Aligning the routing loss at `knn=24` is a real improvement.**
+- The aligned `24/24` run is the best result in this batch.
+- It improves final sequential performance from `49.5%` to `51.5%`.
+- Unlike the earlier `knn=24` win from the `9_4_26` batch, this gain is no longer confounded by a `routing_loss_topk=16` mismatch.
+
+**2. The aligned `24/24` gain comes mainly from better oldest-task retention, not better newest-task fit.**
+- Final env `8` improves strongly: `22 -> 36`.
+- Newer-task performance is slightly lower than the old baseline on envs `3` and `5`: `68 -> 66`, `70 -> 64`.
+- So the net win is a retention-style improvement with a better balance across tasks, not a pure current-task-performance gain.
+
+**3. Increasing `knn` above 24 keeps reducing overlap metrics, but performance turns over.**
+- Sequential mean IoU drops monotonically:
+  - `24/16`: `0.0437`
+  - `24/24`: `0.0332`
+  - `36/36`: `0.0255`
+  - `48/48`: `0.0223`
+- Pairwise update-set IoU from the slot JSONs also drops monotonically.
+- `task9 reads task8 updates` at layer 12/14 also falls overall as `knn` increases.
+- But final seen-task success falls at `36` and `48`.
+
+**4. That means overlap reduction is no longer the active bottleneck beyond `knn=24`.**
+- If read-time interference were still the dominant limiter in this regime, `36/36` and `48/48` should have outperformed `24/24`.
+- They do not.
+- So once routing is aligned and overlap is pushed down to the `24/24` level, further overlap reductions have diminishing returns.
+
+**5. The new bottleneck appears to be a write-budget mismatch.**
+- As `knn` increases, the model reads from broader, more trusted mixtures:
+  - sequential gate mean rises `0.595 -> 0.668 -> 0.707`
+- But sequential TF-IDF still updates only `top_t=512` slots per batch.
+- From the memory slot JSONs, mean unique updated slots per task/layer actually falls with larger `knn`:
+  - baseline `24/16`: roughly `2532 / 2750 / 3363 / 3335`
+  - aligned `24/24`: `2189 / 2444 / 3065 / 3403`
+  - `36/36`: `1815 / 2053 / 2556 / 3023`
+  - `48/48`: `1531 / 1776 / 2188 / 2761`
+- Interpretation:
+  - larger `knn` spreads read mass over more slots
+  - fixed `top_t=512` then captures a smaller fraction of the read footprint for gradient updates
+  - the model becomes less plastic even while it trusts memory more
+
+**6. Layer 14 still matters most.**
+- In both pretraining and sequential training, layer 14 remains the highest-overlap and highest-trust layer.
+- Pretrain weighted overlap at layer 14:
+  - baseline `24/16`: `0.026`
+  - aligned `24/24`: `0.023`
+  - `36/36`: `0.029`
+  - `48/48`: `0.033`
+- Sequential mean IoU is still highest at layer 14 for every run.
+- So late-layer routing concentration has improved, but the late layer remains the main leverage point.
+
+### Updated interpretation
+
+The picture is now:
+- alignment of `routing_loss_topk` to actual retrieval was worth doing and produced a genuine gain at `knn=24`
+- pushing `knn` higher than `24` reduces overlap further but does **not** improve rollout performance
+- the main tradeoff has shifted from:
+  - overlap / interference
+to:
+  - read breadth vs update breadth
+
+The system now looks **write-limited**:
+- larger `knn` gives broader, more expressive mixtures at read time
+- but with fixed `tfidf_top_t=512`, sequential training cannot update enough of the slots that those mixtures depend on
+
+### Next experiments
+
+The clean next test is a **sequential-only top-`t` sweep** on the stronger aligned checkpoints:
+
+- `knn=24`, `top_t = 768 / 1024 / 1536`
+- `knn=36`, `top_t = 768 / 1024 / 1536`
+
+Rationale:
+- if `24/24` is still the best retrieval operating point, larger `top_t` may improve plasticity further without needing new pretraining
+- if `36/36` was mainly hurt by the fixed write budget, increasing `top_t` should recover more of its potential
+- this directly tests the new write-budget hypothesis instead of returning to robustness or routing regularization
+
+What to watch:
+1. `eval/avg_pc_success_seen` after 4 tasks
+2. final per-env success, especially env `8` vs envs `3` and `5`
+3. mean unique updated slots per task/layer
+4. `memory_iou/all_modules_mean`
+5. `task9 reads task8 updates`, especially layers 12 and 14
+
+### What we are not doing next
+
+- we are **not** increasing `knn` beyond `48` yet
+- we are **not** revisiting dropout or corruption yet
+- first we want to test whether the current limitation is simply that `top_t=512` is too small for the broader aligned read footprints
