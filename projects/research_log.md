@@ -995,3 +995,180 @@ What to watch:
 - we are **not** increasing `knn` beyond `48` yet
 - we are **not** revisiting dropout or corruption yet
 - first we want to test whether the current limitation is simply that `top_t=512` is too small for the broader aligned read footprints
+
+---
+
+## Entry 17 - 15 Apr 26 (Top-`t` Sweep Results + New `knn=36` Control)
+
+### Results from the `15_4_26` batch
+
+This batch was a **sequential-only** sweep over the TF-IDF write budget:
+- `knn=24`, `top_t = 768 / 1024 / 1536`
+- `knn=36`, `top_t = 768 / 1024 / 1536`
+
+Important comparison note:
+- no new pretrains were run in this batch
+- the `knn=24` sequentials reuse the aligned `24/24` pretrained checkpoint
+- the `knn=36` sequentials reuse the aligned `36/36` pretrained checkpoint
+- so the pretrain-side differences are inherited from Entry 16, while the new signal here is how much extra sequential write budget each pretrained routing regime can actually exploit
+
+#### Inherited pretrain comparison
+
+| Pretrain | Eval % | MSE | Gate mean | Used frac | Effnum | Routing support |
+|----------|--------|-----|-----------|-----------|--------|-----------------|
+| `24/24` | 80.0 | 0.0149 | 0.516 | 0.110 | 4223 | 2937 |
+| `36/36` | 77.5 | 0.0154 | 0.601 | 0.142 | 6041 | 4945 |
+
+So before any new sequential training:
+- `36/36` already reads from a broader and more trusted memory mixture than `24/24`
+- the question in this batch was whether larger `top_t` lets sequential training update enough of that broader footprint to recover performance
+
+#### Sequential summary
+
+| Run | T6 | T7 | T8 | T9 | Final seen % | Seq MSE | Mean IoU |
+|-----|----|----|----|----|--------------|---------|----------|
+| baseline `24/24, top_t=512` | 38.0 | 29.0 | 42.0 | 51.5 | 51.5 | 0.0616 | 0.0332 |
+| `24/24, top_t=768` | 28.0 | 28.0 | 48.0 | 51.5 | 51.5 | 0.0597 | 0.0337 |
+| `24/24, top_t=1024` | 22.0 | 34.0 | 41.3 | 42.0 | 42.0 | 0.0592 | 0.0342 |
+| `24/24, top_t=1536` | 32.0 | 33.0 | 49.3 | 48.0 | 48.0 | 0.0569 | 0.0352 |
+| baseline `36/36, top_t=512` | 38.0 | 34.0 | 41.3 | 46.0 | 46.0 | 0.0646 | 0.0255 |
+| `36/36, top_t=768` | 32.0 | 39.0 | 40.7 | 50.5 | 50.5 | 0.0600 | 0.0260 |
+| `36/36, top_t=1024` | 34.0 | 40.0 | 38.7 | 52.0 | 52.0 | 0.0597 | 0.0265 |
+| **`36/36, top_t=1536`** | **38.0** | **38.0** | **49.3** | **57.5** | **57.5** | **0.0529** | **0.0276** |
+
+Final per-env success after 4 tasks:
+- baseline `24/24, top_t=512`: `36 / 40 / 66 / 64`
+- `24/24, top_t=768`: `30 / 46 / 66 / 64`
+- `24/24, top_t=1024`: `14 / 40 / 58 / 56`
+- `24/24, top_t=1536`: `22 / 38 / 62 / 70`
+- baseline `36/36, top_t=512`: `26 / 34 / 68 / 56`
+- `36/36, top_t=768`: `40 / 40 / 60 / 62`
+- `36/36, top_t=1024`: `26 / 48 / 58 / 76`
+- **`36/36, top_t=1536`: `28 / 46 / 76 / 80`**
+
+### Main findings
+
+**1. Entry 16's write-budget diagnosis was correct.**
+- The `36/36` family improves monotonically as `top_t` increases:
+  - `46.0 -> 50.5 -> 52.0 -> 57.5`
+- The old conclusion that `36/36` was a worse operating point than `24/24` was therefore incomplete.
+- What was actually true is:
+  - `36/36` was worse under the old write budget
+  - but once we increase `top_t`, it overtakes `24/24` clearly
+
+**2. `36/36, top_t=1536` is the new best sequential setting so far.**
+- It improves final seen-task success from `51.5%` to `57.5%` relative to the aligned `24/24` baseline.
+- It also improves strongly over the original `36/36, top_t=512` control (`46.0 -> 57.5`).
+- Sequential MSE also improves materially (`0.0646 -> 0.0529` within the `knn=36` family).
+
+**3. The `24/24` family does not benefit from larger `top_t` in the same way.**
+- `top_t=768` only ties the baseline.
+- `top_t=1024` collapses badly (`42.0%` final, env `8` down to `14`).
+- `top_t=1536` partially recovers but still underperforms baseline.
+- So for `knn=24`, larger write budgets quickly become too interference-heavy.
+
+**4. `top_t` is behaving mainly as a write-budget knob, not a read-footprint knob.**
+- Within each fixed-`knn` family, the mean number of accessed slots changes only slightly as `top_t` increases.
+- But the number of updated slots grows dramatically.
+
+Mean unique updated slots per task/layer:
+- `24/24`:
+  - `top_t=512`: `2189 / 2444 / 3065 / 3403`
+  - `top_t=768`: `3356 / 3708 / 4632 / 5266`
+  - `top_t=1024`: `4588 / 5064 / 6210 / 7103`
+  - `top_t=1536`: `6990 / 7842 / 9398 / 10755`
+- `36/36`:
+  - `top_t=512`: `1815 / 2053 / 2556 / 3023`
+  - `top_t=768`: `2730 / 3114 / 3844 / 4501`
+  - `top_t=1024`: `3710 / 4223 / 5197 / 6080`
+  - `top_t=1536`: `5733 / 6460 / 7910 / 9338`
+
+This is exactly what we hoped to test in Entry 16:
+- broader `knn` increases read breadth
+- higher `top_t` restores enough write breadth to match it
+
+**5. But extra write budget also increases the harmful read-through channel.**
+- `task9 reads task8 updates` rises sharply with `top_t` in both families.
+
+At layers 12 / 14:
+- `24/24`:
+  - `top_t=512`: `4.21% / 3.78%`
+  - `top_t=768`: `5.94% / 5.29%`
+  - `top_t=1024`: `8.15% / 8.26%`
+  - `top_t=1536`: `12.50% / 14.32%`
+- `36/36`:
+  - `top_t=512`: `2.49% / 3.25%`
+  - `top_t=768`: `3.67% / 4.42%`
+  - `top_t=1024`: `4.85% / 6.60%`
+  - `top_t=1536`: `9.19% / 11.35%`
+
+So larger `top_t` is always buying plasticity by accepting more eventual drift through updated slots.
+
+**6. The reason `36/36` wins is that it has the right starting regime for this tradeoff.**
+- The `36/36` pretrain already uses broader mixtures: higher gate, higher support, higher effnum.
+- With `top_t=512` that regime was under-updated.
+- With `top_t=1536`, it finally gets enough write coverage to exploit that broader read footprint.
+- By contrast, the `24/24` regime already sits closer to the plasticity/interference boundary, so higher `top_t` mostly pushes it into overshoot.
+
+**7. The new best run still has a retention weakness.**
+- `36/36, top_t=1536` gets its gain mainly from the newer and middle tasks:
+  - env `3`: `76`
+  - env `5`: `80`
+- Oldest-task retention is not solved:
+  - env `8` still drops from `38` after task 3 to `28` after task 4
+- So the system now has much better plasticity, but not clean immunity to shared-slot drift.
+
+### Updated interpretation
+
+The picture is now:
+- `knn=36` was not intrinsically worse than `knn=24`
+- it was **write-limited** under `top_t=512`
+- increasing `top_t` reveals that `36/36` is a better read-time operating point once sequential updates can keep up
+
+This means the main remaining bottleneck has shifted again:
+- from “not enough write budget” to
+- “how to keep the strong plasticity of `36/36, top_t=1536` while reducing drift in shared-read slots”
+
+We now have a new sequential control:
+- **`knn=36`, `top_t=1536`**
+
+### Next experiments
+
+We are now launching two follow-up directions.
+
+#### 1. Extend the `knn=36` top-`t` sweep upward
+
+New sequential-only runs:
+- `knn=36`, `top_t=2048`
+- `knn=36`, `top_t=3072`
+
+Rationale:
+- performance is still improving at `top_t=1536`
+- this tells us the peak of the plasticity/interference curve has not been located yet
+- the right next step is therefore to continue along the same axis before changing anything else
+
+What to watch:
+1. final `eval/avg_pc_success_seen`
+2. env `8` retention versus envs `3` and `5`
+3. `task9 reads task8 updates`, especially L12/L14
+4. whether updated-slot counts keep rising faster than performance
+
+#### 2. Revisit corruption on top of the stronger `36/36, top_t=1536` base
+
+New pretrain + sequential sweep:
+- `corruption_prob = 0.05 / 0.1 / 0.15`
+- fixed `corruption_std = 0.1`
+- fixed `knn=36`, `routing_loss_topk=36`
+- sequential runs use `top_t=1536`
+
+Rationale:
+- in the new best run, the residual failure mode now looks like **drifted shared slots**, not missing-slot robustness
+- `task9 reads task8 updates` is now roughly `9-11%` at the critical late layers in the best run
+- so `corruption_prob=0.1` is now the natural center point, with `0.05` and `0.15` bracketing it
+- this is a cleaner test than the earlier corruption sweeps, which were run on weaker bases and before the write-budget issue was resolved
+
+### What we are not doing next
+
+- we are **not** spending more runs on `knn=24` with larger `top_t`; that branch already looks overshot
+- we are **not** revisiting dropout; the earlier evidence still says missing-slot robustness is the wrong target
+- we are **not** adding more routing-loss sweeps yet; the dominant open question is now post-update drift under the stronger `36/36` operating point

@@ -8,7 +8,7 @@ Make sure to read these document in full, every line. It traces the research dec
 
 Make special attention to the most recent entires as they are the most informative about the current experiment set.
 
-I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/lerobot/outputs/14_4_26/
+I have downloaded the most recent set of experiments (routing balance loss weight sweep) to here: /home/josh/phddev/lerobot/outputs/15_4_26/
 
 You can read the evolution of a given task's performace over a run by reading the raw logs (not metrics) for sequential runs. The relevant lines look like this:
 
