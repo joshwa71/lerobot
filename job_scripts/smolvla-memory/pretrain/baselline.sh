@@ -80,8 +80,8 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda
 
 # Copy dataset to scratch
 echo "Copying dataset to scratch space..."
-DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero"
-DATASET_SCRATCH="$SCRATCH_DIR/data/libero"
+DATASET_SOURCE="/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_all/libero_all"
+DATASET_SCRATCH="$SCRATCH_DIR/data/libero_all"
 cp -r "$DATASET_SOURCE" "$DATASET_SCRATCH"
 echo "Dataset copied to $DATASET_SCRATCH"
 
@@ -100,9 +100,9 @@ export TOKENIZERS_PARALLELISM=false
 
 
 # Output directory in scratch
-OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_baseline"
+OUTPUT_SCRATCH="$SCRATCH_DIR/outputs/train/libero_full_baseline"
 # Final output target (used by trap for sync-back)
-FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_baseline"
+FINAL_OUTPUT_DIR="/SAN/vision/jo71_vla_wd/lerobot_memory/outputs/train/libero_full_baseline"
 
 # Periodic backup function (every 6 hours)
 function periodic_backup {
@@ -135,24 +135,24 @@ cd /SAN/vision/jo71_vla_wd/lerobot_memory
 # Run training
 lerobot-train \
   --policy.path="$MODEL_SCRATCH" \
-  --policy.repo_id=outputs/train/libero_baseline \
+  --policy.repo_id=outputs/train/libero_full_baseline \
   --dataset.repo_id="$DATASET_SCRATCH" \
   --env.type=libero \
-  --env.task=libero_spatial \
+  --env.task=libero_10 \
   --output_dir="$OUTPUT_SCRATCH" \
   --save_freq=20000 \
   --steps=100000 \
   --batch_size=32 \
   --num_workers=12 \
   --eval.batch_size=1 \
-  --eval.n_episodes=3 \
-  --eval_freq=20000 \
+  --eval.n_episodes=20 \
+  --eval_freq=50000 \
   --policy.freeze_vision_encoder=false \
   --policy.train_expert_only=false \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=80000 \
-  --job_name=libero_baseline \
+  --job_name=libero_full_baseline \
   --policy.push_to_hub=false \
   --wandb.enable=true \
   --wandb.project=vla-memory \

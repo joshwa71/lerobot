@@ -105,8 +105,7 @@ def update_data_df(df, src_meta, dst_meta):
 def update_meta_data(
     df,
     dst_meta,
-    meta_idx,
-    data_idx,
+    data_file_map,
     videos_idx,
 ):
     """Updates metadata DataFrame with new chunk, file, and timestamp indices.
@@ -117,18 +116,22 @@ def update_meta_data(
     Args:
         df: DataFrame containing the metadata to be updated.
         dst_meta: Destination dataset metadata.
-        meta_idx: Dictionary containing current metadata chunk and file indices.
-        data_idx: Dictionary containing current data chunk and file indices.
+        data_file_map: Mapping from source data (chunk, file) to destination
+            data (chunk, file).
         videos_idx: Dictionary containing current video indices and timestamps.
 
     Returns:
         pd.DataFrame: Updated DataFrame with adjusted indices and timestamps.
     """
 
-    df["meta/episodes/chunk_index"] = df["meta/episodes/chunk_index"] + meta_idx["chunk"]
-    df["meta/episodes/file_index"] = df["meta/episodes/file_index"] + meta_idx["file"]
-    df["data/chunk_index"] = df["data/chunk_index"] + data_idx["chunk"]
-    df["data/file_index"] = df["data/file_index"] + data_idx["file"]
+    mapped_data_chunks = []
+    mapped_data_files = []
+    for src_chunk, src_file in zip(df["data/chunk_index"], df["data/file_index"], strict=False):
+        dst_chunk, dst_file = data_file_map[(int(src_chunk), int(src_file))]
+        mapped_data_chunks.append(dst_chunk)
+        mapped_data_files.append(dst_file)
+    df["data/chunk_index"] = mapped_data_chunks
+    df["data/file_index"] = mapped_data_files
     for key, video_idx in videos_idx.items():
         # Store original video file indices before updating
         orig_chunk_col = f"videos/{key}/chunk_index"
@@ -136,16 +139,29 @@ def update_meta_data(
         df["_orig_chunk"] = df[orig_chunk_col].copy()
         df["_orig_file"] = df[orig_file_col].copy()
 
-        # Update chunk and file indices to point to destination
-        df[orig_chunk_col] = video_idx["chunk"]
-        df[orig_file_col] = video_idx["file"]
+        # Update chunk and file indices to point to the destination file that
+        # received each source video file.
+        src_to_dst = video_idx.get("src_to_dst", {})
+        if src_to_dst:
+            mapped_chunks = []
+            mapped_files = []
+            for idx in df.index:
+                src_key = (int(df.at[idx, "_orig_chunk"]), int(df.at[idx, "_orig_file"]))
+                dst_chunk, dst_file = src_to_dst[src_key]
+                mapped_chunks.append(dst_chunk)
+                mapped_files.append(dst_file)
+            df[orig_chunk_col] = mapped_chunks
+            df[orig_file_col] = mapped_files
+        else:
+            df[orig_chunk_col] = video_idx["chunk"]
+            df[orig_file_col] = video_idx["file"]
 
         # Apply per-source-file timestamp offsets
         src_to_offset = video_idx.get("src_to_offset", {})
         if src_to_offset:
             # Apply offset based on original source file
             for idx in df.index:
-                src_key = (df.at[idx, "_orig_chunk"], df.at[idx, "_orig_file"])
+                src_key = (int(df.at[idx, "_orig_chunk"]), int(df.at[idx, "_orig_file"]))
                 offset = src_to_offset.get(src_key, 0)
                 df.at[idx, f"videos/{key}/from_timestamp"] += offset
                 df.at[idx, f"videos/{key}/to_timestamp"] += offset
@@ -237,9 +253,11 @@ def aggregate_datasets(
 
     for src_meta in tqdm.tqdm(all_metadata, desc="Copy data and videos"):
         videos_idx = aggregate_videos(src_meta, dst_meta, videos_idx, video_files_size_in_mb, chunk_size)
-        data_idx = aggregate_data(src_meta, dst_meta, data_idx, data_files_size_in_mb, chunk_size)
+        data_idx, data_file_map = aggregate_data(
+            src_meta, dst_meta, data_idx, data_files_size_in_mb, chunk_size
+        )
 
-        meta_idx = aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx)
+        meta_idx = aggregate_metadata(src_meta, dst_meta, meta_idx, data_file_map, videos_idx)
 
         dst_meta.info["total_episodes"] += src_meta.total_episodes
         dst_meta.info["total_frames"] += src_meta.total_frames
@@ -268,6 +286,7 @@ def aggregate_videos(src_meta, dst_meta, videos_idx, video_files_size_in_mb, chu
         videos_idx[key]["episode_duration"] = 0
         # Track offset for each source (chunk, file) pair
         videos_idx[key]["src_to_offset"] = {}
+        videos_idx[key]["src_to_dst"] = {}
 
     for key, video_idx in videos_idx.items():
         unique_chunk_file_pairs = {
@@ -302,6 +321,7 @@ def aggregate_videos(src_meta, dst_meta, videos_idx, video_files_size_in_mb, chu
             if not dst_path.exists():
                 # Store offset before incrementing
                 videos_idx[key]["src_to_offset"][(src_chunk_idx, src_file_idx)] = current_offset
+                videos_idx[key]["src_to_dst"][(src_chunk_idx, src_file_idx)] = (chunk_idx, file_idx)
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(str(src_path), str(dst_path))
                 videos_idx[key]["episode_duration"] += src_duration
@@ -317,6 +337,7 @@ def aggregate_videos(src_meta, dst_meta, videos_idx, video_files_size_in_mb, chu
                 # So its offset should be 0
                 videos_idx[key]["src_to_offset"][(src_chunk_idx, src_file_idx)] = 0
                 chunk_idx, file_idx = update_chunk_file_indices(chunk_idx, file_idx, chunk_size)
+                videos_idx[key]["src_to_dst"][(src_chunk_idx, src_file_idx)] = (chunk_idx, file_idx)
                 dst_path = dst_meta.root / DEFAULT_VIDEO_PATH.format(
                     video_key=key,
                     chunk_index=chunk_idx,
@@ -329,6 +350,7 @@ def aggregate_videos(src_meta, dst_meta, videos_idx, video_files_size_in_mb, chu
             else:
                 # Append to existing video file - use current accumulated offset
                 videos_idx[key]["src_to_offset"][(src_chunk_idx, src_file_idx)] = current_offset
+                videos_idx[key]["src_to_dst"][(src_chunk_idx, src_file_idx)] = (chunk_idx, file_idx)
                 concatenate_video_files(
                     [dst_path, src_path],
                     dst_path,
@@ -366,6 +388,8 @@ def aggregate_data(src_meta, dst_meta, data_idx, data_files_size_in_mb, chunk_si
 
     unique_chunk_file_ids = sorted(unique_chunk_file_ids)
 
+    data_file_map = {}
+
     for src_chunk_idx, src_file_idx in unique_chunk_file_ids:
         src_path = src_meta.root / DEFAULT_DATA_PATH.format(
             chunk_index=src_chunk_idx, file_index=src_file_idx
@@ -373,7 +397,7 @@ def aggregate_data(src_meta, dst_meta, data_idx, data_files_size_in_mb, chunk_si
         df = pd.read_parquet(src_path)
         df = update_data_df(df, src_meta, dst_meta)
 
-        data_idx = append_or_create_parquet_file(
+        data_idx, dst_chunk_idx, dst_file_idx = append_or_create_parquet_file_with_location(
             df,
             src_path,
             data_idx,
@@ -383,11 +407,12 @@ def aggregate_data(src_meta, dst_meta, data_idx, data_files_size_in_mb, chunk_si
             contains_images=len(dst_meta.image_keys) > 0,
             aggr_root=dst_meta.root,
         )
+        data_file_map[(int(src_chunk_idx), int(src_file_idx))] = (dst_chunk_idx, dst_file_idx)
 
-    return data_idx
+    return data_idx, data_file_map
 
 
-def aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx):
+def aggregate_metadata(src_meta, dst_meta, meta_idx, data_file_map, videos_idx):
     """Aggregates metadata from a source dataset into the destination dataset.
 
     Reads source metadata files, updates all indices and timestamps,
@@ -397,7 +422,7 @@ def aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx):
         src_meta: Source dataset metadata.
         dst_meta: Destination dataset metadata.
         meta_idx: Dictionary tracking metadata chunk and file indices.
-        data_idx: Dictionary tracking data chunk and file indices.
+        data_file_map: Mapping from source data files to destination data files.
         videos_idx: Dictionary tracking video indices and timestamps.
 
     Returns:
@@ -419,12 +444,11 @@ def aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx):
         df = update_meta_data(
             df,
             dst_meta,
-            meta_idx,
-            data_idx,
+            data_file_map,
             videos_idx,
         )
 
-        meta_idx = append_or_create_parquet_file(
+        meta_idx, dst_chunk_idx, dst_file_idx = append_or_create_parquet_file_with_location(
             df,
             src_path,
             meta_idx,
@@ -434,6 +458,13 @@ def aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx):
             contains_images=False,
             aggr_root=dst_meta.root,
         )
+        dst_path = dst_meta.root / DEFAULT_EPISODES_PATH.format(
+            chunk_index=dst_chunk_idx, file_index=dst_file_idx
+        )
+        written_df = pd.read_parquet(dst_path)
+        written_df["meta/episodes/chunk_index"] = dst_chunk_idx
+        written_df["meta/episodes/file_index"] = dst_file_idx
+        written_df.to_parquet(dst_path)
 
     # Increment latest_duration by the total duration added from this source dataset
     for k in videos_idx:
@@ -442,7 +473,7 @@ def aggregate_metadata(src_meta, dst_meta, meta_idx, data_idx, videos_idx):
     return meta_idx
 
 
-def append_or_create_parquet_file(
+def append_or_create_parquet_file_with_location(
     df: pd.DataFrame,
     src_path: Path,
     idx: dict[str, int],
@@ -468,28 +499,35 @@ def append_or_create_parquet_file(
         aggr_root: Root path for the aggregated dataset.
 
     Returns:
-        dict: Updated index dictionary with current chunk and file indices.
+        tuple: Updated index dictionary and the destination chunk/file that
+        received this dataframe.
     """
     dst_path = aggr_root / default_path.format(chunk_index=idx["chunk"], file_index=idx["file"])
 
     if not dst_path.exists():
+        dst_chunk = idx["chunk"]
+        dst_file = idx["file"]
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if contains_images:
             to_parquet_with_hf_images(df, dst_path)
         else:
             df.to_parquet(dst_path)
-        return idx
+        return idx, dst_chunk, dst_file
 
     src_size = get_parquet_file_size_in_mb(src_path)
     dst_size = get_parquet_file_size_in_mb(dst_path)
 
     if dst_size + src_size >= max_mb:
         idx["chunk"], idx["file"] = update_chunk_file_indices(idx["chunk"], idx["file"], chunk_size)
+        dst_chunk = idx["chunk"]
+        dst_file = idx["file"]
         new_path = aggr_root / default_path.format(chunk_index=idx["chunk"], file_index=idx["file"])
         new_path.parent.mkdir(parents=True, exist_ok=True)
         final_df = df
         target_path = new_path
     else:
+        dst_chunk = idx["chunk"]
+        dst_file = idx["file"]
         existing_df = pd.read_parquet(dst_path)
         final_df = pd.concat([existing_df, df], ignore_index=True)
         target_path = dst_path
@@ -499,6 +537,30 @@ def append_or_create_parquet_file(
     else:
         final_df.to_parquet(target_path)
 
+    return idx, dst_chunk, dst_file
+
+
+def append_or_create_parquet_file(
+    df: pd.DataFrame,
+    src_path: Path,
+    idx: dict[str, int],
+    max_mb: float,
+    chunk_size: int,
+    default_path: str,
+    contains_images: bool = False,
+    aggr_root: Path = None,
+):
+    """Appends data to an existing parquet file or creates a new one based on size constraints."""
+    idx, _, _ = append_or_create_parquet_file_with_location(
+        df,
+        src_path,
+        idx,
+        max_mb,
+        chunk_size,
+        default_path,
+        contains_images=contains_images,
+        aggr_root=aggr_root,
+    )
     return idx
 
 
