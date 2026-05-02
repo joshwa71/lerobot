@@ -37,24 +37,24 @@ from lerobot.configs.default import DatasetConfig
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.datasets.factory import make_dataset
 from lerobot.datasets.sampler import EpisodeAwareSampler
-from lerobot.datasets.utils import cycle
 from lerobot.envs.factory import make_env
 from lerobot.envs.utils import close_envs
 from lerobot.optim.factory import make_optimizer_and_scheduler
 from lerobot.policies.factory import make_policy, make_pre_post_processors
 from lerobot.policies.pretrained import PreTrainedPolicy
-from lerobot.rl.wandb_utils import WandBLogger
+from lerobot.common.wandb_utils import WandBLogger
 from lerobot.scripts.lerobot_eval import eval_policy_all
 from lerobot.scripts.lerobot_train import _sanitize_wandb_dict, update_policy
+from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.logging_utils import AverageMeter, MetricsTracker
 from lerobot.utils.random_utils import set_seed
-from lerobot.utils.train_utils import (
+from lerobot.common.train_utils import (
     get_step_checkpoint_dir,
     get_step_identifier,
     save_checkpoint,
     update_last_checkpoint,
 )
-from lerobot.utils.utils import format_big_number, init_logging
+from lerobot.utils.utils import cycle, format_big_number, init_logging
 
 from lerobot.policies.modules.memory_lite import split_memory_params
 
@@ -357,9 +357,20 @@ def _build_dataloader_for_task(
     if dataset.meta.tasks is None:
         raise ValueError("Dataset metadata has no tasks table; cannot filter by task indices.")
 
-    all_episode_tasks = dataset.meta.episodes["tasks"]
-    allowed_task_name = task_index_to_name[dataset_task_id]
-    episode_indices = [i for i, tlist in enumerate(all_episode_tasks) if allowed_task_name in tlist]
+    if "tasks" in dataset.meta.episodes.column_names:
+        all_episode_tasks = dataset.meta.episodes["tasks"]
+        allowed_task_name = task_index_to_name[dataset_task_id]
+        episode_indices = [i for i, tlist in enumerate(all_episode_tasks) if allowed_task_name in tlist]
+    else:
+        episode_task_ids = getattr(dataset, "_episode_task_ids_cache", None)
+        if episode_task_ids is None:
+            episode_task_ids = defaultdict(set)
+            for ep_idx, task_idx in zip(dataset.hf_dataset["episode_index"], dataset.hf_dataset["task_index"], strict=True):
+                episode_task_ids[int(ep_idx)].add(int(task_idx))
+            dataset._episode_task_ids_cache = episode_task_ids
+        episode_indices = [
+            ep_idx for ep_idx, task_ids in episode_task_ids.items() if dataset_task_id in task_ids
+        ]
 
     sampler = EpisodeAwareSampler(
         dataset.meta.episodes["dataset_from_index"],
@@ -1200,7 +1211,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     # Policy
     if is_main:
         logging.info("Creating policy")
-    policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta)
+    policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta, rename_map=cfg.rename_map)
 
     # Attach pre/post processors with dataset stats and device overrides
     processor_kwargs = {}
@@ -1216,6 +1227,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 "features": {**policy.config.input_features, **policy.config.output_features},
                 "norm_map": policy.config.normalization_mapping,
             },
+        }
+        processor_kwargs["preprocessor_overrides"]["rename_observations_processor"] = {
+            "rename_map": cfg.rename_map
         }
         postprocessor_kwargs["postprocessor_overrides"] = {
             "unnormalizer_processor": {
@@ -1530,6 +1544,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     train_tracker.dataloading_s = time.perf_counter() - t0
 
                     t1 = time.perf_counter()
+                    for cam_key in dataset.meta.camera_keys:
+                        if cam_key in batch and batch[cam_key].dtype == torch.uint8:
+                            batch[cam_key] = batch[cam_key].to(dtype=torch.float32) / 255.0
                     batch = preprocessor(batch)
                     train_tracker.preproc_s = time.perf_counter() - t1
 
@@ -1858,9 +1875,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
 
 def main():
+    register_third_party_plugins()
     sequential_train()
 
 
 if __name__ == "__main__":
     main()
-

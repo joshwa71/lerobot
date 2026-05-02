@@ -14,16 +14,27 @@
 
 import copy
 import logging
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoModelForImageTextToText,
-    AutoProcessor,
-    SmolVLMForConditionalGeneration,
-)
+
+from lerobot.utils.import_utils import _transformers_available, require_package
+
+if TYPE_CHECKING or _transformers_available:
+    from transformers import (
+        AutoConfig,
+        AutoModel,
+        AutoModelForImageTextToText,
+        AutoProcessor,
+        SmolVLMForConditionalGeneration,
+    )
+else:
+    AutoConfig = None
+    AutoModel = None
+    AutoModelForImageTextToText = None
+    AutoProcessor = None
+    SmolVLMForConditionalGeneration = None
 
 from lerobot.policies.modules.memory_lite import MLPPlusMemory, checkpoint_recompute_context_fn
 
@@ -73,13 +84,14 @@ class SmolVLMWithExpertModel(nn.Module):
         num_vlm_layers: int = -1,
         self_attn_every_n_layers: int = -1,
         expert_width_multiplier: float = 0.5,
+        device: str = "auto",
     ):
         super().__init__()
+        require_package("transformers", extra="smolvla")
         if load_vlm_weights:
             print(f"Loading  {model_id} weights ...")
             self.vlm = AutoModelForImageTextToText.from_pretrained(
                 model_id,
-                device_map="auto",
                 torch_dtype="bfloat16",
                 low_cpu_mem_usage=True,
             )

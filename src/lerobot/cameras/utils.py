@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import platform
 from typing import cast
 
 from lerobot.utils.import_utils import make_device_from_device_class
@@ -43,6 +42,11 @@ def make_cameras_from_configs(camera_configs: dict[str, CameraConfig]) -> dict[s
 
             cameras[key] = Reachy2Camera(cfg)
 
+        elif cfg.type == "zmq":
+            from .zmq.camera_zmq import ZMQCamera
+
+            cameras[key] = ZMQCamera(cfg)
+
         else:
             try:
                 cameras[key] = cast(Camera, make_device_from_device_class(cfg))
@@ -53,24 +57,13 @@ def make_cameras_from_configs(camera_configs: dict[str, CameraConfig]) -> dict[s
 
 
 def get_cv2_rotation(rotation: Cv2Rotation) -> int | None:
-    import cv2
+    import cv2  # type: ignore  # TODO: add type stubs for OpenCV
 
     if rotation == Cv2Rotation.ROTATE_90:
-        return cv2.ROTATE_90_CLOCKWISE
+        return int(cv2.ROTATE_90_CLOCKWISE)
     elif rotation == Cv2Rotation.ROTATE_180:
-        return cv2.ROTATE_180
+        return int(cv2.ROTATE_180)
     elif rotation == Cv2Rotation.ROTATE_270:
-        return cv2.ROTATE_90_COUNTERCLOCKWISE
+        return int(cv2.ROTATE_90_COUNTERCLOCKWISE)
     else:
         return None
-
-
-def get_cv2_backend() -> int:
-    import cv2
-
-    if platform.system() == "Windows":
-        return cv2.CAP_MSMF  # Use MSMF for Windows instead of AVFOUNDATION
-    # elif platform.system() == "Darwin":  # macOS
-    #     return cv2.CAP_AVFOUNDATION
-    else:  # Linux and others
-        return cv2.CAP_ANY
