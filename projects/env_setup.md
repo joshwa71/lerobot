@@ -30,9 +30,11 @@ For the local LIBERO tree I used:
 The memory/VLA setup also still needs:
 
 ```bash
---rename_map='{"observation.images.image":"observation.image","observation.images.image2":"observation.image2"}'
+--rename_map='{"observation.images.image":"observation.images.camera1","observation.images.image2":"observation.images.camera2"}'
 --policy.empty_cameras=1
 ```
+
+The rename map must point at the policy's expected feature keys (`observation.images.camera{1,2,3}`), not at `observation.image*`. With 2 dataset cameras renamed to `camera1`/`camera2`, `empty_cameras=1` fills the remaining slot with zeros.
 
 ## Local environment that worked
 
@@ -86,6 +88,15 @@ if [ -e /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]; then
 fi
 ```
 
+On clusters that ship Mesa-only EGL (no `libnvidia-gl-*`, no `10_nvidia.json` vendor file), `MUJOCO_GL=egl` will fail with `Cannot initialize a EGL device display`. As long as `libosmesa6` is installed, fall back to:
+
+```bash
+export MUJOCO_GL=osmesa
+unset DISPLAY
+```
+
+This was needed for the Nebius-style instance with H200 + Mesa-only userspace (driver 570.195.03).
+
 ## Porting the old training scripts
 
 The main edit is replacing path-valued `dataset.repo_id` with `dataset.root` + a short repo id.
@@ -124,7 +135,7 @@ lerobot-train \
   --policy.empty_cameras=1 \
   --dataset.repo_id=libero \
   --dataset.root="$ROOT_DIR/outputs/libero" \
-  --rename_map='{"observation.images.image":"observation.image","observation.images.image2":"observation.image2"}' \
+  --rename_map='{"observation.images.image":"observation.images.camera1","observation.images.image2":"observation.images.camera2"}' \
   --output_dir="$ROOT_DIR/outputs/smoke/lerobot-memory-updated/train-smoke-smallmem" \
   --job_name=smoke_pretrain_mem_small \
   --steps=1 \
@@ -173,7 +184,7 @@ python -m lerobot.scripts.lerobot_sequential_train \
   --policy.path="$ROOT_DIR/outputs/smoke/lerobot-memory-updated/train-smoke-smallmem/checkpoints/000001/pretrained_model" \
   --dataset.repo_id=libero \
   --dataset.root="$ROOT_DIR/outputs/libero" \
-  --rename_map='{"observation.images.image":"observation.image","observation.images.image2":"observation.image2"}' \
+  --rename_map='{"observation.images.image":"observation.images.camera1","observation.images.image2":"observation.images.camera2"}' \
   --output_dir="$ROOT_DIR/outputs/smoke/lerobot-memory-updated/sequential-smoke-smallmem" \
   --steps=2 \
   --batch_size=2 \
@@ -204,7 +215,7 @@ unset DISPLAY
 
 lerobot-eval \
   --policy.path="$ROOT_DIR/outputs/smoke/lerobot-memory-updated/train-smoke-smallmem/checkpoints/000001/pretrained_model" \
-  --rename_map='{"observation.images.image":"observation.image","observation.images.image2":"observation.image2"}' \
+  --rename_map='{"observation.images.image":"observation.images.camera1","observation.images.image2":"observation.images.camera2"}' \
   --env.type=libero \
   --env.task=libero_10 \
   --env.task_ids='[0]' \

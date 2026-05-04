@@ -380,6 +380,10 @@ class LiberoEnv(gym.Env):
     def close(self):
         if self._env is not None:
             self._env.close()
+            # libero's ControlEnv.close() does `del self.env` on the underlying
+            # OffScreenRenderEnv, leaving it in a broken state. Drop our handle
+            # so that the next reset() rebuilds it via _ensure_env().
+            self._env = None
 
 
 def _make_env_fns(

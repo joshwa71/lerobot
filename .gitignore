@@ -23,6 +23,9 @@ venv.bak/
 __pypackages__/
 node_modules/
 
+outputs/
+job_scripts/
+
 # Lock files
 poetry.lock
 Pipfile.lock
