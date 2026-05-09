@@ -54,6 +54,14 @@ from lerobot.utils.constants import (
     OPENPI_ATTENTION_MASK_VALUE,
 )
 
+from ..modules.memory_lite import (
+    MLPPlusMemory,
+    TaskEmbeddingCache,
+    aggregate_memory_losses,
+    attach_memory_to_layer_list,
+    checkpoint_recompute_context_fn,
+    split_memory_params,
+)
 from ..pretrained import PreTrainedPolicy, T
 from ..rtc.modeling_rtc import RTCProcessor
 from .configuration_pi05 import DEFAULT_IMAGE_SIZE, PI05Config
@@ -225,7 +233,15 @@ def resize_with_pad_torch(  # see openpi `resize_with_pad_torch` (exact copy)
 
 # Define the complete layer computation function for gradient checkpointing
 def compute_layer_complete(
-    layer_idx, inputs_embeds, attention_mask, position_ids, adarms_cond, paligemma, gemma_expert
+    layer_idx,
+    inputs_embeds,
+    attention_mask,
+    position_ids,
+    adarms_cond,
+    paligemma,
+    gemma_expert,
+    task_emb=None,
+    task_ids=None,
 ):
     models = [paligemma.model.language_model, gemma_expert.model]
     query_states = []
@@ -286,10 +302,17 @@ def compute_layer_complete(
         out_emb = _gated_residual(hidden_states, out_emb, gates[i])
         after_first_residual = out_emb.clone()
         out_emb, gate = layernorm_forward(layer.post_attention_layernorm, out_emb, adarms_cond[i])
-        # Convert to bfloat16 if the next layer (mlp) uses bfloat16
-        if layer.mlp.up_proj.weight.dtype == torch.bfloat16:
-            out_emb = out_emb.to(dtype=torch.bfloat16)
-        out_emb = layer.mlp(out_emb)
+        # Memory layers wrap the expert MLP only; pass language conditioning + task ids when present.
+        if isinstance(layer.mlp, MLPPlusMemory):
+            base_mlp = layer.mlp.mlp
+            if base_mlp.up_proj.weight.dtype == torch.bfloat16:
+                out_emb = out_emb.to(dtype=torch.bfloat16)
+            out_emb = layer.mlp(out_emb, lang_emb=task_emb, task_ids=task_ids)
+        else:
+            # Convert to bfloat16 if the next layer (mlp) uses bfloat16
+            if layer.mlp.up_proj.weight.dtype == torch.bfloat16:
+                out_emb = out_emb.to(dtype=torch.bfloat16)
+            out_emb = layer.mlp(out_emb)
         # second residual
         out_emb = _gated_residual(after_first_residual, out_emb, gate)
         outputs_embeds.append(out_emb)
@@ -449,6 +472,23 @@ class PaliGemmaWithExpertModel(
     def embed_language_tokens(self, tokens: torch.Tensor):
         return self.paligemma.model.language_model.embed_tokens(tokens)
 
+    def attach_memory_to_expert(self, cfg):
+        """Attach product-key memory layers to the action expert MLP blocks.
+
+        PI05 only attaches memory to the action expert (gemma_expert), not the
+        VLM (paligemma) backbone.
+        """
+        target_layers = attach_memory_to_layer_list(
+            self.gemma_expert.model.layers,
+            dim=self.gemma_expert.config.hidden_size,
+            cfg=cfg,
+            label="EXPERT",
+        )
+        try:
+            self.mem_target_layers = target_layers
+        except Exception:
+            pass
+
     def forward(
         self,
         attention_mask: torch.Tensor | None = None,
@@ -457,6 +497,8 @@ class PaliGemmaWithExpertModel(
         inputs_embeds: list[torch.FloatTensor] | None = None,
         use_cache: bool | None = None,
         adarms_cond: list[torch.Tensor] | None = None,
+        task_emb: torch.Tensor | None = None,
+        task_ids: torch.Tensor | None = None,
     ):
         if adarms_cond is None:
             adarms_cond = [None, None]
@@ -507,8 +549,11 @@ class PaliGemmaWithExpertModel(
                         adarms_cond,
                         use_reentrant=False,
                         preserve_rng_state=False,
+                        context_fn=checkpoint_recompute_context_fn,
                         paligemma=self.paligemma,
                         gemma_expert=self.gemma_expert,
+                        task_emb=task_emb,
+                        task_ids=task_ids,
                     )
                 else:
                     inputs_embeds = compute_layer_complete(
@@ -519,6 +564,8 @@ class PaliGemmaWithExpertModel(
                         adarms_cond,
                         paligemma=self.paligemma,
                         gemma_expert=self.gemma_expert,
+                        task_emb=task_emb,
+                        task_ids=task_ids,
                     )
 
             # final norm
@@ -728,7 +775,18 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
 
         return embs, pad_masks, att_masks, adarms_cond
 
-    def forward(self, images, img_masks, tokens, masks, actions, noise, time) -> Tensor:
+    def forward(
+        self,
+        images,
+        img_masks,
+        tokens,
+        masks,
+        actions,
+        noise,
+        time,
+        task_emb=None,
+        task_ids=None,
+    ) -> Tensor:
         """Do a full training forward pass and compute the loss."""
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
@@ -760,6 +818,8 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
                 inputs_embeds=[prefix_embs, suffix_embs],
                 use_cache=False,
                 adarms_cond=[None, adarms_cond],
+                task_emb=task_emb,
+                task_ids=task_ids,
             )
             return suffix_out
 
@@ -786,6 +846,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         masks,
         noise=None,
         num_steps=None,
+        task_emb=None,
         **kwargs: Unpack[ActionSelectKwargs],
     ) -> Tensor:
         """Do a full inference forward and compute the action."""
@@ -817,6 +878,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             past_key_values=None,
             inputs_embeds=[prefix_embs, None],
             use_cache=True,
+            task_emb=task_emb,
         )
 
         dt = -1.0 / num_steps
@@ -832,6 +894,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
                     past_key_values=past_key_values,
                     x_t=input_x_t,
                     timestep=current_timestep,
+                    task_emb=task_emb,
                 )
 
             if self._rtc_enabled():
@@ -863,6 +926,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         past_key_values,
         x_t,
         timestep,
+        task_emb=None,
     ):
         """Apply one denoising step of the noise `x_t` at a given timestep."""
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, timestep)
@@ -889,6 +953,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             inputs_embeds=[None, suffix_embs],
             use_cache=False,
             adarms_cond=[None, adarms_cond],
+            task_emb=task_emb,
         )
 
         suffix_out = outputs_embeds[1]
@@ -921,13 +986,69 @@ class PI05Policy(PreTrainedPolicy):
         self.init_rtc_processor()
         self.model = PI05Pytorch(config, rtc_processor=self.rtc_processor)
 
+        # Attach memory layers to the action expert before loading any pretrained
+        # weights, so memory parameters appear in the state_dict. PI05 does not
+        # attach memory to the VLM backbone — only the action expert.
+        if (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ) and not getattr(self.config, "pretrained_path", None):
+            self.model.paligemma_with_expert.attach_memory_to_expert(self.config.memory_layer)
+
         # Enable gradient checkpointing if requested
         if config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
+        # Optional language-conditioned query projection: cache sentence-transformers task
+        # embeddings keyed by task name.
+        self.task_embedding_cache = None
+        if getattr(self.config.memory_layer, "lang_to_query", False):
+            embedding_model = getattr(self.config.memory_layer, "embedding_model", "all-MiniLM-L6-v2")
+            self.task_embedding_cache = TaskEmbeddingCache(model_name=embedding_model, device="cpu")
+
         self.model.to(config.device)
 
         self.reset()
+
+    def post_load_setup(self) -> None:
+        """Hook called after loading pretrained weights.
+
+        Re-attaches memory layers in case the loaded weights changed module
+        structure (e.g., loading a non-memory checkpoint into a memory-enabled
+        config, or vice versa).
+        """
+        if (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ):
+            self.model.paligemma_with_expert.attach_memory_to_expert(self.config.memory_layer)
+
+    def precompute_task_embeddings(self, dataset_meta) -> None:
+        if self.task_embedding_cache is not None:
+            self.task_embedding_cache.precompute_from_metadata(dataset_meta)
+
+    def get_task_embeddings(self, task_names: list[str]) -> torch.Tensor | None:
+        if self.task_embedding_cache is None:
+            return None
+        return self.task_embedding_cache.get_by_indices(task_names)
+
+    def get_task_embeddings_from_tokens(self, lang_tokens: torch.Tensor) -> torch.Tensor | None:
+        """Fall back path used at inference: decode tokens to text and embed.
+
+        Returns None if no task embedding cache is configured (memory disabled
+        or no language-conditioned query). The caller treats None as "skip".
+        """
+        if self.task_embedding_cache is None:
+            return None
+        try:
+            from transformers import AutoTokenizer
+
+            tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
+            texts = tokenizer.batch_decode(lang_tokens, skip_special_tokens=True)
+            texts = [t.strip() for t in texts]
+            return self.task_embedding_cache.get_by_indices(texts)
+        except Exception:
+            return None
 
     @classmethod
     def from_pretrained(
@@ -998,6 +1119,19 @@ class PI05Policy(PreTrainedPolicy):
                 print("Returning model without loading pretrained weights")
                 return model
 
+            # If the checkpoint already contains memory parameters, attach memory
+            # before loading so the keys line up. Otherwise we'll attach after load
+            # (handled inside __init__ via post_load_setup).
+            checkpoint_has_memory = any(
+                ".mlp.mem." in k or ".mlp.mlp." in k for k in original_state_dict.keys()
+            )
+            want_memory = (
+                getattr(config, "memory_layers", False)
+                or getattr(config.memory_layer, "enabled", False)
+            )
+            if checkpoint_has_memory and want_memory:
+                model.model.paligemma_with_expert.attach_memory_to_expert(config.memory_layer)
+
             # First, fix any key differences (see openpi model.py, _fix_pytorch_state_dict_keys)
             fixed_state_dict = model._fix_pytorch_state_dict_keys(original_state_dict, model.config)
 
@@ -1016,8 +1150,28 @@ class PI05Policy(PreTrainedPolicy):
             if remap_count > 0:
                 print(f"Remapped {remap_count} state dict keys")
 
+            # When memory is enabled, the checkpoint may or may not contain memory
+            # parameters depending on whether it was trained with memory. Allow
+            # missing keys for the memory submodules so we can pretrain on top of
+            # a non-memory base checkpoint.
+            memory_enabled = (
+                getattr(config, "memory_layers", False)
+                or getattr(config.memory_layer, "enabled", False)
+            )
+            load_strict = strict and not memory_enabled
+
             # Load the remapped state dict into the model
-            missing_keys, unexpected_keys = model.load_state_dict(remapped_state_dict, strict=strict)
+            missing_keys, unexpected_keys = model.load_state_dict(remapped_state_dict, strict=load_strict)
+
+            # Filter out missing memory keys if memory is freshly attached
+            if memory_enabled and missing_keys:
+                memory_missing = [k for k in missing_keys if ".mlp.mem." in k or ".mlp.mlp." in k]
+                missing_keys = [k for k in missing_keys if k not in memory_missing]
+                if memory_missing:
+                    print(
+                        f"  ✓ {len(memory_missing)} memory param keys initialized from scratch "
+                        "(checkpoint has no memory weights)"
+                    )
 
             if missing_keys:
                 print(f"Missing keys when loading state dict: {len(missing_keys)} keys")
@@ -1041,6 +1195,14 @@ class PI05Policy(PreTrainedPolicy):
 
             if not missing_keys and not unexpected_keys:
                 print("All keys loaded successfully!")
+
+            # Re-align memory module dtype/device after load: load_state_dict can
+            # cast value params to match the checkpoint's dtype, but they should
+            # stay in float32 for stable gradients.
+            try:
+                model.post_load_setup()
+            except Exception:
+                pass
 
         except Exception as e:
             print(f"Warning: Could not load state dict: {e}")
@@ -1110,6 +1272,22 @@ class PI05Policy(PreTrainedPolicy):
         return fixed_state_dict
 
     def get_optim_params(self) -> dict:
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            mem_vals, others = split_memory_params(self)
+            if len(mem_vals) == 0:
+                return self.parameters()
+            return [
+                {
+                    "params": others,
+                    "lr": self.config.optimizer_lr,
+                    "weight_decay": self.config.optimizer_weight_decay,
+                },
+                {
+                    "params": mem_vals,
+                    "lr": getattr(self.config.memory_layer, "memory_lr", 1e-3),
+                    "weight_decay": getattr(self.config.memory_layer, "memory_weight_decay", 0.0),
+                },
+            ]
         return self.parameters()
 
     def reset(self):
@@ -1232,8 +1410,12 @@ class PI05Policy(PreTrainedPolicy):
         images, img_masks = self._preprocess_images(batch)
         tokens, masks = batch[f"{OBS_LANGUAGE_TOKENS}"], batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
 
+        task_emb = self.get_task_embeddings_from_tokens(tokens)
+        if task_emb is not None:
+            task_emb = task_emb.to(device=tokens.device)
+
         # Sample actions using the model (pass through RTC kwargs, no separate state needed for PI05)
-        actions = self.model.sample_actions(images, img_masks, tokens, masks, **kwargs)
+        actions = self.model.sample_actions(images, img_masks, tokens, masks, task_emb=task_emb, **kwargs)
 
         # Unpad actions to actual action dimension
         original_action_dim = self.config.output_features[ACTION].shape[0]
@@ -1241,7 +1423,13 @@ class PI05Policy(PreTrainedPolicy):
 
         return actions
 
-    def forward(self, batch: dict[str, Tensor], reduction: str = "mean") -> tuple[Tensor, dict]:
+    def forward(
+        self,
+        batch: dict[str, Tensor],
+        reduction: str = "mean",
+        task_emb: Tensor | None = None,
+        task_ids: Tensor | None = None,
+    ) -> tuple[Tensor, dict]:
         """Run the batch through the model and compute the loss for training.
 
         Args:
@@ -1249,10 +1437,17 @@ class PI05Policy(PreTrainedPolicy):
             reduction: How to reduce the loss. Options:
                 - "mean": Return scalar mean loss (default, backward compatible)
                 - "none": Return per-sample losses of shape (batch_size,) for RA-BC weighting
+            task_emb: Optional language embedding tensor for memory query conditioning.
+            task_ids: Optional task index tensor used by memory contrastive/routing losses.
         """
         # Prepare inputs
         images, img_masks = self._preprocess_images(batch)
         tokens, masks = batch[f"{OBS_LANGUAGE_TOKENS}"], batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
+
+        if task_ids is None and "task_index" in batch:
+            task_ids = batch["task_index"]
+            if task_ids is not None:
+                task_ids = task_ids.to(device=images[0].device if images else tokens.device)
 
         actions = self.prepare_action(batch)
 
@@ -1260,7 +1455,17 @@ class PI05Policy(PreTrainedPolicy):
         time = self.model.sample_time(actions.shape[0], actions.device)
 
         # Compute loss (no separate state needed for PI05)
-        losses = self.model.forward(images, img_masks, tokens, masks, actions, noise, time)
+        losses = self.model.forward(
+            images,
+            img_masks,
+            tokens,
+            masks,
+            actions,
+            noise,
+            time,
+            task_emb=task_emb,
+            task_ids=task_ids,
+        )
 
         # Truncate losses to actual action dimensions
         original_action_dim = self.config.output_features[ACTION].shape[0]
@@ -1278,6 +1483,24 @@ class PI05Policy(PreTrainedPolicy):
         else:
             # Default: return scalar mean loss
             loss = losses.mean()
+            loss_dict["mse_loss"] = loss.item()
+
+            # Aggregate optional memory regularizers (contrastive, routing) and
+            # log per-layer + aggregate slot usage diagnostics when enabled.
+            if (
+                getattr(self.config, "memory_layers", False)
+                or getattr(self.config.memory_layer, "enabled", False)
+            ):
+                try:
+                    loss = aggregate_memory_losses(
+                        self,
+                        loss,
+                        self.config.memory_layer,
+                        loss_dict,
+                    )
+                except Exception:
+                    pass
+
             loss_dict["loss"] = loss.item()
             return loss, loss_dict
 

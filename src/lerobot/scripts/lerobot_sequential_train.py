@@ -37,7 +37,7 @@ from lerobot.configs.default import DatasetConfig
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.datasets.factory import make_dataset
 from lerobot.datasets.sampler import EpisodeAwareSampler
-from lerobot.envs.factory import make_env
+from lerobot.envs.factory import make_env, make_env_pre_post_processors
 from lerobot.envs.utils import close_envs
 from lerobot.optim.factory import make_optimizer_and_scheduler
 from lerobot.policies.factory import make_policy, make_pre_post_processors
@@ -449,45 +449,39 @@ def _get_value_params(mem_module) -> list:
 def _iter_memory_modules(unwrapped_policy: PreTrainedPolicy):
     """
     Yield tuples of (layer_index, mem_module, value_params, json_key) for all attached memory layers
-    across the action expert and the VLM text backbone.
+    on any policy backbone (smolvla expert/VLM text, pi05 action expert, etc.).
+
+    Discovery is policy-agnostic: walks named_modules() looking for MLPPlusMemory
+    wrappers and uses the wrapper's module path (minus the trailing ".mlp") as the
+    json_key. Layer index is parsed from the path's `layers.{i}` segment.
 
     value_params is a list of parameters:
       - For vector mode: [values]
       - For lora mode: [slot_down, slot_up]
-
-    json_key strings are aligned with memory_usage.json conventions:
-      - Expert: "model.vlm_with_expert.lm_expert.layers.{i}"
-      - VLM:    "model.vlm_with_expert.vlm.model.text_model.layers.{i}"
     """
-    mems = []
-    try:
-        model = unwrapped_policy.model  # VLAFlowMatching
-        expert = model.vlm_with_expert.lm_expert
-        for li, layer in enumerate(expert.layers):
-            mlp = getattr(layer, "mlp", None)
-            mem_module = getattr(mlp, "mem", None)
-            if mem_module is not None:
-                value_params = _get_value_params(mem_module)
-                if value_params:
-                    json_key = f"model.vlm_with_expert.lm_expert.layers.{li}"
-                    mems.append((li, mem_module, value_params, json_key))
-    except Exception:
-        pass
+    from lerobot.policies.modules.memory_lite import MLPPlusMemory
+    import re
 
-    # Include VLM backbone (text_model) memory layers if present
-    try:
-        model = unwrapped_policy.model  # VLAFlowMatching
-        vlm_text_model = model.vlm_with_expert.get_vlm_model().text_model
-        for li, layer in enumerate(vlm_text_model.layers):
-            mlp = getattr(layer, "mlp", None)
-            mem_module = getattr(mlp, "mem", None)
-            if mem_module is not None:
-                value_params = _get_value_params(mem_module)
-                if value_params:
-                    json_key = f"model.vlm_with_expert.vlm.model.text_model.layers.{li}"
-                    mems.append((li, mem_module, value_params, json_key))
-    except Exception:
-        pass
+    mems = []
+    seen_keys: set[str] = set()
+    for module_name, module in unwrapped_policy.named_modules():
+        if not isinstance(module, MLPPlusMemory):
+            continue
+        mem_module = getattr(module, "mem", None)
+        if mem_module is None:
+            continue
+        value_params = _get_value_params(mem_module)
+        if not value_params:
+            continue
+        # `module_name` looks like "model...layers.{i}.mlp"; strip the trailing ".mlp"
+        # to align with the json conventions used in memory_usage.json.
+        json_key = module_name[:-4] if module_name.endswith(".mlp") else module_name
+        if json_key in seen_keys:
+            continue
+        seen_keys.add(json_key)
+        match = re.search(r"layers\.(\d+)", json_key)
+        li = int(match.group(1)) if match else 0
+        mems.append((li, mem_module, value_params, json_key))
     return mems
 
 
@@ -1384,10 +1378,16 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
     # Eval envs: pre-create all envs for suite, later subset based on seen tasks
     eval_envs_all = None
+    env_preprocessor = None
+    env_postprocessor = None
     if cfg.env is not None:
         if is_main:
             logging.info("Creating eval envs")
         eval_envs_all = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
+        # Upstream eval_policy_all() now requires env-side pre/post-processors.
+        env_preprocessor, env_postprocessor = make_env_pre_post_processors(
+            env_cfg=cfg.env, policy_cfg=cfg.policy
+        )
 
     # Dataset task index -> name
     task_index_to_name = _collect_task_index_to_name(dataset)
@@ -1695,6 +1695,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 eval_info = eval_policy_all(
                     envs=env_subset,
                     policy=accelerator.unwrap_model(policy),
+                    env_preprocessor=env_preprocessor,
+                    env_postprocessor=env_postprocessor,
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
                     n_episodes=cfg.eval.n_episodes,

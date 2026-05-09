@@ -13,22 +13,24 @@ import pandas as pd
 from datasets import Dataset
 
 from lerobot.datasets.compute_stats import aggregate_stats
-from lerobot.datasets.utils import (
-    DEFAULT_DATA_PATH,
-    DEFAULT_EPISODES_PATH,
-    DEFAULT_VIDEO_PATH,
-    INFO_PATH,
-    get_hf_features_from_features,
+from lerobot.datasets.feature_utils import get_hf_features_from_features
+from lerobot.datasets.io_utils import (
     load_episodes,
     load_info,
     load_stats,
     load_tasks,
     to_parquet_with_hf_images,
-    update_chunk_file_indices,
     write_episodes,
     write_info,
     write_stats,
     write_tasks,
+)
+from lerobot.datasets.utils import (
+    DEFAULT_DATA_PATH,
+    DEFAULT_EPISODES_PATH,
+    DEFAULT_VIDEO_PATH,
+    INFO_PATH,
+    update_chunk_file_indices,
 )
 
 
@@ -302,24 +304,27 @@ def _write_episodes_metadata(
 
 
 def merge_datasets(sources: List[Path], target: Path) -> None:
+    from lerobot.datasets.utils import DatasetInfo
+
     logging.info("Validating sources...")
     base_info = _validate_all(sources)
-    fps = base_info["fps"]
-    features = base_info["features"]
-    chunks_size = int(base_info["chunks_size"])
-    data_files_size_in_mb = int(base_info["data_files_size_in_mb"])
-    video_files_size_in_mb = int(base_info["video_files_size_in_mb"]) if base_info.get("video_path") else 0
+    base_info_dict = base_info.to_dict() if hasattr(base_info, "to_dict") else dict(base_info)
+    fps = base_info_dict["fps"]
+    features = base_info_dict["features"]
+    chunks_size = int(base_info_dict["chunks_size"])
+    data_files_size_in_mb = int(base_info_dict["data_files_size_in_mb"])
+    video_files_size_in_mb = int(base_info_dict["video_files_size_in_mb"]) if base_info_dict.get("video_path") else 0
 
     logging.info("Initializing destination...")
     target.mkdir(parents=True, exist_ok=False)
     write_info(
-        {
-            **base_info,
+        DatasetInfo.from_dict({
+            **base_info_dict,
             "total_episodes": 0,
             "total_frames": 0,
             "total_tasks": 0,
             "splits": {},
-        },
+        }),
         target,
     )
 
@@ -358,13 +363,13 @@ def merge_datasets(sources: List[Path], target: Path) -> None:
 
     logging.info("Finalizing info.json...")
     write_info(
-        {
-            **base_info,
+        DatasetInfo.from_dict({
+            **base_info_dict,
             "total_episodes": int(total_episodes),
             "total_frames": int(total_frames),
             "total_tasks": int(total_tasks),
             "splits": {"train": f"0:{total_episodes}"},
-        },
+        }),
         target,
     )
 

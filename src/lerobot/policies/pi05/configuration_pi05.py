@@ -20,6 +20,7 @@ from lerobot.configs import FeatureType, NormalizationMode, PolicyFeature, PreTr
 from lerobot.optim import AdamWConfig, CosineDecayWithWarmupSchedulerConfig
 from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
 
+from ..modules.memory_config import MemoryLayerConfig
 from ..rtc.configuration_rtc import RTCConfig
 
 DEFAULT_IMAGE_SIZE = 224
@@ -58,6 +59,11 @@ class PI05Config(PreTrainedConfig):
 
     # Real-Time Chunking (RTC) configuration
     rtc_config: RTCConfig | None = None
+
+    # Optional memory layers attached to selected action-expert MLP blocks.
+    # PI05 only attaches memory to the action expert (not the VLM backbone).
+    memory_layers: bool = False
+    memory_layer: MemoryLayerConfig = field(default_factory=MemoryLayerConfig)
 
     image_resolution: tuple[int, int] = (
         DEFAULT_IMAGE_SIZE,

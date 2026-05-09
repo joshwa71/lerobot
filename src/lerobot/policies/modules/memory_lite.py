@@ -1076,17 +1076,26 @@ def _get_lang_dim(cfg: MemoryLayerConfig) -> int:
     return EMBEDDING_DIM_MAP.get(model_name, 384)
 
 
-def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
+def attach_memory_to_layer_list(
+    layers,
+    dim: int,
+    cfg: MemoryLayerConfig,
+    label: str = "EXPERT",
+) -> List[int]:
     """
-    Replace selected expert MLPs with MLPPlusMemory in-place.
+    Replace selected MLPs with MLPPlusMemory in-place on an arbitrary layer list.
 
-    smolvla_model: SmolVLMWithExpertModel
-    cfg: MemoryLayerConfig (enabled must be True at the callsite)
+    layers: an nn.ModuleList of transformer-style decoder layers, each having a `.mlp` attribute.
+    dim: hidden size used for the memory module's input/output dimension.
+    cfg: MemoryLayerConfig (enabled must be True at the callsite).
+    label: human-readable name printed for debugging.
+
+    Returns the resolved list of target layer indices.
     """
-    num_layers = smolvla_model.num_expert_layers
+    num_layers = len(layers)
     target_layers = _resolve_target_layers(num_layers, cfg.layers)
 
-    print(f"Target EXPERT layers for memory: {target_layers}")
+    print(f"Target {label} layers for memory: {target_layers}")
     target_set = set(target_layers)
 
     lang_dim = _get_lang_dim(cfg)
@@ -1095,14 +1104,13 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
 
     # First, unwrap any previously wrapped layers that are not in the target set
     for li in range(num_layers):
-        layer = smolvla_model.lm_expert.layers[li]
+        layer = layers[li]
         if isinstance(getattr(layer, "mlp", None), MLPPlusMemory) and li not in target_set:
             layer.mlp = layer.mlp.mlp
 
     # Now, wrap exactly the requested target layers
     for li in target_layers:
-        layer = smolvla_model.lm_expert.layers[li]
-        dim = smolvla_model.expert_hidden_size
+        layer = layers[li]
         # Avoid double wrapping if already wrapped
         if isinstance(layer.mlp, MLPPlusMemory):
             continue
@@ -1115,6 +1123,23 @@ def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
                 p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
+
+    return target_layers
+
+
+def attach_memory_to_expert(smolvla_model, cfg: MemoryLayerConfig):
+    """
+    Replace selected expert MLPs with MLPPlusMemory in-place.
+
+    smolvla_model: SmolVLMWithExpertModel
+    cfg: MemoryLayerConfig (enabled must be True at the callsite)
+    """
+    target_layers = attach_memory_to_layer_list(
+        smolvla_model.lm_expert.layers,
+        dim=smolvla_model.expert_hidden_size,
+        cfg=cfg,
+        label="EXPERT",
+    )
     # Record for debugging/metrics
     try:
         smolvla_model.mem_target_layers = target_layers
@@ -1186,3 +1211,211 @@ def split_memory_params(module: nn.Module):
     for p in module.parameters():
         (mem_vals if getattr(p, "pk_value_param", False) else others).append(p)
     return mem_vals, others
+
+
+def iter_memory_layers(root: nn.Module):
+    """Yield ``(qualified_name, MLPPlusMemory)`` for every memory wrapper in root.
+
+    Walks ``named_modules`` so this works for any policy regardless of where
+    memory layers are attached (action expert, VLM backbone, etc.). Each
+    wrapper is yielded once.
+    """
+    seen: set[int] = set()
+    for name, module in root.named_modules():
+        if isinstance(module, MLPPlusMemory) and id(module) not in seen:
+            seen.add(id(module))
+            yield name, module
+
+
+def aggregate_memory_losses(
+    root: nn.Module,
+    base_loss: torch.Tensor,
+    cfg: MemoryLayerConfig,
+    loss_dict: dict | None = None,
+    layer_label_fn=None,
+) -> torch.Tensor:
+    """Aggregate per-layer contrastive / routing / usage stats into the loss.
+
+    Walks every ``MLPPlusMemory`` reachable from ``root`` and adds:
+      - the (weighted) mean of per-layer contrastive losses
+      - the (weighted) mean of per-layer routing locality / inter-task
+        similarity / global balance losses
+      - per-layer and aggregate slot usage diagnostics under ``loss_dict``
+        when ``cfg.log_usage`` is true
+
+    The returned tensor is ``base_loss`` plus all memory regularizers. When
+    ``loss_dict`` is provided it is mutated in place with diagnostic keys.
+
+    ``layer_label_fn(name) -> str`` lets the caller customize the prefix used
+    in diagnostic keys (e.g. ``""`` for expert layers, ``"vlm_"`` for VLM text
+    layers). The default returns ``""``.
+    """
+    if loss_dict is None:
+        loss_dict = {}
+
+    if layer_label_fn is None:
+        def layer_label_fn(_name: str) -> str:
+            return ""
+
+    contrastive_loss_weight = float(getattr(cfg, "contrastive_loss_weight", 0.0))
+    routing_intra_task_locality_weight = float(getattr(cfg, "routing_intra_task_locality_weight", 0.0))
+    if routing_intra_task_locality_weight <= 0:
+        routing_intra_task_locality_weight = float(getattr(cfg, "routing_compactness_weight", 0.0))
+    routing_inter_task_separation_weight = float(getattr(cfg, "routing_inter_task_separation_weight", 0.0))
+    if routing_inter_task_separation_weight <= 0:
+        routing_inter_task_separation_weight = float(getattr(cfg, "routing_separation_weight", 0.0))
+    routing_global_balance_weight = float(getattr(cfg, "routing_global_balance_weight", 0.0))
+    log_usage = bool(getattr(cfg, "log_usage", False))
+
+    contrastive_losses = []
+    locality_losses = []
+    similarity_losses = []
+    global_balance_losses = []
+    routing_intra_task_entropies = []
+    routing_intra_task_supports = []
+    routing_global_entropies = []
+
+    used_fracs: list[float] = []
+    perplexities: list[float] = []
+    top1_shares: list[float] = []
+    eff_nums: list[float] = []
+    intra_sims: list[float] = []
+    inter_sims: list[float] = []
+    gate_means: list[float] = []
+
+    loss = base_loss
+
+    for name, wrapper in iter_memory_layers(root):
+        mem = wrapper.mem
+        prefix = layer_label_fn(name)
+        # parse layer index from "...layers.{i}.mlp"
+        import re as _re
+        m = _re.search(r"layers\.(\d+)", name)
+        li = int(m.group(1)) if m else 0
+
+        # --- contrastive loss ---
+        if contrastive_loss_weight > 0 and getattr(mem, "last_contrastive_loss", None) is not None:
+            contrastive_losses.append(mem.last_contrastive_loss)
+            loss_dict[f"{prefix}contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
+
+        # --- routing losses ---
+        if getattr(mem, "last_routing_intra_task_locality_loss", None) is not None:
+            locality_losses.append(mem.last_routing_intra_task_locality_loss)
+            v = mem.last_routing_intra_task_locality_loss.item()
+            loss_dict[f"{prefix}routing_intra_task_locality_L{li}"] = v
+            loss_dict[f"{prefix}routing_compactness_L{li}"] = v
+        if getattr(mem, "last_routing_inter_task_similarity_loss", None) is not None:
+            similarity_losses.append(mem.last_routing_inter_task_similarity_loss)
+            v = mem.last_routing_inter_task_similarity_loss.item()
+            loss_dict[f"{prefix}routing_inter_task_similarity_L{li}"] = v
+            loss_dict[f"{prefix}routing_inter_task_separation_L{li}"] = 1.0 - v
+            loss_dict[f"{prefix}routing_separation_L{li}"] = v
+        if getattr(mem, "last_routing_global_balance_loss", None) is not None:
+            global_balance_losses.append(mem.last_routing_global_balance_loss)
+            loss_dict[f"{prefix}routing_global_balance_L{li}"] = mem.last_routing_global_balance_loss.item()
+        if getattr(mem, "last_routing_intra_task_entropy", None) is not None:
+            routing_intra_task_entropies.append(mem.last_routing_intra_task_entropy)
+            loss_dict[f"{prefix}routing_intra_task_entropy_L{li}"] = mem.last_routing_intra_task_entropy
+            loss_dict[f"{prefix}routing_task_entropy_L{li}"] = mem.last_routing_intra_task_entropy
+        if getattr(mem, "last_routing_intra_task_support", None) is not None:
+            routing_intra_task_supports.append(mem.last_routing_intra_task_support)
+            loss_dict[f"{prefix}routing_intra_task_support_L{li}"] = mem.last_routing_intra_task_support
+        if getattr(mem, "last_routing_global_entropy", None) is not None:
+            routing_global_entropies.append(mem.last_routing_global_entropy)
+            loss_dict[f"{prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
+
+        # --- usage logging ---
+        if log_usage and getattr(mem, "last_indices", None) is not None:
+            idx = mem.last_indices
+            unique_count = torch.unique(idx).numel()
+            frac = float(unique_count) / float(mem.size)
+            usage_prefix = f"{prefix}mem_" if prefix else "mem_"
+            loss_dict[f"{usage_prefix}used_count_L{li}"] = float(unique_count)
+            loss_dict[f"{usage_prefix}used_frac_L{li}"] = frac
+            used_fracs.append(frac)
+
+            idx_flat = idx.reshape(-1)
+            if getattr(mem, "last_weights", None) is not None:
+                w_flat = mem.last_weights.reshape(-1).float()
+            else:
+                w_flat = torch.ones_like(idx_flat, dtype=torch.float32)
+            uniq, inv = torch.unique(idx_flat, return_inverse=True)
+            usage = torch.zeros(uniq.shape[0], dtype=torch.float32, device=idx_flat.device)
+            usage.scatter_add_(0, inv, w_flat)
+            total = usage.sum()
+            if total > 0:
+                p = usage / total
+                eps = 1e-12
+                entropy = -(p * (p + eps).log()).sum()
+                perplexity = float(torch.exp(entropy).item())
+                top1 = float(p.max().item())
+                hhi = float((p * p).sum().item())
+                eff_num = float(1.0 / max(hhi, eps))
+                loss_dict[f"{usage_prefix}usage_perplexity_L{li}"] = perplexity
+                loss_dict[f"{usage_prefix}usage_top1_share_L{li}"] = top1
+                loss_dict[f"{usage_prefix}usage_effnum_L{li}"] = eff_num
+                perplexities.append(perplexity)
+                top1_shares.append(top1)
+                eff_nums.append(eff_num)
+            if getattr(mem, "last_query_intra_sim", None) is not None:
+                loss_dict[f"{prefix}query_intra_sim_L{li}"] = mem.last_query_intra_sim
+                intra_sims.append(mem.last_query_intra_sim)
+            if getattr(mem, "last_query_inter_sim", None) is not None:
+                loss_dict[f"{prefix}query_inter_sim_L{li}"] = mem.last_query_inter_sim
+                inter_sims.append(mem.last_query_inter_sim)
+            if getattr(mem, "last_gate_mean", None) is not None:
+                loss_dict[f"{prefix}gate_mean_L{li}"] = mem.last_gate_mean
+                gate_means.append(mem.last_gate_mean)
+
+    # Add the regularizers to the loss
+    if contrastive_loss_weight > 0 and contrastive_losses:
+        total_contrastive = sum(contrastive_losses) / len(contrastive_losses)
+        loss_dict["contrastive_loss_mean"] = total_contrastive.item()
+        loss = loss + contrastive_loss_weight * total_contrastive
+    if routing_intra_task_locality_weight > 0 and locality_losses:
+        total_locality = sum(locality_losses) / len(locality_losses)
+        v = total_locality.item()
+        loss_dict["routing_intra_task_locality_mean"] = v
+        loss_dict["routing_compactness_mean"] = v
+        loss = loss + routing_intra_task_locality_weight * total_locality
+    if routing_inter_task_separation_weight > 0 and similarity_losses:
+        total_similarity = sum(similarity_losses) / len(similarity_losses)
+        v = total_similarity.item()
+        loss_dict["routing_inter_task_similarity_mean"] = v
+        loss_dict["routing_inter_task_separation_mean"] = 1.0 - v
+        loss_dict["routing_separation_mean"] = v
+        loss = loss + routing_inter_task_separation_weight * total_similarity
+    if routing_global_balance_weight > 0 and global_balance_losses:
+        total_global_balance = sum(global_balance_losses) / len(global_balance_losses)
+        loss_dict["routing_global_balance_mean"] = total_global_balance.item()
+        loss = loss + routing_global_balance_weight * total_global_balance
+    if routing_intra_task_entropies:
+        loss_dict["routing_intra_task_entropy_mean"] = float(
+            sum(routing_intra_task_entropies) / len(routing_intra_task_entropies)
+        )
+        loss_dict["routing_task_entropy_mean"] = loss_dict["routing_intra_task_entropy_mean"]
+    if routing_intra_task_supports:
+        loss_dict["routing_intra_task_support_mean"] = float(
+            sum(routing_intra_task_supports) / len(routing_intra_task_supports)
+        )
+    if routing_global_entropies:
+        loss_dict["routing_global_entropy_mean"] = float(
+            sum(routing_global_entropies) / len(routing_global_entropies)
+        )
+
+    if used_fracs:
+        loss_dict["mem_used_frac_mean"] = float(sum(used_fracs) / len(used_fracs))
+    if perplexities:
+        loss_dict["mem_usage_perplexity_mean"] = float(sum(perplexities) / len(perplexities))
+    if top1_shares:
+        loss_dict["mem_usage_top1_share_mean"] = float(sum(top1_shares) / len(top1_shares))
+    if eff_nums:
+        loss_dict["mem_usage_effnum_mean"] = float(sum(eff_nums) / len(eff_nums))
+    if intra_sims:
+        loss_dict["query_intra_sim_mean"] = float(sum(intra_sims) / len(intra_sims))
+    if inter_sims:
+        loss_dict["query_inter_sim_mean"] = float(sum(inter_sims) / len(inter_sims))
+    if gate_means:
+        loss_dict["gate_mean"] = float(sum(gate_means) / len(gate_means))
+
+    return loss
