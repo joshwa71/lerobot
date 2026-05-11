@@ -52,6 +52,7 @@ policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
 
 """
 
+import logging
 import math
 import os
 from collections import deque
@@ -336,7 +337,11 @@ class SmolVLAPolicy(PreTrainedPolicy):
             texts = [t.strip() for t in texts]
             return self.task_embedding_cache.get_by_indices(texts)
         except Exception:
-            return None
+            logging.exception(
+                "Failed to compute task embeddings from language tokens; "
+                "memory routing would fall back to lang_emb=None."
+            )
+            raise
 
     @classmethod
     def from_pretrained(

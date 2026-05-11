@@ -166,6 +166,13 @@ def _get_pi_gemma_decoder_layer_base():
             adarms_cond: torch.Tensor | None = None,
             **kwargs,
         ) -> torch.Tensor:
+            # Pop memory-routing kwargs before self_attn so they don't leak into attention.
+            # The pi05 inference path (suffix-only denoise) reaches the memory MLP through
+            # this layer's forward; without this dispatch the FiLM lang-conditioning that
+            # was trained on never fires at inference.
+            lang_emb = kwargs.pop("lang_emb", None)
+            task_ids = kwargs.pop("task_ids", None)
+
             residual = hidden_states
             hidden_states, gate = self.input_layernorm(hidden_states, cond=adarms_cond)
             hidden_states, _ = self.self_attn(
@@ -183,7 +190,12 @@ def _get_pi_gemma_decoder_layer_base():
 
             residual = hidden_states
             hidden_states, gate = self.post_attention_layernorm(hidden_states, cond=adarms_cond)
-            hidden_states = self.mlp(hidden_states)
+            from lerobot.policies.modules.memory_lite import MLPPlusMemory  # local import to avoid cycle
+
+            if isinstance(self.mlp, MLPPlusMemory):
+                hidden_states = self.mlp(hidden_states, lang_emb=lang_emb, task_ids=task_ids)
+            else:
+                hidden_states = self.mlp(hidden_states)
             hidden_states = _gated_residual(residual, hidden_states, gate)
             return hidden_states
 

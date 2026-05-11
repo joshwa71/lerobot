@@ -515,6 +515,10 @@ class PaliGemmaWithExpertModel(
             prefix_output = prefix_output.last_hidden_state
             suffix_output = None
         elif inputs_embeds[0] is None:
+            # Suffix-only path used by denoise_step. PiGemma's decoder layer (pi_gemma.py)
+            # pops lang_emb/task_ids out of **kwargs and dispatches to MLPPlusMemory when
+            # the wrapped expert MLP is memory-augmented, so passing them here is what
+            # restores the FiLM language conditioning at inference for pi05+memory.
             suffix_output = self.gemma_expert.model.forward(
                 inputs_embeds=inputs_embeds[1],
                 attention_mask=attention_mask,
@@ -522,6 +526,8 @@ class PaliGemmaWithExpertModel(
                 past_key_values=past_key_values,
                 use_cache=use_cache,
                 adarms_cond=adarms_cond[1] if adarms_cond is not None else None,
+                lang_emb=task_emb,
+                task_ids=task_ids,
             )
             suffix_output = suffix_output.last_hidden_state
             prefix_output = None
@@ -1006,6 +1012,10 @@ class PI05Policy(PreTrainedPolicy):
             embedding_model = getattr(self.config.memory_layer, "embedding_model", "all-MiniLM-L6-v2")
             self.task_embedding_cache = TaskEmbeddingCache(model_name=embedding_model, device="cpu")
 
+        # Paligemma tokenizer used by `get_task_embeddings_from_tokens` to decode the
+        # language tokens back to text. Loaded lazily once per process, not per chunk.
+        self._paligemma_tokenizer = None
+
         self.model.to(config.device)
 
         self.reset()
@@ -1037,18 +1047,28 @@ class PI05Policy(PreTrainedPolicy):
 
         Returns None if no task embedding cache is configured (memory disabled
         or no language-conditioned query). The caller treats None as "skip".
+
+        Errors during tokenizer/encoder use are logged and re-raised — failing
+        silently here was a real footgun: it produced a model that runs but
+        ignores language conditioning entirely, which is indistinguishable from
+        "memory disabled" at the call site.
         """
         if self.task_embedding_cache is None:
             return None
-        try:
+        if self._paligemma_tokenizer is None:
             from transformers import AutoTokenizer
 
-            tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
-            texts = tokenizer.batch_decode(lang_tokens, skip_special_tokens=True)
+            self._paligemma_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
+        try:
+            texts = self._paligemma_tokenizer.batch_decode(lang_tokens, skip_special_tokens=True)
             texts = [t.strip() for t in texts]
             return self.task_embedding_cache.get_by_indices(texts)
         except Exception:
-            return None
+            logging.exception(
+                "Failed to compute task embeddings from language tokens; "
+                "memory routing would fall back to lang_emb=None."
+            )
+            raise
 
     @classmethod
     def from_pretrained(
