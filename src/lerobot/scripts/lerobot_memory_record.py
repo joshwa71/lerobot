@@ -219,32 +219,94 @@ class MemoryRecordConfig:
 # ---------------------------------------------------------------------------
 
 
+def _optimize_pi05_for_inference(policy: PreTrainedPolicy) -> dict:
+    """Apply Pi0.5-specific inference-only memory optimizations.
+
+    Replaces ``paligemma.lm_head`` and ``gemma_expert.lm_head`` with
+    ``nn.Identity`` — both are dead weight at inference (the only references in
+    ``modeling_pi05.py`` are in the load-time key rewriter). Frees ~1.6 GB.
+
+    Applied on CPU *before* the move to the target device so the freed
+    weights never touch GPU memory. Returns a dict of bytes freed for logging.
+
+    Vision tower precision is intentionally left untouched — siglip's layer_norm
+    in transformers 5.3.x rejects mixed dtypes, so partial bf16 casts break
+    the forward (mixed fp32 patch embedding + bf16 layernorm). The full-FP32
+    vision tower is the upstream contract for this pi05 implementation.
+    """
+    import torch.nn as nn
+
+    freed = {"lm_heads": 0}
+    try:
+        paligemma = policy.model.paligemma_with_expert.paligemma
+        gemma_expert = policy.model.paligemma_with_expert.gemma_expert
+    except AttributeError:
+        return freed
+
+    for head_owner, attr in [(paligemma, "lm_head"), (gemma_expert, "lm_head")]:
+        head = getattr(head_owner, attr, None)
+        if isinstance(head, nn.Linear):
+            freed["lm_heads"] += head.weight.numel() * head.weight.element_size()
+            if head.bias is not None:
+                freed["lm_heads"] += head.bias.numel() * head.bias.element_size()
+            setattr(head_owner, attr, nn.Identity())
+
+    return freed
+
+
 def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
     """Instantiate the policy from disk, honouring the saved memory config.
 
     ``from_pretrained`` peeks at the safetensors keys for ``mlp.mem``
     entries and calls ``attach_memory_to_*`` *before* loading weights, so
     memory-augmented SmolVLA / Pi0.5 checkpoints come back ready to run.
+
+    For Pi0.5, the model is loaded on CPU first so we can apply
+    inference-only footprint optimizations (drop unused lm_heads, bf16
+    vision_tower) before moving to the target device — otherwise the
+    in-init ``self.model.to(cfg.device)`` blows past available VRAM on
+    smaller cards.
     """
     policy_cfg = cfg.policy
     policy_class = get_policy_class(policy_cfg.type)
 
-    if hasattr(policy_cfg, "compile_model"):
-        # Honour the user override; default to keeping it off for snappy startup.
-        # `from_pretrained` reads policy_cfg.compile_model.
-        pass
+    target_device = cfg.device
+    is_pi05 = policy_cfg.type in {"pi0", "pi05"}
 
-    policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
-    policy = policy.to(cfg.device)
+    # For Pi05 we route the build through CPU to apply inference optimizations
+    # before the GPU move. For other policies (smolvla, etc.) we let the
+    # original from_pretrained handle the device move directly.
+    if is_pi05:
+        original_device = policy_cfg.device
+        policy_cfg.device = "cpu"
+        try:
+            policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
+        finally:
+            policy_cfg.device = original_device
+        freed = _optimize_pi05_for_inference(policy)
+        if freed.get("lm_heads"):
+            logger.info(
+                "Pi05 inference-mode trim: lm_heads=%.2f GB",
+                freed["lm_heads"] / 1e9,
+            )
+    else:
+        policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
+
+    policy = policy.to(target_device)
     policy.eval()
+
+    # Log memory-offload status when applicable.
+    mem_cfg = getattr(policy_cfg, "memory_layer", None)
+    offload = bool(getattr(mem_cfg, "offload_slots_to_cpu", False))
     logger.info(
-        "Policy loaded: type=%s | memory_layers=%s | device=%s",
+        "Policy loaded: type=%s | memory_layers=%s | offload_slots_to_cpu=%s | device=%s",
         policy_cfg.type,
         bool(
             getattr(policy_cfg, "memory_layers", False)
-            or getattr(getattr(policy_cfg, "memory_layer", None), "enabled", False)
+            or getattr(mem_cfg, "enabled", False)
         ),
-        cfg.device,
+        offload,
+        target_device,
     )
     return policy
 

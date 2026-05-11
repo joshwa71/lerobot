@@ -296,6 +296,58 @@ class HashingMemoryLite(nn.Module):
         # Accumulator for per-batch (binary) slot usage across training steps (CPU tensor).
         self.usage_batch_counts = None
 
+        # Inference-time CPU offload of slot tensors. When True, slot_down/slot_up
+        # (LoRA) or values (vector) are kept in pinned CPU memory and only the
+        # retrieved slot rows are transferred to the compute device per forward.
+        # Read from cfg here so the flag is set BEFORE any `.to(device)` chain runs
+        # — `_apply` masks slot params from device moves when this is True, so they
+        # never touch GPU memory in the first place (important for memory-constrained
+        # inference where the full slot tensor wouldn't fit). The forward inspects
+        # the slot tensor's `.device` at runtime so the on-GPU path is untouched
+        # when offload is disabled.
+        self._slots_offloaded = bool(getattr(cfg, "offload_slots_to_cpu", False))
+        if self._slots_offloaded:
+            # Best-effort pin; falls back to plain CPU memory if pinning fails
+            # (e.g. host has no CUDA driver or already-pinned tensor).
+            for p in self._slot_params():
+                try:
+                    p.data = p.data.pin_memory()
+                except (RuntimeError, NotImplementedError):
+                    pass
+
+    def _slot_param_names(self) -> tuple[str, ...]:
+        if self.value_type == "lora":
+            return ("slot_down", "slot_up")
+        if self.value_type == "vector":
+            return ("values",)
+        return ()
+
+    def _slot_params(self):
+        for name in self._slot_param_names():
+            p = self._parameters.get(name)
+            if p is not None:
+                yield p
+
+    def _apply(self, fn, recurse=True):
+        """Override to keep slot params on CPU when offload is enabled.
+
+        ``nn.Module._apply`` is the funnel for every ``.to(device)`` / ``.cuda()`` /
+        ``.float()`` call. Temporarily evict slot parameters from ``self._parameters``
+        so ``fn`` (which would otherwise move them to ``device``) skips them.
+        """
+        if not self._slots_offloaded:
+            return super()._apply(fn, recurse=recurse)
+        saved = {}
+        for name in self._slot_param_names():
+            if name in self._parameters:
+                saved[name] = self._parameters.pop(name)
+        try:
+            result = super()._apply(fn, recurse=recurse)
+        finally:
+            for name, param in saved.items():
+                self._parameters[name] = param
+        return result
+
     def _ensure_contrastive_queue(self, device: torch.device, dtype: torch.dtype) -> None:
         cap = self.contrastive_query_queue
         if cap <= 0:
@@ -380,6 +432,40 @@ class HashingMemoryLite(nn.Module):
             self._enqueue_contrastive_queries(z=z, labels=labels)
         self._pending_contrastive_batches.clear()
 
+    @torch.no_grad()
+    def offload_slots_to_cpu(self) -> int:
+        """Move slot tensors (slot_down/slot_up or values) to pinned CPU memory.
+
+        Intended for inference on memory-constrained GPUs. The forward path
+        gathers only the retrieved slot rows and transfers that subset to
+        the compute device per call, so the numerical output is identical
+        to the on-GPU path.
+
+        Returns the number of bytes freed from GPU memory by the move.
+        Safe to call multiple times — re-pinning a CPU tensor is a no-op.
+        """
+        freed_bytes = 0
+        slot_tensors = []
+        if self.value_type == "lora":
+            slot_tensors = [self.slot_down, self.slot_up]
+        elif self.value_type == "vector":
+            slot_tensors = [self.values]
+
+        for p in slot_tensors:
+            if p.device.type != "cpu":
+                freed_bytes += p.numel() * p.element_size()
+                cpu_data = p.data.detach().to("cpu")
+                try:
+                    cpu_data = cpu_data.pin_memory()
+                except (RuntimeError, NotImplementedError):
+                    # Pinning is best-effort: fails on some hosts (e.g. no CUDA driver,
+                    # or already-pinned tensor). Plain CPU memory still works, just slower.
+                    pass
+                p.data = cpu_data
+
+        self._slots_offloaded = True
+        return freed_bytes
+
     def reset_parameters(self):
         bound = 1 / math.sqrt(self.k_dim)
         nn.init.uniform_(self.keys, a=-bound, b=bound)
@@ -409,8 +495,13 @@ class HashingMemoryLite(nn.Module):
         dtype, device = x.dtype, x.device
         if getattr(self, "_param_dtype", None) is not dtype or getattr(self, "_param_device", None) is not device:
             for p in self.parameters(recurse=True):
+                is_value = getattr(p, "pk_value_param", False)
+                # Skip slot/value params when offloaded — those live in CPU pinned memory
+                # and are gathered per-forward via the _slots_offloaded branches below.
+                if is_value and self._slots_offloaded:
+                    continue
                 # Keep value params (vectors or LoRA weights) in float32 for stable gradients
-                if getattr(p, "pk_value_param", False):
+                if is_value:
                     p.data = p.data.to(device=device, dtype=torch.float32)
                 else:
                     p.data = p.data.to(device=device, dtype=dtype)
@@ -571,7 +662,23 @@ class HashingMemoryLite(nn.Module):
             Aggregated output (bs, v_dim) in float32
         """
         bs = indices.shape[0]
-        if self.training and self.corruption_prob > 0:
+        # When slots are offloaded to CPU, gather the unique retrieved rows on CPU
+        # and transfer just the subset to the compute device. Falls back to the
+        # original on-GPU path otherwise.
+        if self._slots_offloaded and self.values.device.type == "cpu":
+            indices_flat = indices.reshape(-1)
+            unique_idx_cpu, inverse = torch.unique(indices_flat.cpu(), return_inverse=True)
+            values_subset = self.values[unique_idx_cpu].to(device, non_blocking=True).float()
+            inverse = inverse.to(device, non_blocking=True).view(bs, self.heads * self.knn)
+            retrieved_values = values_subset[inverse]
+            if self.training and self.corruption_prob > 0:
+                corruption_mask = torch.bernoulli(
+                    torch.full((bs, self.heads * self.knn), self.corruption_prob, device=device)
+                ).bool()
+                noise = torch.randn_like(retrieved_values) * self.corruption_std
+                retrieved_values = retrieved_values + corruption_mask.unsqueeze(-1).float() * noise
+            out_fp32 = (retrieved_values * weights.float().unsqueeze(-1)).sum(dim=1)
+        elif self.training and self.corruption_prob > 0:
             # Manual gather + corruption + weighted sum
             retrieved_values = self.values.float()[indices]  # (bs, heads*knn, v_dim)
 
@@ -618,8 +725,19 @@ class HashingMemoryLite(nn.Module):
         # Gather LoRA weights for selected slots
         # slot_down: (n_slots, input_dim, rank) -> (bs, k, input_dim, rank)
         # slot_up: (n_slots, rank, v_dim) -> (bs, k, rank, v_dim)
-        down_weights = self.slot_down[indices]  # (bs, k, input_dim, rank)
-        up_weights = self.slot_up[indices]  # (bs, k, rank, v_dim)
+        if self._slots_offloaded and self.slot_down.device.type == "cpu":
+            # CPU-resident slots: dedupe indices, gather on CPU, transfer subset to GPU.
+            # `indices` lives on the compute device; flatten + unique to bound the transfer.
+            indices_flat = indices.reshape(-1)
+            unique_idx_cpu, inverse = torch.unique(indices_flat.cpu(), return_inverse=True)
+            down_subset = self.slot_down[unique_idx_cpu].to(device, non_blocking=True)
+            up_subset = self.slot_up[unique_idx_cpu].to(device, non_blocking=True)
+            inverse = inverse.to(device, non_blocking=True).view(bs, k)
+            down_weights = down_subset[inverse]  # (bs, k, input_dim, rank)
+            up_weights = up_subset[inverse]  # (bs, k, rank, v_dim)
+        else:
+            down_weights = self.slot_down[indices]  # (bs, k, input_dim, rank)
+            up_weights = self.slot_up[indices]  # (bs, k, rank, v_dim)
 
         # Compute each slot's LoRA output:
         # hidden = SiLU(x @ down) -> (bs, k, rank)
@@ -1117,10 +1235,16 @@ def attach_memory_to_layer_list(
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
-        # Align non-value memory params to base dtype/device; keep value params in float32
+        # Align non-value memory params to base dtype/device; keep value params in float32.
+        # When CPU offload is requested, leave value (slot) params on CPU — moving them
+        # to GPU here would defeat the whole point and OOM on small cards.
+        offload_slots = bool(getattr(cfg, "offload_slots_to_cpu", False))
         for name, p in layer.mlp.mem.named_parameters():
             if getattr(p, "pk_value_param", False):
-                p.data = p.data.to(device=base_device, dtype=torch.float32)
+                if offload_slots:
+                    p.data = p.data.to(dtype=torch.float32)  # stay on CPU
+                else:
+                    p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
 

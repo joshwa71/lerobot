@@ -133,3 +133,10 @@ class MemoryLayerConfig:
     # Rank for LoRA-style slots (only used when value_type="lora").
     # Lower rank = fewer params but less capacity per slot.
     lora_rank: int = 2
+
+    # Inference-time CPU offload for slot tensors (slot_down/slot_up when value_type="lora",
+    # or values when value_type="vector"). When enabled, the slot tensors are pinned in CPU
+    # memory; the forward gathers only the retrieved slot indices and transfers that subset
+    # to GPU per call. Numerically identical to the on-GPU path. Intended for inference on
+    # memory-constrained GPUs — not for training.
+    offload_slots_to_cpu: bool = False
