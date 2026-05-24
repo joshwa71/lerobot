@@ -33,6 +33,7 @@ from lerobot.datasets.feature_utils import (
 )
 from lerobot.datasets.io_utils import (
     load_episodes,
+    load_stats,
     to_parquet_with_hf_images,
     write_info,
     write_stats,
@@ -414,9 +415,21 @@ def split_dataset_by_task(
             task_index_to_name,
         )
 
-        # Aggregate stats from selected episodes and write
+        # Aggregate stats from selected episodes and write.
+        # Older v3.0 datasets store stats only in meta/stats.json (no per-episode
+        # stats columns in meta/episodes), so the per-episode aggregation returns
+        # {} and downstream training crashes with KeyError on image keys. Fall
+        # back to the source's global stats.json so each split has usable stats.
         ep_rows = _read_episode_stats_rows(src_meta.root, episodes_to_keep)
         stats = _aggregate_stats_from_episode_rows(ep_rows, src_meta.features)
+        if not stats:
+            stats = load_stats(src_meta.root) or {}
+            if stats:
+                logging.warning(
+                    "No per-episode stats found in meta/episodes for source %s; "
+                    "copied global meta/stats.json into split %s as a fallback.",
+                    src_meta.root, dst_root,
+                )
         write_stats(stats, dst_root)
 
         # Finalize info.json
