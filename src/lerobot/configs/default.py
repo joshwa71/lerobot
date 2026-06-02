@@ -73,8 +73,19 @@ class EvalConfig:
     # `use_async_envs` specifies whether to use asynchronous environments (multiprocessing).
     # Defaults to True; automatically downgraded to SyncVectorEnv when batch_size=1.
     use_async_envs: bool = True
+    # Evaluation mode. Currently honored only by the sequential trainer
+    # (lerobot-sequential-train); the standard trainers always use env rollouts.
+    #   "env"  -> closed-loop rollout eval in a gym env (requires --env.*). Default.
+    #   "loss" -> loss-based eval: after each sequential task, recompute the
+    #             flow-matching loss on every task seen so far (no env required).
+    #   "none" -> skip evaluation entirely.
+    type: str = "env"
 
     def __post_init__(self) -> None:
+        if self.type not in {"env", "loss", "none"}:
+            raise ValueError(
+                f"eval.type must be one of {{'env', 'loss', 'none'}}, got {self.type!r}"
+            )
         if self.batch_size == 0:
             self.batch_size = self._auto_batch_size()
         if self.batch_size > self.n_episodes:

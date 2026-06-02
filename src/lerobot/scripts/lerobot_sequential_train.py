@@ -74,6 +74,11 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Steps to run per task during online adaptation
     online_steps_per_task: int = 200
 
+    # ---- Loss-based eval (--eval.type=loss) ----
+    # Number of batches per seen task to average when computing loss-based eval
+    # after each sequential task. Uses --batch_size for the batch dimension.
+    eval_loss_n_batches: int = 20
+
     # When true, use TF-only slot masking (no IDF stats required).
     # If enabled, this overrides TF-IDF behavior.
     tf_only: bool = False
@@ -219,6 +224,146 @@ def _render_cumulative_eval_bar_chart(
 
     fig.tight_layout()
     return fig
+
+
+def _render_loss_eval_chart(loss_history: list[dict]) -> "matplotlib.figure.Figure":
+    """Line chart of per-task eval MSE (lower=better) after each training stage.
+
+    loss_history: list of dicts, one per eval loop, each with:
+        {"trained_task_idx": int, "per_task": {task_id: mse, ...}}
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    n_groups = len(loss_history)
+    all_task_ids = sorted({tid for e in loss_history for tid in e["per_task"]})
+    cmap = plt.get_cmap("tab10")
+
+    fig, ax = plt.subplots(figsize=(max(6, n_groups * 1.5), 5))
+    x = list(range(n_groups))
+    for i, tid in enumerate(all_task_ids):
+        ys = [e["per_task"].get(tid, float("nan")) for e in loss_history]
+        ax.plot(x, ys, marker="o", color=cmap(i % 10), label=f"Task {tid}")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [f"After Task {e['trained_task_idx']}" for e in loss_history],
+        rotation=30, ha="right", fontsize=9,
+    )
+    ax.set_ylabel("MSE loss (lower = better)")
+    ax.set_title("Cumulative Loss Eval: Per-Task MSE After Each Training Stage")
+    ax.legend(loc="upper left", fontsize=8, ncol=max(1, len(all_task_ids) // 5 + 1))
+    fig.tight_layout()
+    return fig
+
+
+def _append_loss_results_jsonl(
+    output_dir: Path,
+    step: int,
+    per_task_loss: dict[int, float],
+    baseline: dict[int, float],
+):
+    """Append a JSONL line with per-task eval MSE (and forgetting vs the just-trained
+    baseline) to {output_dir}/eval/loss_results.jsonl.
+
+    Format: {"step": step, "task_0": mse, "forget_0": mse-baseline, ...}
+    """
+    record: dict[str, float | int] = {"step": int(step)}
+    for tid, v in per_task_loss.items():
+        record[f"task_{tid}"] = float(v)
+        base = baseline.get(int(tid))
+        if base is not None:
+            record[f"forget_{tid}"] = float(v) - float(base)
+
+    results_path = Path(output_dir) / "eval" / "loss_results.jsonl"
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(results_path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+@torch.no_grad()
+def _eval_loss_on_seen_tasks(
+    policy: PreTrainedPolicy,
+    accelerator: Accelerator,
+    dataset,
+    task_index_to_name: dict[int, str],
+    seen_task_ids: list[int],
+    *,
+    batch_size: int,
+    num_workers: int,
+    device,
+    n_batches: int,
+    preprocessor,
+    seed: int = 0,
+) -> dict[int, float]:
+    """Loss-based eval: mean flow-matching MSE for each seen task under the *current* policy.
+
+    Mirrors the training forward (same language task-embedding conditioning) but runs in
+    eval mode with no gradient/optimizer/TF-IDF updates. The per-(task, batch) RNG is
+    seeded deterministically so the sampled flow-matching noise/time is identical across
+    eval rounds, making the across-round deltas (i.e. forgetting) low-variance.
+
+    Returns {dataset_task_id: mean_mse}. Runs identically on every rank; the caller logs
+    on the main process only.
+    """
+    unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+    was_training = unwrapped.training
+    unwrapped.eval()
+    cam_keys = list(dataset.meta.camera_keys)
+    results: dict[int, float] = {}
+    try:
+        for t in seen_task_ids:
+            t = int(t)
+            name = task_index_to_name.get(t, "")
+            try:
+                dl = _build_dataloader_for_task(
+                    dataset,
+                    task_index_to_name,
+                    t,
+                    batch_size=batch_size,
+                    num_workers=min(num_workers, 4),
+                    device_type=device.type,
+                    drop_n_last_frames=0,
+                )
+            except Exception as e:
+                logging.warning(f"[loss-eval] could not build dataloader for task {t}: {e}")
+                continue
+
+            torch.manual_seed(seed + 7919 * (t + 1))  # reproducible frame sampling across rounds
+            losses: list[float] = []
+            it = iter(dl)
+            for j in range(n_batches):
+                try:
+                    batch = next(it)
+                except StopIteration:
+                    break
+                for ck in cam_keys:
+                    if ck in batch and batch[ck].dtype == torch.uint8:
+                        batch[ck] = batch[ck].to(dtype=torch.float32) / 255.0
+                batch = preprocessor(batch)
+                B = batch[next(iter(batch))].shape[0]
+                task_emb = None
+                if hasattr(unwrapped, "get_task_embeddings"):
+                    try:
+                        task_emb = unwrapped.get_task_embeddings([name] * B)
+                        if task_emb is not None:
+                            task_emb = task_emb.to(device=device)
+                    except Exception:
+                        task_emb = None
+                torch.manual_seed(10_000 * (t + 1) + j)  # paired noise/time across rounds
+                with accelerator.autocast():
+                    _, out = unwrapped.forward(batch, task_emb=task_emb)
+                mse = out.get("mse_loss", out.get("loss"))
+                if mse is not None:
+                    losses.append(float(mse))
+            del it, dl
+            if losses:
+                results[t] = sum(losses) / len(losses)
+    finally:
+        if was_training:
+            unwrapped.train()
+    return results
 
 
 def _default_libero10_map() -> dict[int, int]:
@@ -1380,7 +1525,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     eval_envs_all = None
     env_preprocessor = None
     env_postprocessor = None
-    if cfg.env is not None:
+    if cfg.env is not None and cfg.eval.type == "env":
         if is_main:
             logging.info("Creating eval envs")
         eval_envs_all = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
@@ -1444,6 +1589,10 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     seen_env_task_ids: list[int] = []
     # Accumulator for the cumulative eval bar chart (one entry per eval loop)
     eval_bar_history: list[dict] = []
+    # Loss-based eval (--eval.type=loss): per-task MSE history + per-task baseline
+    # (a task's loss right after it was trained, used to report forgetting).
+    loss_eval_history: list[dict] = []
+    loss_baseline: dict[int, float] = {}
 
     # Iterate sequentially over dataset tasks
     for idx, dataset_task_id in enumerate(cfg.online_task_ids):
@@ -1677,7 +1826,79 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             _per_task_update_batches.clear()
 
         # Cumulative evaluation up to this task
-        if eval_envs_all is not None:
+        if cfg.eval.type == "loss":
+            # Loss-based eval: recompute flow-matching MSE on every task seen so far,
+            # using the current (just-updated) policy. No env required.
+            seen_ids = [int(t) for t in cfg.online_task_ids[: idx + 1]]
+            if is_main:
+                logging.info(colored(f"Loss eval on seen tasks: {seen_ids}", "green"))
+            per_task_loss = _eval_loss_on_seen_tasks(
+                policy,
+                accelerator,
+                dataset,
+                task_index_to_name,
+                seen_ids,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                device=device,
+                n_batches=cfg.eval_loss_n_batches,
+                preprocessor=preprocessor,
+                seed=cfg.seed,
+            )
+            # Baseline = a task's loss the first time we see it (right after it trained).
+            cur_tid = int(dataset_task_id)
+            if cur_tid in per_task_loss:
+                loss_baseline.setdefault(cur_tid, per_task_loss[cur_tid])
+
+            if is_main:
+                cur = per_task_loss.get(cur_tid, float("nan"))
+                avg_seen = float(np.mean(list(per_task_loss.values()))) if per_task_loss else float("nan")
+                prior_forget = {
+                    tid: per_task_loss[tid] - loss_baseline.get(tid, per_task_loss[tid])
+                    for tid in seen_ids
+                    if tid != cur_tid and tid in per_task_loss
+                }
+                avg_forget = float(np.mean(list(prior_forget.values()))) if prior_forget else 0.0
+                logging.info(
+                    f"Loss eval | tasks_seen={len(seen_ids)} current_mse={cur:.4f} "
+                    f"avg_mse_seen={avg_seen:.4f} avg_forgetting_prior={avg_forget:+.4f}"
+                )
+                for tid in seen_ids:
+                    if tid in per_task_loss:
+                        d = per_task_loss[tid] - loss_baseline.get(tid, per_task_loss[tid])
+                        logging.info(
+                            f"   task {tid} '{task_index_to_name.get(tid, '')[:34]}': "
+                            f"mse={per_task_loss[tid]:.4f}  Δvs_trained={d:+.4f}"
+                        )
+                if wandb_logger:
+                    log_dict = {
+                        "num_tasks_seen": len(seen_ids),
+                        "avg_mse_loss_seen": avg_seen,
+                        "mse_loss_current": cur,
+                        "avg_forgetting_prior": avg_forget,
+                    }
+                    for tid, v in per_task_loss.items():
+                        log_dict[f"loss/task_{tid}"] = float(v)
+                    for tid, d in prior_forget.items():
+                        log_dict[f"forgetting/task_{tid}"] = float(d)
+                    wandb_logger.log_dict(log_dict, global_step, mode="eval")
+
+                _append_loss_results_jsonl(cfg.output_dir, global_step, per_task_loss, loss_baseline)
+                loss_eval_history.append({
+                    "trained_task_idx": cur_tid,
+                    "per_task": {int(k): float(v) for k, v in per_task_loss.items()},
+                })
+                if wandb_logger:
+                    try:
+                        import matplotlib.pyplot as plt
+
+                        fig = _render_loss_eval_chart(loss_eval_history)
+                        wandb = wandb_logger._wandb
+                        wandb.log({"eval/cumulative_loss_chart": wandb.Image(fig)}, step=global_step)
+                        plt.close(fig)
+                    except Exception as e:
+                        logging.warning(f"Failed to log loss eval chart: {e}")
+        elif eval_envs_all is not None:
             # Extend seen env task list using mapping; fallback to dataset_task_id if no mapping
             env_tid = ds_to_env.get(dataset_task_id, dataset_task_id)
             if env_tid not in seen_env_task_ids:
