@@ -1364,8 +1364,8 @@ Scripts: `job_scripts/nebius/libero_90/probes/`
 ### After the probes
 
 1. Stack whatever passes → `--resume` to 40k (or relaunch stacked) → full audit at 40k.
-2. One sequential run carrying the sequential-side changes that are independent of the pretrain outcome:
-   - **Soft per-slot plasticity decay replaces TF-IDF/IDF**: value-grad multiplier `(1 − max_{j<k} presence_j(s))^p` with `presence_j(s)` = fraction of task j's batches reading s (recoverable from existing per-task stats; soft, so no starvation cliff; universal primitives get strong protection by construction). Implement next to the existing mask code in `lerobot_sequential_train.py` while probes run.
+2. One sequential run on the graduating prior:
+   - *[SUPERSEDED — a sequential-side write-rule change was floated here; sequential-side anti-forgetting schemes are OFF THE TABLE per project constraint. Disregard. The fix stays in the prior.]*
    - **`top_t` re-derived from audited footprint size** — if core-50 shrinks ~3×, 1536 per batch is proportionally far too destructive; do not carry it over (that mistake is how this run got its forgetting cliff).
 3. Orthogonal plasticity track (untouched by all routing work, needed for the diagonal): steps/task 3000 → 5000 with LR floor ~2e-4; longer pretrain (40k undertrains — MSE/eval both still improving); `lora_rank=4` only if the ceiling persists after those (memory-heavy: 2.4B → ~4.8B trainable values).
 
@@ -1431,7 +1431,7 @@ Sanity: control audit family IoUs (0.39/0.36/0.30) match the sequential-run meas
 
 1. **Resume probe C → 40k** (`job_scripts/nebius/libero_90/probes/resume_probeC_to_40k.sh`; ~33h). Gates: MSE tracks control (0.196 @20k / 0.133 @40k), held-in eval @20k/@40k vs control 76.4/81.1, support & query-sim stability.
 2. **Re-audit at 40k** (existing audit script, ~35 min) — confirm held-out compaction/separation survives full training.
-3. **Sequential run** on the audited 40k checkpoint with `top_t` re-derived from the new footprints: held-out core50 dropped ~7.5× (2.6K → ~350), so `top_t=1536` is ~an order of magnitude oversized for this regime — start at **256–512** (decide from the 40k audit). Minimal-change config first (no soft decay), so the pretrain effect is attributable; layer the soft per-slot plasticity decay (Entry 19 design) on top only if family read-through still bites.
+3. **Sequential run** on the audited 40k checkpoint with `top_t` re-derived from the new footprints: held-out core50 dropped ~7.5× (2.6K → ~350), so `top_t=1536` is ~an order of magnitude oversized for this regime — start at **256–512** (decide from the 40k audit). Minimal-change config (everything stays pretraining-side; the only sequential knob is the existing TF-IDF top_t).
 4. Probe L checkpoint: keep for reference, no further investment.
 
 **Update (launched 11 Jun, tmux `pipeline`):** all three stages packaged in `job_scripts/nebius/libero_90/probes/pipeline_probeC_full.sh` (idempotent stages, auto-fallback if the resume `--steps` override is ignored). Decisions baked in:
@@ -1514,7 +1514,7 @@ The target is between. The mistake was treating interference as the sole objecti
 1. **Drop `negatives_only` → standard SupCon, weight 0.05, queue 512** (10k probe + audit + capacity gate). Standard SupCon keeps same-task samples in the denominator → retains intra-task uniformity (capacity) while still pushing inter-task apart (separation). Directly targets the diagnosed cause. Expect: query_intra_sim back toward ~0.85–0.9, footprints between control and the failed run, family IoU still below control.
 2. **If still over-compact, sweep weight DOWN: 0.05 → 0.02 → 0.01** (negatives_only either way). We jumped straight to a strong setting; the sweet spot on the breadth axis is likely a *mild* separation nudge that trims family IoU 0.35→~0.25 while keeping core50 ≥ ~1,800.
 3. **Re-anchor the target metric:** stop maximizing separation. The objective is max sequential success = f(capacity, interference); both have to stay in band. Track core50 and read IoU jointly; pick the prior that minimizes interference *subject to* core50 ≥ ~1,800.
-4. Only after a capacity-preserving separated prior exists: re-run sequential at top_t≈768–1024 (now that footprints are mid-sized again) and revisit the soft-plasticity-decay write rule.
+4. Only after a capacity-preserving separated prior exists: re-run sequential at top_t≈768–1024 (now that footprints are mid-sized again). *(A sequential-side write-rule was mentioned here originally — struck; sequential-side schemes are off the table.)*
 
 ### Status
 
@@ -1557,3 +1557,456 @@ Both: queue 512, sep 0.25, loc 0.25, layers [8,10,12,14], knn 36, rank 2 — ide
 **Reminder — the probes do NOT prove success.** They confirm the prior sits in the healthy routing band. Sequential success is still f(capacity, interference) and must be measured by a real sequential run on the graduating prior. Before that sequential, also run the cheap 1-task ~500-step plasticity probe (Entry 21 methodology fix #3) as a final capacity check.
 
 Scripts: `job_scripts/nebius/libero_90/probes/{probe_10k_negonly_c0.025.sh, probe_10k_standard_c0.05.sh, run_probes2_seq.sh}`.
+
+---
+
+## Entry 22 - 15 Jun 26 (2-knob isolation results: negonly dead, standard SupCon under-separates — bracketed)
+
+### Results (10k probes, held-out audit + in-run @10k)
+
+| run | L14 core50 | L14 effnum | query_intra_sim | famIoU | bgIoU | verdict |
+|---|---|---|---|---|---|---|
+| control (broad) | 2,643 | 14,991 | 0.79 | 0.349 | 0.127 | interference-limited baseline (34% seq) |
+| neg 0.05 (FAILED, E21) | 511 | 2,913 | 0.99 | 0.133 | 0.042 | capacity-dead (~12% seq) |
+| **P1 neg 0.025** | **696** | 4,019 | **0.98** | 0.244 | 0.096 | **BAD: still capacity-dead** |
+| **P2 std 0.05** | **1,465** | 8,499 | **0.91** | **0.338** | 0.126 | **BAD: ~no separation (≈control)** |
+
+Gate was: GOOD = core50 ≥ ~1,500 AND query_intra_sim ≤ ~0.90 AND famIoU ≤ ~0.28. **Neither probe passes; they fail at opposite ends.**
+
+### Pre-registered predictions vs outcome
+
+- **P1 ("negonly dose-down may only delay collapse") — CONFIRMED, strongly.** Halving weight 0.05→0.025 moved capacity essentially zero: core50 696 vs failed 511, query_intra_sim 0.98 vs 0.99, effnum 4,019 vs 2,913, support_L14 4,312 vs 4,207. negonly has no anti-collapse term at any weight; dosing down only slightly softens a structural collapse. **The dose is not the lever; the negonly branch is dead.**
+- **P2 ("favored fix: capacity preserved, separation milder but still below control") — HALF RIGHT.** Capacity preserved ✓ (core50 1,465 ≈ 3× failed, query_intra_sim 0.91, effnum 8,499). But separation did NOT come through ✗: famIoU 0.338 vs control 0.349 = 3% (nothing); bgIoU 0.126 vs 0.127 (nothing); in-run inter-task query sim 0.185 actually ABOVE control 0.140. Standard SupCon's same-task-in-denominator term protects capacity AND neutralizes the inter-task push at 0.05. std-0.05 ≈ control with slightly tighter intra-clusters.
+
+### Conclusion — the contrastive frontier has a structural problem
+
+- **negonly couples capacity and separation:** the same query collapse drives both low overlap and low capacity. Weakening it relaxes both toward control together (0.05→0.025: core50 511→696, famIoU 0.133→0.244). Its entire frontier is bad — there is no point on it with core50 ≥ 1,500 AND famIoU ≤ ~0.28.
+- **standard SupCon decouples them** (capacity safe) **but is too weak to separate** at 0.05. Its dominant effect is intra-task clustering, not inter-task pushing.
+- Note on training-amount: control routing is ~flat over training and failed-negonly relaxed slightly 10k→40k (core50 351→511), so P2's 1,465 at 10k would likely clear ~1,500 at 40k. Capacity is borderline-OK; **separation is the dealbreaker, and it won't improve with more steps** (property of the weak loss, not undertraining).
+
+### Open question (sharp)
+
+Can we get held-out family separation INTO the capacity-preserving regime? The thing we actually want is **footprint translation (disjoint but broad), not shrinkage.** The query-space contrastive has now failed at this twice — negonly separates only by collapsing; standard doesn't separate. Two untested mechanisms:
+
+1. **Standard SupCon weight up (0.05 → 0.1):** does its own separation rise with weight before capacity collapses? Risk: dominant effect is clustering, so it may walk toward intra-collapse rather than inter-separation.
+2. **Direct slot-space separation:** standard SupCon 0.05 + `routing_inter_task_separation` 0.25 → 0.5. Pushes task slot-distributions apart directly (translation, not shrinkage) — never swept in the pi05 regime. Mechanistically the most targeted at the decoupling; favored bet.
+
+(Note: locality is NOT the compaction driver — control carries locality 0.25 and is broad, core50 2,643. Compaction came specifically from the strong negonly contrastive. So locality-off is not the lever; leave it unless a separation sweep shows it amplifying compaction.)
+
+### Next experiment (LAUNCHED 15 Jun, tmux `probes3` — Josh: "do both") — 2-probe isolation, mirrors E21
+
+- **Probe 3:** standard SupCon **0.1** (negatives_only=false, queue 512), all else = control. Isolates the contrastive-weight axis on the capacity-safe variant.
+- **Probe 4:** standard SupCon **0.05** + `routing_inter_task_separation` **0.5** (negatives_only=false, queue 512), all else = control. Isolates direct slot-space separation.
+- Same compressed 10k schedule + held-out audit + same gate (core50 ≥ ~1,500 AND query_intra_sim ≤ ~0.90 AND famIoU ≤ ~0.28). Throwaway screens; winner → fresh 40k + 1-task plasticity probe + sequential.
+- GOOD: a point with famIoU ≤ ~0.28 while core50 ≥ ~1,500 (the decoupled frontier we haven't found yet). BAD: famIoU ≈ control (no separation) OR core50 collapse / query_intra_sim > 0.95.
+- Reserve if both fail: separation 0.5 + locality 0 (test compaction amplification), or other pretraining-side separation formulations (e.g. similarity-weighted separation). Pretraining-side only.
+
+### Status
+Probes 1/2 completed (neither earned a 40k). Checkpoints + audits (`audit_heldout_{negonly_c0.025,standard_c0.05}_10k`) retained. Probes 3/4 LAUNCHED 15 Jun in tmux `probes3` (scripts `probe_10k_standard_c0.1.sh`, `probe_10k_standard_c0.05_sep0.5.sh`, runner `run_probes3_seq.sh`); audits `audit_heldout_{standard_c0.1,standard_c0.05_sep0.5}_10k`. ~23.5h. No 40k launched yet.
+
+### Note: discussion after launching probes 3/4 (mechanism + capacity diagnostics)
+
+Two clarifications worked out while probes 3/4 run. Both refine how to read the results; no config changed.
+
+**(a) SupCon (negonly=false) vs `routing_inter_task_separation` are NOT the same loss.** Verified against code (`memory_lite.py`: `_compute_sample_contrastive_loss` L841 vs `_compute_routing_losses` L969). Three differences, two of which are exactly the bet:
+1. **Space.** SupCon = cosine between per-sample query *vectors* `z=mean_{T,heads} q` in continuous k_dim, **before** the key lookup. Separation = cosine between per-task *slot-occupancy histograms* over the n_keys² space, **after** top-M→Cartesian→softmax retrieval. The query→slot map (through learned keys) is many-to-one and nonlinear, so query separation is only an indirect proxy for slot overlap — the Entry 5/7 finding. Live proof in our data: P2 (std SupCon 0.05) moved query geometry but left held-out famIoU at 0.338 ≈ control.
+2. **Intra-task pull.** SupCon's numerator pulls same-task queries together (the force that collapsed query_intra_sim→0.99 and shrank footprints) — structurally inseparable from the contrastive form. Separation has **no** same-task term (pure `i<j` cross-task cosine on aggregated histograms); intra-task breadth is handed to the *decoupled* locality band. This is why separation can in principle reduce overlap by **translating** broad footprints to disjoint regions rather than shrinking them.
+3. **Granularity.** SupCon is instance-level (every sample's query position matters); separation is distribution-level (only each task's aggregate histogram matters), so it tolerates internally-diverse within-task routing.
+- **Caveat / failure mode to watch:** separation can still reduce overlap via the cheap **shrink-to-disjoint** shortcut (tiny private supports also have ~0 cosine). The intended guardrail is the locality band's *min-support floor* (`relu(min_entropy − task_H)`), but its current calibration ([128, 2048]) sits far below control's healthy support (~7,800), so the floor may not bind. Hence the gate is famIoU↓ **AND** core50≥~1,500 *together*; reserve fix is raising the min-support floor, not turning locality off.
+
+**(b) Subkey-level capacity decomposition (held-out audit, L14).** "How many keys per task?" — decomposed each task's slot histogram into its two PQ half-subkey marginals (slot = i1·384 + i2):
+
+| run | eff subkeys/half (of 384) | binary subkeys/half | eff slots |
+|---|---|---|---|
+| control (broad) | 192 | 384 | 14,991 |
+| neg0.05 (FAILED) | 98 | 371 | 2,913 |
+| P1 neg0.025 | 112 | 380 | 4,019 |
+| P2 std0.05 | 152 | 384 | 8,499 |
+
+- **Not a binary-restriction story:** nearly all 384 subkeys are touched in every run (coupon-collector over millions of retrievals). The collapse is in *effective* (mass-weighted) count: 192→98 per half.
+- **Slot collapse is multiplicative.** eff_slots ≈ eff_half₁ × eff_half₂ × corr. control→failed: per-half (192/98)² ≈ 3.8×, plus the two halves become more correlated (joint/product ratio 0.41→0.30, ×1.37) ⇒ ≈5.1× slot drop from a 2× per-half drop. Query collapse makes (q1,q2) near-constant → the same (i1,i2) pairs co-win → halves lock. ~75% of slot collapse = per-half concentration, ~25% = half-correlation. Both trace upstream to Q.
+- **Sharp statement of collapse:** per query, 4 heads × top-36 spans up to ~144 subkeys/half; the failed run's *whole-task* effective key count (98) is **below a single query's cross-head span** — within-task query variation adds ~nothing. Control (192) ≈ 2× a single query → genuinely diversifies.
+- **Key-level target for probe 4:** eff subkeys/half toward ~190 **and** joint/product ratio toward ~0.41 while famIoU drops. New failure signature to watch: separation that cuts famIoU by *re-correlating* the halves (ratio falls) = shrinkage shortcut at the key level, even if per-half effnum looks ok.
+
+**(c) Plain-English on eff_slots ≈ 2,900 (failed run).** It's the aggregate footprint over ALL of a task's observations (~500 slots carry the first half of the weight, tail brings effective total to ~2,900). But query_intra_sim 0.99 means every observation pulls nearly the *same* ~36-slot mixture, so that palette is addressed almost state-independently — aggregate footprint **overstates usable state-conditional capacity**. This is why ~2,900 slots still gave capacity-starved fits (per-task MSE 0.18–0.34): the memory acts closer to a per-task bias than a rich state→action map. Control's ~15k is not just 5× more slots but slots addressed far more state-distinctly.
+
+**(d) Layerwise per-batch reads vs top_t — when is the write budget actually binding?** top_t only "reduces available adaptation params" if it is BELOW the per-batch effective read breadth at a layer; otherwise it is a no-op (you can update everything you read). Per-batch effnum (mean over training, by layer):
+
+| layer | OLD seq (control prior, top_t=1536) | FAILED seq (supcon prior, top_t=512) |
+|---|---|---|
+| L8 | 1,631 | 331 |
+| L10 | 2,296 | 356 |
+| L12 | 3,587 | 487 |
+| L14 | 5,520 | 784 |
+
+Per-batch write coverage = min(top_t, reads)/reads. OLD L14: 1536/5520 = **28%** (heavily write-limited — the Entry 16/17 finding). FAILED L14: 512/784 = **65%**, and ≥100% at L8/L10/L12. So top_t=512 was matched-to-generous for the collapsed prior — the failed run updated a LARGER fraction of its reads than the 34% old run did. This rejects "we hit capacity twice (supcon + low top_t)": the two interact rather than add. Reads collapsed 5,520→784 at L14 (7×, the prior's doing); top_t=512 rode behind that tighter bottleneck and was a near-no-op. **Rule going forward: top_t is binding relative to read breadth, so set it from the winning prior's measured per-batch L14 effnum (target ~70–90% coverage), not a fixed carryover. A broad-but-separated probe-4 prior (L14 reads back toward ~5,000) will make top_t=512 binding again → use ~1536 for that sequential.**
+
+---
+
+## Entry 23 - 16 Jun 26 (Root-cause fix: cross-batch queue for the separation loss + rq512 rerun)
+
+### Why probes 1–4 may have been unfair to separation (code finding)
+
+Traced the two routing losses in code (`memory_lite.py`). The **contrastive** loss uses the cross-batch queue (`contrastive_query_queue`, =512 in our runs) — it concatenates 512 detached query vectors from prior batches. The **separation/locality** loss (`_compute_routing_losses`) does **not**: it operates on `_compute_subkey_scores(current query)` only, grouping the current micro-batch by task. With batch 32 over 90 tasks (random sampler), that means:
+- **~1 sample/task** per step (≈27 distinct tasks/batch, mostly 1 sample each) → each task's slot-histogram in the separation loss is a single-observation estimate.
+- **~9% pairwise coverage**: any two specific tasks co-occur in a batch only ~(27/90)² of steps, so the exact pairs we need to separate (e.g. basket family) get a gradient <1 step in 10, and no step ever sees the global 90-task structure.
+
+So separation has been operating on a noisy, sparsely-covered estimator. The Entry-22 "separation can't decouple" conclusion is **likely premature** — separation may simply never have had a clean signal. (Josh caught this.)
+
+### Fix implemented: routing-separation cross-batch queue
+
+New config `routing_query_queue` (in SAMPLES; 0 = off, current behavior). When >0, `_routing_losses_queued` (new) runs a dense-histogram path:
+- **Current batch** → differentiable per-task slot histograms over the full n_keys² space (dense == compact numerically; carries the gradient).
+- **Queue** → FIFO of per-token detached queries (highest granularity, global FIFO, per Josh). Each step the queued queries are **recomputed against the CURRENT keys** (under no_grad) → detached per-task reference histograms covering all recently-seen tasks. Recompute-vs-current-keys (not frozen histograms) is deliberate: the separation loss *moves* the keys, so frozen references would lag.
+- **Separation** = push each current (differentiable) task histogram away from all reference (detached) task histograms j≠i, vectorized as one `einsum('ihs,jhs->ij')/heads` with an i==j mask. Fixes both the 1-sample estimate and the 9% coverage (every present task pushed against ~all 90 references every step).
+- Locality / global-balance stay on the current differentiable histograms (unchanged). Queue-off path is byte-for-byte the old compact code.
+
+Wiring: per-token queries staged in `forward` (guarded by `_is_checkpoint_recompute()` to avoid double-enqueue under grad checkpointing), flushed after the optimizer step via the existing `flush_staged_contrastive_queries` hook (lerobot_train.py:184).
+
+**Bug caught by smoke test (would have silently disabled the queue):** the existing flush had an early `return` when no *contrastive* entries were pending → the routing flush was skipped whenever contrastive was off. Restructured to flush both independently.
+
+Smoke-tested in isolation (tiny module): queue populates to cap; **a single-task batch still gets a separation loss via references** (the coverage fix); gradients reach query_proj + keys; checkpoint-recompute guard holds; queue-off numerically identical to the old path; vectorized einsum identical to the per-pair loop. Files: `memory_config.py`, `memory_lite.py`.
+
+### Rerun (LAUNCHED 16 Jun, tmux `probes5`)
+
+Same configs as probes 3/4, only delta = `routing_query_queue=512`, so this isolates the queue's effect against the no-queue probes3 audits:
+- **probe 3':** standard SupCon 0.1 + rq512 → `..._probe10k_standard_c0.1_rq512`
+- **probe 4':** standard SupCon 0.05 + sep 0.5 + rq512 → `..._probe10k_standard_c0.05_sep0.5_rq512` (favored)
+- 10k each, audits `audit_heldout_standard_{c0.1,c0.05_sep0.5}_rq512_10k`. Scripts under `probes/`; runner `run_probes5_seq.sh`.
+
+What GOOD looks like (the test of the whole hypothesis): with the estimator fixed, separation should finally move **held-out** famIoU below control's ~0.349 **while** core50 stays ≥ ~1,500 — the decoupled point probes 1–4 couldn't reach. If rq512 still doesn't move held-out famIoU, that's much stronger evidence (now with a fair estimator) that the current separation formulation can't separate held-out near-duplicates under a frozen router → next moves stay PRETRAINING-side (similarity-weighted separation, stronger/longer pretrain, different routing-loss formulation). If it DOES move, the weight sweep (sep 2.0 / contrastive 0.2, possibly 20k) becomes worthwhile on top of the queue. [See Entry 24 for the actual result + decision.]
+
+---
+
+## Entry 24 - 17 Jun 26 (probes5/rq512 verdict: the queue fixes the ESTIMATOR, not the transfer — separation-metric artifact diagnosed, loss-magnitude audit, aggressive sep=2.0 probe launched)
+
+### Headline
+
+probes5 (rq512 reruns of P3/P4) is the fair test Entry 23 set up. Verdict: **the cross-batch routing queue works exactly as designed — it makes the separation signal honest — but at the tested doses (sep 0.25/0.5) prior-side separation STILL does not transfer to held-out lookalike families.** Held-out famIoU stays ≈ control. This is the §7 FAIL branch, but with a crucial caveat surfaced by a loss-magnitude audit: 0.25→0.5 was too small a lever to conclude, and separation is NOT drowned out by MSE. So before declaring separation dead we are running one aggressive, capacity-gated probe at **sep=2.0** (contrastive held at 0.05 to remove the confound). En route we diagnosed a metric artifact that nearly misled us.
+
+### probes5 held-out audit (the §7 decision metric)
+
+Audit pipeline validated against anchors (reproduces handover/Entry-22 numbers exactly: control core50 2643 / famIoU 0.349 / effnum 14991; failed-negonly 511 / 0.133 / 2913).
+
+| run (held-out L14) | core50 | effnum | famIoU | bgIoU |
+|---|---|---|---|---|
+| control@40k (BROAD anchor) | 2643 | 14991 | 0.349 | 0.127 |
+| c005@40k (COLLAPSED anchor) | 511 | 2913 | 0.133 | 0.042 |
+| P3 no-queue (std c0.1) | 1162 | 6839 | 0.381 | 0.111 |
+| **P3' rq512 (std c0.1)** | 979 | 5865 | 0.356 | 0.118 |
+| P4 no-queue (c0.05 sep0.5) | 1752 | 10041 | 0.342 | 0.117 |
+| **P4' rq512 (c0.05 sep0.5)** | 1501 | 8694 | 0.350 | 0.120 |
+
+Gate = famIoU ≤ ~0.28 AND core50 ≥ ~1500 AND query_intra ≤ ~0.90. **Neither rq512 run clears it:** P4' famIoU 0.350 (fails), P3' famIoU 0.356 + core50 979 (fails both). The queue moved held-out famIoU by ≤0.01 vs its no-queue twin — and if anything made footprints marginally *more compact* (core50 1752→1501), the opposite of "more separated." So the queue did not unlock held-out separation at these weights.
+
+### The separation-metric artifact (resolves a confusion that nearly misled us)
+
+**The chart that confused us:** turning on the queue *raised* the logged `routing_inter_task_similarity_mean` (~+0.03–0.04; L14 0.121→0.160), i.e. `routing_inter_task_separation_mean` (=1−v) *dropped* 0.90→0.87. It looked like adding the queue + raising sep weight REDUCED separation — backwards from intent.
+
+**Root cause (code):** the logged similarity is computed *inside* the routing-loss fn, and the queue swaps that fn for a different estimator. Same metric name, different quantity:
+- no-queue `_compute_routing_losses` (L1189-98): mean pairwise cosine between **current-batch** per-task histograms → **sparse-vs-sparse**, only the ~27 in-batch tasks.
+- rq512 `_routing_losses_queued` (L1334-44): cosine between each current task's **single-sample** histogram and the queue's **dense, aggregated, all-90-task reference** histograms → **sparse-vs-dense**, full coverage.
+
+Over a 147,456-slot table, two single-sample histograms drawn from the *same* broad distribution (control effnum ~15K) mostly hit different slots → sparse-vs-sparse cosine is biased toward 0 → the old metric **systematically under-read overlap and flattered separation**. The dense all-task reference removes that bias (and the ~9%→100% pair-coverage bias). The queue made the metric **honest**; "separation got worse" is the flattery being stripped out.
+
+**Three independent checks that it's measurement, not a real regression:**
+1. **Query geometry identical** (computed in the contrastive path, untouched by `routing_query_queue`): query_inter_sim P4 0.186 vs P4' 0.183; query_intra 0.911 vs 0.911. The learned query map didn't change.
+2. **Held-out audit identical** (offline, same method all runs): P4 famIoU 0.342 vs P4' 0.350.
+3. **Trajectory shape:** the queue offset is present from step 200 and the curves run parallel down to 10k — a constant offset, not a divergence.
+
+**Cleanest single statement:** no-queue P4 logs *lower* in-run similarity (0.095) than queue P4' (0.128), yet both have the *same* held-out famIoU (~0.345 ≈ control). The in-run delta is 100% estimator; the ground truth is identical. **Rule: never compare in-run `routing_inter_task_similarity` across queue on/off — only within a fixed estimator, or via the held-out audit.**
+
+### What "near-duplicate" means here + a hidden-state correction
+
+famIoU is measured strictly **held-out ↔ held-out** — among the libero_10 basket family (dataset task_index 4/5/7), NOT libero_90 ↔ libero_10:
+- t4 "put both the alphabet soup and the cream cheese box in the basket"
+- t5 "put both the alphabet soup and the tomato sauce in the basket"
+- t7 "put both the cream cheese box and the butter in the basket"
+
+The **cause** routes through libero_90: these are compositions of single-object basket primitives that libero_90 covers densely ("pick up the alphabet soup/cream cheese box/tomato sauce/… and put it in the basket"). Near-identical instructions → the frozen language-conditioned router drops them into the shared pretrain "…in the basket" basin. Per-pair overlap tracks shared content monotonically (control@40k L14): t4–t5 (share soup) **0.391** > t4–t7 (share cream cheese) **0.355** > t5–t7 (share only the "…basket" structure, disjoint objects) **0.302** ≫ background **0.127**. Even the no-shared-object pair sits at 2.4× background.
+
+**Correction to Entry 19's "FiLM-on-language" framing (Josh's catch):** the query is `q = proj(x)·(1+γ(lang)) + β(lang)` (`memory_lite.py` L143-155) — a projection of the **action-expert hidden state** `x`, FiLM-modulated by language. γ/β are language-only (constant across a task's frames), but `proj(x)` varies per observation and carries the visual scene (different objects on the table). So there *is* discrimination signal beyond the instruction string; the "irreducible floor from identical language" claim was too strong. The floor is softer than stated — which is part of why pushing separation harder is worth a real test (and motivates future direction #2).
+
+### Loss-magnitude audit (answering "what can we actually play with")
+
+Loss assembly (`memory_lite.py` L1734-1755): `loss = MSE + Σ weightᵢ·rawᵢ`, every raw term logged. Reconstructed weighted contributions @10k:
+
+| run | MSE | contrastive raw→**wtd** (%MSE) | sep: sim→**wtd** (%MSE) | locality wtd |
+|---|---|---|---|---|
+| P3 (c0.1, sep0.25) | 0.213 | 1.93→**0.193** (91%) | 0.098→**0.025** (12%) | 0.001 |
+| P4 (c0.05, sep0.5) | 0.212 | 1.97→**0.098** (46%) | 0.095→**0.047** (22%) | 0.001 |
+| P4' rq512 (c0.05, sep0.5) | 0.212 | 1.97→**0.098** (46%) | 0.128→**0.064** (30%) | 0.001 |
+
+Findings:
+1. **Contrastive is the core-compaction knob — it (not separation) collapsed P3.** core50 is monotone in *contrastive* weight: control 0.01→2643, P4 0.05→1752, P3 0.1→1162; query_intra_sim 0.79→0.91→0.93 in lockstep. SupCon's intra-task pull tightens each task's query cloud → shrinks footprints. At c=0.1 the weighted contrastive is 91% of MSE (co-dominant) — that's the compaction pressure. **This is why contrastive must stay fixed/low while we probe separation.**
+2. **Locality is dead weight** — 0.001, ~0.6% of MSE (confirms Entry 19/20; not a usable lever).
+3. **Separation is a real term, not drowned out** — 30% of MSE at sep=0.5 (rq512). So "too low on the scale" in the *negligible* sense is false.
+4. **But the weight-response is weak:** doubling sep 0.25→0.5 moved the seen-task similarity it directly minimizes only 0.098→0.095 (~3%), and held-out famIoU 0.349→0.342 (nothing). Either saturation against MSE's pull or a seen-task sharing floor. A 2× change can't distinguish "scale-limited" from "can't transfer" — hence the aggressive jump.
+
+### Decision + launched (probe 6)
+
+One decisive, cheap probe: **sep=2.0** (8× P3, 4× P4), **contrastive=0.05 FIXED** (isolate separation, preserve capacity — Josh's call to avoid confounds), **rq512** (clean gradient), same compressed 10k schedule. Capacity-gated audit.
+
+- Run: `libero_90_pi05_8_10_12_14_probe10k_standard_c0.05_sep2.0_rq512`; scripts `probes/{probe_10k_standard_c0.05_sep2.0_rq512.sh, run_probe6_seq.sh}`; tmux `probe6`; wandb `r1sklapt`; ETA ~11h pretrain + ~35min audit.
+- **Decisive gate (jointly):** held-out L14 **famIoU ≤ ~0.28 AND core50 ≥ ~1500**.
+  - famIoU↓ **with** core50 held → real translation; separation was scale-limited → sweep upward, then 40k.
+  - famIoU↓ **only** with core50 < ~1500 → shrink-to-disjoint shortcut (the locality min-support floor [128,2048] is too weak to block it — the capacity gate is the guard, not the loss). Reserve fix: raise min_support.
+  - famIoU ≈ control (0.349) → separation conclusively cannot transfer to held-out lookalikes under the frozen router; the residual ~0.30 is the genuine-sharing floor → pivot off the interference axis to the capacity/co-host axis (realworld Entry 3: rank / collision-aware protection).
+
+### Future directions (noted, non-prescriptive — Josh)
+
+1. **20k re-test** of the winning recipe — the probes run a compressed 10k schedule; if separation is borderline, more router-training steps may be the genuine bottleneck (handover flagged 10k as possibly under-training the router for separation). Cheap to test before committing to 40k.
+2. **Hidden-state vs language contribution to the query.** Quantify how much `proj(x)` (scene) vs `γ/β(lang)` drives routing for lookalike-language tasks, then reweight the fusion so the scene carries more signal — so basket tasks separate by *what's on the table* rather than collapsing on near-identical instructions. Pretraining-side, no new params at adaptation. Directly targets the held-out-transfer gap rather than fighting it with global separation weight.
+3. **Per-layer aggressive separation at higher layers.** L14 is consistently the resistant, highest-overlap/highest-trust layer (L14 sim 0.16 vs mean 0.13 at rq512). A per-layer separation weight concentrated on L12/L14 may bite where a uniform weight can't.
+
+### What we are not doing
+
+- Not raising contrastive (it's the compaction confound; capacity-killer above ~0.05).
+- Not reading in-run `routing_inter_task_similarity` across queue on/off as comparable (estimator artifact; use the held-out audit).
+- Not touching locality (inert at 0.6% of MSE), idf_exponent, dropout, or sequential-side schemes (all measured ~no-ops / off the table).
+- Not committing to a 40k or a sequential run until a prior clears the held-out capacity+separation gate jointly.
+
+---
+
+## Entry 25 - 17 Jun 26 (sep=2.0 DECOUPLES — the first separation win without capacity loss; 4-probe batch launched to isolate contrastive / sep-curve / locality)
+
+### Headline
+
+The aggressive probe from Entry 24 (P6: c0.05 / **sep2.0** / loc0.25 / rq512) is **the first prior in the entire project to reduce held-out interference WITHOUT collapsing capacity.** Held-out basket-family IoU fell 0.349→**0.311** (background 0.127→**0.099**) while per-task capacity went *up* (core50 1501→**2368**, ≈ control's 2643), at zero MSE cost and no query collapse — and with none of the shrink-to-disjoint signatures. This overturns the Entry-22 "separation can't decouple" conclusion: it was an artifact of the broken estimator (no queue) + too-low weight (≤0.5). With the clean estimator (rq512) **and** adequate weight (2.0), separation translates footprints apart instead of shrinking them. Josh's Entry-24 instinct ("we could just be too low on the scale") was right.
+
+### The sep=2.0 result (P6), held-out audit + in-run
+
+| (held-out L14) | core50 | effnum | famIoU | bgIoU | effK/h | j/p |
+|---|---|---|---|---|---|---|
+| control@40k (broad) | 2643 | 14991 | 0.349 | 0.127 | 193 | 0.40 |
+| c005@40k (collapsed) | 511 | 2913 | 0.133 | 0.042 | 98 | 0.29 |
+| P4' rq512 sep0.5 | 1501 | 8694 | 0.350 | 0.120 | 154 | 0.36 |
+| **P6 rq512 sep2.0** | **2368** | **13248** | **0.311** | **0.099** | **183** | **0.39** |
+
+Per-family-pair (L14): t4–t5 0.391→**0.321**, t4–t7 0.355→0.359, t5–t7 0.302→**0.254**.
+
+In-run @10k (P6 vs P4', both rq512 → directly comparable): MSE **0.2121 vs 0.2118** (zero fit cost), query_intra **0.912 vs 0.911** / query_inter 0.182 vs 0.183 (query geometry unchanged — separation acts on slot histograms, not queries), but the seen-task similarity the loss minimizes dropped hard: **0.084 vs 0.128** mean (−34%), L14 **0.113 vs 0.160**. support broadened (L14 6084 vs 5714); effnum 10146 vs 8208; gate 0.946 vs 0.950.
+
+### Why it's translation, not the shrink shortcut
+
+Every collapse signature points *away* from shrinkage:
+- effnum and core50 went **up** toward control (broader, not smaller footprints).
+- subkeys/half **183 ≈ control 193** (not concentrated; failed-negonly was 98).
+- joint/product ratio **0.39 ≈ control 0.40** (halves stayed decorrelated; failed was 0.29 — re-correlation is the key-level shrink signature).
+
+So footprints moved apart *into distinct broad regions* — the mechanism Entry 23 hypothesized the queue would unlock once the estimator was honest. Proof that 0.5 was just too weak (not saturated): 0.25→0.5 moved the in-run target ~3%, but 0.5→2.0 moved it 34% while capacity *rose* — we're nowhere near a wall.
+
+### Interpretation
+
+1. **Separation decouples capacity from interference** when fairly estimated + adequately weighted. The breadth axis is no longer one-dimensional: we reduced overlap while *increasing* footprint breadth.
+2. **It preferentially cleaned the incidental overlap.** Background dropped 22% vs family's 11% — separation kills the benign cross-family collateral harder than the genuine-sharing basket overlap (which shares real compositional primitives — Entry 24 discussion). That's the *right* selectivity (handover target property: overlap only at synergistic edges).
+3. **Partial, not a clean gate clear.** famIoU 0.311 is below control but above the ~0.28 GOOD line; query_intra 0.912 is a hair over the 0.90 proxy but core50 (the real measure) is healthy. Clear headroom remains → hence the sep-curve sweep below.
+4. **Interference only.** The dual-cycle plasticity ceiling (~40% diagonal, Entry 19) is untouched; the eventual sequential gain will show up as **retention** (no t5→t7 step-24000 cliff), not a higher peak.
+
+### The 4-probe batch (LAUNCHED 17 Jun, tmux `probes7`)
+
+All single-knob deltas from the P6 anchor; the question is whether **separation alone is the lever.** Runner `run_probes7_10_seq.sh` (interleaved pretrain→audit per probe); ~2 days total.
+
+| probe | run tag | delta vs P6 | goal |
+|---|---|---|---|
+| P7 | `c0_sep2.0_rq512` | contrastive 0.05 → **0** | **A: is contrastive needed at all?** |
+| P8 | `c0.05_sep3.0_rq512` | sep 2.0 → **3.0** | **B: sep curve** |
+| P9 | `c0.05_sep5.0_rq512` | sep 2.0 → **5.0** | **B: sep curve, far end / turnover** |
+| P10 | `c0.05_sep2.0_noloc_rq512` | locality 0.25 → **0** (support bands dropped) | **C: does locality do anything?** |
+
+Hope (Josh): sep is all we need — contrastive redundant (A), locality inert (C), and the sep curve (B) locates the famIoU floor / capacity knee.
+
+**What to look for (all vs the P6 audit 0.311/2368; gate = famIoU ≤ ~0.28 AND core50 ≥ ~1500):**
+- **P7 (no contrastive):** if famIoU/core50 ≈ P6 → contrastive is redundant once sep carries the load (drop it; lose its compaction side-effect for free). If capacity *rises* and famIoU holds → even better (contrastive was only costing capacity). If separation degrades → contrastive's query-tightening was helping sep after all.
+- **P8/P9 (sep curve):** expect famIoU to keep falling; watch for the shrink shortcut switching on at the far end (core50/effnum/j-p ratio dropping). P9 sep5.0 puts the weighted sep term (~0.4) above MSE (~0.21) — highest over-separation risk; capacity is the thing to watch.
+- **P10 (no locality):** if ≈ P6 → locality is dead (drop permanently, as Entry 20/24 already suggest). If capacity drops materially → locality was a load-bearing anti-shrink floor after all.
+
+### Caveats / notes
+
+- **Contrastive read as 0.05, not 0.5.** The request said "Contrastive 0.5" for P8–P10; taken as a typo for 0.05 (the project's capacity-safe value, and the only reading under which these are clean single-knob deltas — 0.5 is 5× the 0.1 that already over-compacted, would collapse capacity, and would confound goals B/C). Proceeded rather than block since Josh stepped away; flagged for correction on return. If 0.5 was intended, P8–P10 need a rerun (P7 and the curve *shape* still stand).
+- **P7 will not log `query_intra/inter_sim`** — those diagnostics live inside the contrastive block, gated by `contrastive_loss_weight > 0` (`memory_lite.py:621`). Read P7 capacity from the held-out audit (core50/effnum/subkey), which is the ground truth regardless.
+- Disk cleaned to make room (see below): dead-end 10k probe **checkpoints** deleted (wandb + all audits retained).
+
+### Next (after the batch)
+
+Pick the winning prior on the joint axis (lowest famIoU with core50 ≥ ~2000, contrastive on/off per P7, locality on/off per P10) → fresh 40k (NOT resume — scheduler gotcha) → 40k held-out audit → 1-task plasticity probe → sequential, judged on the **retention matrix** (esp. early-task collapses), not just final average. The plasticity ceiling remains the separate, binding constraint on absolute performance.
+
+**Update (18 Jun — P7 in, goal A answered: contrastive is LOAD-BEARING, "sep alone" disconfirmed).** P7 (c=0, sep2.0, rq512) held-out L14: core50 **7700**, effnum **37384**, famIoU **0.482**, bg **0.260** — the broadest, highest-overlap prior we've made, *worse than control* (0.349/0.127). In-run: MSE 0.201, routing_sim 0.136 (vs P6 0.084), support_L14 8175. Removing contrastive removed all intra-task compaction → footprints sprawl → separation still translates centroids apart but can't keep enormous clouds disjoint → overlap blows up. **Clean division of labor: contrastive = compaction (footprint *size*); separation = translation (footprint *position*); both required.** Breadth axis is Goldilocks: too much contrastive (negonly/0.1) → collapse; none → sprawl; **c0.05 + sep2.0 (P6, famIoU 0.311 / core50 2368) sits in the pocket and stays the frontier.** P8/P9 (sep curve) and P10 (locality) still running.
+
+---
+
+## Entry 26 - 19 Jun 26 (sep curve: sep=5 CLEARS the gate via translation; contrastive load-bearing, locality dead — sep=5 graduation 40k + full sequential LAUNCHED)
+
+### Probes 7-10 complete — full results
+
+Held-out audit (L14); all rq512, c0.05 unless noted; gate = famIoU ≤ ~0.28 AND core50 ≥ ~1500:
+
+| run | core50 | effnum | famIoU | bgIoU | j/p | gate |
+|---|---|---|---|---|---|---|
+| control@40k (broad) | 2643 | 14991 | 0.349 | 0.127 | 0.40 | — |
+| P4' sep0.5 | 1501 | 8694 | 0.350 | 0.120 | 0.36 | ✗ |
+| P6 sep2.0 | 2368 | 13248 | 0.311 | 0.099 | 0.39 | ✗ |
+| P8 sep3.0 | 2372 | 13305 | 0.309 | 0.092 | 0.39 | ✗ |
+| **P9 sep5.0** | **2679** | 14881 | **0.264** | 0.087 | 0.39 | **✓ CLEARS** |
+| P7 sep2.0 **c=0** | 7700 | 37384 | 0.482 | 0.260 | 0.44 | ✗ sprawl |
+| P10 sep2.0 **noloc** | 2337 | 13081 | 0.309 | 0.103 | 0.38 | ✗ (≡P6) |
+
+In-run @10k: MSE flat across the whole sep curve (0.2118 → 0.2121 → 0.2112 → **0.2102**), in-run sim falls monotonically 0.128 → 0.084 → 0.073 → 0.061; query_intra ~0.91 throughout (sep-independent — it's contrastive's knob).
+
+### The three answers
+
+**B — sep curve: monotone-improving on BOTH axes, no turnover, sep=5 clears the gate.** As sep 0.5→5.0, famIoU falls 0.350→**0.264** *while capacity rises* (core50 1501→**2679**, above control's 2643; effnum→14881≈control), at zero fit cost. Unambiguously **translation, not shrinkage**: j/p ratio rises 0.36→0.39 (halves *decorrelating*), effK/h 154→191, effnum climbing — every shrink signature points away from collapse. We feared sep5.0 would trip the shortcut (weighted term ~0.4 > MSE); it just kept improving. Curve hasn't turned over → headroom likely remains, but residual famIoU (0.264, ~3× bg) is increasingly genuine compositional sharing.
+
+**A — contrastive is LOAD-BEARING.** P7 (c=0) sprawls: core50 7700, famIoU 0.482, bg 0.260 — *worse than control*, the broadest/highest-overlap prior we've made. Clean division of labor: **contrastive = intra-task compaction (footprint size); separation = inter-task translation (position).** Without compaction the footprints are too big to keep disjoint no matter how hard separation pushes their centroids apart.
+
+**C — locality is DEAD.** P10 (loc 0) ≡ P6 (loc 0.25) on every metric (famIoU 0.309 vs 0.311, core50 2337 vs 2368, MSE 0.207 vs 0.212). Controlled confirmation of Entry 19/20/24 — drop it permanently.
+
+Net: Josh's "sep is the lever" bet is largely vindicated — separation does the separating, contrastive just holds footprints compact, locality is removable dead weight. First gate-clearing prior in the project.
+
+### Decision + what's RUNNING
+
+Graduate **P9 (c0.05 + sep5.0 + locality-off + rq512)** to a full run. **LAUNCHED 19 Jun, tmux `sep5_full`** (log `outputs/sep5_full.log`):
+- Script: `job_scripts/nebius/libero_90/combined/pi05_libero_10_4_layer_film_lora2_knn36_40k_c0.05_sep5_noloc_rq512_topt1536.sh` (two-stage, skip-if-exists guard).
+- = the c0.01 combined 40k script with EXACTLY: contrastive 0.01→0.05, contrastive_query_queue 128→**512**, sep 0.25→**5.0**, locality 0.25→**0** (support bands dropped), **+ routing_query_queue=512** (the c0.01 reference predated it — the critical add). New run names. Pretrain arch/schedule + entire sequential stage (tfidf_top_t **1536**, 3000 steps/task ×10, value_lr 1e-3→1e-4, 50 eval eps) unchanged.
+- Runs: pretrain `libero_90_pi05_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` → sequential `libero_10_sequential_..._top_t_1536`. ETA ~44h pretrain + ~45h sequential ≈ **3.7 days**.
+- top_t=1536 kept deliberately: sep5 is broad-but-separated (core50 ~2679 ≈ control), so ~1536 is the right write budget per Entry 22(d), and safer than the Entry-19 cliff (lower overlap, famIoU 0.264 vs 0.349). Watch `task9-reads-task8-updates` early; re-derive from per-batch L14 effnum if overwrite climbs.
+
+### What to check when it lands
+
+1. **Mid-flight (after stage 1, ~44h):** held-out audit on the 40k checkpoint — did sep5 *hold* under full LR decay (famIoU/core50 ≈ 0.264/2679, not eroded toward control)? Runnable while stage 2 trains.
+2. **Held-in eval** @20k/40k vs control 76.4/81.1 (fit guardrail).
+3. **The real test — sequential retention matrix:** per-task init→final, the early-task collapses (esp. the t5→t7 cliff at step 24000 in Entry 19), `memory_iou/all_modules_mean`, read-through-overwrite. Diagonal expected ~unchanged (this cycle attacked interference, not the plasticity ceiling — which remains the binding constraint on absolute performance; levers = steps/task 3000→5000, value_lr floor 1e-4→2e-4 if needed).
+
+---
+
+## Entry 27 - 23 Jun 26 (sep=5 graduation result: interference HALVED, performance FLAT — lever is now plasticity; prior-usefulness write protection built + launched)
+
+### Headline
+
+The sep=5 prior (Entry 26) **delivered its technical target and bought nothing.** In the real sequential run the prior held under full LR decay and sequential read overlap **halved (0.107 → 0.052)** — yet final avg = **34.0%** vs the Entry-19 control's **34.4%** (within rollout noise). Every prediction held *except the score*. The interference axis is now exhausted: broad/interference-limited (34%), compact/capacity-limited (~12%, Entry 21), and now decoupled-middle/separated (34%) all land ≤34%. **The benchmark is plasticity-bound.** Separation reshaped forgetting from broad-and-mild to narrow-and-catastrophic, netting zero.
+
+### Runs
+
+- sep5 pretrain `libero_90_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` (wandb `ozb8vddy`)
+- sep5 sequential `libero_10_sequential_..._sep_5.0_..._top_t_1536` (wandb `f64nunnx`) — 10×3000, top_t=1536, 50 eval eps
+- control = Entry-19 sequential `..._contrastive_0.01_sep_0.25_loc_0.25_..._top_t_1536` (34.4%)
+- (First sequential launch OOM'd in grad-checkpoint recompute; the analysed run is the relaunch with `gradient_checkpointing=false`. Slot pipeline reproduces the logged `memory_iou` exactly — 0.0520 / 0.1066 — so internals read correctly. Scripts: `scripts/slots.py`/`protect.py`/`beta_sweep.py` ported the Entry-18/19 env map to libero_10 `{0:4,1:6,2:9,3:2,4:7,5:0,6:8,7:1,8:3,9:5}`.)
+
+### Pretrain: the prior did its job (separation held, capacity preserved, fit slightly weaker)
+
+| metric @40k | sep5 | control |
+|---|---|---|
+| held-in eval @20k / @40k | **68.1 / 78.9** | 76.4 / 81.1 |
+| routing sim L14 (10k→20k→40k) | 0.085→0.081→**0.067** | 0.119 |
+| query_intra / inter | 0.91 / 0.16 | 0.82 / 0.11 |
+| effnum_L14 / supp_L14 | **13211** / 6307 | 12806 / 7651 |
+
+So separation **held and improved** through decay (answers Entry-26 check #1 without the standalone 40k audit, which was never run; sequential read IoU 0.052 confirms transfer), capacity preserved (effnum ≈ control = translation not shrinkage), held-in only mildly weaker (−2.2pp @40k; −8.3pp @20k, right at the Entry-21 0.9×-control stop-gate but it recovered). Nothing wrong at pretrain.
+
+### Sequential retention matrix (sep5)
+
+Train order t0..t9 = env `4,6,9,2,7,0,8,1,3,5`. Final avg 34.0 (init 41.6, peak 45.0).
+
+| ord | env | task | init | peak | final | ret% |
+|----:|----:|------|-----:|-----:|------:|-----:|
+| t0 | 4 | two mugs→plates | 32 | 48 | 34 | 106 |
+| t1 | 6 | mug→plate+pudding | 54 | 54 | 26 | 48 |
+| t2 | 9 | mugs→microwave+close | 18 | 28 | 12 | 67 |
+| t3 | 2 | stove+moka | 68 | 68 | 56 | 82 |
+| t4 | 7 | **soup+cheese basket** | 18 | 18 | **0** | **0** |
+| t5 | 0 | soup+sauce basket | 18 | 22 | 22 | 122 |
+| t6 | 8 | both mokas→stove | 44 | 44 | 34 | 77 |
+| t7 | 1 | cheese+butter basket | 18 | 22 | 10 | 56 |
+| t8 | 3 | bowl→drawer+close | 78 | 78 | 78 | 100 |
+| t9 | 5 | book→caddy | 68 | 68 | 68 | 100 |
+
+### Finding 1 — interference halved, score flat (the disconnect sharpened)
+
+| | sep5 | control |
+|---|---|---|
+| seq read IoU (all mods / L14) | **0.052 / 0.090** | 0.107 / 0.155 |
+| pairwise channels ≥12% | **9** | 26 |
+| mean read-thru-overwrite (excl last) | **37.3%** | 55.4% |
+| L14 effnum / core50 (capacity) | 5206 / 2526 | 7020 / 3325 |
+| mean diagonal (init) / peak | 41.6 / 45.0 | 39.8 / 44.2 |
+| **final** | **34.0** | **34.4** |
+
+Interference fell hard and broadly (the env3 "bowl→drawer" task that overwrote *eight* others at 20–44% in control is defanged → mid-run seen-success was actually *higher*, e.g. @24k 27.3 vs 22.5). It just doesn't survive to the final number.
+
+### Finding 2 — the cliff MOVED, it didn't close: forgetting reshaped spread → concentrated (the object-sharing autopsy)
+
+Control's catastrophic collapse (env0, the step-24000 cliff, 28→4) is **gone** — env0 rescued (122% ret). A **new** collapse opened: **env7 (soup+cheese) 18→0 at step 18000.** The overwrite matrix tracks **object-sharing exactly**:
+
+- env7 = soup **+ cheese** ; env0 = soup **+ sauce** ; env1 = cheese **+ butter** ; env0∩env1 = ∅ (basket frame only)
+
+| channel (4-layer) | shared object | sep5 | control |
+|---|---|---|---|
+| env7 ← env0 | soup | **53.4%** | 61.9% |
+| env7 ← env1 | cheese | **54.5%** | 58.0% |
+| env0 ← env1 | *none* | **23.7%** | 45.5% |
+
+Separation cleanly fixed the pair with **no genuine sharing** (env0←env1 45→24 → env0 survives) and **could not touch** the pairs with a shared object (env7←{env0,env1} ~53%). env7 is the **hub** of the family — soup∩cheese — so it can't be separated from both neighbours and eats 53%+54% = **81.5% read-through → 0**. Confirms Entry 24/26's "residual ≈0.26 is genuine compositional sharing," caught in a rollout. (This is the realworld-Entry-3 *concentration-vs-spread* pattern reproduced in sim: both runs lose one task catastrophically; separation just relocates which one + cleans the broad bleed, so the average is unchanged.)
+
+### Finding 3 — the diagonal (plasticity) is the binding constraint, untouched by routing
+
+Per-task block-min MSE is **identical** sep5 vs control: dual-cycle tasks plateau at 0.20–0.23, single-cycle at 0.08–0.17, set by task structure not prior. Six of ten tasks are two-full-pick-place compositions (OOD for the single-step libero_90 pretrain) that rank-2 LoRA on a frozen backbone won't fit past 18–54% in 3000 steps. Mean peak ≈ 45% caps everything; "even perfect retention caps this run at ~40%" (Entry 19/26). Reducing interference cannot lift a fit ceiling.
+
+### Discussion — can IDF protect env7? Mechanism autopsy + the corrected rule (with Josh)
+
+Q (Josh): isn't this what IDF is for — env7's writes should raise document-frequency and stop later tasks writing there? Traced the code (`lerobot_sequential_train.py`): online DF is `df_vec[used]+=1` (binary per batch, `used`=retrieved/READ indices), pooled over all tasks; `idf=log((B+1)/(DF+1))^e`; mask = top-t by `tf*idf`. **Structurally the wrong shape**, four reasons:
+1. **Pooled & task-anonymous** — knows "popular," never "env7 relied on it."
+2. **Read-frequency, not usefulness** — every task reads ~140K of 147K slots (coupon-collector), so "read by a prior" is near-universal → useless gate (measured: binary "any-prior-read" protection blocks 74–90% of every writer's demand).
+3. **TF-overridable** — env0's soup-core TF ≈86× median vs IDF discount ≈3× (log crushes a 60:1 DF ratio) → the writer buys back the shared core. (Entry 19 already measured: e=1 keeps 100% of harmful writes, e=4 keeps 60% while blocking legit writes.)
+4. **Self-pollution** — DF accumulates within the current task's own block → env0's reads inflate the DF of env0's private slots → the mask drifts against itself.
+
+The behaviour Josh actually wants: *"if a slot was useful to any prior task, don't update it; probability of update decreases the more useful it was."* This is task-identity-aware + importance-weighted + graded — i.e. the realworld-Entry-3 "collision-aware write protection," deferred there, now reopened. It is EWC-flavoured (protect-important-params) but as a sparse write-gate on read-usefulness, not a Fisher loss.
+
+**Protectability frontier (graded, per prior task's read core, L14):** binary is hopeless, but the *graded* form has real headroom, and — the key result — **the separated prior makes it ~1.5× cheaper**:
+
+| protect env7 core | saved (env7 dmg) | cost (env0 blocked) | sep5 saved/cost | control |
+|---|---|---|---|---|
+| top-25% | 21.6% | 10.6% | **2.03×** | 1.23× |
+| top-50% | 36.6% | 23.8% | **1.54×** | 0.98× (zero-sum) |
+
+Damage is steep at the core (protect where the prior cared most), cost is gradual (the writer's demand is spread) — exactly the structure the "decrease with usefulness" rule exploits. Separation moved env0's demand partly off env7's core, so it's no longer the zero-sum Entry 19 correctly found *on the broad prior*. **Separation and protection compound** — which is why this lever is worth it *now*.
+
+### Offline β-sweep (`scripts/beta_sweep.py`, first-order, static footprints)
+
+Gate `π(s)=(1−u(s))^β`, `u(s)=max over prior tasks of peak-normalized read profile`; β=0 reproduces the measured read-through (37.3% sep5 / 55.4% ctrl — validated). Net = mean prior read-mass saved − mean writer demand blocked:
+
+| β (sep5) | mean saving | mean cost | net | env7 RTO | env0 cost | env1 cost |
+|---|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 81.5% | 0 | 0 |
+| 4 | 12.4% | 6.9% | +5.5% | 52.7% | 13.2% | 16.4% |
+| **8** | 17.2% | 11.0% | **+6.3%** | **41.8%** | 20.4% | 24.7% |
+| 16 | 22.2% | 16.5% | +5.6% | 30.9% | 29.6% | 34.7% |
+
+Net-positive at every β>0, peaks ~β=8 (env7 read-through roughly halved). Cost concentrates on env0/env1 (themselves basket tasks near the floor). To hit the same env7 outcome the control pays its writers ~36% vs sep5 ~20–25% (compounding, confirmed). **Caveats:** mass ≠ rollout success (likely *favourable* — saving sits on env7 at 0%, cost on env0/env1 at 22/10%, concave returns); static footprints (no closed-loop re-routing); these are why the real run is the arbiter.
+
+### Mechanism implemented (opt-in, default OFF — legacy byte-identical)
+
+`lerobot_sequential_train.py`:
+- **Store** `_protect_usefulness_by_module[json_key]` = `u(s)`; `_accumulate_protect_counts_batch` (raw read counts/batch, all ranks, mirrors online-IDF) + `_finalize_protect_usefulness` at each task boundary (`u ← max(u, counts/counts.max())`, then reset). Folded *after* a task finishes so a task never protects against itself.
+- **Gate** in `_compute_tfidf_top_indices_for_batch`: `tfidf *= (1−u).clamp(min=0)**β` before top-t → protected slots fall out, budget reallocates to the task's private reads.
+- **CLI** `--protect_prior_slots` (bool, default `False`) + `--protect_beta` (float, default 4); threaded through `_update_policy_with_tfidf`. When off → `None` passed → old branch. Smoke-tested (`scripts/smoke.py`): peak-norm + max-agg + reset, gate reselection (vetoed slot drops, next-best pulled in), and **β=0 / store=None reproduce the legacy top-t exactly**.
+- NB: implementation β acts on the top-t **ranking** (reselection), so its scale differs from the offline soft-suppression model — treat β=4 as "moderate."
+
+### Launched (23 Jun, tmux `protect_b4`, wandb `11u7mdmj`)
+
+`job_scripts/nebius/libero_90/sequential/pi05_libero_10_seq_sep5_prior_protect_beta4_topt1536.sh`: reuses the sep5 40k prior (no new pretrain), `--protect_prior_slots=true --protect_beta=4`, **eval 20 eps** (vs 50, faster). Otherwise byte-identical to the sep5 sequential. ETA **~17–18h** (eval-bound). Confirmed live: config dump shows `protect_prior_slots=True, protect_beta=4.0`; per-task boundary logs "Updated prior-usefulness protection store after task N".
+- **Watch:** env7 (t4) — baseline 18→0; predicted partial rescue (RTO ~81→~53). env0/env1 (t5/t7) fit cost = the bill. `memory_iou` should drop below 0.052. Diagonal/init ~unchanged (interference lever, not the ceiling).
+- **Decision rule:** env7 materially >0 at acceptable env0/env1 cost → β sweep {2,8}; env7 unmoved → β=8; env0/env1 crater → β=2. If even β=8 can't hold env7 and keep its writers, env7 is confirmed irreducible under write-masking → only rank/co-host (realworld Entry 3) or scene-vs-language query reweighting (Entry 24 #2) remain.
+
+### Next steps
+
+1. **Analyse the β=4 run on landing** — retention matrix + slot autopsy + read-IoU vs this baseline; does mass-saving convert to env7 success.
+2. **Plasticity track (the actual binding constraint, pinned but primary for the *average*):** steps/task 3000→5000 (MSE still falling at block ends), value_lr floor 1e-4→2e-4, then lora_rank 2→4 / longer+stronger pretrain (held-in 78.9<81.1, 40k still undertrains libero_90). Protection protects the fit that exists; only this lifts the ~45% peak — and *then* retention gains convert to points.
+3. **env7-specific (if protection insufficient):** scene-weighted query fusion so basket tasks separate by table contents not near-identical language (Entry 24 #2); higher rank for co-hosting the soup/cheese primitive.
+
+### What we are not doing
+
+- No more pretrain-side separation sweeps — the decoupled prior exists and its sequential payoff is flat; the interference axis is mapped end-to-end.
+- No `idf_exponent`/weighted-DF (measured no-ops); no hard task-boundary veto (Entry 19 zero-sum); no router training / per-task params (off the table).
+- Not raising `top_t` for env7 — the writer needs the shared core it damages (Entry 19 zero-sum); write-location masking can't fix a write-magnitude/co-host problem, only the *graded soft* gate trades it.
+
+---

@@ -88,6 +88,17 @@ class MemoryLayerConfig:
     # 0 preserves the original in-batch-only behavior.
     contrastive_query_queue: int = 0
 
+    # Optional cross-batch FIFO queue (in SAMPLES) of per-token routing queries,
+    # used to estimate per-task reference slot-distributions for the inter-task
+    # separation loss. Without it, separation only sees the ~B tasks present in
+    # the current micro-batch (~1 sample/task when batch_size << num_tasks), so
+    # the per-task histograms are noisy and most task pairs are never co-present.
+    # When > 0, each step recomputes the queued queries' routing against the
+    # CURRENT keys (no grad to the stored queries) to form detached references
+    # covering all recently-seen tasks; the current batch is pushed away from
+    # them. 0 preserves the original current-batch-only behavior.
+    routing_query_queue: int = 0
+
     # Routing regularizers operate on the joint product-key candidate distribution:
     # 1. Take top-M subkeys in each PQ half (M = routing_loss_topk or mem_knn)
     # 2. Form the M×M Cartesian-product candidate slots (matching retrieval)

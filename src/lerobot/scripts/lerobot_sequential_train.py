@@ -146,6 +146,19 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # setting denom=33 makes the pretrain prior "worth" ~one sequential task.
     idf_stats_denom: float = 1.0
 
+    # ---- Prior-usefulness write protection (opt-in; default OFF = legacy behavior) ----
+    # When True, down-weight value-slot updates to slots that PRIOR sequential tasks relied on.
+    # For each slot s, usefulness u(s) = max over prior tasks of that task's peak-normalized read
+    # profile; the per-batch TF-IDF write score is multiplied by (1 - u(s)) ** protect_beta, so
+    # slots important to earlier tasks are pushed out of the top-t update set. This is the
+    # task-identity-aware, importance-weighted, graded analogue of IDF. Rides on the TF-IDF mask,
+    # so it requires tfidf_enable=True. Default False keeps the legacy mask byte-for-byte, so
+    # existing scripts reproduce exactly.
+    protect_prior_slots: bool = False
+    # Sharpness of the protection gate; larger => protect deeper into each prior task's read core.
+    # Only consulted when protect_prior_slots=True; 0.0 disables the gate even if the flag is set.
+    protect_beta: float = 4.0
+
     # ---- Optional visualization logging (WandB) ----
     # When enabled, build an interactive Plotly HTML visualization of:
     # - global memory usage (from pretraining memory_usage.json, if available)
@@ -164,6 +177,8 @@ class SequentialOnlineConfig(TrainPipelineConfig):
                 "tf_idf_weighting_method must be one of {'raw', 'weighted'}, "
                 f"got {self.tf_idf_weighting_method!r}"
             )
+        if self.protect_beta < 0:
+            raise ValueError(f"protect_beta must be >= 0, got {self.protect_beta}")
 
 
 def _render_cumulative_eval_bar_chart(
@@ -861,6 +876,62 @@ def _update_online_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: 
         idf_by_module[json_key] = idf
 
 
+# ---- Prior-usefulness write protection accumulators (per module) ----
+# Raw read counts for the CURRENT task (reset at each task boundary) and the cumulative
+# usefulness vector u(s) = max over prior tasks of each task's peak-normalized read profile.
+_protect_cur_counts_by_module: dict[str, torch.Tensor] = {}
+_protect_usefulness_by_module: dict[str, torch.Tensor] = {}
+
+
+def _accumulate_protect_counts_batch(unwrapped_policy: PreTrainedPolicy):
+    """Accumulate per-slot read counts for the current task (used to build prior usefulness).
+
+    Mirrors `_accumulate_online_idf_stats_batch` but keeps raw counts (not binary DF) so the
+    per-task read profile can be peak-normalized at the task boundary.
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        idx = getattr(mem, "last_indices", None)
+        if idx is None:
+            continue
+        try:
+            num_slots = mem.values.shape[0] if hasattr(mem, "values") else getattr(mem, "size", None)
+        except Exception:
+            num_slots = getattr(mem, "size", None)
+        if num_slots is None:
+            continue
+        num_slots = int(num_slots)
+        cur = _protect_cur_counts_by_module.get(json_key)
+        if cur is None or cur.numel() != num_slots:
+            cur = torch.zeros(num_slots, dtype=torch.float32)
+            _protect_cur_counts_by_module[json_key] = cur
+        idx_flat = idx.reshape(-1).to(torch.long).detach().cpu()
+        if idx_flat.numel() == 0:
+            continue
+        cur += torch.bincount(idx_flat, minlength=num_slots).to(torch.float32)
+
+
+def _finalize_protect_usefulness(unwrapped_policy: PreTrainedPolicy):
+    """Fold the just-finished task's read profile into the cumulative usefulness store.
+
+    u(s) <- max(u(s), read_count(s) / max_s read_count); then reset the current-task counts.
+    Call once at each task boundary, AFTER the task's training loop, so that while task W trains
+    the store reflects only tasks strictly before W (W never protects against itself).
+    """
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        cur = _protect_cur_counts_by_module.get(json_key)
+        if cur is None:
+            continue
+        mx = float(cur.max().item()) if cur.numel() else 0.0
+        if mx > 0:
+            rnorm = cur / mx
+            u = _protect_usefulness_by_module.get(json_key)
+            if u is None or u.numel() != cur.numel():
+                u = torch.zeros_like(cur)
+            _protect_usefulness_by_module[json_key] = torch.maximum(u, rnorm)
+        # Reset current-task counts for the next task.
+        _protect_cur_counts_by_module[json_key] = torch.zeros_like(cur)
+
+
 def _seed_online_idf_from_pretrain(
     stats_path: Path,
     unwrapped_policy: PreTrainedPolicy,
@@ -997,6 +1068,8 @@ def _compute_tfidf_top_indices_for_batch(
     override_indices: dict[str, torch.Tensor] | None = None,
     override_weights: dict[str, torch.Tensor] | None = None,
     weighting_method: str = "raw",
+    protect_usefulness_by_module: dict[str, torch.Tensor] | None = None,
+    protect_beta: float = 0.0,
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -1054,6 +1127,13 @@ def _compute_tfidf_top_indices_for_batch(
                     raise RuntimeError(f"IDF size mismatch for module {json_key}: got {idf.numel()}, expected {num_slots}")
                 idf = idf.to(device=tf.device, dtype=torch.float32)
             tfidf = tf * idf
+            # Prior-usefulness protection: multiply by (1 - u)**beta so slots earlier tasks
+            # relied on are pushed out of the top-t update set (graded, task-identity-aware).
+            if protect_usefulness_by_module is not None and protect_beta > 0:
+                u = protect_usefulness_by_module.get(json_key)
+                if u is not None and u.numel() == num_slots:
+                    u = u.to(device=tf.device, dtype=torch.float32)
+                    tfidf = tfidf * (1.0 - u).clamp_(min=0.0).pow(protect_beta)
             # Consider only slots with c(i) > 0
             used_mask = counts > 0
             if used_mask.any():
@@ -1154,6 +1234,8 @@ def _update_policy_with_tfidf(
     accum_indices_bufs: dict[str, list[torch.Tensor]] | None = None,
     accum_weights_bufs: dict[str, list[torch.Tensor]] | None = None,
     weighting_method: str = "raw",
+    protect_usefulness_by_module: dict[str, torch.Tensor] | None = None,
+    protect_beta: float = 0.0,
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -1226,6 +1308,8 @@ def _update_policy_with_tfidf(
                 override_indices=override_indices,
                 override_weights=override_weights,
                 weighting_method=weighting_method,
+                protect_usefulness_by_module=protect_usefulness_by_module,
+                protect_beta=protect_beta,
             )
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
@@ -1735,6 +1819,10 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             accum_indices_bufs=_seq_accum_indices if grad_accum_steps > 1 else None,
                             accum_weights_bufs=_seq_accum_weights if grad_accum_steps > 1 else None,
                             weighting_method=cfg.tf_idf_weighting_method,
+                            protect_usefulness_by_module=(
+                                _protect_usefulness_by_module if cfg.protect_prior_slots else None
+                            ),
+                            protect_beta=cfg.protect_beta,
                         )
                     else:
                         train_tracker, output_dict = update_policy(
@@ -1771,6 +1859,10 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 if cfg.tfidf_enable and not cfg.tf_only and cfg.use_online_idf_stats:
                     _accumulate_online_idf_stats_batch(unwrapped)
 
+                # Accumulate prior-usefulness read counts per micro-batch (all ranks)
+                if cfg.protect_prior_slots:
+                    _accumulate_protect_counts_batch(unwrapped)
+
             global_step += 1
             train_tracker.step()
 
@@ -1792,6 +1884,21 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     idf_by_module=idf_by_module if idf_by_module is not None else {},
                     idf_exponent=cfg.idf_exponent,
                 )
+            except Exception:
+                pass
+
+        # After finishing this task, fold its read profile into the prior-usefulness store
+        # so that subsequent tasks protect the slots this task relied on.
+        if cfg.protect_prior_slots:
+            try:
+                _finalize_protect_usefulness(
+                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+                )
+                if is_main:
+                    logging.info(
+                        f"Updated prior-usefulness protection store after task {idx + 1} "
+                        f"(protect_beta={cfg.protect_beta})."
+                    )
             except Exception:
                 pass
 

@@ -227,6 +227,19 @@ class HashingMemoryLite(nn.Module):
         # recomputation does not observe a different contrastive key set.
         self._pending_contrastive_batches: list[tuple[torch.Tensor, torch.Tensor]] = []
 
+        # Optional cross-batch FIFO queue for the routing separation loss.
+        # Stores per-token queries (highest granularity) + per-token task labels.
+        # Cap is in SAMPLES; ring buffer is sized lazily to cap * tokens_per_sample.
+        # References are recomputed against current keys each step (no grad to the
+        # stored queries), so this only feeds the separation term.
+        self.routing_query_queue = max(0, int(getattr(cfg, "routing_query_queue", 0)))
+        self._routing_queue_q = None        # (cap_rows, heads, k_dim) detached
+        self._routing_queue_labels = None   # (cap_rows,) long
+        self._routing_queue_ptr = 0
+        self._routing_queue_count = 0
+        self._routing_queue_cap_rows = 0
+        self._pending_routing_batches: list[tuple[torch.Tensor, torch.Tensor, int]] = []
+
         # Store last contrastive loss and diagnostic metrics for aggregation (set during forward)
         self.last_contrastive_loss = None
         self.last_query_intra_sim = None  # mean cosine sim within same-task pairs
@@ -426,11 +439,100 @@ class HashingMemoryLite(nn.Module):
 
     @torch.no_grad()
     def flush_staged_contrastive_queries(self) -> None:
-        if not self._pending_contrastive_batches:
+        # Contrastive and routing queues are flushed independently (either may be
+        # active without the other).
+        if self._pending_contrastive_batches:
+            for z, labels in self._pending_contrastive_batches:
+                self._enqueue_contrastive_queries(z=z, labels=labels)
+            self._pending_contrastive_batches.clear()
+        # Routing-separation queue shares the same flush hook.
+        if self._pending_routing_batches:
+            for q_rows, labels, rows_per_sample in self._pending_routing_batches:
+                self._enqueue_routing_queries(q_rows, labels, rows_per_sample)
+            self._pending_routing_batches.clear()
+
+    # ── Routing-separation cross-batch queue ───────────────────────────
+    def _ensure_routing_queue(self, device: torch.device, dtype: torch.dtype, rows_per_sample: int) -> None:
+        cap = self.routing_query_queue
+        if cap <= 0:
             return
-        for z, labels in self._pending_contrastive_batches:
-            self._enqueue_contrastive_queries(z=z, labels=labels)
-        self._pending_contrastive_batches.clear()
+        cap_rows = cap * max(1, int(rows_per_sample))
+        need_init = (
+            self._routing_queue_q is None
+            or self._routing_queue_q.shape != (cap_rows, self.heads, self.k_dim)
+            or self._routing_queue_q.device != device
+            or self._routing_queue_q.dtype != dtype
+            or self._routing_queue_labels.device != device
+        )
+        if need_init:
+            self._routing_queue_q = torch.empty((cap_rows, self.heads, self.k_dim), device=device, dtype=dtype)
+            self._routing_queue_labels = torch.empty((cap_rows,), device=device, dtype=torch.long)
+            self._routing_queue_ptr = 0
+            self._routing_queue_count = 0
+            self._routing_queue_cap_rows = cap_rows
+
+    def _get_routing_queue(self, device: torch.device, dtype: torch.dtype):
+        if self.routing_query_queue <= 0:
+            return None, None
+        if self._routing_queue_q is None or int(self._routing_queue_count) <= 0:
+            return None, None
+        n = int(self._routing_queue_count)
+        return (
+            self._routing_queue_q[:n].to(device=device, dtype=dtype),
+            self._routing_queue_labels[:n].to(device=device),
+        )
+
+    @torch.no_grad()
+    def _stage_routing_queries(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor) -> None:
+        if self.routing_query_queue <= 0 or _is_checkpoint_recompute():
+            return
+        # query: (B*T*heads, k_dim) in (bs, heads) row-major order with bs = B*T.
+        q_rows = query.detach().view(B * T, self.heads, self.k_dim)
+        labels = task_ids.view(B, 1).expand(B, T).reshape(B * T).detach().to(torch.long)
+        self._pending_routing_batches.append((q_rows, labels, int(T)))
+
+    def _router_trainable(self) -> bool:
+        """True iff the router (query proj or keys) can receive gradient.
+
+        The routing/contrastive losses and the cross-batch routing queue only
+        affect the router, so when it is frozen (sequential adaptation, where only
+        the memory values train) they are inert and skipped. Cheap: a few bool
+        checks per forward. NOTE: if router training is ever re-enabled during
+        sequential (train_query_proj / train_memory_keys), the sequential loop would
+        also need the staged-query flush hook that currently lives only in pretrain.
+        """
+        if self.keys.requires_grad:
+            return True
+        return any(p.requires_grad for p in self.query_proj.parameters())
+
+    @torch.no_grad()
+    def _enqueue_routing_queries(self, q_rows: torch.Tensor, labels: torch.Tensor, rows_per_sample: int) -> None:
+        cap = self.routing_query_queue
+        if cap <= 0 or q_rows.numel() == 0:
+            return
+        self._ensure_routing_queue(q_rows.device, q_rows.dtype, rows_per_sample)
+        cap_rows = self._routing_queue_cap_rows
+        n = int(q_rows.shape[0])
+        if n >= cap_rows:
+            self._routing_queue_q.copy_(q_rows[-cap_rows:])
+            self._routing_queue_labels.copy_(labels[-cap_rows:])
+            self._routing_queue_ptr = 0
+            self._routing_queue_count = cap_rows
+            return
+        ptr = int(self._routing_queue_ptr)
+        end = ptr + n
+        if end <= cap_rows:
+            self._routing_queue_q[ptr:end] = q_rows
+            self._routing_queue_labels[ptr:end] = labels
+        else:
+            first = cap_rows - ptr
+            self._routing_queue_q[ptr:] = q_rows[:first]
+            self._routing_queue_labels[ptr:] = labels[:first]
+            rem = end - cap_rows
+            self._routing_queue_q[:rem] = q_rows[first:]
+            self._routing_queue_labels[:rem] = labels[first:]
+        self._routing_queue_ptr = end % cap_rows
+        self._routing_queue_count = min(cap_rows, int(self._routing_queue_count) + n)
 
     @torch.no_grad()
     def offload_slots_to_cpu(self) -> int:
@@ -530,14 +632,22 @@ class HashingMemoryLite(nn.Module):
         self.last_routing_compactness_loss = None
         self.last_routing_separation_loss = None
         self.last_routing_task_entropy = None
-        if self.training and self.contrastive_loss_weight > 0 and task_ids is not None:
+        # The routing/contrastive losses and the cross-batch routing queue only do
+        # useful work when the router (query proj + keys) can receive gradient.
+        # During sequential adaptation the router is FROZEN (only memory values
+        # train), so they are inert and are skipped. Skipping the queue staging is
+        # also what prevents an unbounded GPU leak: the staged-query flush hook lives
+        # only in the pretrain loop (lerobot_train.py), so in the sequential loop the
+        # pending list would otherwise grow every step and OOM (~1k steps).
+        router_trainable = self._router_trainable()
+        if self.training and self.contrastive_loss_weight > 0 and task_ids is not None and router_trainable:
             if self.contrastive_method == "sample":
                 self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
             else:
                 self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
 
         s1_full, s2_full = self._compute_subkey_scores(query)
-        if self.training and task_ids is not None and (
+        if self.training and task_ids is not None and router_trainable and (
             self.routing_intra_task_locality_weight > 0
             or self.routing_inter_task_separation_weight > 0
             or self.routing_global_balance_weight > 0
@@ -553,6 +663,12 @@ class HashingMemoryLite(nn.Module):
             self.last_routing_compactness_loss = self.last_routing_intra_task_locality_loss
             self.last_routing_separation_loss = self.last_routing_inter_task_similarity_loss
             self.last_routing_task_entropy = self.last_routing_intra_task_entropy
+
+        # Stage per-token routing queries for the cross-batch separation queue
+        # (flushed after the optimizer step in the pretrain loop; skipped when the
+        # router is frozen so the pending list cannot leak — see note above).
+        if self.training and self.routing_query_queue > 0 and task_ids is not None and router_trainable:
+            self._stage_routing_queries(query, B, T, task_ids)
 
         # Indices and scores
         scores, indices = self._get_indices_from_subkey_scores(s1_full, s2_full)  # (bs*heads, knn)
@@ -983,6 +1099,12 @@ class HashingMemoryLite(nn.Module):
         compact slot histogram, and computes locality/separation losses on
         those full-slot distributions.
         """
+        # When a cross-batch routing queue is enabled, use the dense-histogram
+        # path that pushes the current (differentiable) per-task distributions
+        # away from queued, all-task reference distributions.
+        if self.routing_query_queue > 0:
+            return self._routing_losses_queued(s1_full, s2_full, B, T, task_ids)
+
         eps = 1e-12
         M = self.routing_loss_topk if self.routing_loss_topk > 0 else self.knn
         candidate_pool = M * M
@@ -1119,6 +1241,147 @@ class HashingMemoryLite(nn.Module):
         global_entropy_mean = (
             float(sum(global_entropy_terms) / len(global_entropy_terms)) if global_entropy_terms else None
         )
+        return locality, similarity, global_balance, task_entropy_mean, task_support_mean, global_entropy_mean
+
+    def _routing_losses_queued(
+        self,
+        s1_full: torch.Tensor,
+        s2_full: torch.Tensor,
+        B: int,
+        T: int,
+        task_ids: torch.Tensor,
+    ):
+        """Routing losses with a cross-batch reference queue.
+
+        Builds per-task slot distributions over the FULL n_keys**2 space (dense;
+        numerically identical to the compact path since untouched slots are 0).
+        The current batch's per-task histograms are differentiable and carry the
+        gradient. The separation term pushes them away from per-task REFERENCE
+        histograms recomputed from the queued queries against the CURRENT keys
+        (no grad to the stored queries), which cover all recently-seen tasks ->
+        fixes both the ~1-sample/task estimate and the partial-task-coverage of
+        the in-batch-only loss. Locality / global-balance use the current
+        histograms (they need gradient), exactly as before.
+        """
+        eps = 1e-12
+        device = s1_full.device
+        size = self.size
+        heads = self.heads
+        M = self.routing_loss_topk if self.routing_loss_topk > 0 else self.knn
+        candidate_pool = M * M
+        score_scale = math.sqrt(max(self.k_dim // 2, 1))
+        log_norm = math.log(max(size, 2))
+        head_off = torch.arange(heads, device=device).view(1, heads, 1) * size
+
+        sep_weight = self.routing_inter_task_separation_weight
+        loc_weight = self.routing_intra_task_locality_weight
+        gb_weight = self.routing_global_balance_weight
+
+        # Support band -> normalized-entropy band (same definition as compact path)
+        default_min_support = max(self.knn, 8)
+        default_max_support = max(8 * self.knn, candidate_pool // 2)
+        min_support = self.routing_intra_task_min_support or default_min_support
+        max_support = self.routing_intra_task_max_support or default_max_support
+        min_support = max(1, min_support)
+        max_support = max(1, max_support)
+        if min_support > max_support:
+            min_support, max_support = max_support, min_support
+        min_entropy = math.log(max(min_support, 1)) / log_norm
+        max_entropy = math.log(max(max_support, 1)) / log_norm
+
+        def _task_hist_raw(probs_rows, ids_rows, task_idx_rows, n_tasks, accum=None):
+            # probs_rows/ids_rows: (R, heads, M^2); task_idx_rows: (R,) dense idx.
+            # Scatter into a flat (n_tasks*heads*size) buffer; returns raw (unnormalized).
+            r = probs_rows.shape[0]
+            hi = torch.arange(heads, device=device).view(1, heads, 1)
+            off = ((task_idx_rows.view(r, 1, 1) * heads + hi) * size + ids_rows.long()).reshape(-1)
+            src = probs_rows.reshape(-1).float()
+            if accum is None:
+                accum = torch.zeros(n_tasks * heads * size, device=device, dtype=torch.float32)
+            return accum.scatter_add(0, off, src)
+
+        def _normalize(raw, n_tasks):
+            h = raw.view(n_tasks, heads, size)
+            return h / h.sum(dim=-1, keepdim=True).clamp(min=eps)
+
+        # ---- current batch: differentiable per-task histograms (vectorized) ----
+        s1_top, i1_top = s1_full.topk(M, dim=2)
+        s2_top, i2_top = s2_full.topk(M, dim=2)
+        bs = s1_full.shape[0]
+        joint_scores = (s1_top.unsqueeze(3) + s2_top.unsqueeze(2)).reshape(bs, heads, candidate_pool)
+        joint_ids = (i1_top.unsqueeze(3) * self.n_keys + i2_top.unsqueeze(2)).reshape(bs, heads, candidate_pool)
+        joint_probs = F.softmax(joint_scores.float() / score_scale, dim=-1)
+
+        cur_unique = torch.unique(task_ids)
+        cur_id_list = cur_unique.tolist()
+        n_cur = len(cur_id_list)
+        cur_remap = {int(t): i for i, t in enumerate(cur_id_list)}
+        sample_idx = torch.tensor([cur_remap[int(t)] for t in task_ids.tolist()], device=device)
+        row_idx = sample_idx.view(B, 1).expand(B, T).reshape(B * T)
+        cur_raw = _task_hist_raw(joint_probs, joint_ids, row_idx, n_cur)
+        cur_h = _normalize(cur_raw, n_cur)  # (n_cur, heads, size) differentiable
+
+        task_H = -(cur_h * cur_h.clamp(min=eps).log()).sum(dim=-1)  # (n_cur, heads)
+        task_H_norm = task_H / log_norm
+        task_entropy_mean = float(task_H_norm.mean().item())
+        task_support_mean = float(torch.exp(task_H).mean().item())
+        locality = None
+        if loc_weight > 0:
+            locality = (F.relu(min_entropy - task_H_norm).pow(2) + F.relu(task_H_norm - max_entropy).pow(2)).mean()
+
+        # ---- queue: detached reference histograms recomputed vs CURRENT keys ----
+        ref_h = None
+        ref_id_list: list[int] = []
+        qz, qlab = self._get_routing_queue(device, self.keys.dtype)
+        if qz is not None and sep_weight > 0:
+            ref_id_list = torch.unique(qlab).tolist()
+            n_ref = len(ref_id_list)
+            ref_remap = {int(t): i for i, t in enumerate(ref_id_list)}
+            CHUNK = 4096
+            with torch.no_grad():
+                ref_raw = torch.zeros(n_ref * heads * size, device=device, dtype=torch.float32)
+                for c0 in range(0, qz.shape[0], CHUNK):
+                    qc = qz[c0:c0 + CHUNK]
+                    lc = qlab[c0:c0 + CHUNK]
+                    r = qc.shape[0]
+                    s1c, s2c = self._compute_subkey_scores(qc.reshape(r * heads, self.k_dim))
+                    s1ct, i1ct = s1c.topk(M, dim=2)
+                    s2ct, i2ct = s2c.topk(M, dim=2)
+                    jsc = (s1ct.unsqueeze(3) + s2ct.unsqueeze(2)).reshape(r, heads, candidate_pool)
+                    jic = (i1ct.unsqueeze(3) * self.n_keys + i2ct.unsqueeze(2)).reshape(r, heads, candidate_pool)
+                    jpc = F.softmax(jsc.float() / score_scale, dim=-1)
+                    lc_idx = torch.tensor([ref_remap[int(t)] for t in lc.tolist()], device=device)
+                    ref_raw = _task_hist_raw(jpc, jic, lc_idx, n_ref, accum=ref_raw)
+                ref_h = _normalize(ref_raw, n_ref)  # (n_ref, heads, size) detached
+
+        # ---- separation (vectorized einsum; mean cosine over heads, masked i==j) ----
+        similarity = None
+        if sep_weight > 0:
+            if ref_h is not None:
+                cur_n = F.normalize(cur_h, p=2, dim=-1)
+                ref_n = F.normalize(ref_h, p=2, dim=-1)
+                sim = torch.einsum("ihs,jhs->ij", cur_n, ref_n) / heads  # (n_cur, n_ref)
+                cur_ids_t = torch.tensor(cur_id_list, device=device).view(n_cur, 1)
+                ref_ids_t = torch.tensor(ref_id_list, device=device).view(1, n_ref)
+                valid = (cur_ids_t != ref_ids_t).float()
+                similarity = (sim * valid).sum() / valid.sum().clamp(min=1.0)
+            elif n_cur >= 2:
+                # Warmup (queue empty): current-vs-current.
+                cur_n = F.normalize(cur_h, p=2, dim=-1)
+                sim = torch.einsum("ihs,jhs->ij", cur_n, cur_n) / heads
+                valid = 1.0 - torch.eye(n_cur, device=device)
+                similarity = (sim * valid).sum() / valid.sum().clamp(min=1.0)
+
+        # ---- global balance (current histograms) ----
+        global_balance = None
+        global_entropy_mean = None
+        if gb_weight > 0 and n_cur >= 2:
+            global_prob = cur_h.mean(dim=0)
+            global_prob = global_prob / global_prob.sum(dim=-1, keepdim=True).clamp(min=eps)
+            global_H = -(global_prob * global_prob.clamp(min=eps).log()).sum(dim=-1) / log_norm
+            global_balance = (1.0 - global_H).mean()
+            global_entropy_mean = float(global_H.mean().item())
+
         return locality, similarity, global_balance, task_entropy_mean, task_support_mean, global_entropy_mean
 
     def _get_indices_from_subkey_scores(self, s1_full: torch.Tensor, s2_full: torch.Tensor):
