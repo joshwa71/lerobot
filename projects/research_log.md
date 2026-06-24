@@ -2010,3 +2010,99 @@ Net-positive at every β>0, peaks ~β=8 (env7 read-through roughly halved). Cost
 - Not raising `top_t` for env7 — the writer needs the shared core it damages (Entry 19 zero-sum); write-location masking can't fix a write-magnitude/co-host problem, only the *graded soft* gate trades it.
 
 ---
+
+## Entry 28 - 24 Jun 26 (protection β=4 result: +6.5pp via the INCIDENTAL half, env7 irreducible; routing autopsy FLIPS — FiLM language is near-inert, routing is scene-driven)
+
+### Part A — prior-usefulness protection (β=4) result
+
+The Entry-27 mechanism ran (`..._top_t_1536_protect_beta4`, reused the sep5 prior, 20 eval eps, ~17h). **It works — on the protectable half.** Headline (caveat: 20 eval eps vs the 50-ep baselines, so ±3–4pp noise; slot metrics are eval-independent and corroborate):
+
+| metric | control(50) | sep5(50) | **protect β4(20)** |
+|---|---|---|---|
+| final avg | 34.4 | 34.0 | **40.5** |
+| within-run forgetting (init→final) | −5.4 | −7.6 | **−3.0** |
+| mean read-through-overwrite | 55.4% | 37.3% | **29.8%** |
+| pairwise channels ≥12% | 26 | 9 | **6** |
+| read IoU | 0.107 | 0.052 | 0.051 |
+| L14 effnum / core50 | 7020/3325 | 5206/2526 | 5257/2534 |
+
+Forgetting roughly **halved** (−7.6→−3.0), and the gains are mechanistically attributable — the tasks whose read-through dropped are the ones that improved: env6 (37→28% / rollout 26→55), env8 (22→17% / 34→50), env1 (15→13% / 10→30), env9 (56→45% / 12→20). Read IoU unchanged because reads are frozen-router; protection is write-side (steers later writes off prior cores). Capacity untouched.
+
+**env7 still collapses to 0** (the genuine hub). Its read-through dropped 81.5→**71.2%** and its killer channels fell (env7←env0 53→**40%**, env7←env1 54→**39%**) — the gate *did* steer env0/env1 off env7's core — but 71% + gate≈0.99 still = collapse. Its trajectory softened from a cliff (baseline 18→0 at the next task) to a bleed (25→10→5→5→0), but it ends at 0.
+
+**Why env7 resists, and why that's expected — two mechanistic findings:**
+1. **β=4 under-protected it specifically.** Offline predicted env7→52.7% at β=4; actual 71.2% ⇒ *implementation* β=4 ≈ *offline* β≈1 for env7. The top-t reselection is weaker than the soft-suppression sim.
+2. **Top-t reselection is self-limiting on genuine contention.** env0/env1's soup/cheese-core slots have TF ~86× median; even ×(1−u)^4 they stay in the top-1536 → survive the gate. The slots it *can't* exclude are the high-TF shared ones = exactly the genuine-contention slots write-masking provably can't protect anyway (Entry 19 zero-sum). So the mechanism self-selects the **incidental** half (cheap, low-TF overlaps → the +6.5pp) and gracefully declines the **genuine** half (env7). This is the cleanest confirmation of the Entry-27 incidental-vs-genuine split.
+
+**Verdict:** β=4 protection is a keeper — fold into the recipe (free, opt-in, +6.5pp via forgetting). Higher β won't rescue env7 (self-limiting) and would start costing env0/env1 — not worth it. env7 is now firmly the genuine-contention residual.
+
+### Part B — env7 is "a routing issue": query-decomposition autopsy (Josh) — and it FLIPS the hypothesis
+
+Hypothesis (Josh + me): the frozen FiLM-on-language router drops the lookalike basket tasks into a shared basin; the fix is to **up-weight `proj(x)` (scene) over language** in the query `q = proj(x)·(1+γ(lang)) + β(lang)`. First clarified (code): this is a *fusion* lever, not a routing-*loss* lever — the loss is downstream of `q` and can only separate what `q` already encodes (which is why sep=5 floored the basket famIoU at 0.26).
+
+Then probed the actual query map from the **checkpoint alone** (no forward; `scripts/query_probe.py`): embed the 10 instructions (all-mpnet-base-v2), push through each layer's `film_mlp`, inspect γ/β. **The premise is wrong — the FiLM language pathway is near-inert:**
+- **`γ ≈ 0`**: `‖1+γ‖ ≈ 45.3 ≈ √2048` at every layer → multiplicative modulation ≈ identity.
+- **`β` is near-task-agnostic** despite distinguishable instructions:
+
+| | instruction cosine (raw mpnet) | β cosine (post-`film_mlp`) |
+|---|---|---|
+| basket | 0.76 (env7~env0 0.86, env0~env1 0.61) | **0.98** |
+| background | 0.43 | **0.945** |
+
+`film_mlp` **compresses the instruction signal away** (cos 0.43–0.86 → 0.945–0.99; bias-dominated output). So the one signal that uniquely names the basket tasks ("which two objects") is present at the input and discarded. Routing is carried by **`proj(x)` — the scene**. (Recontextualizes Entry-18's "frozen language-router" → it's a frozen *scene* router; Entry-24 started softening this, now quantified to near-fully-scene. The whole sep/contrastive program has been separating tasks in *scene* space — works when scenes differ, floors when they don't.)
+
+**Implication:** "up-weight scene over language" is **moot/backwards** — scene already dominates, language already ≈0 for discrimination. env7 collapses because the **basket scenes are genuinely similar** (same kitchen table / overlapping objects / basket) and the model has no working channel for the instruction that would separate them. The likely irreducible case.
+
+**Revised options for env7 (all harder than a reweight):**
+1. **Recover the language signal** (opposite direction): stop `film_mlp` collapsing to its bias (anti-collapse reg / align β with mpnet instruction *differences*) so "soup+cheese" routes differently from "soup+sauce". Caveats: re-opens held-out-generalization risk (Entry 18); basket instructions are themselves only cos 0.86 → bounded; new pretrain.
+2. **Representation / co-host (rank)** for the shared region (realworld Entry 3 cautions rank doesn't allocate under a frozen router).
+3. **Accept env7**, bank the protection win on the rest.
+
+### Part C — forward probe PREPARED (pending; run next)
+
+The checkpoint-only probe is decisive that language is near-inert, but the last open question — *is the basket residual driven by scene-similarity or by the small β-residual?* — needs `proj(x)` magnitudes. Prepared (NOT yet run):
+- `scratchpad/query_forward.py`: monkeypatches `QueryMLPLite.forward`, runs ~25 batches/task on basket (task_idx 4/5/7) + controls (2/6) through the frozen sep5 checkpoint, recomputes routing under **full = proj·(1+γ)+β / scene = proj·(1+γ) / lang = β** and reports `‖scene‖` vs `‖β‖`.
+- Trainer hook to add (env-var-guarded, after `task_index_to_name` ~line 1622): `if os.environ.get("QUERY_PROBE"): run_query_probe(...); sys.exit(0)` — reuses the validated policy/dataset/preprocessor setup, forward-only, exits before training.
+- **Decisive test:** basket `IoU(scene)` vs `IoU(full)`. `scene << full` → β drives the collision → option 1 has teeth. `scene ≈ full` → pure scene similarity → only options 2/3.
+
+**RESULT (ran via standalone `scratchpad/query_forward_standalone.py` — reuses `parser.wrap` + factories, NO trainer changes; 25 batches/task on basket 4/5/7 + controls 2/6):**
+- **Scene dominates β by 17–21×**: `‖proj(x)·(1+γ)‖` ≈ 16 / 18 / 18 / 20 at L8/10/12/14 vs `‖β‖` ≈ 0.98. The language bias is a ~5% additive perturbation on the query.
+- **Stripping β changes basket routing by ≈0%** (L14 basket weighted IoU): full **0.215** vs scene (β-stripped) **0.216** — e7~e0 0.221 vs 0.224, e7~e1 0.282 vs 0.283, e0~e1 0.142 vs 0.143. Language-only (q=β) would be 0.545, but β is 20× too small to bend the routing. (full-query basket 0.215 / background 0.058 reproduces the sequential JSON read IoU — pipeline validated.)
+- **VERDICT: env7 is pure scene-similarity, NOT routing-fixable by reweighting.** Scene already dominates 20×; deleting language entirely leaves the basket collision unchanged. The three basket tasks have near-identical *initial scenes* (same kitchen, overlapping objects, a basket); the sole discriminator is the instruction, which the model routes ≈0% on. **Option 1 (down-weight language) is DEAD.** The only routing-based lever left is the *opposite and amplified* — recover AND scale the language pathway ~20× (anti-collapse + magnitude) so the instruction can steer routing — a large architecture change, with held-out-generalization risk (Entry 18) and bounded by instruction similarity (mpnet cos 0.86). Pragmatic read: env7 is the genuine *same-scene/different-instruction* residual (1 of 10); bank the β=4 protection win on the other 9 and pivot to the plasticity ceiling for the average; revisit env7 only if a language-amplification or co-host idea is worth a pretrain.
+
+### Next steps
+1. Run the forward probe (Part C) → decide whether env7 is routing-fixable at all.
+2. Fold β=4 protection into the recipe regardless (it's a free retention win on the incidental channels).
+3. Plasticity remains the binding constraint on the *average* (diagonal ~43; dual-cycle tasks low) — steps/task, value_lr, rank, longer pretrain. Independent of the env7 question.
+
+---
+
+## Entry 29 - 24 Jun 26 (LAUNCHED: autonomous protection+plasticity batch on the sep5 prior — 4 sequential runs, ~3 days)
+
+Josh away a few days; lined up 4 **sequential-only** runs (all reuse the EXISTING sep5 40k prior — no new pretrain), single-knob deltas from the standing baseline **β=4 protection (Entry 28, 40.5% @20ep)**. Chained in tmux `plast_batch`; runner `job_scripts/nebius/libero_90/sequential/run_protect_plasticity_batch.sh`; runner log `outputs/protect_plasticity_batch.log`; per-run logs `outputs/batch_logs/<run>.log`; wandb project `vla-memory`. All 20-eval-eps for apples-to-apples with the β4 baseline. Robust runner (one failure doesn't abort; skip-if-final-ckpt-exists).
+
+Order C → B → D → A (front-load the binding-constraint/plasticity tests; β8 last):
+
+| # | run suffix (`…_top_t_1536_<suffix>`) | delta vs β4 | tests | prediction |
+|---|---|---|---|---|
+| C | `protect_beta4_steps5k` | steps 3k→5k | plasticity (safe) | diagonal/init ↑ (MSE still falling at 3k block-ends) |
+| B | `protect_beta4_lr2x` | value_lr 1e-3/1e-4→2e-3/2e-4 | plasticity (LR) | diagonal ↑; **watch 2e-3 peak instability** (Entry 20: t8 late-block MSE; grad-clip 1.0 is the guard — if grad_norm/MSE blow up it's diverging, fallback floor-only 2e-4) |
+| D | `protect_beta4_lr2x_steps5k` | both | plasticity ceiling / additivity | most likely new best; protection(write-location) ⟂ LR(write-magnitude) → should compose |
+| A | `protect_beta8` | β 4→8 | protection curve | env7 ~unchanged (self-limiting); env0/env1 start paying; incidental channels protected harder |
+
+**Standing conclusions feeding this batch (Entries 27–28):**
+- β=4 protection is a confirmed keeper: forgetting halved (init→final −7.6→−3.0), mean read-through 37→30%, +6.5pp — entirely on the **incidental** channels; env7 (genuine hub) stays 0.
+- **env7 is NOT routing-fixable** (forward probe, Entry 28 Part C): scene dominates the query 17–21×; stripping β changes basket routing ≈0% (full 0.215 vs scene 0.216 @L14). It's the genuine same-scene/different-instruction residual. Routing-side lever would be the *opposite+amplified* (recover & scale language ~20×) — deferred, risky.
+- The **average is plasticity-bound** (diagonal ~43, dual-cycle tasks low) — hence this batch targets plasticity. The big uncovered lever is **rank-4** (per-slot expressivity) — needs a fresh 44h pretrain (blocks the GPU), so it's the first thing to queue on return, + a clean **50-ep re-eval** of whatever wins this batch (de-noise the 20-ep numbers).
+
+**Analysis recipe (persisted: `scripts/vla_analysis/`):** env map `{0:4,1:6,2:9,3:2,4:7,5:0,6:8,7:1,8:3,9:5}`; train order = task_index 0..9; basket family = task_idx 4/5/7 (env7/env0/env1, env7=soup+cheese hub).
+- Retention matrix: `retention3.py` (add the 4 new run dirs to its `RUNS`). Baselines: control 34.4 / sep5 34.0 / β4 40.5 (final avg); mean init (diagonal) control 39.8 / sep5 41.6 / β4 43.5 — **for the plasticity runs the key read is whether mean init/peak rises above ~45**.
+- Slot usage: `slots.py <run>` (add run to its `runs` dict) — capacity (L14 effnum/core50), read-through-overwrite (control 55/sep5 37/β4 30%; env7 86/81/71%), pairwise overwrite, read-IoU validation (must match logged `memory_iou`).
+- wandb scalars: `wb.py` / `parse_wandb.py` — held-in/seen success, mse_loss, gate, query sims.
+- Routing autopsy (done, reproducible): `query_probe.py` (checkpoint-only) + `query_forward_standalone.py` (forward; reuses `parser.wrap`+factories, NO trainer changes — run via conda env, `QUERY_PROBE_NB` batches/task).
+
+**Mechanism in code (shipped, opt-in, default off):** `lerobot_sequential_train.py` — `--protect_prior_slots` / `--protect_beta`; store `_protect_usefulness_by_module` (u(s)=max over prior tasks of peak-normalized read profile, folded at task boundaries), gate `tfidf *= (1-u)^β` before top-t. β=0/off ⇒ legacy byte-identical.
+
+**When results land:** retention matrix per run vs β4 baseline (diagonal first — did plasticity lift the ceiling?), B/D LR-stability check, A's env0/env1-vs-env7 tradeoff. Pick the winner → 50-ep re-eval → then rank-4 pretrain.
+
+---
