@@ -144,6 +144,11 @@ class MemoryLayerConfig:
     # Rank for LoRA-style slots (only used when value_type="lora").
     # Lower rank = fewer params but less capacity per slot.
     lora_rank: int = 2
+    # Optional per-layer LoRA ranks (only used when value_type="lora"). When non-empty,
+    # its length must equal the number of attached expert `layers` and it is matched to
+    # `layers` by order, overriding the scalar `lora_rank` per layer. Empty -> use the
+    # scalar `lora_rank` for every layer (backward compatible).
+    layer_ranks: List[int] = field(default_factory=list)
 
     # Inference-time CPU offload for slot tensors (slot_down/slot_up when value_type="lora",
     # or values when value_type="vector"). When enabled, the slot tensors are pinned in CPU

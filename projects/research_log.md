@@ -2106,3 +2106,150 @@ Order C → B → D → A (front-load the binding-constraint/plasticity tests; �
 **When results land:** retention matrix per run vs β4 baseline (diagonal first — did plasticity lift the ceiling?), B/D LR-stability check, A's env0/env1-vs-env7 tradeoff. Pick the winner → 50-ep re-eval → then rank-4 pretrain.
 
 ---
+
+## Entry 30 - 29 Jun 26 (plasticity batch results: the diagonal MOVED for the first time — steps5k is the new best (44.5); LR-2× backfires, β8 over-protects; non-memory baselines LAUNCHED to locate the standard-finetuning ceiling)
+
+### Headline
+
+The Entry-29 batch (C/B/D/A, all reuse the sep5 prior + β-protection, 20 eval eps, all completed clean — no NaN/divergence/OOM) **broke the plasticity wall for the first time in the project.** Entry 27 found the per-task fit floor (block-min MSE) *identical* sep5 vs control — routing never touched the diagonal. Here, `steps=5000` and `lr=2e-3` BOTH lower it (−20% / −11%; both together −28%, the lowest in the project), and peak rollout climbed 45→**53-55**. **Run C (β4 + steps5k) is the new best at 44.5%** (+4pp over β4, +10pp over control/sep5). But the levers aren't free — they broaden the late-layer read footprint and re-couple interference — so LR-2× backfires on retention and the two don't compose at the rollout level. β=4 is confirmed the protection optimum; β=8 over-protects.
+
+### Scoreboard (all protect-family 20-ep, mutually comparable + vs protectB4; control/sep5 50-ep; slot/MSE cols eval-independent)
+
+| run | lever vs β4 | **final** | init(diag) | peak | forget | **MSE-floor** | L14 effnum | core50 | read-IoU | RTO | ch≥12% |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| control(50) | — | 34.4 | 39.8 | 44.2 | −5.4 | 0.149 | 7020 | 3325 | 0.107 | 55.4% | 26 |
+| sep5(50) | — | 34.0 | 41.6 | 45.0 | −7.6 | 0.146 | 5206 | 2526 | 0.052 | 37.3% | 9 |
+| **protectB4** | (baseline) | 40.5 | 43.5 | 49.5 | −3.0 | 0.150 | 5257 | 2534 | 0.051 | 29.8% | 6 |
+| **C steps5k** | +steps | **44.5** | 43.5 | 53.5 | **+1.0** | 0.120 | 6630 | 3265 | 0.057 | 33.2% | 8 |
+| **B lr2x** | +LR(2e-3) | 38.0 | **47.5** | **55.0** | **−9.5** | 0.133 | 8689 | 4443 | 0.071 | 33.2% | 7 |
+| **D lr2x5k** | both | 42.5 | 46.5 | 53.5 | −4.0 | **0.108** | 11789 | 6032 | 0.085 | 37.9% | 14 |
+| **A beta8** | β8 | 38.5 | 39.0 | 46.0 | −0.5 | 0.152 | 5143 | 2495 | 0.051 | **25.8%** | **3** |
+
+Score order: **C(44.5) > D(42.5) > β4(40.5) > A(38.5) ≈ B(38.0) ≫ ctrl/sep5(34).** Slot read-IoU reproduces the logged `memory_iou` exactly for all 7 runs (pipeline validated). No instability: grad-norm max 0.037–0.045 everywhere (B/D the *lowest*, ~0.037, 25× below the clip) — the Entry-29 "watch 2e-3" worry was void; B/D's behaviour is a clean optimization effect, not divergence. LR confirmed (B/D peak ≈2e-3, others ≈1e-3).
+
+### Finding 1 — the diagonal finally moved (block-min MSE), and it was partly optimization-limited
+
+Per-task block-min `train/mse_loss`, mean over 10 tasks: β4 0.150 → **C 0.120 (−20%)**, B 0.133 (−11%), **D 0.108 (−28%)**, A 0.152 (≈β4). Across-the-board, including the hard dual-cycle tasks E27 said rank-2 LoRA "won't fit in 3000 steps" (soup+cheese 0.206→0.134, cheese+butter 0.210→0.162, mug+micro 0.238→0.181). **So the diagonal was partly optimization budget, not a pure rank-2 architecture wall** — more steps and higher LR both lower the floor, and they compose at the fit level (D lowest). A confirms the negative control: β is a pure write-protection knob, leaves fit untouched.
+
+### Finding 2 — the levers broaden the read footprint → re-couple capacity↔interference
+
+L14 effnum: β4 5257 → C 6630 → B 8689 → **D 11789** (broader than *control's* 7020). Memory sits at [8,10,12,14], so value updates at L8/10/12 perturb the residual stream → shift the **frozen** router's `proj(x)` query at L14 → route to a broader slot set. Training values harder broadens the late-layer footprint, which lifts capacity (fit) AND interference together: read-IoU 0.051→0.085, RTO 29.8→37.9%, channels 6→**14** (D). **Plasticity (broaden) and protection (compact-the-writes) push OPPOSITE directions on interference — they are NOT orthogonal** (the E29 "protection ⟂ LR → should compose" guess is disconfirmed at rollout: they compose on MSE, anti-compose on interference).
+
+### Finding 3 — steps ≫ LR (the basin-depth mechanism, E18)
+
+- **C `steps=5000` (WIN):** deepens every basin (−20% MSE) with only marginal broadening (effnum +26%, read-IoU +0.006). **Retention *improves* (+1.0, the only positive)** despite slightly higher exposure — exactly E18's *final ≈ f(basin depth, exposure)*: C deepens basins faster than it raises exposure, so the deeper basins absorb the overwrite. (Secondary: the 5k-step protection store accumulates more read-batches → sharper `u(s)` → better-targeted protection.) Fit gain shows up as **peak+retention**, not a higher fresh diagonal (init 43.5 = β4).
+- **B `lr=2e-3` (BACKFIRES):** fits the *fresh* diagonal highest (init 47.5, peak 55.0) but the big-magnitude writes are the overwriters → **worst retention −9.5** → nets below β4. Clean plasticity/stability tradeoff, not instability.
+- **D both (DOESN'T COMPOSE):** best fit floor in the project (0.108) + broadest footprint (11789) → most interference of the family (read-IoU 0.085, 14 channels, RTO 37.9%). The 5k steps rescue *some* of LR's retention damage (−4.0 vs B's −9.5, deeper basins) but it lands **below C**. Compose on fit, anti-compose on interference → C-alone wins.
+
+### Finding 4 — β=4 is the protection optimum (β8 over-protects, as predicted E28)
+
+A (β8) is the strongest interference suppressor on record — RTO 25.8%, only **3** channels≥12%, **env7 RTO 86→60.5%** (best ever; killers e7←e0/e7←e1 down to 40.6/35.4%), retention −0.5. **But** the heavier write-veto starves the basket writers' own fit (env0 craters, init 39.0 lowest) → excellent retention of a worse fit → 38.5, below β4. β=4 stays the sweet spot.
+
+### Finding 5 — env7 still irreducible
+
+env7 ends ~0–5 in every run. B's 2× LR gave it its best-ever *fresh* fit (init 30) and A's β8 its best-ever *protection* (RTO 60.5%) — neither saves it (60% read-through × gate≈0.98 still overwrites, and the protection that helps also starves its own writes). The genuine same-scene contention the E28 forward probe nailed. Parked.
+
+### Caveats
+- All 20-ep → ±3–4pp/cell. C's env4 "two mugs" reads 40→5 final while β4 *and* D held env4=40 → almost certainly a noisy single eval (if env4≈40, C's true mean ≈48). **The winner needs a clean 50-ep re-eval before locking in.**
+
+### Decision — run the missing non-memory baselines (Josh, 29 Jun)
+
+The whole memory program is judged against an *implicit* ceiling we never measured: **plain pi05 multi-task finetuning, no memory layers.** With the diagonal now shown movable and C at 44.5/peak 53-55, the live question is whether ~45–55% is a *base-model* ceiling on this OOD dual-cycle suite or a memory-specific limit. Two baselines (base pi05, no memory, **same base train args** — same scheduler/warmup, pi05's default base LR, bs32, grad-ckpt, bf16, empty_cameras, rename_map, normalization):
+1. **`libero_90_and_long_pi05_base_50k`** — 50k steps on libero_90 **+** libero_10(Long) merged (the natural multi-task ceiling *with* the pretrain data).
+2. **`libero_10_pi05_base_50k`** — 50k steps on just libero_10(Long) (the 10-task-only finetune ceiling).
+- Both: `lerobot-train` (NOT sequential — standard joint finetune), eval **libero_10 @ 50 eps/task** at the end only (`save_freq=eval_freq=50000`, code stable → no storage blow-up / eval drag). `scheduler_decay_steps=50000` (honor the schedule, E20 gotcha). Base = pinned `pi05_base` snapshot `9e55186`.
+- **Dataset built:** `outputs/libero_90_and_long` via `merge_datasets.py` (libero_90 3959 eps + the 10 Long tasks 379 eps; the libero_10 dataset's task_index 0–9 are the only ones with episodes — 10–39 are empty vocab). NB: merge needed a lenient features check (libero_10 carries a redundant per-feature `fps` key; bypassed via monkeypatch, utility unchanged; libero_90 placed first so the target inherits its clean schema).
+- Scripts: `job_scripts/nebius/baselines/`. **What this tells us:** if base-pi05 on 90+10 reaches ~50–55% per-task, the memory method is roughly at the joint-finetune ceiling and the remaining gap is the OOD dual-cycle structure (→ rank/longer-pretrain, not continual-learning machinery); if base-pi05 is well *above* us, the memory constraints (frozen backbone + rank-2 values) are costing real performance and that's the thing to attack. The libero_10-only run isolates how much the 90-task pretrain data actually helps the Long suite.
+
+### Cleanup
+Freed **640G**: deleted the 9 intermediate per-task checkpoints from each of the 4 batch runs (kept each run's final + `last` symlink + the small eval/`memory_by_task` JSONs that the analysis reads). Killed the now-redundant `training_state` reaper (batch done; ts already at 0). Disk 1.1T free (55%).
+
+### Next (after baselines land)
+1. Read the two baselines' per-task libero_10 success → place our 44.5 / peak-55 against the standard-finetune ceiling.
+2. **50-ep re-eval of C** (`protect_beta4_steps5k`) to de-noise 44.5 and resolve the env4 cell. *(Winner final checkpoint retained for this.)*
+3. Then the orthogonal plasticity swing: `lora_rank=4` (fresh 44h pretrain — now best-justified, attacks the per-slot expressivity the steps/LR levers can't), and/or push `steps→7000` (steps is the clean Pareto lever; MSE was still the cleanest mover).
+
+---
+
+## Entry 31 - 1 Jul 26 (non-memory baseline: joint-finetune ceiling = 72.6%; the memory gap is ~28pp, concentrated on the forgetting/dual-cycle tasks)
+
+Plain pi05, **NO memory**, same base train args (bf16, bs32, grad-ckpt, warmup 4k / decay 50k, pi05 default LR), 50k steps, eval libero_10 @ 50 eps/task. Ran **B1 = libero_90 + libero_10 joint finetune**; killed B2 (libero_10-only) — B1 answered the question. Run artifacts deleted (results here; wandb `zv5k7a6m`).
+
+**B1 → 72.6% on libero_10** (500 eps). Per-task final % vs our best memory runs (by env id; C = `protect_beta4_steps5k`, the Entry-30 winner):
+
+| env | task | BASE (90+10) | C steps5k | β4 | gap base−C |
+|--:|--|--:|--:|--:|--:|
+| 0 | soup+sauce | 74 | 40 | 15 | +34 |
+| 1 | cheese+butter | 66 | 50 | 30 | +16 |
+| 2 | stove+moka | 96 | 70 | 55 | +26 |
+| 3 | bowl+drawer | 86 | 90 | 75 | −4 |
+| 4 | two mugs | 52 | 5 | 40 | +47 |
+| 5 | book | 68 | 70 | 65 | −2 |
+| 6 | mug+pud | 86 | 55 | 55 | +31 |
+| 7 | soup+cheese | 80 | 0 | 0 | **+80** |
+| 8 | both mokas | 58 | 40 | 50 | +18 |
+| 9 | mug+micro | 60 | 25 | 20 | +35 |
+| | **overall** | **72.6** | **44.5** | **40.5** | **+28.1** |
+
+- Ceiling is **72.6%, +28pp over our best** → we are NOT near the standard multi-task finetune ceiling; the frozen-backbone + rank-2-memory continual setup costs real performance (disconfirms the "maybe we're already at the ceiling" hypothesis).
+- **env7 (soup+cheese) is not irreducible task difficulty** — base solves it at **80%** vs 0% under memory. Its collapse is pure continual-learning forgetting (shared-slot overwrite); joint finetune has no forgetting so the "genuine same-scene contention" only bites under sequential adaptation.
+- The gap concentrates on the forgetting/dual-cycle tasks (env7 +80, two-mugs +47, mug+micro +35, soup+sauce +34); the easy single-cycle tasks are already at ceiling (bowl+drawer −4, book −2). → case for the plasticity/capacity + forgetting track (rank-4, longer pretrain), not more routing separation.
+- Caveat: 72.6% is a *joint* finetune (all tasks at once, no continual constraint) — an upper bound for the setup, not a target a frozen-backbone continual method can fully reach. The value is the **size + location** of the headroom.
+
+### Update (1 Jul) — layer-wise LoRA rank probes launched (capacity where it matters, without rank-4-on-all-4)
+
+That 28 pp is mostly forgetting + plasticity, and rank is the one untried per-slot-capacity lever. Rank-4 on all four layers is 4.8 B values → OOM (~148 GB > H200; confirmed by the VRAM ladder below), and rank-3 has matmul issues — so the question is *where* to spend a smaller increase. Implemented **per-layer rank**: `--policy.memory_layer.layer_ranks=[...]`, matched to `layers` by order, asserts length; empty ⇒ scalar `lora_rank` (legacy byte-identical). Smoke-tested (per-layer shapes, length assert, backward compat, mixed-rank forward). Two 10k probes, **C's noloc-sep5 recipe verbatim except `layer_ranks`** (compressed 10k schedule = every prior probe → the existing rank-2 sep5/P9 audit is the `[2,2,2,2]` baseline):
+
+- **P1 `[2,2,2,4]` on `[8,10,12,14]`** — keep all four, boost the action-proximal L14 (+25%, 3.0 B values). *Invest in the highest-value / most-output-proximal layer.*
+- **P2 `[4,4,4]` on `[8,10,12]`** — drop L14, rank-4 on the rest (+50%, 3.6 B). *Josh's original: shed the messy high-interference L14, beef up the cleaner earlier layers.*
+
+Decisive read at the held-out audit: does **P2's L12 inherit-and-worsen** the family IoU / core50 — the high-trust/high-forgetting role is *positional* (last memory layer), so dropping L14 likely migrates it to L12, now at rank 4 = more destructive overwrites (Entry 4) — or does P1's proximal boost sit better with routing intact? Plus the 1-task plasticity probe for fit. Caveat: rank is a **fit** lever, not a forgetting one under the frozen router (realworld Entry 3) → expect diagonal gains; the average is plasticity-bound anyway.
+
+Status: launched (tmux `layerrank_probes`, P1→P2, ~10 h each). P1 confirmed stepping — attach applied `L8=r2/L10=r2/L12=r2/L14=r4`, 119 GB (fits). **VRAM ladder:** P1 3.0 B = 119 GB, P2 3.6 B ≈ 129 GB (fits), all-r4 4.8 B ≈ 148 GB (OOM) — why 4-on-4 is off the table. Code: `memory_config.py` (`layer_ranks`), `memory_lite.py` (threaded `lora_rank_override` through attach → `MLPPlusMemory` → `HashingMemoryLite`). Script: `probes/run_layerrank_probes.sh`.
+
+---
+
+## Entry 32 - 2 Jul 26 (layer-rank probe verdict: drop-L14 REJECTED — the last-layer role is positional and migrates+amplifies; keep-4-boost-L14 clean. Rank mental model: capacity AND interference both scale with rank → [2,2,4,4] probes with a contrastive re-look LAUNCHED)
+
+### Probe results (10k + held-out audit; anchors reproduce exactly — control 2643/0.349/0.127, P9 2679/0.264/0.087)
+
+| run | last layer | effnum | core50 | famIoU | bgIoU | worst pair |
+|---|---|---:|---:|---:|---:|---|
+| control@40k | L14 | 5928 | 2643 | 0.349 | 0.127 | e7~e0 0.391 |
+| P9 `[2,2,2,2]` (baseline) | L14 | 6085 | 2679 | 0.264 | 0.087 | e7~e1 0.302 |
+| **P1 `[2,2,2,4]`** | L14 | 5693 | 2553 | **0.290** | 0.084 | e7~e0 0.328 |
+| **P2 `[4,4,4]`** (drop L14) | **L12** | 4099 | 1894 | **0.301** | 0.066 | **e7~e1 0.388** |
+
+**P2 REJECTED — the positional hypothesis confirmed, and it overshot.** P9's L12 (same position, with L14 above): famIoU 0.210 / effnum 3014 / core50 1362. P2's L12, promoted to last memory layer: famIoU **0.301 (+43%)**, effnum 4099, core50 1894 — *more* family-overlapped than the old last layer ever was (P9 L14 0.264), worst pair e7~e1 **0.388** > even broad control's L14 pairs, elevated at every P2 layer (L10 0.386). Mean famIoU over the layers sequential would actually touch: **P2 0.248 vs P9 0.211** — removing the worst layer *raised* the average interference surface, and parked it on rank-4 slots (2× destructive per overwrite). In-run corroboration: P2's L12 gate tracked P9's **L14** trajectory point-for-point from step 2k (0.69→0.961 vs L14's 0.81→0.969) — the high-trust last-layer role migrated immediately and structurally. Fit also paid: block-MSE min 0.215 vs P9 0.196 (+10%; losing the most action-proximal memory site costs leverage). Fails on every axis.
+
+**P1 PASSES — r4-on-L14 leaves routing intact.** Capacity preserved (core50 2553 ≈ 2679, effK/h 120 = P9, j/p 0.39 — no shrink signatures), famIoU 0.290 within the sep5 probe band (P6/P8/P9 = 0.311/0.309/0.264), background 0.084 ≈ 0.087, lower layers *better* separated (L8 fam 0.132 vs 0.172), fit ≈ baseline (min MSE 0.202 vs 0.196), gate ladder intact with L14 slightly up (0.977). +25% value params (3.02 B, verified from checkpoint shapes) at zero routing damage.
+
+### The rank mental model (the clean way to think about rank vs fit vs interference)
+
+> **capacity ≈ footprint × per-slot rank;  interference-damage ≈ overlap × per-slot destructiveness. Rank multiplies BOTH sides.**
+
+Consequences:
+1. The (c=0.05, sep=5.0) routing pocket was selected under a **rank-2 capacity gate** (core50 ≥ ~1500 ⇒ ~3000 rank-units). Rank-4 relaxes exactly that constraint: compaction that was fatal at rank 2 (c=0.1 → core50 1162 = dead) is ~affordable at rank 4 (1162 × r4 ≈ 4650 rank-units ≈ 87% of P9's healthy 5360). **The rank-2-tuned contrastive ceiling need not carry to rank 4.**
+2. Symmetrically, overlap costs more at rank 4 (bigger behavioral transform per shared slot) → same famIoU, more forgetting damage → argues for at-least-as-much separation.
+3. Both effects push the same direction: higher rank supports smaller-better-separated footprints.
+4. **Bounds on the re-look:** (i) the contrastive ceiling is not only capacity — it's **query collapse** (state-independent addressing, Entry 21/22c), which rank does NOT fix; guard query_intra ≤ ~0.93. (ii) **Compaction alone doesn't separate** (P3: c=0.1 shrank footprints, famIoU stayed ≈ control) — c-up only pays through sep's translation, so test it with sep=5 held. (iii) The sep benefit-cap is the genuine scene-sharing floor (famIoU ~0.26, forward-probe-proven scene routing) — rank-insensitive; **sep stays 5.0**. (iv) Under mixed rank the contrastive weight is global across layers → c-up also compacts the still-rank-2 L8/L10, which can't afford it; if the c-up cell fails, expect it to fail there first → fail-route = per-layer contrastive (sibling of the per-layer-sep idea, Entry 24 #3).
+
+### Next: `[2,2,4,4]` A/B probes (LAUNCHED)
+
+`[2,2,4,4]` = the max-affordable all-layers config: 3.62 B values (= P2's footprint, fits), boosts the two layers carrying ~70% of read mass/trust (L12+L14, per Entry 22d ladder), keeps L14 in place so no positional migration. Two cells, single-knob delta, interleaved run→audit→run→audit:
+
+| cell | config | question |
+|---|---|---|
+| A | `[2,2,4,4]` c=0.05 sep=5.0 | does r4-at-L12 perturb L14's routing from below? (P1 only tested the last layer — nothing downstream of it) |
+| B | `[2,2,4,4]` **c=0.1** sep=5.0 | does rank-4 make compaction affordable AND convert to lower famIoU via sep? (the model-driven contrastive re-look; untested combination) |
+
+**Rank-adjusted gate:** famIoU ≤ ~0.28 AND query_intra ≤ ~0.93 AND capacity-in-rank-units ≥ baseline at the r4 layers (core50 ≥ ~1300 at L12/L14) AND r2 layers not cratering (L8/L10 core50 ≥ ~50% of P9's 534/1047). B graduates if it holds capacity and lands famIoU < A; A graduates if B fails the P3 pattern (famIoU ≈ A) or craters L8/L10; `[2,2,2,4]` (P1, checkpoint retained) is the validated fallback. Blast-radius contingency for the eventual sequential: per-layer sep bump on L12/L14 only.
+
+Known risk either way: rank is a **fit** lever, not a retention lever (frozen router fills all ranks of a shared slot; realworld Entry 3) — the diagonal should move; env7-class genuine contention won't, and r4 overwrites hit 2× harder → β4 protection stays mandatory in the sequential stage.
+
+Script: `probes/run_layerrank_probes2.sh` (run A → audit A → run B → audit B, ~23.5 h total). Audits: `audit_heldout_ranks2244_c005_10k`, `audit_heldout_ranks2244_c01_10k`. Analysis: `scratchpad/audit_ranks.py` pattern (extend RUNS).
+
+### Cleanup
+Deleted P2 `ranks_444` checkpoints (~64 G, rejected branch — wandb + audit JSONs retained) and `training_state` from P1 + P9 probe dirs (never resumed). **Kept**: P1 `ranks_2224` and P9 10k `pretrained_model`s — P1 is the fallback graduation candidate; both are the comparators for the pending 1-task plasticity probe (rank→fit conversion check, still to run).
+
+---

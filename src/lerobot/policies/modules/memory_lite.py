@@ -171,7 +171,8 @@ class HashingMemoryLite(nn.Module):
 
     EVAL_MEMORY = True
 
-    def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0):
+    def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
+                 lora_rank_override: int | None = None):
         super().__init__()
         assert cfg.mem_k_dim % 2 == 0
 
@@ -190,7 +191,7 @@ class HashingMemoryLite(nn.Module):
 
         # Value type: "vector" (original) or "lora" (low-rank transform per slot)
         self.value_type = getattr(cfg, "value_type", "vector")
-        self.lora_rank = getattr(cfg, "lora_rank", 2)
+        self.lora_rank = int(lora_rank_override) if lora_rank_override is not None else getattr(cfg, "lora_rank", 2)
 
         # Value corruption parameters
         self.corruption_prob = getattr(cfg, "corruption_prob", 0.0)
@@ -1398,10 +1399,11 @@ class HashingMemoryLite(nn.Module):
 
 
 class MLPPlusMemory(nn.Module):
-    def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0):
+    def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
+                 lora_rank_override: int | None = None):
         super().__init__()
         self.mlp = base_mlp
-        self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim)
+        self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override)
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
 
@@ -1479,6 +1481,19 @@ def attach_memory_to_layer_list(
     print(f"Target {label} layers for memory: {target_layers}")
     target_set = set(target_layers)
 
+    # Optional per-layer LoRA ranks: matched to target_layers by order, overriding the
+    # scalar lora_rank. Empty -> None override everywhere (scalar lora_rank; backward compat).
+    _layer_ranks = list(getattr(cfg, "layer_ranks", []) or [])
+    rank_by_layer: dict[int, int] = {}
+    if _layer_ranks:
+        if len(_layer_ranks) != len(target_layers):
+            raise ValueError(
+                f"layer_ranks has length {len(_layer_ranks)} but there are {len(target_layers)} memory "
+                f"{label} layers {target_layers}; lengths must match (matched by order)."
+            )
+        rank_by_layer = {li: int(r) for li, r in zip(target_layers, _layer_ranks)}
+        print(f"Per-layer LoRA ranks for {label}: " + ", ".join(f"L{li}=r{rank_by_layer[li]}" for li in target_layers))
+
     lang_dim = _get_lang_dim(cfg)
     if lang_dim > 0:
         print(f"Language-conditioned query projection enabled with lang_dim={lang_dim}")
@@ -1497,7 +1512,8 @@ def attach_memory_to_layer_list(
             continue
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
-        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim)
+        layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim,
+                                  lora_rank_override=rank_by_layer.get(li))
         # Align non-value memory params to base dtype/device; keep value params in float32.
         # When CPU offload is requested, leave value (slot) params on CPU — moving them
         # to GPU here would defeat the whole point and OOM on small cards.
