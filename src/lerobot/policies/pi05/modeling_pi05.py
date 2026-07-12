@@ -1018,6 +1018,10 @@ class PI05Policy(PreTrainedPolicy):
 
         self.model.to(config.device)
 
+        # Non-strict: on the from_pretrained path memory is attached later in
+        # post_load_setup, which re-applies the freeze strictly.
+        self._apply_train_memory_only(strict=not getattr(self.config, "pretrained_path", None))
+
         self.reset()
 
     def post_load_setup(self) -> None:
@@ -1032,6 +1036,64 @@ class PI05Policy(PreTrainedPolicy):
             or getattr(self.config.memory_layer, "enabled", False)
         ):
             self.model.paligemma_with_expert.attach_memory_to_expert(self.config.memory_layer)
+        self._apply_train_memory_only()
+
+    def _apply_train_memory_only(self, strict: bool = True) -> None:
+        """Freeze every parameter except the attached memory modules.
+
+        Memory modules are identified by the ``.mlp.mem.`` name segment
+        (``MLPPlusMemory`` wraps the expert MLP and registers the
+        ``HashingMemoryLite`` as ``mem``); this keeps values, keys, query
+        projections/FiLM and gating trainable while the whole backbone is
+        frozen. Called from ``__init__`` (fresh attach) and ``post_load_setup``
+        (attach after loading a checkpoint), so it holds for every load path.
+
+        With ``strict=False`` (the ``__init__`` call on the from_pretrained
+        path, where memory attaches later in ``post_load_setup``) a model with
+        no memory params is left untouched instead of raising.
+
+        ``train_router_only`` narrows the trainable set further to the memory
+        ROUTER (keys + query projection/FiLM): values stay at init (slot_up is
+        zero-init so the memory output — and hence the MSE gradient on the
+        routing path — is ~0), giving a pure routing-loss warm-up phase.
+        Supersedes ``train_memory_only`` when both are set.
+        """
+        router_only = getattr(self.config, "train_router_only", False)
+        mem_only = getattr(self.config, "train_memory_only", False)
+        freeze_router = getattr(self.config, "freeze_memory_router", False)
+        if not (router_only or mem_only):
+            return
+
+        def is_router(name: str) -> bool:
+            return ".mlp.mem.keys" in name or ".mlp.mem.query_proj." in name
+
+        def trainable(name: str) -> bool:
+            if router_only:
+                return is_router(name)
+            if ".mlp.mem." not in name:
+                return False
+            if freeze_router and is_router(name):
+                return False
+            return True
+
+        names = [n for n, _ in self.named_parameters()]
+        n_train = sum(trainable(n) for n in names)
+        if n_train == 0:
+            if strict:
+                raise ValueError(
+                    "train_memory_only/train_router_only set but no memory parameters "
+                    "found - enable policy.memory_layers/memory_layer.enabled so memory "
+                    "is attached."
+                )
+            return  # memory not attached yet; post_load_setup applies the freeze
+        for name, param in self.named_parameters():
+            param.requires_grad = trainable(name)
+        mode = (
+            "train_router_only" if router_only
+            else "train_memory_only+freeze_memory_router" if freeze_router
+            else "train_memory_only"
+        )
+        print(f"{mode}: {n_train} param tensors trainable, {len(names) - n_train} frozen")
 
     def precompute_task_embeddings(self, dataset_meta) -> None:
         if self.task_embedding_cache is not None:
@@ -1227,6 +1289,11 @@ class PI05Policy(PreTrainedPolicy):
         except Exception as e:
             print(f"Warning: Could not load state dict: {e}")
 
+        # post_load_setup (which applies the train_memory_only freeze) runs inside
+        # the try/except above; re-apply here so a swallowed load warning can never
+        # leave the freeze silently unapplied.
+        model._apply_train_memory_only()
+
         return model
 
     def _fix_pytorch_state_dict_keys(
@@ -1296,6 +1363,19 @@ class PI05Policy(PreTrainedPolicy):
             mem_vals, others = split_memory_params(self)
             if len(mem_vals) == 0:
                 return self.parameters()
+            # Respect freezing (train_memory_only / train_router_only /
+            # freeze_vision_encoder): frozen params get no grads anyway, but keeping
+            # them out of the optimizer avoids allocating groups over dead params.
+            others = [p for p in others if p.requires_grad]
+            mem_vals = [p for p in mem_vals if p.requires_grad]
+            if len(mem_vals) == 0:  # router warm-up: values frozen at init
+                return [
+                    {
+                        "params": others,
+                        "lr": self.config.optimizer_lr,
+                        "weight_decay": self.config.optimizer_weight_decay,
+                    }
+                ]
             return [
                 {
                     "params": others,

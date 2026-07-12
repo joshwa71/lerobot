@@ -2252,4 +2252,282 @@ Script: `probes/run_layerrank_probes2.sh` (run A → audit A → run B → audit
 ### Cleanup
 Deleted P2 `ranks_444` checkpoints (~64 G, rejected branch — wandb + audit JSONs retained) and `training_state` from P1 + P9 probe dirs (never resumed). **Kept**: P1 `ranks_2224` and P9 10k `pretrained_model`s — P1 is the fallback graduation candidate; both are the comparators for the pending 1-task plasticity probe (rank→fit conversion check, still to run).
 
+### Appendix (2 Jul, discussion w/ Josh) — the rank model CORRECTED: fractional damage is ~rank-invariant to first order; net sign on forgetting is ambiguous and empirically decidable
+
+Josh's 2-task critique of "rank multiplies destructiveness": with 1% (read-mass) overlap, doubling rank uniformly doubles capacity in BOTH contested and uncontested slots, so the *fraction* of a task's learned function that is corruptible stays ~1% — the "2×-destructive" claim double-counts (scales the per-slot numerator, forgets the denominator scaled too). **Accepted.** Damage ≈ Σ_{s∈overlap} reliance(s) × distance-moved(s); under uniform rank scaling the reliance *fraction* on the overlap is invariant, provided three assumptions — each with a specific leak:
+1. **Reliance concentration** — with 2× per-slot capacity, SGD may achieve the fit relying on *fewer* slots more intricately. Invisible to routing metrics (retrieval is query/key-driven, rank-blind); lives purely on the value side. If reliance concentrates, the same slot-overlap carries a larger reliance fraction.
+2. **Specialization drift** — rank-2's limited capacity is an implicit regularizer keeping contested slots at blunt shared primitives (which part-serve both tasks = the measured forward transfer). Rank-4 lets the overwriter specialize contested slots further from the shared solution → larger per-slot delta seen by the frozen reader.
+3. **Threshold nonlinearity** — forgetting is cliff-y and concentrated (realworld E3, env7); 1+2 both push toward concentrated corruption at fixed average corrupted mass.
+Counter-channel previously uncredited: **basin deepening** — rank-2 was *underfitting*, so rank-4 stores MORE information (deeper basins), and `final ≈ f(depth, exposure)` + the C result (steps deepened basins → retention +1.0 despite ↑exposure) says deeper basins absorb corruption. Retention-POSITIVE channel. And the surviving (modified) form of the original claim: **mixed rank `[2,2,4,4]` migrates capacity share into exactly the highest-famIoU layers** (L12/L14) — the honest "blast radius" is capacity-share migration, not per-slot arithmetic. **Net sign of rank on forgetting: ambiguous a priori.**
+
+Josh's (B): "1% slot overlap" carries no importance info — right, and one level deeper than our weighted metrics: **read-mass is a proxy for importance** (true importance = ∂success/∂slot-corruption, never measured). Proxy has been well-calibrated at the tail so far (RTO called stack +60%, red-bowl +209%, env7→0), but a rank change is exactly the intervention that could de-calibrate it (rank-4 fits plausibly less redundant → higher importance per unit read-mass).
+
+**Three empirical tests (all ~free):**
+1. **Forgetting-per-unit-RTO calibration curve** — scatter x=per-task RTO, y=retention (final/init) over the ~70 task-points from the 7 rank-2 runs; the `[2,2,4,4]` sequential adds 10 points. On the curve → rank-invariant per unit overlap (Josh's A). Above → drift/concentration dominate. Below → basin-deepening dominates (C pattern). Task-matched version (each task vs its own 7-run history) kills task-identity noise. *(RTO = read-through-overwrite: fraction of a task's read WEIGHT on slots later tasks updated, mean over layers.)*
+2. **Within-run rank contrast (diff-in-diff)** — `[2,2,4,4]` contains both rank classes under identical conditions (L8/L10=r2, L12/L14=r4). Measure contested-slot value-drift per layer (e.g. env7's core slots: ‖Δslot values across env0's block‖/‖before‖, from per-task checkpoints) → ρ = d(L14)/d(L8). Compare ρ_mixed vs ρ of an all-r2 baseline to cancel the layer-position confound. ρ_mixed ≈ ρ_r2 → no per-slot amplification; ρ_mixed ≫ → specialization drift confirmed. Same DiD for update-mass concentration.
+3. **Slot-ablation importance probe** (new instrument, Josh-approved idea): zero the top-k contested slots on a frozen adapted checkpoint, measure the `--eval.type=loss` delta → calibrates read-mass against actual importance. ~minutes.
+
+**Data availability (checked):** all 7 rank-2 runs' `memory_by_task` JSONs intact → test 1 buildable today. C's per-task checkpoints were deleted (E30 cleanup; final only) → test 2's rank-2 baseline = **protectB4** (all 10 per-task ckpts retained, same β4/prior; only mismatch 3k-vs-5k steps, ~cancels in the layer ratio). sep5 also retains 10/10. **⚠ RETENTION FLAG: the eventual `[2,2,4,4]` sequential's per-task checkpoints must NOT be cleaned until the drift analysis (test 2) is done.**
+
+**Rank-2 calibration curve BUILT (2 Jul):** 70 task-points → `outputs/analysis/rank2_rto_retention.json`; generator `scripts/vla_analysis/rto_curve.py` (run the same extractor on the rank-4 sequential and overlay). Shape: RTO<20% → ret ~104% (net transfer), 0 collapses; 20–40% → 95%; 40–60% → 85%; **>60% → 7/10 tasks collapse to ≤5** (bin means mask bimodality — deep basins hold, shallow ones cliff, exactly the two-factor model). corr(RTO, drop): pearson −0.36 / spearman −0.42 — moderate, confirming exposure is only half the story (basin depth is the other half; blockmin_mse + init stored per point for exactly that regression).
+
+### Update (3 Jul) — `[2,2,4,4]` A/B verdict: **A (c=0.05) GRADUATES — healthiest audit in the project; B (c=0.1) repeats the P3 pattern (compaction ≠ family separation)**
+
+Both cells + audits completed clean (chain 19:02 → 16:42 UTC). Held-out audit (last layer L14; gate famIoU≤0.28 ∧ q_intra≤0.93 ∧ r4-core50≥1300 ∧ L8/L10 ≥ 50% of P9):
+
+| cell | L14 core50 (rank-units) | L12 core50 (r-u) | L8/L10 core50 | famIoU L14 | bgIoU | e7~e1 | q_intra | verdict |
+|---|---|---|---|---|---|---|---|---|
+| P9 r2 baseline | 2679 (5.4k) | 1362 (2.7k) | 534/1047 | 0.264 | 0.087 | 0.302 | 0.912 | — |
+| **A c=0.05** | **2981 (11.9k)** | 1687 (6.7k) | 923/1599 | **0.265** | 0.092 | 0.288 | 0.910 | **✓ GRADUATES** |
+| B c=0.1 | 2156 (8.6k) | 1227 (4.9k) | 682/1055 | **0.279** | 0.073 | **0.367** | 0.931 | ✗ P3 pattern |
+
+- **A answers the arch question: r4-at-L12 does NOT perturb L14 from below.** L14 famIoU 0.265 = P9's 0.264; core50 *up at every layer* (923/1599/1687/2981 vs 534/1047/1362/2679 — above even control's, before counting rank-units: 2.2–2.5× at the r4 layers); 4-layer mean famIoU 0.199 vs P9 0.211; fit fine (min MSE 0.201 vs 0.196). One structural shift: the gate ladder flattens (in-run gate L12 0.964 ≥ L14 0.952 — trust spreads over the two beefy layers), showing as mildly higher L12 famIoU (0.245 vs 0.210) — watch L12 channels in the sequential.
+- **B disconfirms the contrastive re-look at this dose.** The rank-relaxed capacity gate ~held (rank-units ≥ ~92% of baseline; L8/L10 did NOT crater — the global-c bluntness worry was wrong), and background improved (0.073). But **famIoU went UP not down** (0.279 > A's 0.265) and the hub's worst channel degraded (e7~e1 0.367, approaching control's 0.355) — compaction pulls each basket task's queries tighter around the *same scene representation*, so sep=5 still can't translate the family apart. Same failure shape as P3, now demonstrated with capacity held by rank — the family overlap is scene-genuine, not a capacity artifact. q_intra 0.931 right at the guard. B's only win (background) is the half β4 protection already handles at write time. **c=0.05 confirmed; the contrastive question is closed at both ranks.**
+- **Next:** graduate A → fresh 40k (`layer_ranks=[2,2,4,4]`, noloc sep5 recipe, clean schedule) → 40k audit → sequential with C's config (β4 + 5k steps/task + top_t 1536), **keeping per-task checkpoints** (⚠ retention flag) → overlay the 10 rank-4 points on the rank-2 RTO curve (test 1) + the within-run r2-vs-r4 DiD (test 2, baseline protectB4). Optional pre-flight: 1-task plasticity probe A-10k vs P9-10k (~30 min) to confirm rank→fit conversion before the ~4-day GPU commit.
+
 ---
+## Entry 33 - 8 Jul 26 ([2,2,4,4] verdict: rank exonerated AND exhausted (+6 diagonal, on-curve retention, no drift amplification) — bottleneck = 14pp frozen-backbone fit + 12pp retention tax → STAGED PRETRAINING protocol launched (competence into the frozen backbone, memory as pure residual substrate))
+
+### The [2,2,4,4] graduation result
+
+Chain landed clean (40k pretrain held-in **81.9** best-of-family → sequential, C's config, 20 eps). Final **46.5%** (+2.0 over C, within noise), init **49.5** / peak **58.5** (both project bests), forgetting −3.0 (C: +1.0). Retention matrix (init→final): e4 35→20, e6 55→**75**, e9 40→20, e2 85→80, e7 25→**0**, e0 45→45, e8 20→**45**, e1 30→20, e3 80→80, e5 80→80.
+
+| run | final | init | peak | forget | MSE-floor | L14 effnum/core50 | read-IoU | RTO | ch≥12% |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| protectB4 (r2,3k) | 40.5 | 43.5 | 49.5 | −3.0 | 0.150 | 5257/2534 | 0.051 | 29.8% | 6 |
+| C steps5k (r2,5k) | 44.5 | 43.5 | 53.5 | +1.0 | 0.120 | 6630/3265 | 0.057 | 33.2% | 8 |
+| **r2244 (r4@L12/14)** | **46.5** | **49.5** | **58.5** | −3.0 | **0.105** | 6394/3152 | 0.059 | 34.7% | 9 |
+
+Slot pipeline validates (computed IoU 0.0592 == logged). Exposure ≈ C on every axis — rank-4 did NOT broaden footprints at matched steps/LR.
+
+### Both pre-registered rank tests (E32): rank-invariant — Josh's fractional-invariance model confirmed
+
+1. **RTO-curve overlay (test 1): ON the curve.** Task-matched residual vs each env's 7-point rank-2 history = **+1.3pp ≈ 0** (e6 +31/e8 +18 net-transfer absorbers; e7 −21 vs a floor-capped prediction; rest −7…+2). Points: `outputs/analysis/rank4_2244_rto_points.json`.
+2. **Contested-slot drift DiD (test 2): r4 slots drift LESS ≈ pure gradient dilution.** ρ = d(L14)/d(L8) on env7's core across env0's block: protectB4 (all-r2) **1.26** (updated-slots) vs r2244 (L14=r4) **0.74** → DiD ≈ 0.59, ≈ the expected 2×-params dilution (0.63). No specialization-drift excess. (`scripts/vla_analysis/drift_did.py`; outputs in `outputs/analysis/`.)
+
+**Why retention still looked worse: the fit gains landed on high-RTO tasks whose collapse floors are unchanged** — e7 init 10→25 then →0 regardless; e0 +20 init kept +5. More to lose, same losers. Run-specific aggravation: the 40k audit's e7~e0=0.445 watch-item materialized (e7←e0 overwrite **67.8%** vs C's 41.6%; env0 hits 74.5% of e7's L8 core mass vs protB4's 44.3%) — this pretrain converged the soup pair (prior-wide), concentrating e7's death into one channel. e3-as-heavy-writer appears in C too (5k-steps effect, not rank). Gate-ladder flattening (L12 0.977 ≥ L14 0.973) persisted with no visible extra damage channel — L12 watch-item closed.
+
+### Why the fit gain was small
+
+MSE floor −12% vs C but concentrated on already-easy tasks (soup+sauce −30%, book −21%); the hard dual-cycle set barely moved (**soup+cheese −2%**, mug+micro −6%, cheese+butter −9%). +50% params bought less than steps 3k→5k (−20%). ~Half the blocks stop improving by mid-block (identical pattern in C). **Per-slot capacity was never the binding constraint on the low tasks — the frozen backbone is** (base pi05 joint finetune = 72.6 on the same data).
+
+### Bottleneck, measured (gap to 72.6 = 26.1pp)
+
+**14.1pp fit-at-peak** (e7 +55, e1 +36 — basket dual-cycle) **+ 12.0pp retention-from-peak** (e4 35 noisy-cell, e7 25, e9 20, e0 15). Both halves rank-insensitive. Lever ledger now measured-and-spent: separation (flat), protection (β4 opt), steps (half-saturated at 5k), LR (backfires), rank (+2 net). Structural constraints: frozen backbone (fit half) + frozen router & gate≈0.97 (retention half).
+
+### Discussion (Josh) → decision: STAGED PRETRAINING
+
+Josh's 2-prong framing: (1) some tasks don't convert capacity into fit; (2) some convert but get overwritten. Options weighed: gate-desaturation penalty (first-order analysis: gate scale CANCELS out of seq-task-on-seq-task interference since ΔV ∝ 1/g — the real effect is raising the post-collapse floor by shifting pretrain competence into the frozen part ⇒ same bet as stronger pretrain, enforced structurally); more layers (extend DOWN, [4,6,8,10,12,14] — last-layer hub role is positional, earlier layers are the clean ones; E9/E11 precedent); β8×rank-4 (new cell: r4 private capacity may absorb the veto that starved writers at r2); **magnitude-based protection** (move (1−u)^β from top-t *ranking* to per-slot *gradient/LR scaling* — the E27 offline soft-suppression frontier that measured net-positive at all β, env7 RTO 81.5→41.8 at β=8, which the ranking implementation only delivered at ~β≈1 strength; strongest un-tried retention lever, PARKED not dead).
+
+**Chosen: Josh's staged protocol** — (1) finetune base pi05 (no memory) on libero_90; (2) attach memory, train ONLY memory (values+keys+query/FiLM+gate) against the frozen backbone with the sep5 recipe; (3) sequential as usual. Memory becomes an additive residual/adaptation substrate; core competence lives in frozen weights by construction. What it buys: post-collapse floor = stage-1 zero-shot (e7 currently falls to literal 0 because corrupted memory < no memory); ~blank value table at stage 3 (no pretrain content to read through and lose); big iteration-speed win (stage 2 has no backbone grads/Adam → every future prior experiment is a cheap stage-2 rerun). What it does NOT fix: delta-on-delta overwrite of sequentially-learned fit. Open question the probe answers: does the sep5 routing pocket reproduce on a frozen backbone (standard audit gates: famIoU≤0.28 ∧ core50≥1500 ∧ q_intra≤0.93)? Pre-registered success criterion for the full chain: **no task ends below its stage-1 zero-shot floor, and final ≥ 50**.
+
+### Code + launch
+
+- New flag `--policy.train_memory_only` (pi05): `configuration_pi05.py` field; `PI05Policy._apply_train_memory_only()` (freezes everything without `.mlp.mem.` in the name — 60 memory tensors trainable / 2.45B params, 813 frozen / 4.14B) called from `__init__` (strict only when no pretrained_path — attach happens later on the load path), `post_load_setup`, AND after the try/except in `from_pretrained` (the hook is exception-swallowed there); `get_optim_params` now filters `others` by requires_grad. Smoke-tested fresh-init + load-path (pi05_base = structurally a stage-1 ckpt): only mem params trainable, groups clean (52 router tensors @ base LR + 8 value tensors @ memory_lr), backward reaches memory, flag-off byte-identical, strict-raise when memory absent.
+- Scripts `job_scripts/nebius/libero_90/staged/`: `stage1_base50k_stage2_probe10k.sh` (stage 1 = E31-baseline recipe on libero_90, 50k, eval **libero_10 @ 50 eps at 50k = the zero-shot floor table**; stage 2 probe 10k compressed, frozen-base, sep5 recipe verbatim; audit `audit_heldout_frozenbase_10k`) — **LAUNCHED 8 Jul, tmux `staged`, log `outputs/staged1.log`**, ETA ~2 days stage 1 + ~8h probe + 35min audit. `stage2_full40k_stage3_sequential.sh` (40k clean schedule → `audit_heldout_frozenbase_40k` → C's sequential verbatim, run `libero_10_sequential_..._frozenbase_..._protect_beta4_steps5k`) — READY, launch after the probe audit clears.
+- Grad-ckpt: stage 1 TRUE (measured requirement — plain pi05 bs32 OOMs without it, 29 Jun test); stages 2/3 FALSE (frozen backbone; r2 values-only no-ckpt bs32 = measured sequential precedent).
+
+### Bookkeeping
+- ⚠ E32 retention flag DISCHARGED (tests 1+2 done): r2244's 10 per-task checkpoints (~450G) deletable on Josh's word (keep final/`last`; JSONs+evals carry the analyses).
+- Analysis artifacts: `outputs/analysis/{rank4_2244_rto_points.json, slots_2244.out, slots_C.out, drift_did.out}`.
+
+---
+## Entry 34 - 10 Jul 26 (STAGED protocol first results: stage-1 zero-shot floor ≈ 0 on all collapse tasks; frozen-base probe = a NEW ROUTING REGIME — gates naturally moderate at 0.63-0.68 (first time ever) but the routing losses lose their actuator and the audit FAILS separation (famIoU 0.390, inverted layer ladder) → nonlinear query head (query_proj_layers=2) implemented + probe LAUNCHED; script 2 held)
+
+### Stage 1 (libero_90 base finetune, no memory, 50k) — healthy, and the floor table kills the floor-raising hope
+
+Train MSE 0.09-0.13 at 50k (≈ joint pretrains' fit). **Zero-shot libero_10 @ 50 eps = 10.6% mean**; per env: e3 bowl+drawer **60**, e5 book **32**, e2 stove+moka 8, e0/e6/e7 **2**, e1/e4/e8/e9 **0**. So the post-collapse floor the protocol was meant to raise is ~0 exactly on the collapse-prone tasks (env7 floor = 2). Corollary worth recording: every sequential init we've ever measured (25-85%) was ~entirely memory adaptation, not backbone transfer — the diagonal IS the memory system. (Floor table = the pre-registered stage-3 comparison row; per-task successes recovered from the eval runner's per_task dump in `outputs/staged1.log` — lerobot-train wandb only logs the aggregate.)
+
+### Stage-2 frozen-base probe (10k, sep5 recipe verbatim, train_memory_only) — Josh: "curves look very different." Confirmed; qualitatively new regime
+
+| @10k (vs P9 joint probe) | P9 joint | frozenbase |
+|---|---:|---:|
+| mse_loss | 0.210 | **0.097** (0.130→0.097, real residual learning) |
+| gate mean / L14 | 0.935 / 0.969 | **0.682 / 0.633** |
+| query_intra / inter | 0.915 / 0.178 | **0.715** / 0.313 |
+| routing sim in-run | 0.061 | **0.179** (flat from step 2.5k) |
+| support_L14 | 6009 falling | **9160 rising** |
+| grad_norm | ~1.2 | ~0.1 |
+
+- **The gate finding is real and novel: first natural gate moderation in the project** (every joint config saturated ≥0.93; the E18 "overwrites pass at full strength" amplifier). With the backbone carrying the function, the network simply doesn't over-trust memory. This was the gate-desaturation lever (E33 option) achieved structurally, for free.
+- q_intra 0.71 = strongly state-conditional addressing (healthy opposite of the E21 collapse) — the frozen backbone acts as an anti-collapse regularizer.
+- Loss composition: MSE 0.097 vs aux ≈ 1.06 — **the routing losses already dominate the objective ~10:1** (stage 2 is organically a router-training phase).
+
+### Held-out audit (`audit_heldout_frozenbase_10k`) — FAILS separation, smashes capacity
+
+L14: famIoU **0.390** (control 0.349, P9 0.264; gate ≤0.28 FAIL), bg **0.188** (2.2× P9), core50 **6456** / effnum 14663 (2.4× control; capacity gate passed ×4.3). **Layer ladder INVERTED**: L8 is now the worst layer (famIoU 0.538, bg 0.272) instead of the cleanest — raw frozen features are generically similar early and differentiate with depth, the opposite profile of a routing-loss-shaped backbone. Family pairs uniform (e7~e0 0.385 ≈ e7~e1 0.399 ≈ e0~e1 0.386) — generic broad-footprint collision, not object-graded semantics.
+
+### Mechanism (the diagnosis)
+
+**The routing losses lost their main actuator: backbone co-adaptation.** In every joint pretrain, contrastive/sep gradients flowed through proj(x) into the backbone and reshaped the hidden states themselves — that's what actually bought the E20-26 compaction/translation. On a frozen backbone the only routing surface is one shared linear proj + FiLM, which cannot fold 90 interleaved task clouds into compact separated footprints. Weight-limited is disconfirmed (aux already 10:1 over MSE); step-limited unlikely (in-run sep flat 0.18 from 2.5k). Representation-limited.
+
+### Why this is ambiguous rather than a clean fail (discussed with Josh)
+
+Three of four damage-model terms moved favorably — gate 0.63-0.68 (attenuation at read time), near-blank values (no pretrain content to lose through shared reads), 2.4× slot capacity for β4 to steer writes into — and one badly (exposure: broad overlapping reads → high stage-3 RTO). The audit gate thresholds were calibrated on joint priors where high famIoU meant load-bearing shared content at gate 0.98; none of those side conditions hold here, so 0.28 may not transfer. The floor-raising benefit, though, is measured dead (floors ≈ 0).
+
+### Decision (Josh): fix the router for frozen-x FIRST — nonlinear query head. Script 2 HELD.
+
+**Code (shipped + smoke-tested):** `--policy.memory_layer.query_proj_layers` (default 1 = original single linear, byte-identical) + `query_proj_hidden_dim` (0→input_dim). `memory_lite.py`: `_build_query_proj` (Linear→SiLU→…→Linear), threaded via cfg into `QueryMLPLite`; param tagging now iterates all proj params (`pk_query_proj_param` — sequential-trainer `train_query_proj` plumbing unchanged); **`reset_parameters` fixed** (xavier looped over Linears — the old line assumed a bare `.proj.weight` and would crash on Sequential). Smokes: depth-1 state-dict keys unchanged (legacy checkpoints load); depth-2 forward/backward through the head; policy-level with train_memory_only = 68 trainable tensors (60 + 4×4 qproj), optimizer groups clean. ~2M params/layer at depth 2.
+
+**Probe LAUNCHED (10 Jul, tmux `qproj2`, log `outputs/qproj2_probe.log`):** `stage2_probe10k_qproj2.sh` — single-knob delta from the failed frozen-base probe (`query_proj_layers=2`), run `libero_90_pi05_8_10_12_14_frozenbase_probe10k_qproj2_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_qproj2_10k`. ~8h + 35min.
+
+**Read + decision rule:** primary = famIoU materially down from 0.390 toward ≤~0.28 with core50 ≥1500 (it starts at 6456 — huge room) and q_intra ≤0.93 (some RISE from 0.71 is expected and fine — the head can now tighten clusters); secondary = does the inverted ladder flatten, in-run sep < 0.18. If it clears/materially improves → stage-2-full graduates WITH `query_proj_layers=2` (**NB script 2 `stage2_full40k_stage3_sequential.sh` must gain the flag before launch**). If ≈ depth-1 → the frozen-feature separability ceiling is confirmed → run script 2 on depth-1 anyway as the end-to-end baseline (the changed damage model deserves one full measurement); depth-3/wider-hidden only if something suggests headroom.
+
+### Cleanup (~360G freed; disk 43%)
+- Failed depth-1 frozenbase probe: `checkpoints/` deleted (wandb + `audit_heldout_frozenbase_10k` retained — they're the comparison baseline for qproj2).
+- sep5 + protectB4 sequentials: 9 intermediate per-task checkpoints each + final `training_state` deleted (their retention reason — the rank-2 DiD baseline for E33 test 2 — is discharged; finals + `last` + memory_by_task JSONs + evals + wandb retained).
+- **`libero_90_pi05_base_nomem_50k` (the finetuned pi05) untouched** (weights + training_state), per Josh — it's the base for every stage-2 variant.
+- Flag for later (not touched, different track): `outputs/train/realworld_v2` is 267G of packaged real-world test models from realworld-E1.
+
+---
+## Entry 35 - 12 Jul 26 (STAGED PROTOCOL VERDICT: DEAD as a frontier route — killed at 6/10 blocks. Held-in PARITY (81.7) but held-out adaptation collapses (inits −18pp, MSE floors 1.5-2×, e7 init 0): compact routing was a JOINT-TRAINING product; diffuse routing dilutes both reads AND writes. Pivot back to the joint track)
+
+### Chain status + kill decision (Josh)
+
+Stage-2 full (40k, frozen base, depth-1 head per E34) completed clean; 40k audit ran; stage 3 (C's config verbatim) auto-started and was **killed at 6/10 blocks** (~30k steps) — mid-flight results were clearly non-competitive and the pre-registered criterion (final ≥ 50) was already unreachable. Partial artifacts retained (memory_by_task tasks 0-5, evals through 25k, wandb); the 6 per-task checkpoints deleted.
+
+### Stage-2 full: the dissociation that defines the postmortem
+
+- **Held-in libero_90 eval 82.8 @20k / 81.7 @40k — PARITY with the best joint pretrains** (control 81.1, [2,2,4,4] 81.9), at MSE 0.087, gates drifting 0.68→0.75 (still ≪ joint 0.97), routing sim stuck at 0.18.
+- So: memory-as-residual on a frozen backbone serves SEEN tasks perfectly well. The failure is specific to being an **adaptation substrate for new tasks**.
+
+### Stage-3 partial (6 blocks): the diagonal collapses
+
+| ord | env | task | FB init | r2244 init | C init | FB block-min MSE | vs r2244 |
+|---|---|---|---:|---:|---:|---:|---:|
+| t0 | e4 | two mugs | 25 | 35 | 35 | 0.141 | 1.49× |
+| t1 | e6 | mug+pud | 30 | 55 | 45 | 0.142 | 1.80× |
+| t2 | e9 | mug+micro | 30 | 40 | 35 | 0.267 | 1.49× |
+| t3 | e2 | stove+moka | 65 | 85 | 75 | 0.182 | 1.57× |
+| t4 | e7 | soup+cheese | **0** | 25 | 10 | 0.244 | 1.86× |
+| t5 | e0 | soup+sauce | (killed mid-eval) | 45 | 25 | 0.098 | 2.03× |
+
+Mean init over matched 5 = **30.0 vs r2244's 48.0 / C's 40.0**. MSE floors 1.5-2× worse on EVERY block. Retention no better either (e9 30→5 collapse-shaped). Even perfect retention caps this run ~30-35.
+
+### Mechanism (from the partial JSONs — and it kills the simple write-starvation story)
+
+Reads are ~2× broader (L14 effnum 11-15k vs r2244's 5-7k, per the audit) — but writes are NOT starved, they're **diffused**: 4L unique updates 95k/190k/255k (t0/t1/t4) vs r2244's stable 55-62k. Broad, low-concentration TF → the per-batch top-1536 churns constantly → updates smear over enormous slot sets with tiny per-slot totals; the retrieval mixture spreads output over many weakly-specialized slots. Compounding: gates frozen at ~0.75 attenuate the new task's memory contribution (ΔV must grow to compensate, within a 5000-step budget), the backbone never co-adapted to integrate large memory corrections, and β4's (1−u) gate over famIoU-0.39-broad prior cores scatters later tasks' writes further (update counts GROW with block index).
+
+**The central lesson: the compact, separated, high-trust routing that made joint-pretrained memory a good few-shot substrate is a product of BACKBONE CO-ADAPTATION, not of the memory module or its losses.** Freezing the backbone keeps the competence but forfeits the substrate quality; E34's qproj2 result already showed no query-head capacity buys it back.
+
+### Banked findings (the protocol wasn't free to run, so keep what it taught)
+1. **Zero-shot floor table** (stage-1, 50 eps): mean 10.6; ~0-2% on every collapse-prone task → all sequential inits ever measured are ~pure memory adaptation.
+2. **Gate moderation happens naturally on a frozen base** (0.63→0.75 vs joint 0.97) — but it is NOT a free anti-overwrite knob: trust and plasticity are coupled (this run is the demonstration).
+3. **Routing separation/compaction is a joint-training technology** (frozen-feature equilibrium famIoU ≈ 0.39 regardless of query-head capacity).
+4. Stage-2-style memory-only training: ~1.18s/step, no ckpt, huge VRAM headroom — reusable machinery (`train_memory_only`, `query_proj_layers`) if a frozen-base variant is ever wanted.
+5. Held-in eval CANNOT gate substrate quality (81.7 parity here) — only held-out adaptation probes can.
+
+### Pivot (back to the joint track; the E33 lever ranking resumes)
+1. **Magnitude-based protection** (per-slot gradient/LR scaling by (1−u)^β instead of top-t reselection) on the [2,2,4,4] prior with C's config — the E27 offline frontier (net-positive at all β, env7 RTO 81.5→41.8 at β=8) that the ranking implementation never delivered. Sequential-only, no pretrain.
+2. **50-ep re-eval of r2244's final** (~7h) — de-noise the 46.5 frontier number before building on it.
+3. **6-layer depth** ([4,6,8,10,12,14] r2 joint pretrain) — the remaining capacity shape (E33).
+
+### Cleanup
+- Stage-3 partial: checkpoints deleted; JSONs/evals/wandb retained. Stage-2 40k prior (23G) + its audits retained for reference (E21 precedent for documented negative results); stage-1 base (`libero_90_pi05_base_nomem_50k`) retained — it's the floor-table reference and reusable for any future frozen-base work.
+
+---
+### Entry 35 addendum (12 Jul, deep-dive at Josh's request) — the full mechanistic chain, with code findings
+
+**Code finding 1 (the actuator, confirmed):** `memory_lite.py` forward passes live `x` into `query_proj` — NO detach. In joint pretrains the contrastive/sep gradients therefore flow THROUGH the query into the backbone (and at E24-measured magnitudes: aux terms 30-91% of MSE). Joint routing quality was bought by sculpting the hidden states; in stage 2 that path dies at `requires_grad=False`. qproj2 (E34) already showed head capacity is not the binding constraint.
+
+**Correction to this entry: the substrate is NOT blank.** Per-slot ‖θ‖ (down+up, L8/L14): frozenbase-40k mean 2.50/3.09 vs sep5-joint-40k 1.93/2.75 (untouched-slot init ≈0.9). Stage 2 built joint-magnitude residual content — slightly LARGER (the ΔV ∝ 1/gate compensation, gates 0.68-0.78). So stage-3 reads on un-adapted slots deliver stage-2 libero_90 residuals into libero_10 behavior, not zeros.
+
+**The plasticity chain (Q: why is plasticity down when per-task support is UP?):** support was never the capacity metric — concentration is. Five measured links:
+1. Frozen features → no compaction/separation possible (code finding 1) → diffuse routing: per-batch L14 effnum during the sequential 10-12k (FB) vs 3-7k (r2244); audit footprints 14.6k vs 6.1k; effK/h ~190 vs ~120 (near-flat retrieval scores).
+2. Diffuse reads → low per-slot TF → the per-batch top-1536 churns → writes SMEAR: unique updated L14 slots 27.5k/46k/66k (t0/t1/t4, growing with block) vs r2244's stable 20-24k; update events/slot p90 204-716 vs 838-1193 — the would-be specialist slots get ~4-5× fewer repeated updates.
+3. Coverage collapse: fraction of the task's read MASS on slots it adapted = 43-53% (t1/t4) vs r2244's 64-76%; core50-adapted 43-54% vs 72-94%. Half the retrieval mixture is stage-2 residual content, not task adaptation.
+4. Transmission loss: gates frozen (W_g not trainable in sequential) at 0.68 (L8) - 0.89 (L14), vs 0.97 joint — the adapted contribution is attenuated on top.
+5. (Unquantified residual) the frozen downstream layers never co-adapted to consume large memory corrections.
+Net: block-min MSE 1.5-2.0× worse on all six blocks; inits −18pp. grad_norm ≈ equal (~0.02) — not an optimizer-signal problem.
+
+**Q: why do layers behave differently (inverted famIoU ladder)?** Two different causes for two different ladders. Frozen-base famIoU tracks RAW FEATURE GEOMETRY: early-layer expert hiddens are generically similar across tasks (L8 0.538) and task-differentiate with depth (L14 0.390) — while breadth stays flat (12-15k at every layer). Joint famIoU tracks the TRUST/CONTENT EQUILIBRIUM: both gate and read-mass ladder UP with depth, MSE parks shared load-bearing content at the action-proximal layer, and separation pressure loses exactly there (L14 worst) while winning at the low-traffic early layers (L8 best) — i.e. the joint ladder was never "deep features are less separable" (the frozen run proves the opposite); it's where the MSE-vs-separation tug lands. Corollary: the frozen run still ladders TRUST upward (gate L8 0.68 → L14 0.89) even as famIoU improves with depth — the two ladders are separable phenomena.
+
+**Q: is "state+lang not enough to separate routing"?** No — the information is sufficient (joint runs separate the same nominal inputs; E28: scene carries ~20× the language signal). What's insufficient is a FIXED representation with only a head on top: stage-1 features are organized for action prediction, not task discrimination; separability was an emergent property of routing-loss gradient reaching the backbone. Secondary (plausible, circumstantial): value-content anchoring — in-run sep flatlines by step 2.5k, exactly when value content becomes useful at the initial routing locations; moving routing away from built content costs MSE, pinning the equilibrium early.
+
+**Implication:** the staged protocol cannot be patched router-side (qproj2 = the direct test). Any fix must let routing gradients touch the backbone at some phase — which is the joint protocol. Closed.
+
+---
+## Entry 36 - 12 Jul 26 (The debate resolved by measurement: frozen features ARE separable (linear probe ~98%) but CROWDED (inter-task cos ~0.9); joint training was blowing the geometry apart at exactly the memory layers (0.93→0.46). Router failure = anchored optimization, not information. → ROUTER WARM-UP v1 (geometry-before-content, Josh's protocol) LAUNCHED; contribution reframed around the staged setting)
+
+### The discussion (Josh's challenges, and where each landed)
+
+1. **"Why isn't the router learning to separate, given a nonzero input difference?"** — the sharpened form of the E35 question, and it exposed my "representation-limited" claim as imprecise. The mechanistic answer, assembled this session:
+   - **Value anchoring at 40× LR** (Josh's reading, confirmed): values (1e-3) specialize onto the *initial random* routing within ~2k steps; the router (keys/proj in the base group, 2.5e-5) then faces first-order MSE cost for any move. The sep-flatline-at-2.5k in both frozen probes is the fingerprint. In joint runs the same LRs exist but backbone drift keeps re-shuffling the geometry — no anchor ever sets.
+   - **No exploration across key cells**: sep's gradient flows only through the top-M candidates (hard selection); moving a task to genuinely different slots means crossing key-Voronoi boundaries — a plateau. Joint x-drift supplied the hops; frozen x + 2.5e-5 supplies none. (Why qproj2 failed: capacity was never the constraint.)
+   - The FiLM/language channel that carries the cleanest per-task signal atrophies under training (E28) and nothing in the objective prevents it.
+2. **Contribution reframe (Josh)**: the staged setting IS the thesis — "post-train a VLA for its domain (stage 1 = sim stand-in, skipped in reality), then bolt on a sparse LoRA-lookup that adds capabilities without erasing old ones." The joint protocol is the methodologically weaker story (bespoke pretrain). This reverses E35's "closed" verdict on staging: the goal isn't to beat 46.5 via staging, it's to make staging work.
+3. **"Separation never converted to points" corrected (Josh)**: E8 measured 16.5→34.5 from introducing separation — it converts when interference is binding; it stopped converting in the joint pi05 era once protection/basins absorbed exposure and fit became binding (E27). In the STAGED regime routing quality is a **fit lever** (the E35 dilution chain: compaction → concentrated writes → slot specialization → self-adapted read mass), so separation should convert here again.
+4. **Language-only routing (Josh's idea) — evaluated, parked**: E28's forward probe already measured it (q=β): basket family IoU **0.545 vs 0.215** scene-based — doubles the binding collision (near-duplicate unseen instructions co-locate under any smooth map; mpnet cos 0.86), and constant per-task queries = the E21 state-independent regime = per-task-adapter baseline rebuilt minus state-conditional composition. Keepable kernel: a hybrid language-only HEAD (private sections) — post-deadline queue.
+5. **Move memory layers up (Josh's idea) — measured, negative** (probe below).
+
+### The feature-separability probe (new instrument: `scripts/vla_analysis/feat_probe.py`)
+
+Hooks on each expert layer's `.mlp` input (= the router input), mean-pooled per sample; 4 sweeps (stage-1 & joint sep5 ckpts × libero_90 & libero_10), layers [4,8,10,12,14,15,16,17]; linear task probes + centroid cosine geometry. Data: `outputs/analysis/featprobe/*.npz`. (Gotcha fixed: task vocabs contain empty entries — skip ValueError from the per-task dataloader.)
+
+| linear probe acc | L4 | L8 | L12 | L14 | L16 | L17 |
+|---|---|---|---|---|---|---|
+| stage-1 libero_90 (90-way) | 89.5 | 98.1 | 98.1 | 97.9 | 97.5 | 96.6 |
+| stage-1 libero_10 held-out | 98.0 | 98.6 | 98.9 | 98.3 | 98.0 | 97.4 |
+
+| inter-task centroid cos | L8 | L12 | L14 | L15 | L16 | L17 |
+|---|---|---|---|---|---|---|
+| stage-1 (frozen) | 0.93 | 0.89 | 0.87 | 0.86 | 0.86 | 0.93 |
+| joint (co-trained) | **0.46** | **0.48** | **0.49** | 0.61 | 0.69 | 0.86 |
+
+- **Josh right: the information was never missing** — linearly separable at ~98%, held-out included (caveat: frame-level splits share episodes → accuracies optimistic; geometry numbers unaffected).
+- **The features are crowded**: all tasks in a ~0.9-cos cone, inter≈intra — differences live in low-variance directions that dot-product retrieval cannot resolve unless the query proj amplifies them. **Joint training was doing exactly that to the features themselves** (0.93→0.46, precisely at the memory layers, decaying above L14) — the co-adaptation actuator, now quantified at the geometry level.
+- **Move-up dead**: separability flat L8→L16, L17 worse; crowding improves marginally with depth. [8,10,12,14] stays (also preserves all baselines).
+- **The needle**: basket family at cos **0.978–0.994** frozen (joint: 0.89–0.93) — still linearly discriminable; the warm-up's hardest test.
+
+### Code shipped: `--policy.train_router_only` (+ smoke)
+
+Freeze everything except keys + query_proj/FiLM (28 tensors); values pinned at init (slot_up zero). Smoke verified the two load-bearing mechanics: **zero values ⇒ MSE gradient on the router is exactly ~0** (warm-up purity) and **contrastive+sep gradients DO reach keys/proj** (the learning signal); `get_optim_params` drops the empty values group; `train_memory_only` regression intact (60/2-group).
+
+### LAUNCHED: router warm-up v1 (12 Jul, tmux `rwarmup`, ~2.9h + 35min audit)
+
+`staged/stage2_router_warmup10k.sh` → run `libero_90_pi05_8_10_12_14_frozenbase_rwarmup10k_lr1e-4_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_rwarmup_10k`. Config: router LR 2.5e-5→**1e-4**, c=0.05 kept (Josh: comparability; recalibrate later if needed), sep5/noloc/rq512, [8,10,12,14], 10k compressed schedule. **Decision tree**: famIoU ≤~0.28 ∧ core50 ≥~1500 ∧ q_intra ≤~0.93 → anchoring hypothesis confirmed, geometry-before-content becomes the method → discuss A-then-sequential. Collapse signature (core50 crater / q_intra >0.95) → unopposed contrastive won → c down, ~3h loop. Still ~0.39 → the sep-through-top-M formulation itself can't find the probe's directions → fallback: **seed the query proj from the linear-probe directions** (we have the probe weights).
+
+### Design decisions from the discussion
+- **A vs B after warm-up** (A = short values-on-90 phase, B = straight to sequential): Josh prioritizes iterating the geometry to near-perfect first (the warm-up↔audit loop is ~4h/iteration — the staged protocol's iteration dividend), expects A to help downstream. Note: anchoring is a FEATURE once geometry is good (content cements the map); A also calibrates gates (untrained ≈0.5 after warm-up) and re-audit after A is warranted (values perturb downstream x → routing shifts, E30 mechanism).
+- **Per-task LoRA-FT baseline** (vla-memory.md §5, never run; PEFT is wired — `use_peft`): three roles — (i) the fit CEILING of adapter-adaptation on this exact frozen backbone (turns the "LoRA-FT is enough" premise into a number; separates "what the lookup costs" from "what freezing costs"), (ii) the reviewer-mandatory comparator (answer: task-identity-free routing, fixed params, measured forward transfer — e6 30→75, e8 20→50), (iii) effort compass (LoRA-FT ~55 → substrate near ceiling, work on retention; ~70 → memory design leaves fit on the table). ~8–17h; slot after the warm-up chain.
+
+---
+## Entry 37 - 12 Jul 26 (ROUTER WARM-UP v1: ALL GATES CLEARED — famIoU 0.145, the best routing prior in project history, on a FROZEN backbone, in 3h. Anchoring hypothesis confirmed end-to-end; the "scene-genuine 0.26 floor" was substantially an anchored-equilibrium artifact. → A-phase (values-only, ROUTER FROZEN) + sequential LAUNCHED)
+
+### Warm-up result (10k router-only, lr 1e-4, c0.05/sep5/noloc/rq512, frozen stage-1 backbone)
+
+In-run @10k: routing sim **0.050 mean AND L14** (P9 joint: 0.061/0.085 — beat the joint run outright, and L14 matches the mean for the first time ever: no MSE-trust equilibrium → no last-layer pathology), q_inter **0.016**, q_intra 0.883 (inside P9's healthy band — the unopposed-contrastive/E21 collapse never came at c=0.05), support_L14 5191, effnum 10.4k.
+
+Held-out audit (`audit_heldout_frozenbase_rwarmup_10k`), all gates cleared:
+
+| held-out L14 | famIoU | core50 | bgIoU | e7~e0 | e7~e1 | e0~e1 |
+|---|---:|---:|---:|---:|---:|---:|
+| control@40k | 0.349 | 2643 | 0.127 | 0.391 | 0.355 | 0.302 |
+| P9 joint (prev best) | 0.264 | 2679 | 0.087 | 0.255 | 0.302 | 0.235 |
+| fb-depth1 (anchored) | 0.390 | 6456 | 0.188 | 0.385 | 0.399 | 0.386 |
+| **RWARMUP** | **0.145** | **2955** | **0.066** | **0.234** | **0.138** | **0.062** |
+
+- famIoU **45% below the best joint prior**; capacity ABOVE it (core50 2955; no shrink shortcut — effnum 6505 ≈ P9's 6085); q_intra 0.883 ≤ 0.93. Generalization gap in-run→held-out ≈ 2.9× (P9's was 4.3×).
+- **Flat layer ladder** (0.155/0.144/0.129/0.145) — first ever; more evidence the joint famIoU ladder was the MSE-trust equilibrium, not geometry.
+- **Basket family cracked**: e0~e1 0.062 = background level (P9 0.235); e7~e1 halved (0.138); even the shared-soup pair e7~e0 (0.234) is below every prior built. The E24-28 "scene-genuine ~0.26 floor" was substantially the anchored equilibrium.
+
+Mechanism chain now closed end-to-end: features separable-but-crowded (E36 probe) → joint training separated by reshaping features (inter-cos 0.93→0.46) → on frozen features the router was blocked by value-anchoring at 40× LR + no exploration (E36) → remove the anchor (values pinned at zero) + 4× router LR → the router finds the probe's discriminative directions on its own. **Geometry-before-content works.** (Full credit: Josh's protocol, over my initial "representation-limited" skepticism.)
+
+### A-phase design decision (Josh's Q: values-only with frozen router, or keys/queries too at small LR?)
+
+**Chose: router FROZEN (option 1).** (i) MSE's router-gradient points back at the joint attractor (famIoU ~0.26, trust ladder) — small LR only slows the walk back, and it erodes a certified asset; (ii) routing drifts anyway via upstream-value→x perturbation (E30 Finding 2) — minimize the controllable part and measure the rest with a re-audit; (iii) values-on-frozen-router demonstrably fits (every sequential block ever); (iv) crisp protocol: aux-only geometry → frozen router → MSE-only content, consistent with the sequential's frozen-router constraint. **Reserve trigger for option 2** (router unfrozen at ~2.5e-6 ≡ train_memory_only + tiny optimizer_lr, zero new code): A-phase MSE plateauing meaningfully above the joint pretrains' libero_90 level (~0.13-0.16) = separation-vs-usefulness mismatch.
+
+### Code + chain (LAUNCHED 12 Jul, tmux `stageA`, log `outputs/stageA.log`)
+
+- New modifier flag `--policy.freeze_memory_router` (composes with train_memory_only): trainable = memory module MINUS keys/query_proj = **32 tensors** (values 8 @ memory_lr + gate/value_proj/swilu 24 @ base LR). Smoked: freeze pattern, optimizer groups, both prior modes regression-clean.
+- `staged/stageA_values10k_seq.sh`: **A phase** (10k values-only on libero_90 from the warmed router ckpt, aux losses kept ON as pure telemetry — grads dead-end on the frozen router but the in-run routing-sim log becomes the live drift monitor; held-in eval @10k = seen-task plasticity check) → **re-audit** `audit_heldout_frozenbase_rwarmupA_10k` (deployed geometry after value training; informational) → **sequential** (C's config verbatim: β4 + 5000 steps/task + top_t 1536, 20 eps, per-task ckpts) → run `libero_10_sequential_pi05_8_10_12_14_frozenbase_rwarmupA_..._protect_beta4_steps5k`. ETA ≈ A 3.2h + eval ~1h + audit 0.6h + sequential ~40h.
+- Pre-registered sequential reads: inits vs fb-depth1's mean-30 disaster and r2244's 48 (the dilution chain predicts routing quality converts to FIT here); self-adapted read mass (fb 43-53% → want 70%+); retention matrix vs floor table; RTO overlay (damage-per-exposure).
+
+### Artifacts
+- **PRESERVED (Josh): the warmed-router checkpoint** `libero_90_..._rwarmup10k_lr1e-4_.../checkpoints/` — the backtrack point if we later want to un-freeze and let the router keep learning (e.g. option-2 arm, different A designs, different value schedules all restart from here).
+- Deleted: qproj2 probe checkpoints (~37G; negative result — audit + wandb retained). Kept: stage-2-full 40k prior (23G, documented negative result / E35 postmortem subject), stage-1 base (untouchable), featprobe npz (analysis data), all audits.
+
+---
+### Entry 37 addendum — launch gotcha caught at first contact (12 Jul)
+
+The A-phase's first launch silently ran in **router-only mode**: the warmed checkpoint's saved `config.json` carries `train_router_only: True`, which supersedes the CLI's `train_memory_only` (by the flag-precedence rule). Killed at step ~400, fixed by passing `--policy.train_router_only=false` explicitly in the A stage, relaunched; correct mode confirmed in-log (`train_memory_only+freeze_memory_router: 32 param tensors trainable`). **Rule for all future staged chains: any freeze-mode flag set in an upstream stage must be explicitly disabled downstream — checkpoint configs carry them forward.** Cleanup: qproj2 probe checkpoints deleted (~37G; audit+wandb retained); warmed-router checkpoint preserved in full (18G) as the backtrack point.

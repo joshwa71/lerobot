@@ -89,23 +89,42 @@ class TaskEmbeddingCache:
         return self.encode_batch(task_names)
 
 
+def _build_query_proj(in_dim: int, out_dim: int, layers: int, hidden_dim: int, bias: bool) -> nn.Module:
+    """Single linear when layers<=1 (the original, byte-identical); otherwise a
+    SiLU-separated MLP ending in a linear to out_dim."""
+    if layers <= 1:
+        return nn.Linear(in_dim, out_dim, bias=bias)
+    h = hidden_dim if hidden_dim > 0 else in_dim
+    mods: list[nn.Module] = []
+    d = in_dim
+    for _ in range(layers - 1):
+        mods += [nn.Linear(d, h, bias=bias), nn.SiLU()]
+        d = h
+    mods.append(nn.Linear(d, out_dim, bias=bias))
+    return nn.Sequential(*mods)
+
+
 class QueryMLPLite(nn.Module):
-    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True, lang_dim: int = 0, fuse_method: str = "concat"):
+    def __init__(self, input_dim: int, heads: int, k_dim: int, bias: bool = True, lang_dim: int = 0, fuse_method: str = "concat", proj_layers: int = 1, proj_hidden_dim: int = 0):
         super().__init__()
         self.input_dim = input_dim
         self.heads = heads
         self.k_dim = k_dim
         self.lang_dim = lang_dim
         self.fuse_method = fuse_method
+        self.proj_layers = int(proj_layers)
 
         if fuse_method not in ("concat", "film"):
             raise ValueError(f"Unknown fuse_method: {fuse_method}. Expected 'concat' or 'film'.")
 
+        if self.proj_layers > 1:
+            print(f"Query projection MLP: depth={self.proj_layers}, hidden={proj_hidden_dim or input_dim}")
+
         if fuse_method == "concat":
             proj_input_dim = input_dim + lang_dim
-            self.proj = nn.Linear(proj_input_dim, heads * k_dim, bias=bias)
+            self.proj = _build_query_proj(proj_input_dim, heads * k_dim, self.proj_layers, proj_hidden_dim, bias)
         else:
-            self.proj = nn.Linear(input_dim, heads * k_dim, bias=bias)
+            self.proj = _build_query_proj(input_dim, heads * k_dim, self.proj_layers, proj_hidden_dim, bias)
             if lang_dim > 0:
                 hidden_dim = max(lang_dim, heads * k_dim) // 2
                 self.film_mlp = nn.Sequential(
@@ -115,9 +134,8 @@ class QueryMLPLite(nn.Module):
                 )
 
         try:
-            self.proj.weight.pk_query_proj_param = True
-            if self.proj.bias is not None:
-                self.proj.bias.pk_query_proj_param = True
+            for p in self.proj.parameters():
+                p.pk_query_proj_param = True
         except Exception:
             pass
 
@@ -300,7 +318,11 @@ class HashingMemoryLite(nn.Module):
 
         self.gating = nn.Linear(input_dim, 1) if cfg.mem_gated else None
         fuse_method = getattr(cfg, "fuse_method", "concat")
-        self.query_proj = QueryMLPLite(self.input_dim, self.heads, self.k_dim, lang_dim=lang_dim, fuse_method=fuse_method)
+        self.query_proj = QueryMLPLite(
+            self.input_dim, self.heads, self.k_dim, lang_dim=lang_dim, fuse_method=fuse_method,
+            proj_layers=getattr(cfg, "query_proj_layers", 1),
+            proj_hidden_dim=getattr(cfg, "query_proj_hidden_dim", 0),
+        )
 
         self.reset_parameters()
 
@@ -582,7 +604,12 @@ class HashingMemoryLite(nn.Module):
             # up projection: zero init so LoRA starts as identity-ish
             nn.init.zeros_(self.slot_up)
 
-        nn.init.xavier_uniform_(self.query_proj.proj.weight)
+        proj_linears = (
+            [self.query_proj.proj] if isinstance(self.query_proj.proj, nn.Linear)
+            else [m for m in self.query_proj.proj if isinstance(m, nn.Linear)]
+        )
+        for lin in proj_linears:
+            nn.init.xavier_uniform_(lin.weight)
         if self.v_proj:
             nn.init.normal_(self.value_proj.weight, mean=0, std=self.output_dim ** -0.5)
         if self.swilu_proj:

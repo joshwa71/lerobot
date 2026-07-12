@@ -58,6 +58,14 @@ class MemoryLayerConfig:
     # - "concat": concatenate language embedding to hidden state before projection
     # - "film": apply FiLM modulation (Feature-wise Linear Modulation) after projection
     fuse_method: str = "concat"
+    # Depth of the state-path query projection. 1 (default) = the original single
+    # linear (byte-identical). >=2 inserts SiLU-separated hidden layers of width
+    # query_proj_hidden_dim (0 -> input_dim) before the final projection to
+    # heads*k_dim. Motivation: on a FROZEN backbone (train_memory_only staged
+    # pretraining) the routing losses cannot separate tasks by co-adapting hidden
+    # states; a nonlinear query head restores a learnable routing surface.
+    query_proj_layers: int = 1
+    query_proj_hidden_dim: int = 0
 
     # Dropout probability applied to retrieved memory slots during training.
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.

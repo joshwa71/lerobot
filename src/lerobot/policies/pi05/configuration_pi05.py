@@ -92,6 +92,22 @@ class PI05Config(PreTrainedConfig):
     # Finetuning settings
     freeze_vision_encoder: bool = False  # Freeze only the vision encoder
     train_expert_only: bool = False  # Freeze entire VLM, train only action expert and projections
+    # Freeze EVERYTHING except the attached memory modules (values, keys, query
+    # projections/FiLM, gating). Used for staged pretraining: finetune the base model
+    # first without memory, then attach memory and train only it against the frozen
+    # backbone. Requires memory layers to be enabled (asserted at policy init).
+    train_memory_only: bool = False
+    # Router warm-up mode: freeze EVERYTHING except the memory ROUTER (keys + query
+    # projection/FiLM). Values stay at init (slot_up zero => memory output ~0 => MSE
+    # is inert on the routing path), so keys/queries train on the routing losses
+    # alone — geometry before content, no value anchoring. Supersedes
+    # train_memory_only when both are set.
+    train_router_only: bool = False
+    # Modifier for train_memory_only: additionally freeze the memory ROUTER
+    # (keys + query projection/FiLM), so only values/gating/value_proj/swilu train.
+    # Used for the post-warm-up content phase: the certified routing geometry stays
+    # exactly as audited while MSE fills in the values.
+    freeze_memory_router: bool = False
 
     # Optimizer settings: see openpi `AdamW`
     optimizer_lr: float = 2.5e-5  # see openpi `CosineDecaySchedule: peak_lr`
