@@ -2531,3 +2531,85 @@ Mechanism chain now closed end-to-end: features separable-but-crowded (E36 probe
 ### Entry 37 addendum — launch gotcha caught at first contact (12 Jul)
 
 The A-phase's first launch silently ran in **router-only mode**: the warmed checkpoint's saved `config.json` carries `train_router_only: True`, which supersedes the CLI's `train_memory_only` (by the flag-precedence rule). Killed at step ~400, fixed by passing `--policy.train_router_only=false` explicitly in the A stage, relaunched; correct mode confirmed in-log (`train_memory_only+freeze_memory_router: 32 param tensors trainable`). **Rule for all future staged chains: any freeze-mode flag set in an upstream stage must be explicitly disabled downstream — checkpoint configs carry them forward.** Cleanup: qproj2 probe checkpoints deleted (~37G; audit+wandb retained); warmed-router checkpoint preserved in full (18G) as the backtrack point.
+
+---
+## Entry 38 - 13 Jul 26 (rwarmupA sequential postmortem: the killer is ROUTING DRIFT — value training re-points the frozen router above L8 (self-IoU 0.21-0.33 vs L8's exact 1.000); exposure/writes exonerated; the certificate was void by task 0's own block. Fix: FROZEN-BASE ROUTING (dual-path) implemented + smoked; stageB chain (A rerun -> audit -> 5-task sequential) LAUNCHED)
+
+### The run (killed at 7/10 blocks, Josh's call)
+
+`libero_10_sequential_..._frozenbase_rwarmupA_..._protect_beta4_steps5k` — C's config verbatim from the A checkpoint (warmed router + 10k values-only fill). Ran 16:08 Jul 12 → killed 12:15 Jul 13 at 7/10 blocks.
+
+Eval trajectory (env: init → @35k): e4 15→20, e6 55→35, e9 5→0, e2 **80→25**, e7 **40→5**, e0 30→35, e8 50 (just trained). Seen-avg @35k = **24.3** (r2244 @35k: 44.3). Matched-5 inits = **39.0** vs fb-depth1 30.0 / C 40.0 / r2244 48.0.
+
+### Fit side (Josh's MSE/gate observation): real, quantified, SECONDARY
+
+- Block-min MSE mean 0.150 = **+20% vs C** (0.120; rank-matched) and +40% vs r2244 (0.105; r4 at L12/14) — but 15-25% BETTER than fb-depth1 on every matched block. Rollout inits ≈ C despite the MSE gap.
+- Gates frozen (W_g untrainable in sequential) at **0.74/0.88/0.90/0.89** per layer vs 0.97+ in every joint run — consistent with the +20% (ΔV must be ~1/g larger per unit correction; plus no downstream co-adaptation). The A-phase substrate itself is healthy: held-in **83.9%** @10k (parity with the best joint pretrains), MSE 0.079-0.092, no reserve trigger.
+- The E35 dilution chain is otherwise FIXED by the warm-up: per-batch L14 effnum 5,624 ≈ joint (r2244 4,989 / C 5,060; fb 9,317), self-adapted read mass 61-86% ≈ joint, writes 82-143k unique slots (fb: 95-255k), e7 got its best-ever cold start (init 40; joint era 8-25). **Routing quality converts to fit in the staged regime — the run did not die of fit.**
+
+### Retention side: exposure and writes exonerated, then the anomaly
+
+- Cleanest static exposure ever: **3** pairwise channels ≥12% (e7←e0 45%, e2←e8 29%, e0←e8 12%) vs r2244's 9 / control's 26.
+- Write magnitudes identical to joint: e7-core drift across e0's block (same channel, same metric as the E33 DiD) = 0.49/0.43 core&updated at L8/L14 vs r2244's 0.51/0.38, at LOWER mass exposure. End-state contested-slot ‖θ‖ 5.59 vs 5.76 (L8, r2 both) — no 1/g write blowup.
+- Against the 70-point rank-2 calibration curve (RTO 20-40% → ret 95%; 40-60% → 85%): e2 ret **31%** @ RTO 37, e6 **64%** @ 24, e7 **12%** @ 49 — **~3× the historical damage per unit exposure** — while low-exposure tasks sit ABOVE the curve (e4 133% @ 27, e0 117% @ 12). e6 lost 15pp across a block that perturbed **0.6%** of its core mass. Static overwrite cannot explain this run.
+
+### The discovery — READ-SIDE ROUTING DRIFT (new instrument: pre/post deployment audits)
+
+Ran the held-out audit on the seq-35k checkpoint and compared per-task footprints to the post-A audit (same instrument, same demos, seed-matched; `audit_heldout_rwarmupA_seq35k`):
+
+| self-IoU (seq start → 35k) | L8 | L10 | L12 | L14 |
+|---|---|---|---|---|
+| weighted footprint (trained t0-t6) | **1.000 exactly** | 0.24-0.32 | 0.17-0.28 | 0.17-0.25 |
+| binary core-50 set | **1.000** | 0.16-0.23 | 0.13-0.23 | 0.14-0.16 |
+
+- **L8 is the built-in control**: its input is the immutable stage-1 features (no memory below it) → frozen queries → IoU exactly 1.0 (also validates the instrument end-to-end). Everything above L8 re-routes almost completely: value updates at L8-12 perturb the residual stream; the frozen router's queries at L10-14 move; retrieval hops key-cells.
+- **Untrained tasks drift too, in a scene-proximity gradient** (t7=e1 basket 0.50 < t8=e3 0.60 < t9=e5 0.73): the perturbation δx = g·Δmem(x) is state-dependent — routing moved most where content was written.
+- **Timeline**: IoU(post-A audit, own-block reads) ≈ 0.21-0.39 already at t0 — **the certified famIoU-0.145 geometry was void within the first block**; each task fits whatever transient routing exists during its block (own-block→35k ≈ 0.66-0.78 vs the ~0.93 block-JSON measurement ceiling), and the anchor keeps sliding after.
+- **Still-mine mass** (fraction of eval-time reads on slots the task adapted AND that weren't later overwritten): e2 35-46% (the biggest collapse, lowest mass), e6 41-47%, vs e4 59-69% (the task that held). Substituting effective for static exposure puts the collapses back ON the calibration curve (>60% → historical collapse band). The "3× anomaly" was RTO under-measuring exposure once reads move.
+- **Separation survived; anchors didn't.** Deployed geometry @35k: famIoU 0.190 / bg 0.107 / core50 4188 — eroded from 0.145/0.066/2955 but still better than ANY joint prior audited (P9 0.264/0.087). A still-clean map that has MOVED is as fatal as a collapsed one → more separation would not have saved this run; **stationarity, not geometry, is the missing property.**
+- Corollary: β4 protection references stale maps in both directions under drift (steers writes off where early tasks USED to read, while they now read elsewhere).
+- Gate note (Josh's hypothesis, retention half): mid-sigmoid gates (0.74-0.89) sit on the steep part — g·(1−g) 4-6× the input-sensitivity of joint's saturated 0.97 — a secondary channel from the same root (the stream the frozen gate reads is non-stationary). The primary channel is the query re-routing.
+
+### Mechanism synthesis
+
+The staged substrate lacks **routing stationarity**. E37 proved the geometry is achievable on frozen features; nothing holds it — the router input is the live stream, value training moves the stream, and the warmed router separates tasks along low-variance directions of the crowded frozen-feature cone (E36: inter-task cos 0.86-0.99) so there is no margin to absorb the motion. Joint priors tolerate the same nominal channel because (1) co-trained features are spread (cos ~0.46 → wide margins), (2) heavy pretrain content (‖θ‖ 1.83-2.6 vs A's 1.06) makes sequential writes a smaller relative field change (+35% vs +75%), (3) saturated gates are insensitive. Refines E35's verdict: joint training doesn't (only) create the geometry — it creates the margins and ballast that keep it still. (r2244 post-sequential audit for the cross-regime drift number was started and killed on Josh's call — the L8-vs-L10/14 within-run control is decisive without it; partial audit deleted.)
+
+### Fix implemented: FROZEN-BASE ROUTING (dual-path), `--policy.memory_layer.use_frozen_base_input_features` (default false = byte-identical)
+
+Memory ROUTING (query projection + gate) reads the backbone features as they would be WITHOUT any memory contribution; the value/output path (LoRA transform, swilu) stays on the live stream. Addressing becomes stationary by construction — L8's IoU=1.000 extended to every memory layer. The warmed router was trained with values pinned to zero, i.e. on EXACTLY the features the frozen branch serves → it drops in unchanged.
+
+- **Training/joint path** (`modeling_pi05.py`): lazy fork — streams are identical below the first memory layer, so a memory-free suffix stream (`compute_frozen_suffix_layer`, mirrors the expert side of `compute_layer_complete`: shares the per-layer prefix KV since the prefix never attends to the suffix) runs only from fork_lo to fork_hi under no_grad, its per-layer mlp inputs passed as `router_x` into each memory layer. At fork_lo the live mlp-input IS the routing feature (router_x=None). Dropped after fork_hi.
+- **Inference path** (suffix-only denoise): pass A = expert forward with memory bypassed (per-wrapper capture state on `MLPPlusMemory`; own deepcopy of the prefix KV cache — the attention appends to it), stashing each memory layer's mlp input; pass B pops the stash as router_x. Strict stash hygiene (exactly-1 per layer, consumed-after-pass asserts, exception-safe).
+- `HashingMemoryLite.forward(..., router_x=None)`: query + gate read router_x; value path unchanged. Incompatible with `memory_only` (guarded).
+- **Smokes (all pass, float32 tiny model, real code path):** T1 flag-on @ zero values == flag-off BITWISE (live pass untouched); T2 frozen-stream fidelity 0.00e+00 (any mask/rotary/residual bug would fail); T3 router_x stationary under value bumps while live x moves; T4 inference dual-pass bitwise clean + cache uncorrupted + stationary; T5 grads flow (values + query_proj) with the no_grad stream present; T6 gradient-checkpointing parity 0.00e+00; T7 single-memory-layer edge case. Policy-level probe on the real warmed checkpoint: flag parses, "Frozen-base routing ENABLED" fires, 32/841 freeze pattern, **1.11 s/step** (old A: ~1.18 — overhead within noise; the fork costs ~40% of one expert-suffix pass, expert ≈ 300M of 6.6B).
+
+### LAUNCHED: stageB chain (13 Jul, tmux `stageB`, log `outputs/stageB.log`)
+
+`staged/stageB_frozenroute_A10k_audit_seq5.sh`: **A rerun** (10k values-only, router frozen, frozen-route ON — gates must train against the frozen-branch input they'll read at deployment; old-A content was measured compatible but 4h buys exact train/deploy consistency) → **audit** `audit_heldout_frozenroute_rwarmupB_10k` (expect ≈ the warm-up certificate 0.145/2955 — the frozen branch serves exactly the warm-up features) → **sequential, FIRST 5 TASKS** `[0-4]` (deadline scope; contains all three collapse cases e2/e6/e7 + the e7←e0 genuine channel), C's config verbatim + the flag. Runs: `libero_90_..._frozenroute_rwarmupB_values10k_...` → `libero_10_sequential_..._frozenroute_rwarmupB_..._steps5k_tasks5`.
+
+**Tripwire (zero GPU):** when task 0's block JSON lands, IoU(t0 block reads, post-A audit) must sit near the ~0.93 measurement ceiling (old wiring: 0.28). If low → the fix isn't holding in the real trainer → kill.
+
+**Pre-registered reads on landing:** (1) per-task self-IoU pre→post ≈ 1.0 at ALL layers (the property, in production); (2) still-mine mass ≈ 1 − static-RTO; (3) retention back on the calibration curve at the cleanest-ever exposure — e2/e6 should hold near init; e7←e0 (famIoU 0.234, genuine soup channel) remains the residual risk with β4; (4) fit ≈ unchanged or slightly better (inits ~39-40; tasks no longer chase their own routing within a block).
+
+### Cleanup
+- Deleted (analysis retained — JSONs/evals/wandb/audits): killed-sequential checkpoints (251G), old A-phase checkpoints (36G). Disk 47%.
+- Untouched: `libero_90_pi05_base_nomem_50k` (stage-1 base), warmed-router checkpoint (stageB source + backtrack point), r2244/C/sep5/protectB4 finals, stage-2-full 40k (documented negative), all audits, `realworld_v2`.
+- New analysis artifacts: `audit_heldout_rwarmupA_seq35k` (the drift measurement), scratchpad `rerouting.py`/`drift_rwA.py`/`norms_cmp.py` patterns.
+
+### Next steps
+1. stageB lands (~16-18h): tripwire after block 0, then the pre-registered reads above. If retention holds → extend to 10 tasks (the script's sequential stage is the same command with `online_task_ids=[0..9]`) and/or 50-ep re-eval.
+2. If e7 still collapses via the genuine soup channel → that's the honest residual: magnitude-based protection (E27 offline frontier) is the parked lever.
+3. Post-deadline queue unchanged: per-task LoRA-FT baseline on the frozen stage-1 (fit ceiling / reviewer comparator), hybrid language-only head, joint warm-up variant.
+
+---
+### Entry 38 addendum (13 Jul, discussion) — the drift tax is retroactive: this channel was live in EVERY sequential run ever
+
+Josh's observation, confirmed on existing data: routing drift (values mutating the stream the frozen router reads) was not introduced by the staged protocol — it has been present in every sequential run in the project; the regimes differ only in the damage coefficient.
+
+- **Joint-era evidence, reread with today's lens:** E30 Finding 2's footprint broadening (L14 effnum 5257→11789 as write magnitude/duration grew) IS this mechanism — we measured it and named it "broadening" because we never compared a task's own footprint before/after. **B (lr2x) is the joint-era drift casualty**: damage-per-exposure ~3× β4's (ret −9.5 @ RTO 33% vs −3.0 @ 30%) — the same anomaly signature that cracked the rwarmupA run. Its "backfire" was attributed entirely to bigger overwrites; doubled ΔV also doubles stream perturbation.
+- **Why joint survived it at standard LR:** margins (feature cos 0.46 vs the frozen cone's 0.86-0.99), ballast (relative field change +35% vs +75%), gate saturation. The static-exposure machinery (calibration curve, timing-matched cliffs, β4's +6.5pp) worked because drift-per-write was small there — but not zero.
+- **The deep consequence: the rank-2 calibration curve's ABSOLUTE level is contaminated.** "85% retention at 40-60% RTO" was measured with drift on. No drift-free sequential run has ever been observed; **stageB is the first stationary-addressing run in project history.** Pre-registered read upgraded accordingly: retention ON the historical curve at matched exposure ⇒ drift was staged-only; retention ABOVE the curve ⇒ the gap is the historical drift tax, quantified behaviorally — and it applies to the whole family, joint runs included.
+- **Follow-ons if confirmed:** (1) the flag for the JOINT track — with a variant: a joint router was trained on live features *including pretrain memory content*, so its frozen routing input should be features computed with **values snapshotted at sequential start** (same dual-path code, frozen branch carries the snapshot; ~10GB extra at r2), not memory-free. "r2244 + snapshot-frozen routing" is the candidate frontier run. (2) The direct retrospective number: the r2244 post-sequential audit (pre→post self-IoU for the joint regime, ~1.1h GPU) once stageB frees the card.
+- Relative conclusions of the project (write-budget, separation-as-translation, incidental/genuine protection split, capacity/interference axis) stand — all A/B'd within-regime with drift on both arms. The absolute retention levels, and specifically the lr2x reading, carry the unquantified tax.
+
+Launch status at write time: A-phase stepping cleanly (step 200, 1.12s/step, loss 0.111, frozen routing confirmed in-log); tripwire ~21:15, chain ETA ~06:30-08:00 Jul 14.

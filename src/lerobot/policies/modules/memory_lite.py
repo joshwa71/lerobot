@@ -617,10 +617,14 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
         # lang_emb: (B, lang_dim) or None
         # task_ids: (B,) optional task indices for contrastive loss
+        # router_x: (B, T, C) optional frozen-base routing features (memory-free
+        #   backbone forward). When given, the QUERY and the GATE read router_x so
+        #   the addressing is stationary under value training; the value/output
+        #   path (LoRA transform, swilu) stays on the live stream x.
         # Ensure module parameters/buffers match the input dtype/device without recreating Parameters
         dtype, device = x.dtype, x.device
         if getattr(self, "_param_dtype", None) is not dtype or getattr(self, "_param_device", None) is not device:
@@ -644,8 +648,17 @@ class HashingMemoryLite(nn.Module):
         x_flat = x.view(-1, C)
         bs = x_flat.shape[0]
 
+        if router_x is not None:
+            if router_x.shape != x.shape:
+                raise ValueError(f"router_x shape {tuple(router_x.shape)} != x shape {tuple(x.shape)}")
+            xr = router_x.to(dtype=x.dtype)
+            xr_flat = xr.view(-1, C)
+        else:
+            xr = x
+            xr_flat = x_flat
+
         # Query (with optional language conditioning)
-        query = self.query_proj(x, lang_emb=lang_emb)  # (bs*heads, k_dim)
+        query = self.query_proj(xr, lang_emb=lang_emb)  # (bs*heads, k_dim)
 
         # Compute query contrastive loss if enabled and task_ids provided
         self.last_contrastive_loss = None
@@ -784,7 +797,7 @@ class HashingMemoryLite(nn.Module):
 
         out = out.view(B, T, -1)
         if self.gating is not None:
-            gate = torch.sigmoid(self.gating(x_flat)).view(B, T, 1)
+            gate = torch.sigmoid(self.gating(xr_flat)).view(B, T, 1)
             if self.training and self.log_usage:
                 self.last_gate_mean = float(gate.mean().item())
             out = gate * out
@@ -1433,9 +1446,42 @@ class MLPPlusMemory(nn.Module):
         self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override)
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
+        # Frozen-base routing, inference path (suffix-only denoise forward): the
+        # dual pass is driven by plain module state because the HF layer stack
+        # between PaliGemmaWithExpertModel and this wrapper cannot thread a new
+        # kwarg. Pass A (capture) bypasses memory and stashes the mlp input; pass
+        # B pops it as router_x. The training path passes router_x explicitly and
+        # never touches this state.
+        self._frozen_capture = False
+        self._frozen_stash: list[torch.Tensor] = []
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None):
-        mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids)
+    def begin_frozen_capture(self):
+        if self.memory_only:
+            raise RuntimeError("use_frozen_base_input_features is incompatible with memory_only")
+        self._frozen_stash = []
+        self._frozen_capture = True
+
+    def end_frozen_capture(self):
+        self._frozen_capture = False
+        if len(self._frozen_stash) != 1:
+            raise RuntimeError(
+                f"frozen-routing capture expected exactly 1 stashed tensor, got {len(self._frozen_stash)}"
+            )
+
+    def assert_frozen_stash_consumed(self):
+        if self._frozen_stash:
+            raise RuntimeError("frozen-routing stash not consumed by the live pass")
+
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None,
+                router_x: torch.Tensor | None = None):
+        if self._frozen_capture:
+            # Pass A of the inference dual forward: memory bypassed, record the
+            # frozen (memory-free) routing features for the live pass.
+            self._frozen_stash.append(x.detach())
+            return self.mlp(x)
+        if router_x is None and self._frozen_stash:
+            router_x = self._frozen_stash.pop(0)
+        mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)
         if self.memory_only:
             return mem_out
         return self.mlp(x) + mem_out

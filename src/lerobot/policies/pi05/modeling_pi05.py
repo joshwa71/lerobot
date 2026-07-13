@@ -242,6 +242,7 @@ def compute_layer_complete(
     gemma_expert,
     task_emb=None,
     task_ids=None,
+    router_x=None,
 ):
     models = [paligemma.model.language_model, gemma_expert.model]
     query_states = []
@@ -307,7 +308,9 @@ def compute_layer_complete(
             base_mlp = layer.mlp.mlp
             if base_mlp.up_proj.weight.dtype == torch.bfloat16:
                 out_emb = out_emb.to(dtype=torch.bfloat16)
-            out_emb = layer.mlp(out_emb, lang_emb=task_emb, task_ids=task_ids)
+            out_emb = layer.mlp(
+                out_emb, lang_emb=task_emb, task_ids=task_ids, router_x=router_x if i == 1 else None
+            )
         else:
             # Convert to bfloat16 if the next layer (mlp) uses bfloat16
             if layer.mlp.up_proj.weight.dtype == torch.bfloat16:
@@ -318,6 +321,96 @@ def compute_layer_complete(
         outputs_embeds.append(out_emb)
         start_pos = end_pos
     return outputs_embeds
+
+
+def compute_frozen_suffix_layer(
+    layer_idx,
+    prefix_hidden,
+    frozen_hidden,
+    attention_mask,
+    position_ids,
+    adarms_cond,
+    paligemma,
+    gemma_expert,
+    collect_mlp_input,
+    run_mlp,
+):
+    """One expert-layer step of the FROZEN (memory-free) suffix stream.
+
+    Used by memory_layer.use_frozen_base_input_features: downstream memory layers
+    route (query + gate) on the backbone features as they would be WITHOUT any
+    memory contribution, so the suffix stream is recomputed from the first memory
+    layer onward with every memory module bypassed. The prefix stream never
+    attends to the suffix (prefix-LM mask), so it is memory-independent and its
+    per-layer hidden states are reused from the live pass for this layer's
+    keys/values. Mirrors the expert-side computation of compute_layer_complete.
+
+    Returns (mlp_input if collect_mlp_input else None, layer_output if run_mlp else None).
+    """
+    expert_layer = gemma_expert.model.layers[layer_idx]
+    pg_attn = paligemma.model.language_model.layers[layer_idx].self_attn
+    prefix_len = prefix_hidden.shape[1]
+
+    # Prefix keys/values for this layer (queries not needed: prefix outputs come from the live pass).
+    pre_normed, _ = layernorm_forward(
+        paligemma.model.language_model.layers[layer_idx].input_layernorm, prefix_hidden, adarms_cond[0]
+    )
+    pre_shape = (*pre_normed.shape[:-1], -1, pg_attn.head_dim)
+    k_pre = pg_attn.k_proj(pre_normed).view(pre_shape).transpose(1, 2)
+    v_pre = pg_attn.v_proj(pre_normed).view(pre_shape).transpose(1, 2)
+
+    # Frozen suffix q/k/v.
+    fro_normed, attn_gate = layernorm_forward(
+        expert_layer.input_layernorm, frozen_hidden, adarms_cond[1]
+    )
+    fro_shape = (*fro_normed.shape[:-1], -1, expert_layer.self_attn.head_dim)
+    q_fro = expert_layer.self_attn.q_proj(fro_normed).view(fro_shape).transpose(1, 2)
+    k_fro = expert_layer.self_attn.k_proj(fro_normed).view(fro_shape).transpose(1, 2)
+    v_fro = expert_layer.self_attn.v_proj(fro_normed).view(fro_shape).transpose(1, 2)
+
+    # Rotary embeddings: same cos/sin as the joint pass, applied per position slice.
+    dummy_tensor = torch.zeros(
+        q_fro.shape[0], position_ids.shape[1], q_fro.shape[-1], device=q_fro.device, dtype=q_fro.dtype
+    )
+    cos, sin = paligemma.model.language_model.rotary_emb(dummy_tensor, position_ids)
+    _, k_pre = modeling_gemma.apply_rotary_pos_emb(
+        k_pre, k_pre, cos[:, :prefix_len], sin[:, :prefix_len], unsqueeze_dim=1
+    )
+    q_fro, k_fro = modeling_gemma.apply_rotary_pos_emb(
+        q_fro, k_fro, cos[:, prefix_len:], sin[:, prefix_len:], unsqueeze_dim=1
+    )
+
+    key_states = torch.cat([k_pre, k_fro], dim=2)
+    value_states = torch.cat([v_pre, v_fro], dim=2)
+
+    # Suffix rows of the joint mask: same column semantics ([prefix, suffix]).
+    att_output, _ = modeling_gemma.eager_attention_forward(
+        pg_attn,
+        q_fro,
+        key_states,
+        value_states,
+        attention_mask[..., prefix_len:, :],
+        pg_attn.scaling,
+    )
+    att_output = att_output.reshape(frozen_hidden.shape[0], -1, 1 * 8 * pg_attn.head_dim)
+    if att_output.dtype != expert_layer.self_attn.o_proj.weight.dtype:
+        att_output = att_output.to(expert_layer.self_attn.o_proj.weight.dtype)
+    out_emb = expert_layer.self_attn.o_proj(att_output)
+    out_emb = _gated_residual(frozen_hidden, out_emb, attn_gate)
+    after_first_residual = out_emb.clone()
+    out_emb, mlp_gate = layernorm_forward(
+        expert_layer.post_attention_layernorm, out_emb, adarms_cond[1]
+    )
+
+    base_mlp = expert_layer.mlp.mlp if isinstance(expert_layer.mlp, MLPPlusMemory) else expert_layer.mlp
+    if base_mlp.up_proj.weight.dtype == torch.bfloat16:
+        out_emb = out_emb.to(dtype=torch.bfloat16)
+    mlp_input = out_emb if collect_mlp_input else None
+    if not run_mlp:
+        return mlp_input, None
+    out = base_mlp(out_emb)
+    out = _gated_residual(after_first_residual, out, mlp_gate)
+    return mlp_input, out
 
 
 class GemmaConfig:  # see openpi `gemma.py: Config`
@@ -488,6 +581,25 @@ class PaliGemmaWithExpertModel(
             self.mem_target_layers = target_layers
         except Exception:
             pass
+        self._mem_cfg = cfg
+        self._mem_layer_indices = sorted(
+            i for i, layer in enumerate(self.gemma_expert.model.layers) if isinstance(layer.mlp, MLPPlusMemory)
+        )
+        if getattr(cfg, "use_frozen_base_input_features", False):
+            if getattr(cfg, "memory_only", False):
+                raise ValueError("use_frozen_base_input_features is incompatible with memory_layer.memory_only")
+            logging.info(
+                f"Frozen-base routing ENABLED: memory layers {self._mem_layer_indices} route on the "
+                "memory-free backbone features (dual-path)."
+            )
+
+    def _frozen_routing_enabled(self) -> bool:
+        cfg = getattr(self, "_mem_cfg", None)
+        return bool(
+            cfg is not None
+            and getattr(cfg, "use_frozen_base_input_features", False)
+            and getattr(self, "_mem_layer_indices", None)
+        )
 
     def forward(
         self,
@@ -519,6 +631,38 @@ class PaliGemmaWithExpertModel(
             # pops lang_emb/task_ids out of **kwargs and dispatches to MLPPlusMemory when
             # the wrapped expert MLP is memory-augmented, so passing them here is what
             # restores the FiLM language conditioning at inference for pi05+memory.
+            frozen_routing = self._frozen_routing_enabled()
+            if frozen_routing:
+                # Frozen-base routing, pass A: run the expert once with memory
+                # bypassed so each memory layer stashes its memory-free mlp input
+                # (the routing features). The prefix KV cache is deep-copied because
+                # the attention appends suffix keys to it (denoise_step deep-copies
+                # for the same reason).
+                mem_wrappers = [
+                    self.gemma_expert.model.layers[i].mlp for i in self._mem_layer_indices
+                ]
+                for m in mem_wrappers:
+                    m.begin_frozen_capture()
+                try:
+                    with torch.no_grad():
+                        pkv_a = copy.deepcopy(past_key_values) if past_key_values is not None else None
+                        self.gemma_expert.model.forward(
+                            inputs_embeds=inputs_embeds[1],
+                            attention_mask=attention_mask,
+                            position_ids=position_ids,
+                            past_key_values=pkv_a,
+                            use_cache=use_cache,
+                            adarms_cond=adarms_cond[1] if adarms_cond is not None else None,
+                            lang_emb=task_emb,
+                            task_ids=task_ids,
+                        )
+                except Exception:
+                    for m in mem_wrappers:
+                        m._frozen_capture = False
+                        m._frozen_stash = []
+                    raise
+                for m in mem_wrappers:
+                    m.end_frozen_capture()
             suffix_output = self.gemma_expert.model.forward(
                 inputs_embeds=inputs_embeds[1],
                 attention_mask=attention_mask,
@@ -529,6 +673,9 @@ class PaliGemmaWithExpertModel(
                 lang_emb=task_emb,
                 task_ids=task_ids,
             )
+            if frozen_routing:
+                for m in mem_wrappers:
+                    m.assert_frozen_stash_consumed()
             suffix_output = suffix_output.last_hidden_state
             prefix_output = None
             prefix_past_key_values = None
@@ -543,8 +690,56 @@ class PaliGemmaWithExpertModel(
                 and self.training
             ) or (hasattr(self, "gradient_checkpointing") and self.gradient_checkpointing and self.training)
 
+            # Frozen-base routing (training/joint path): maintain a memory-free
+            # suffix stream from the first memory layer to the last, whose per-layer
+            # mlp inputs are the routing features for the live pass. Layers below the
+            # first memory layer are identical in both streams (no memory to diverge
+            # them), so the fork starts lazily at the first memory layer, and the
+            # frozen stream is dropped once the last memory layer's routing features
+            # are collected. Runs under no_grad: routing features are a frozen
+            # function of the backbone by design.
+            frozen_routing = self._frozen_routing_enabled()
+            mem_idx = self._mem_layer_indices if frozen_routing else []
+            fork_lo = mem_idx[0] if frozen_routing else -1
+            fork_hi = mem_idx[-1] if frozen_routing else -1
+            frozen_hidden = None
+
             # Process all layers with gradient checkpointing if enabled
             for layer_idx in range(num_layers):
+                router_x = None
+                if frozen_routing and fork_lo <= layer_idx <= fork_hi:
+                    with torch.no_grad():
+                        if layer_idx == fork_lo:
+                            # Streams are identical before the fork layer's MLP: the
+                            # live mlp-input IS the routing feature here (router_x
+                            # stays None), and the frozen stream is initialized from
+                            # this layer's plain-MLP output.
+                            if fork_lo != fork_hi:
+                                _, frozen_hidden = compute_frozen_suffix_layer(
+                                    layer_idx,
+                                    inputs_embeds[0],
+                                    inputs_embeds[1],
+                                    attention_mask,
+                                    position_ids,
+                                    adarms_cond,
+                                    self.paligemma,
+                                    self.gemma_expert,
+                                    collect_mlp_input=False,
+                                    run_mlp=True,
+                                )
+                        else:
+                            router_x, frozen_hidden = compute_frozen_suffix_layer(
+                                layer_idx,
+                                inputs_embeds[0],
+                                frozen_hidden,
+                                attention_mask,
+                                position_ids,
+                                adarms_cond,
+                                self.paligemma,
+                                self.gemma_expert,
+                                collect_mlp_input=layer_idx in mem_idx,
+                                run_mlp=layer_idx < fork_hi,
+                            )
                 if use_gradient_checkpointing:
                     inputs_embeds = torch.utils.checkpoint.checkpoint(
                         compute_layer_complete,
@@ -560,6 +755,7 @@ class PaliGemmaWithExpertModel(
                         gemma_expert=self.gemma_expert,
                         task_emb=task_emb,
                         task_ids=task_ids,
+                        router_x=router_x,
                     )
                 else:
                     inputs_embeds = compute_layer_complete(
@@ -572,6 +768,7 @@ class PaliGemmaWithExpertModel(
                         gemma_expert=self.gemma_expert,
                         task_emb=task_emb,
                         task_ids=task_ids,
+                        router_x=router_x,
                     )
 
             # final norm

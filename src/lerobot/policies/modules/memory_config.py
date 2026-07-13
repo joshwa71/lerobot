@@ -67,6 +67,19 @@ class MemoryLayerConfig:
     query_proj_layers: int = 1
     query_proj_hidden_dim: int = 0
 
+    # Frozen-base routing (dual-path). When True, memory ROUTING (query projection
+    # + gate) reads the backbone features as they would be WITHOUT any memory
+    # contribution (a memory-free forward of the frozen expert from the first
+    # memory layer onward), while the value/output path still acts on the live
+    # residual stream. Motivation (research_log E38): with routing computed from
+    # the live stream, sequential value training perturbs the stream and re-points
+    # the frozen router above the first memory layer (measured: per-task footprint
+    # IoU 0.21-0.33 at L10-14 after 7 blocks vs exactly 1.0 at L8, whose input is
+    # immutable) — every earlier task's reads slide off the slots it adapted.
+    # Frozen-base routing makes the addressing stationary by construction at every
+    # memory layer. Default False = original behavior, byte-identical.
+    use_frozen_base_input_features: bool = False
+
     # Dropout probability applied to retrieved memory slots during training.
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
     dropout_prob: float = 0.0
