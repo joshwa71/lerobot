@@ -2613,3 +2613,75 @@ Josh's observation, confirmed on existing data: routing drift (values mutating t
 - Relative conclusions of the project (write-budget, separation-as-translation, incidental/genuine protection split, capacity/interference axis) stand — all A/B'd within-regime with drift on both arms. The absolute retention levels, and specifically the lr2x reading, carry the unquantified tax.
 
 Launch status at write time: A-phase stepping cleanly (step 200, 1.12s/step, loss 0.111, frozen routing confirmed in-log); tripwire ~21:15, chain ETA ~06:30-08:00 Jul 14.
+
+---
+## Entry 39 - 14 Jul 26 (stageB verdict: FORGETTING SOLVED — first flat retention matrix in project history (MSE forgetting +0.0-1.7%, routing self-IoU exactly 1.0000); the low score is NOT retention, it is the staged substrate's rollout-fit conversion (inits 35 vs r2244's 48), decomposed per-task: e9 = warm-up footprint dilution (measured), e4 = backbone-integration gap (footprint-controlled), e7 = staged WINS. The "apparent forgetting" (e6 60→25) is 20-ep eval noise on a +0.5%-drifted function)
+
+### The run
+
+`libero_10_sequential_..._frozenroute_rwarmupB_..._protect_beta4_steps5k_tasks5` — chain completed clean 07:57 Jul 14 (A-phase 10k frozen-route -> audit -> 5-task sequential, C's config + `use_frozen_base_input_features=true` everywhere). Chain hygiene verified in-log: "Frozen-base routing ENABLED" in all stages, 32/841 tensors trainable in A, values-only 2.42B/6.6B in sequential, protection store folded after every task. (Bookkeeping note: the overnight chain monitor was killed right after launch, so the ~21:15 tripwire never ran live; the chain completed on its own and the tripwire was run retroactively this morning — it PASSES, see below.)
+
+Eval (20 eps/cell):
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|---|---|---|---|---|---|
+| 5k | 10 | | | | | 10.0 |
+| 10k | 10 | 60 | | | | 35.0 |
+| 15k | 10 | 25 | 5 | | | 13.3 |
+| 20k | 25 | 25 | 10 | 70 | | 32.5 |
+| 25k | 20 | 35 | 5 | 70 | 30 | **32.0** |
+
+First-5 comparison @25k (all 20 eps except C/sep-era 50): stageB **32.0** / rwarmupA 35.0 / C 39.0 / r2244 42.0. Inits: stageB **35.0** (10/60/5/70/30) / rwarmupA 39.0 / C 40.0 / r2244 48.0. Block-min MSE mean: stageB **0.127** / rwarmupA 0.156 / C 0.131 / r2244 0.120.
+
+### 1. The fix works EXACTLY as designed — stationarity is total (code exonerated)
+
+- **Tripwire (retroactive, all 5 tasks × all layers):** IoU(block reads, post-A audit) = **0.90-0.93 at L8/L10/L12/L14 uniformly** — at the measurement ceiling (rwarmupA's immutable-L8 control: 0.92-0.93). rwarmupA's same numbers above L8 were 0.25-0.39. The training path routes stationarily.
+- **The definitive instrument** (new post-sequential audit `audit_heldout_frozenroute_rwarmupB_seq25k` vs post-A): per-task footprint self-IoU = **1.0000 exactly, every task, every layer** (rwarmupA: 0.21-0.32 above L8). Deployed geometry after 5 blocks is byte-identical to post-A: famIoU 0.144/0.144, bg 0.066/0.064, core50 2958/2958, effnum 6507/6507. **The E38 read-side drift channel is dead.**
+- **Parameter-level proof** (checkpoint diff 010000→015000, e9's block): the ONLY tensors that changed are the 8 slot_up/slot_down — keys, query_proj/FiLM, gate, value_proj, swilu, backbone all bitwise-zero delta. Combined with self-IoU=1.0: the sole interference channel left in the whole system is *values on shared slots*.
+- Certificate transfer: warmup-audit ↔ postA(B)-audit per-task IoU = L8 1.000, L10-14 0.980-0.988 (live-route A-phase: 0.926-0.945). The 0.98 residual is the value_proj-bias delta (the warmup audit ran on the live path, whose stream at values=0 still carries g×bias; the frozen branch is strictly memory-free) — expected, not drift. A-phase itself no longer moves routing.
+
+### 2. FORGETTING: SOLVED. The E3-style MSE matrix is flat — first time ever
+
+Ran the full 5×5 forgetting matrix offline (paired-noise `_eval_loss_on_seen_tasks`, 16 batches/task, all 5 per-task checkpoints):
+
+| ckpt | e4 | e6 | e9 | e2 | e7 |
+|---|---|---|---|---|---|
+| 5k | **0.1140** | 0.6065 | 1.6084 | 0.8788 | 0.9069 |
+| 10k | 0.1140 | **0.1049** | 1.6067 | 0.8794 | 0.9039 |
+| 15k | 0.1144 | 0.1050 | **0.1891** | 0.8597 | 0.8882 |
+| 20k | 0.1145 | 0.1050 | 0.1900 | **0.1326** | 0.8863 |
+| 25k | 0.1159 | 0.1054 | 0.1910 | 0.1329 | **0.1682** |
+
+Just-trained → final: e4 **+1.7%**, e6 **+0.5%**, e9 **+1.0%**, e2 **+0.3%**, e7 **+0.0%**. For calibration: realworld-E3's matrix had red-bowl **+209%**; rwarmupA lost e2 80→25 in rollouts. Nothing in project history is close to this flat. Untrained-task cells move ≤0.3% between checkpoints (paired noise works); small negative transfer visible pre-training (e7 0.907→0.886 before its block = mild positive transfer).
+
+Supporting numbers, same story: cleanest exposure ever (RTO t0-t2 10-12%, t3 3.7%, **zero** pairwise channels ≥12%, read IoU L14 0.055-0.113); still-mine 56-77%; e6's core-50 hit by later writers at only 0.2-1.4% of read mass per layer; and the direct field measurement — across e9's block, e6's mass-weighted value field changed **1.2-2.1%** (core-50: 0.1-0.6%), e4's 0.8-1.3%.
+
+**So the e6 "collapse" (60→25 at e9's block) is NOT forgetting.** The function e6 reads moved +0.1% across that block. Verdict: 20-ep binomial noise around a marginal policy (p≈0.35-0.45 → ±11pp/cell; the 60 was the outlier draw) plus possibly a sliver of closed-loop brittleness (the 25k video shows a wrong-mug grab — object-binding wobble — while 15k failures are second-step timeouts). A 50-ep re-eval of the retained per-task checkpoints would fully settle it; the MSE matrix already settles the mechanism question.
+
+Protection was inert here — nothing to protect: t1-t4's read mass on high-usefulness (u≥0.25) prior slots was 0.1-0.8%, realized writes there 0.0%. Note discovered en route (applies to ALL runs, incl. r2244): u(s) is peak-normalized and access distributions are so sharp (max/p99 ≈ 10-16×) that u at the core-50 boundary is only ~0.035 → (1-u)^β≈4 ≈ 0.87 — β4 only ever vetoes the top ~1% mega-hot slots. It paid +6.5pp in the joint era because damage concentrated exactly there; worth remembering if protection is ever re-tuned.
+
+### 3. What actually went wrong: rollout-fit conversion, not retention
+
+The 10pp gap to r2244 @25k is entirely on the diagonal (inits 35 vs 48) — and MSE does NOT explain it (stageB MSE floor 0.127 ≈ r2244's 0.120, better than C's 0.131; stationary targets fit EASIER than rwarmupA's moving ones, −19% MSE). The staged substrate converts flow-matching fit into rollout success much worse than joint substrates. Per-task decomposition (the useful part):
+
+- **e9 (mugs→microwave, init 5 in BOTH staged runs vs 35-40 joint) = warm-up footprint dilution, measured.** The warmed router assigns e9 a footprint 2.1-2.4× everyone else's (audit L14 core50 6980 vs 2100-3800; block core50 7081 vs r2244's 3759; per-batch L14 effnum 8973 vs r2244's 5896). top_t=1536 covers only 17% of its per-batch reads (r2244: 26%); updates smear (ev/slot p50 17, p90 549 vs r2244's 837) → no slot specializes → mushy mixture. This was visible in the E37 audit table (e9 = 14993/6973, 2.4× the others) and unremarked — the capacity gates were min-only. **Audit-methodology fix: add a footprint-size dispersion/max gate (flag any task >2× median core50).** The E38 claim "per-batch effnum 5624 ≈ joint, dilution fixed" was a mean over blocks that masked e9's 8973.
+- **e4 (two-mugs dual-cycle, init 10-20 vs 35 joint) = the backbone-integration gap, now footprint-CONTROLLED.** e4's staged footprint is essentially identical to joint (L14 effnum 6254 vs 6274, writes 17.5k vs 20.1k, same ev/slot scale) and its MSE lands 0.114 — yet rollouts 10-20 vs 35. With routing/dilution equalized, what remains is E35's link-5 residual, isolated cleanly for the first time: a backbone that never co-trained with memory in the loop does not integrate memory corrections into long-horizon composition (videos: first pick-place cycle completes, second hovers/fails). One-step MSE cannot see compounding.
+- **e7 (soup+cheese, init 30; rwarmupA 40) = the staged geometry WINS where routing binds.** Joint-era e7 inits were 10 (C) / 25 (r2244) with famIoU-collision routing; the warmed geometry's clean basket separation converts to the best e7 fits on record. The staged substrate trades: fixes routing-bound tasks, loses integration-bound ones.
+- Amplifier on everything: gates are frozen mid-sigmoid constants under frozen-route (L8/L10/L12/L14 = 0.74/0.80/0.72-0.76/0.81-0.85; rwarmupA's live gates self-amplified to 0.88-0.92 during blocks; joint 0.97) — every correction delivered at 75-85% strength on a substrate where memory IS the task competence (stage-1 floors ≈ 0-2).
+
+### 4. The pre-registered drift-tax read is VOID at this exposure — the window can't discriminate
+
+All five tasks sit at RTO ≤ 12%, i.e. in the calibration curve's <20% bin where the rank-2 history already predicts ~zero forgetting. Observed zero forgetting is consistent with the curve AND with the drift-tax hypothesis — the run proves stationarity holds in production and that clean-exposure forgetting is nil, but it cannot yet price the historical drift tax. The 5-task window also ends exactly where rwarmupA's catastrophe began (its e2 80→25, e6 −15, e9→0 all happened at blocks 5-7). The A/B that shows the fix's retention payoff requires blocks 5-10.
+
+### 5. Next steps (proposed, in value order)
+
+1. **Port stationary addressing to the JOINT track — "r2244 + snapshot-frozen routing"** (E38-addendum follow-on, now maximally supported): joint substrate has the fit (init 48), stageB proves stationarity eliminates function-level forgetting, and r2244's within-window losses (e4 35→20, e9 40→20, later e7→0) are the drift-suspect retention tax. Code delta: the frozen suffix branch must run memory WITH slot values snapshotted at sequential start (the joint router/gate were trained on live-with-content features; memory-free features would be OOD for them) — snapshot slot_up/slot_down at seq start (~7GB bf16 at r2244 sizes), thread a use-snapshot flag through the frozen-branch memory call. Expected: init ≈ 48 with a flat matrix → new frontier >46.5, and the drift tax finally quantified within the joint regime.
+2. **Extend stageB to 10 tasks** (same command, `online_task_ids=[0..9]`, ~40h): the matrix predicts the seen-avg holds ≈ its init mean through blocks 5-10 where rwarmupA fell to 24.3. That is the controlled catastrophe-elimination demonstration (mechanism E38 → fix → matched-config rescue) — the cleanest causal story the project owns.
+3. **50-ep re-eval of the 5 retained per-task checkpoints** (~cheap): every conclusion above rides on ±11pp cells; de-noise the trajectory, resolve e6's wobble empirically.
+4. **Staged-track plasticity levers unlocked by zero forgetting** (if the staged track stays a thesis pillar): with drift dead and exposure clean, the levers that backfired via interference are now safe by construction — memory_value_lr 2e-3 (B's fit was best-in-family, its −9.5 retention was the drift tax; pre-registered: under frozen-route the tax should vanish), top_t 1536→~3072 (e9's coverage 17%→34%), steps 5k→7k. Cheap sequential-only reruns from the same A checkpoint.
+5. **e4-class integration gap: do not chase in-protocol** — E35/E36 stand (needs backbone co-adaptation at some phase = joint track). The staged track's honest scope: routing-bound tasks won, integration-bound tasks conceded, zero forgetting.
+
+### Artifacts
+- New: `audit_heldout_frozenroute_rwarmupB_seq25k` (10 JSONs, the 1.0000 measurement), MSE matrix (`scratchpad/mse_matrix.{py,jsonl}` — reusable instrument: paired-noise per-checkpoint loss eval via the trainer's own `_eval_loss_on_seen_tasks`), `field_change.py` (mass-weighted value-field perturbation from checkpoint pairs), `stageB_analysis.py` (full battery), `ckpt_diff.py` (safetensors group diff).
+- Retained: stageB A checkpoint + all 5 per-task sequential checkpoints (needed for #3/#4 and any drift-tax follow-ups), both post-A audits, block JSONs, evals/videos, wandb.
+- GPU free.
