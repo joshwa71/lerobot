@@ -79,6 +79,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # after each sequential task. Uses --batch_size for the batch dimension.
     eval_loss_n_batches: int = 20
 
+    # Episodes per env for the eval that runs after the FINAL task only. 0 (default)
+    # = use eval.n_episodes for every eval (unchanged behavior). >0 = intermediate
+    # evals keep eval.n_episodes (cheap trajectory tracking) while the final
+    # cumulative eval uses this larger count — at 20 eps a cell is +/-10pp near
+    # p=0.4; 50 eps brings the headline number to +/-7pp for ~2.5x the cost of one
+    # eval round instead of every round.
+    eval_final_episodes: int = 0
+
     # When true, use TF-only slot masking (no IDF stats required).
     # If enabled, this overrides TF-IDF behavior.
     tf_only: bool = False
@@ -385,6 +393,18 @@ def _default_libero10_map() -> dict[int, int]:
     return {0: 4, 1: 6, 2: 9, 3: 2, 4: 7, 5: 0, 6: 8, 7: 1, 8: 3, 9: 5}
 
 
+def _eval_n_episodes_for_task(cfg, task_pos: int) -> int:
+    """Episode count for the rollout eval after the task at position `task_pos`.
+
+    Returns cfg.eval_final_episodes for the LAST task when that override is set
+    (>0); otherwise cfg.eval.n_episodes. Lets a run track the trajectory cheaply
+    (e.g. 20 eps) while de-noising the headline final number (e.g. 50 eps).
+    """
+    if getattr(cfg, "eval_final_episodes", 0) > 0 and task_pos == len(cfg.online_task_ids) - 1:
+        return int(cfg.eval_final_episodes)
+    return int(cfg.eval.n_episodes)
+
+
 def _append_eval_results_jsonl(
     output_dir: Path,
     step: int,
@@ -591,7 +611,9 @@ def _get_value_params(mem_module) -> list:
     Get the value parameter(s) from a memory module.
 
     For value_type="vector": returns [mem.values]
-    For value_type="lora": returns [mem.slot_down, mem.slot_up]
+    For value_type="lora": returns [mem.slot_down, mem.slot_up] (+ [mem.slot_bias]
+    when the affine lora_slot_bias variant is enabled — all per-slot in dim 0, so
+    the TF-IDF row mask applies uniformly).
     """
     value_type = getattr(mem_module, "value_type", "vector")
     if value_type == "vector":
@@ -602,6 +624,8 @@ def _get_value_params(mem_module) -> list:
             params.append(mem_module.slot_down)
         if hasattr(mem_module, "slot_up"):
             params.append(mem_module.slot_up)
+        if hasattr(mem_module, "slot_bias"):
+            params.append(mem_module.slot_bias)
         return params
     return []
 
@@ -1151,6 +1175,7 @@ def _compute_tfidf_top_indices_for_batch(
                     pass
                 # Mask all value params by the selected slot indices
                 # For vector mode: [values], for lora mode: [slot_down, slot_up]
+                # (+ [slot_bias] for affine slots — same dim-0 slot indexing)
                 for vp in value_params:
                     allowed_by_param[vp] = top_indices.detach()
 
@@ -1680,6 +1705,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
     # Iterate sequentially over dataset tasks
     for idx, dataset_task_id in enumerate(cfg.online_task_ids):
+        # `idx` is rebound later in this block (memory diagnostics); keep the task
+        # position under a stable name for the end-of-task eval.
+        task_pos = idx
         if is_main:
             logging.info(colored(f"=== Online task {idx+1}/{len(cfg.online_task_ids)} | dataset_task_id={dataset_task_id}", "cyan", attrs=["bold"]))
 
@@ -2027,7 +2055,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     env_postprocessor=env_postprocessor,
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
-                    n_episodes=cfg.eval.n_episodes,
+                    n_episodes=_eval_n_episodes_for_task(cfg, task_pos),
                     videos_dir=videos_dir,
                     max_episodes_rendered=max_episodes_rendered,
                     start_seed=cfg.seed,

@@ -171,6 +171,22 @@ class MemoryLayerConfig:
     # scalar `lora_rank` for every layer (backward compatible).
     layer_ranks: List[int] = field(default_factory=list)
 
+    # Affine LoRA slots ("lora + value", only used when value_type="lora"). When True,
+    # each slot additionally stores a per-slot bias vector b_i (v_dim), added to the
+    # slot's LoRA output before the retrieval-weighted sum:
+    #   value_i(x) = slot_up_i @ SiLU(slot_down_i @ x) + b_i
+    # Motivation (research_log E40): the homogeneous LoRA form has no constant term —
+    # the DC component of a task's correction must be approximated through x's stable
+    # cone direction, spending rank on it. A per-slot bias (i) learns the average
+    # correction fast and directly (no U·V product coupling — robust to diluted
+    # write schedules), (ii) frees the rank budget for the state-dependent residual,
+    # and (iii) restores the additive-constant function class of value_type="vector"
+    # without handing state-conditionality back to the router. Biases init to zero:
+    # flag-on at init is numerically identical to flag-off, and legacy checkpoints
+    # (no slot_bias key) load cleanly with biases at zero. Tagged pk_value_param so
+    # the TF-IDF write mask, protection, and value optimizer groups apply unchanged.
+    lora_slot_bias: bool = False
+
     # Inference-time CPU offload for slot tensors (slot_down/slot_up when value_type="lora",
     # or values when value_type="vector"). When enabled, the slot tensors are pinned in CPU
     # memory; the forward gathers only the retrieved slot indices and transfers that subset

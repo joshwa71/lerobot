@@ -304,6 +304,17 @@ class HashingMemoryLite(nn.Module):
             self.slot_down.fixed_lr = cfg.value_fixed_lr
             self.slot_up.pk_value_param = True
             self.slot_up.fixed_lr = cfg.value_fixed_lr
+            # Affine slots ("lora + value"): per-slot bias added to the LoRA output
+            # before the retrieval-weighted sum. Zero-init => numerically identical
+            # to plain lora until trained; absent from legacy checkpoints (loads
+            # tolerate the missing key and keep the zero init).
+            self.lora_slot_bias = bool(getattr(cfg, "lora_slot_bias", False))
+            if self.lora_slot_bias:
+                self.slot_bias = nn.Parameter(
+                    torch.empty(self.size, self.v_dim, dtype=torch.float32)
+                )
+                self.slot_bias.pk_value_param = True
+                self.slot_bias.fixed_lr = cfg.value_fixed_lr
         else:
             raise ValueError(f"Unknown value_type: {self.value_type}. Expected 'vector' or 'lora'.")
 
@@ -353,6 +364,8 @@ class HashingMemoryLite(nn.Module):
 
     def _slot_param_names(self) -> tuple[str, ...]:
         if self.value_type == "lora":
+            if getattr(self, "lora_slot_bias", False):
+                return ("slot_down", "slot_up", "slot_bias")
             return ("slot_down", "slot_up")
         if self.value_type == "vector":
             return ("values",)
@@ -603,6 +616,9 @@ class HashingMemoryLite(nn.Module):
             nn.init.normal_(self.slot_down, mean=0, std=0.02)
             # up projection: zero init so LoRA starts as identity-ish
             nn.init.zeros_(self.slot_up)
+            # affine bias: zero init so flag-on == flag-off until trained
+            if getattr(self, "lora_slot_bias", False):
+                nn.init.zeros_(self.slot_bias)
 
         proj_linears = (
             [self.query_proj.proj] if isinstance(self.query_proj.proj, nn.Linear)
@@ -862,6 +878,7 @@ class HashingMemoryLite(nn.Module):
         LoRA-based forward: run input through selected tiny LoRAs, weighted sum of outputs.
 
         Each slot is a low-rank transform: output_i = slot_up_i @ SiLU(slot_down_i @ x)
+        (+ per-slot bias b_i when cfg.lora_slot_bias — the affine "lora + value" form).
         Final output = sum(weights_i * output_i)
 
         Args:
@@ -882,6 +899,7 @@ class HashingMemoryLite(nn.Module):
         # Gather LoRA weights for selected slots
         # slot_down: (n_slots, input_dim, rank) -> (bs, k, input_dim, rank)
         # slot_up: (n_slots, rank, v_dim) -> (bs, k, rank, v_dim)
+        bias_weights = None
         if self._slots_offloaded and self.slot_down.device.type == "cpu":
             # CPU-resident slots: dedupe indices, gather on CPU, transfer subset to GPU.
             # `indices` lives on the compute device; flatten + unique to bound the transfer.
@@ -892,9 +910,14 @@ class HashingMemoryLite(nn.Module):
             inverse = inverse.to(device, non_blocking=True).view(bs, k)
             down_weights = down_subset[inverse]  # (bs, k, input_dim, rank)
             up_weights = up_subset[inverse]  # (bs, k, rank, v_dim)
+            if getattr(self, "lora_slot_bias", False):
+                bias_subset = self.slot_bias[unique_idx_cpu].to(device, non_blocking=True)
+                bias_weights = bias_subset[inverse]  # (bs, k, v_dim)
         else:
             down_weights = self.slot_down[indices]  # (bs, k, input_dim, rank)
             up_weights = self.slot_up[indices]  # (bs, k, rank, v_dim)
+            if getattr(self, "lora_slot_bias", False):
+                bias_weights = self.slot_bias[indices]  # (bs, k, v_dim)
 
         # Compute each slot's LoRA output:
         # hidden = SiLU(x @ down) -> (bs, k, rank)
@@ -909,6 +932,11 @@ class HashingMemoryLite(nn.Module):
 
         # up projection: (bs, k, rank) @ (bs, k, rank, v_dim) -> (bs, k, v_dim)
         slot_outputs = torch.einsum('bkr,bkro->bko', hidden, up_weights)
+
+        # Affine slots: per-slot bias joins the slot output BEFORE corruption and
+        # the weighted sum, so it is part of the adapter output proper.
+        if bias_weights is not None:
+            slot_outputs = slot_outputs + bias_weights
 
         # Corrupt each adapter output before the shared gating path.
         if self.training and self.corruption_prob > 0:
