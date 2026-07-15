@@ -2731,3 +2731,95 @@ Expected magnitudes (honest): arms 2-4 are worth ~+3-7pp average and ~0 on e4 (i
 - **Arm 2 LAUNCHED** on VM 3 (`computeinstance-e00xwgqsddb43xnsz3`), 14 Jul 17:58 (tmux `lr2x`, log `outputs/lr2x.log`, wandb `i6zojqts`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_lr2x_steps5k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `memory_value_lr=2e-3 → 2e-4` linear (the single delta vs stageB), frozen-base routing ENABLED, train_memory_only+freeze_memory_router (32/841 tensors), β4 protection, top_t 1536, tasks [0-4] × 5000 steps, 20-ep evals + 50-ep final.
 - **Stepping cleanly, in-family with arm 3:** step 200 loss 0.343, grdn 0.010, `lr:2.0e-03` in-log (the 2× peak confirmed live), 1.08 s/step (arm 3: 0.399 / 0.010 / 1.10). Final checkpoint = 025000 (5×5k); ETA ~14-16h.
 - VM-3 disk cleanup (clone-local, ~200G freed, disk 56%→48%; all `pretrained_model` weights kept): same recipe as VM 2 — deleted never-resumed `training_state` from the 5 stageB per-task checkpoints (5×19G) and the stageB A checkpoint (19G; arms consume its `pretrained_model` only), the stage2-full 40k prior's intermediate `020000` + `040000/training_state` (~56G; final 40k weights kept per E35), and the r2244 pretrain's intermediate `020000` (23G; graduated 40k prior weights kept). Untouched: stage-1 base (in full, per Josh), warmed-router backtrack ckpt, all finals/`last` symlink targets (verified before deletion), audits, memory_by_task JSONs, evals, `realworld_v2` (267G, per Josh).
+
+---
+## Entry 41 - 15 Jul 26 (E40 3-arm postmortem + the conversion-gap probe program: five instruments, two falsified mechanisms, one corrected over-claim -> a 3-layer failure model. The e6-after-e9 drop is REAL (4/4 replication; E39/E40 noise attribution REVERSED). Soft (grad_scale) protection shipped + calibrated; denoised-chunk error adopted as the gate metric; 3 arms in flight (topt3072 / softprotect / bs64))
+
+### The three completed E40 arms (rsynced to one box; env order e4/e6/e9/e2/e7; finals 50-ep, stageB final 20-ep)
+
+| arm | inits | mean init | final | block-min MSE | block-END MSE | eval-time paired MSE (diag mean) |
+|---|---|---|---:|---:|---:|---:|
+| stageB (baseline) | 10/60/5/70/30 | 35.0 | 32.0 | 0.1274 | 0.1410 | 0.144 (E39) |
+| affine+nogate | 20/55/10/75/38 | 39.6 | 32.8 | 0.1190 | 0.1274 | 0.129 |
+| lr2x | 35/65/25/80/32 | **47.4** | 35.6 | 0.1132 | 0.1239 | 0.125 |
+| steps7k | 10/55/10/70/32 | 35.4 | **36.0** | 0.0984 | 0.1235 | 0.126 |
+
+Config integrity verified from checkpoints + wandb for all arms (each ran exactly its single delta). Josh's framing question: losses lower, perf flat — why?
+
+### Arm verdicts
+
+- **Arm 1 (affine+nogate): both hypotheses dead, cleanly.** A-phase healthy (held-in 80.8 vs stageB-A 81.7; MSE comparable). The biases LEARNED (nonzero on ~all 147k slots, ||b|| ~0.6x the UV-path norm at every layer, stable A->seq) — the parameterization works; the DC term was not the binding constraint. Gate removal delivered full-strength corrections — also not binding (values recalibrate to the gate during training either way). +4.6pp init is at the noise edge; final 32.8 == baseline. DECISIONS: `mem_gated=false` retired (gate stays — also operationally simpler: gated arms reuse the rwarmupB A checkpoint); `lora_slot_bias` retired from the recipe, flag kept in code.
+- **Arm 2 (lr2x): the only init mover (47.4 = r2244's 48)** — and it gave ~all of it back (final 35.6). Grad norms 0.022 max (no instability). See the correction below for how much of the init story survives.
+- **Arm 3 (steps7k): dead lever at the endpoint.** The -23% block-min MSE is partly a min-over-more-windows selection artifact; the within-block trajectory converges by ~2.5-3k steps then OSCILLATES (e4: 0.087<->0.132 band, no trend — NOT instability, batch-window variance; my earlier "+54% late-block degradation" claim retracted on the full trajectory, and the TF-IDF self-pollution mechanism I proposed for it is disconfirmed in code: DF accumulates per batch but IDF is frozen within a block, recomputed only at boundaries). Endpoint function: -12% vs stageB == the other arms; inits unchanged. Retro-explains E30: 3k->5k helped joint because joint blocks hadn't converged at 3k; staged blocks converge by ~3k, so 5k is already past the knee. 5k->7k retired at the current write rule.
+
+### FORGETTING: still solved in every arm (MSE matrices, paired-noise instrument rebuilt as scripts/vla_analysis/mse_matrix2.py — partial-load slot-swap, 12x less IO)
+
+Just-trained->final drift: stageB +0.0-1.7% (E39), affine <=+0.6%, lr2x +0.4-2.2%, steps7k +1.2-1.7%. Stationarity holds at 2x LR, with biases, at 7k steps. Untrained-task cells reproduce across arms to 3 decimals (instrument validated). lr2x diagonals uniformly -13% vs stageB.
+
+### The e6-after-e9-block drop is REAL — E39/E40's eval-noise attribution REVERSED
+
+e6 drops across e9's block in **4/4 runs** (stageB -35, affine -10, lr2x -20, steps7k -30; pooled ~3sigma), e4 in 3/4. No other block shows systematic cross-task deltas. Mechanistic chain, each link measured:
+1. **Exposure topology is arm-invariant** (frozen router): all arms share footprints, RTO 10-13%, bleed channels e6<-e9 = 4-6%/layer, e4<-e9 = 3-4% (vs e2's 2-3%) — e9 is the one anomalous writer (35.8k L14 slots written, 2x anyone; the warmed router gave it a 2.4x footprint; E39).
+2. **The perturbation is tiny in function space**: e6-perceived field change across e9's block 1.36-1.62% (core50 0.13-0.16%); paired-MSE drift on e6's cell +0.5-1.3%.
+3. **The rollout cost is 10-30pp** — a ~10-20x function->success amplification on MARGINAL tasks only (e2 at 80% absorbed identical drift free). Policies sit near the success boundary; 50-action open-loop chunks compound small field changes.
+4. **Protection can't gate it (structurally)**: rank-mode (1-u)^beta only flips top-t membership — high-TF slots never rank out, and the diffuse tail sits at u~0.01-0.05 under peak normalization (u at core-50 boundary ~0.035; max/p99 ~10-16x) => beta4 vetoes only the top ~1% mega-hot slots (E39 note, now the load-bearing fact).
+Displacement analysis (checkpoint diffs, L14): lr2x moves written slots ~1.6x (median ||d|| 1.33-1.51 vs affine 1.03-1.21, steps7k 0.87-1.08 — steps7k's median slot moved LESS: same mask budget spread over more batches + decayed-LR tail). The giveback (lr2x -11.8pp init->final) rides on this channel: e6 -31, e9's own decay -17, e4 -15 — all post-e9-block or late-block micro-drift.
+
+### The conversion-gap probe program (5 instruments, chronological; all persisted to scripts/vla_analysis/, results in outputs/analysis/e41/)
+
+The sharpest puzzle: steps7k and lr2x reach the SAME eval-time paired MSE (within 2%) with 20-ep inits 10-vs-35 (e4) and 10-vs-25 (e9). Working hypothesis #0 (displacement/amplitude -> "commitment") was formed from this; the program below tested it and its rivals.
+
+**Probe A — downstream-gain (Josh's layer-position hypothesis: "layers 15-17 fix the corrections back toward pretrained behavior").** Inject at L14/L8: the learned memory delta vs matched-norm random vs matched-norm feature-direction perturbations; measure velocity-readout movement. RESULT: **disconfirmed in its strong form** — learned deltas transmit 2-3x BETTER than random (T_rand 1.9-3.2) and 1.2-1.8x better than feature directions, at both layers, every arm. Downstream is an amplifier tuned to the memory's directions, not a fixer. Surviving nuance: amplitude response saturates at L14 (2x delta -> +60-70% output; L8 +81-94%; layer-norm renormalization is the likely mechanism) — a headroom warning for LR pushes, not a case for moving layers. Also: total velocity-space throw of the memory is ARM-INVARIANT (~25 at L14) — lr2x does not deliver a bigger total correction, it delivers a better-placed one. Layer repositioning PARKED with evidence.
+
+**Probe B — denoised-chunk (the integrated field).** Run the real 10-step denoise on demo obs; compare executed chunk to demo chunk. The training loss only ever queries the field ON the noise-demo interpolation bridge (x_t anchored to the true action — teacher-forcing one level down); integration queries the model's OWN trajectory, which leaves the bridge after step 1. RESULT: chunk error ranks arms **exactly as rollouts do, 9/9** (e4: lr2x 0.156 < steps7k 0.172 < stageB 0.191; e9: 0.366/0.401/0.459; e2: 0.224/0.272/0.304) where velocity-MSE couldn't separate lr2x from steps7k. Arm gaps grow on the last 10 chunk steps. **ADOPTED as the standard gate metric** (~10 min/checkpoint, no simulator).
+
+**Probe C — bias decomposition (pre-registered: weak arms carry a systematic pull toward A-phase content; amplitude de-biases).** Signed velocity errors, K=6 paired draws/state, finite-K-corrected bias fraction + cosine to the pre-sequential (A-state) bias field. RESULT: **FALSIFIED.** Bias fractions uniform across arms (0.38-0.43); task-level bias ~0.03 everywhere; every arm shrinks the A-bias field to ~25-35% equally; and r2244 — the best converter — has the HIGHEST bias fraction (0.41-0.47) and STRONGEST A-pull (cos 0.49-0.55 vs staged 0.34-0.42).
+
+**Probe D — off-bridge generalization (pre-registered: weak arms generalize worse off the training manifold).** Noise-shift trick: passing noise+sigma*xi queries the field at x_t + t*sigma*xi with the EXACT analytic target (u+sigma*xi), so L(sigma) measures off-bridge field quality with zero approximation. RESULT: **FALSIFIED.** Relative degradation at sigma=0.6 is 23-27% for all staged arms, no rollout-matching order (lr2x slightly worse if anything); r2244 modestly better (18-21%).
+
+**Probe E — trajectory-error coherence (the remaining suspect after C+D: error ORGANIZATION along the model's own denoise path).** Step the real 10-step denoise manually; at the model's own x_t the demo-consistent velocity is analytic (v* = (x_t - a)/t); record e_k per step. RESULT — two findings:
+1. **Family-wide: coherence 0.94-0.97 for EVERY model including joint r2244** (adjacent-step cos 0.91-0.95). The field's error along a trajectory is essentially one constant vector per (obs, seed); integration accumulates it ~1:1 — **no model in this family self-corrects during denoising.** Endpoint offsets ~0.25-0.3 normalized units/dim for everyone.
+2. Arms are consistently but MODESTLY ordered (coherence stageB 0.946/0.958/0.949 > steps7k 0.940/0.950/0.940 > lr2x 0.937/0.947/0.937 on e4/e9/e2; endpoints stageB ~10% worse; per-step RMS tracks the on-bridge MSE gap).
+
+### THE CORRECTION (the program's most important output)
+
+Assembling all instruments: **within the staged family, function quality is consistent everywhere** — stageB < steps7k ~= lr2x by ~10% on every metric (on-bridge MSE, chunk error, coherence, endpoint, per-step RMS) — and this matches the only well-measured rollout numbers, the **50-ep finals (32.0 < 36.0 ~= 35.6)**. The dramatic "same loss, 3x rollouts" init contrasts were **20-ep cells (+/-11pp) on marginal policies**, and hypothesis #0 over-fit a mechanism to them. Amplitude is hereby DEMOTED from "the conversion mechanism" to "a real ~10% fit improvement plus favorable draws." Session tally: two falsified mechanisms (C, D), one demoted over-claim (#0), one disconfirmed architecture hypothesis (A). METHODOLOGY ADOPTED: 20-ep init cells retired from decision-making (50-ep or chunk-metric only); every future arm gets the probe battery before narrative.
+
+### The 3-layer failure model (current best understanding)
+
+- **Layer 1 — rollout-level interference (nailed, fix shipped):** later tasks' diffuse writes -> tiny value-field drift -> 10-30pp drops on marginal tasks via open-loop amplification; carried by the one diluted writer (e9); provably ungateable by rank-mode protection.
+- **Layer 2 — the family fit ceiling (characterized, not closed):** every frozen-backbone-adapter model produces a velocity field whose error is COHERENT along its own denoise trajectory (~0.95); the endpoint inherits the per-step field error ~1:1 (~0.25-0.3 units). The one-step loss structurally under-weights exactly this component (it samples pointwise against noisy targets; the systematic part hides under the sampling floor — bias_frac ~0.40 of a small number). This is WHY loss and rollout success decouple. All tested levers (rank r4, +600M bias params, gate, steps, 2xLR) move it <=10% — they all act on value-path capacity, which is not where the offset mainly lives.
+- **Layer 3 — staged-family vs base ceiling (open):** base joint finetune = 74.8% on these 5 tasks vs our 32-36; the offset is not task-intrinsic. Rank-2-mixture expressivity vs adaptation budget vs frozen backbone — undecomposed; the base-finetune control was deleted (E31), which elevates the **LoRA-FT baseline to the decisive experiment** (same frozen backbone, dense adapter, same budget, read through the probe battery: if its chunk error ~0.15 -> the tax is OUR sparse-mixture path; if ~ours -> the ceiling is frozen-backbone adaptation generally and the thesis claim scopes to "joint-adapter-level fit with zero forgetting").
+
+### Soft (grad_scale) protection: shipped, smoked, calibrated (the Layer-1 fix)
+
+- **Design**: TF-IDF top-1536 mask unchanged (locality); protection moves from the ranking score to the UPDATE: each surviving slot's applied update is multiplied by (1-u_q(s))^beta. **Implementation catch that would have silently no-op'd: Adam's step is invariant to a time-constant per-row gradient scale** (m-hat and sqrt(v-hat) scale together; smoke-measured movement ratio 0.995 under naive grad scaling). Correct mechanism = **post-optimizer-step blend** theta <- theta_pre + scale*(theta_post - theta_pre) on protected rows — exact per-slot LR scaling under any optimizer (smoke: measured 0.00389 vs theoretical 0.25^4 = 0.00391).
+- **u-normalization fix**: `protect_u_norm=corefrac` — u = counts / count-at-core50-boundary, clipped to 1 (peak-norm's u~0.035-at-boundary degeneracy fixed; the whole prior core now protects).
+- New config: `protect_mode` (rank=legacy default, byte-identical) / `protect_u_norm` (peak default). Smokes 33/33 (scripts/vla_analysis/smoke_softprotect.py) + affine regression 20/20.
+- **beta calibration** (offline, real lr2x per-slot deltas x read-mass distributions, L14+L8; scripts/vla_analysis/calibrate_beta.py): smooth trade, no knee — e9-block bleed onto e4/e6 kept 70/60/48/35/24% at beta 1/2/4/8/16 for e9 static write-mass cost 7/12/18/26/35%. **beta=4 chosen**: halves the bleed; static cost overstates real cost (mask reallocates suppressed magnitude to prior-free slots; e9 — the writer that matters — is the CHEAPEST to constrain); midpoint is information-maximizing under unknown damage-response shape. Decision tree: e6 still drops at beta4 -> response is threshold-y -> beta 8-16; e7's init craters (later writers pay cumulatively more, ~28-38% static at beta4) -> beta 2.
+
+### Batch-size smokes (Josh's hypothesis: bs32 under-covers the trajectory)
+
+bs128 native: OOM (~146GB demand vs 139.8 usable). bs64 native: OOM (~140GB). bs32 training steady-state is ~125-131GB (the "37GB" VM3 reading was a mid-eval allocator-released snapshot). => effective-64 via `gradient_accumulation_steps=2` (the committed script; the trainer counts OPTIMIZER steps and merges retrieval indices across micro-batches, so the TF-IDF mask sees a true 64-frame TF). **The strongest mechanism for bs64 is mask stability, not gradient noise**: at bs32 the top-1536 is ranked from 32 frames' retrievals -> mask churns -> write budget rotates across slot subsets -> updates smear (the dilution pathology; steps7k made it WORSE — more draws, 37.7k unique slots). 64-frame TF -> stabler selection -> fewer slots, more events each -> counters dilution AND shrinks the bleed surface. This is the anti-dilution lever from the opposite direction to topt3072.
+
+### In flight (all 5-task, stageB-verbatim + single delta, 50-ep finals)
+
+| VM | run | delta | pre-registered reads |
+|---|---|---|---|
+| VM3 | topt3072 | tfidf_top_t 3072 | e9 init + chunk error (dilution-as-budget?); e6@20k cell (2x write breadth should WORSEN the bleed if the model is right — falsification opportunity) |
+| VM2 | lr2x+softprotect (grad_scale/corefrac/beta4) | protection mechanism + 2e-3 | inits >=~45; e6-across-e9-block drop <=10pp (vs -10..-35 in 4/4); e9 init may pay a few pp; final >=42 = new frontier |
+| VM1 | bs64accum2 | effective batch 64 | e9 L14 written-slot count (expect down from 35.8k) + ev/slot p50 up; e9 init + chunk error; e4/e6 bleed shrinkage |
+
+All three land ~16 Jul; read via retention matrices + slot JSONs + the probe battery (chunk metric first), NOT 20-ep init cells.
+
+### Next steps (after the 3 arms)
+1. **LoRA-FT per-task baseline** (e4/e9/e2, ~8-17h) — now the decisive Layer-3 experiment; read through the probe battery, not just success.
+2. **Seed-averaging micro-experiment** (offline, ~1h): endpoint error = shared bias + per-seed component (probe-B spread 0.09-0.25 is substantial); averaging denoised chunks over a few noise seeds may cancel the seed part at pure inference cost. Test with probe B before touching evals. Risk: mode-averaging on multimodal segments.
+3. If softprotect works: 10-task extension of the winning config (the catastrophe-elimination demonstration, E39 #2).
+4. Parked with evidence: layer repositioning (probe A), gate/bias variants (arm 1), steps>5k (arm 3), global top-t for retention (E19 + bleed mechanism), joint track (off-thesis, E40).
+
+### Code / artifacts / bookkeeping
+- Trainer: `protect_mode` / `protect_u_norm` / `_core50_boundary_count` / `_snapshot_protected_rows` / `_blend_protected_rows` in lerobot_sequential_train.py (defaults byte-identical; committed ba388ad1 with the E41 instruments + both arm scripts).
+- Instruments PERSISTED to scripts/vla_analysis/ (mse_matrix2, probe_conversion [gain+chunk], probe_bias, probe_offbridge, probe_coherence, calibrate_beta, arms_{slots,displacement,wandb}, smoke_{softprotect,affine}, run_*.sh) — the E39 instruments died in a scratchpad; not again. Results: outputs/analysis/e41/*.jsonl.
+- Job scripts (git add -f, dir gitignored): stageB_seq5_lr2x_softprotect.sh, stageB_seq5_bs64.sh (+ the E40 four from a8ac9fff/reconstructions).
+- Eval-comparability note: stageB's final row is 20-ep; all E41-era finals are 50-ep.
