@@ -166,6 +166,29 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Sharpness of the protection gate; larger => protect deeper into each prior task's read core.
     # Only consulted when protect_prior_slots=True; 0.0 disables the gate even if the flag is set.
     protect_beta: float = 4.0
+    # Protection mechanism (research_log E41).
+    # - "rank" (default, legacy): the (1 - u)^beta factor multiplies the TF-IDF *ranking score*,
+    #   so protection acts only by pushing slots out of the top-t mask. Per slot per batch this is
+    #   binary (in mask = full gradient, out = zero) and cannot attenuate high-TF survivors or the
+    #   diffuse low-u tail — the measured carrier of the rollout-level bleed (E41).
+    # - "grad_scale": ranking is pure TF-IDF (no protection discount); each surviving slot's
+    #   parameter UPDATE is multiplied by (1 - u(s)) ** beta via a post-optimizer-step blend
+    #   (theta <- theta_pre + scale * (theta_post - theta_pre)) — exact per-slot LR scaling.
+    #   NB implemented as a post-step blend rather than gradient scaling because Adam's
+    #   normalization is invariant to a time-constant per-row gradient scale (m-hat and
+    #   sqrt(v-hat) scale together), which would make naive grad scaling a no-op.
+    #   Continuous per-slot write attenuation, no hard block; beta=0 or an empty store reproduces
+    #   the unprotected mask exactly. Trainable keys are still masked, never scaled.
+    protect_mode: str = "rank"
+    # Normalization of a task's read profile when folding it into u(s) at its task boundary.
+    # - "peak" (default, legacy): counts / max(counts). Degenerate for the sharp read
+    #   distributions we measure (max/p99 ~ 10-16x => u ~ 0.03 at the core-50 boundary, so the
+    #   gate only ever bites the top ~1% of slots; E39).
+    # - "corefrac": counts / count_at_core50_boundary, clipped to 1. The boundary slot of the
+    #   task's core-50 set (smallest slot set carrying half its read mass) gets u = 1; below it u
+    #   decays proportionally with read density. Density-proportional, so (1 - u)^beta tracks the
+    #   mass-weighted damage integral the protection is meant to suppress.
+    protect_u_norm: str = "peak"
 
     # ---- Optional visualization logging (WandB) ----
     # When enabled, build an interactive Plotly HTML visualization of:
@@ -187,6 +210,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
             )
         if self.protect_beta < 0:
             raise ValueError(f"protect_beta must be >= 0, got {self.protect_beta}")
+        if self.protect_mode not in {"rank", "grad_scale"}:
+            raise ValueError(
+                f"protect_mode must be one of {{'rank', 'grad_scale'}}, got {self.protect_mode!r}"
+            )
+        if self.protect_u_norm not in {"peak", "corefrac"}:
+            raise ValueError(
+                f"protect_u_norm must be one of {{'peak', 'corefrac'}}, got {self.protect_u_norm!r}"
+            )
 
 
 def _render_cumulative_eval_bar_chart(
@@ -934,10 +965,29 @@ def _accumulate_protect_counts_batch(unwrapped_policy: PreTrainedPolicy):
         cur += torch.bincount(idx_flat, minlength=num_slots).to(torch.float32)
 
 
-def _finalize_protect_usefulness(unwrapped_policy: PreTrainedPolicy):
+def _core50_boundary_count(counts: torch.Tensor) -> float:
+    """Read count of the slot at the task's core-50 boundary.
+
+    The core-50 set is the smallest set of slots (taken hottest-first) carrying >= 50% of the
+    task's total read mass; the boundary count is the count of its coldest member. Used by the
+    "corefrac" usefulness normalization: u = counts / boundary, clipped to 1.
+    """
+    total = float(counts.sum().item())
+    if total <= 0:
+        return 0.0
+    sorted_counts, _ = torch.sort(counts, descending=True)
+    cum = torch.cumsum(sorted_counts, dim=0)
+    k = int(torch.searchsorted(cum, 0.5 * total).item())
+    k = min(k, sorted_counts.numel() - 1)
+    return float(sorted_counts[k].item())
+
+
+def _finalize_protect_usefulness(unwrapped_policy: PreTrainedPolicy, u_norm: str = "peak"):
     """Fold the just-finished task's read profile into the cumulative usefulness store.
 
-    u(s) <- max(u(s), read_count(s) / max_s read_count); then reset the current-task counts.
+    u(s) <- max(u(s), normalize(read_count)); then reset the current-task counts.
+    normalize is counts/max (u_norm="peak", legacy) or min(1, counts/core50-boundary-count)
+    (u_norm="corefrac"; see SequentialOnlineConfig.protect_u_norm).
     Call once at each task boundary, AFTER the task's training loop, so that while task W trains
     the store reflects only tasks strictly before W (W never protects against itself).
     """
@@ -947,7 +997,11 @@ def _finalize_protect_usefulness(unwrapped_policy: PreTrainedPolicy):
             continue
         mx = float(cur.max().item()) if cur.numel() else 0.0
         if mx > 0:
-            rnorm = cur / mx
+            if u_norm == "corefrac":
+                ref = _core50_boundary_count(cur)
+                rnorm = (cur / ref).clamp_(max=1.0) if ref > 0 else cur / mx
+            else:
+                rnorm = cur / mx
             u = _protect_usefulness_by_module.get(json_key)
             if u is None or u.numel() != cur.numel():
                 u = torch.zeros_like(cur)
@@ -1094,6 +1148,8 @@ def _compute_tfidf_top_indices_for_batch(
     weighting_method: str = "raw",
     protect_usefulness_by_module: dict[str, torch.Tensor] | None = None,
     protect_beta: float = 0.0,
+    protect_mode: str = "rank",
+    protect_scale_out: dict[torch.nn.Parameter, torch.Tensor] | None = None,
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -1101,6 +1157,12 @@ def _compute_tfidf_top_indices_for_batch(
     The mask is always defined over value-slot indices; when memory keys are trainable, their
     gradients are masked using the corresponding key rows implied by these selected slots.
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
+
+    Protection: with protect_mode="rank" (legacy) the (1-u)^beta factor discounts the ranking
+    score before top-t. With protect_mode="grad_scale" the ranking stays pure TF-IDF and, when
+    `protect_scale_out` is provided, it is filled with value_param -> per-slot update scale
+    vector (1-u)^beta (full num_slots, float32, CPU); the caller applies it to the optimizer
+    step via _snapshot_protected_rows/_blend_protected_rows. Keys are never scaled, only masked.
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
     for _, mem_module, value_params, json_key in _iter_memory_modules(unwrapped_policy):
@@ -1151,9 +1213,11 @@ def _compute_tfidf_top_indices_for_batch(
                     raise RuntimeError(f"IDF size mismatch for module {json_key}: got {idf.numel()}, expected {num_slots}")
                 idf = idf.to(device=tf.device, dtype=torch.float32)
             tfidf = tf * idf
-            # Prior-usefulness protection: multiply by (1 - u)**beta so slots earlier tasks
-            # relied on are pushed out of the top-t update set (graded, task-identity-aware).
-            if protect_usefulness_by_module is not None and protect_beta > 0:
+            # Prior-usefulness protection, "rank" mode: multiply by (1 - u)**beta so slots
+            # earlier tasks relied on are pushed out of the top-t update set (graded,
+            # task-identity-aware). In "grad_scale" mode the ranking is left untouched and the
+            # attenuation is applied to the gradients instead (see protect_scale_out below).
+            if protect_usefulness_by_module is not None and protect_beta > 0 and protect_mode == "rank":
                 u = protect_usefulness_by_module.get(json_key)
                 if u is not None and u.numel() == num_slots:
                     u = u.to(device=tf.device, dtype=torch.float32)
@@ -1178,6 +1242,21 @@ def _compute_tfidf_top_indices_for_batch(
                 # (+ [slot_bias] for affine slots — same dim-0 slot indexing)
                 for vp in value_params:
                     allowed_by_param[vp] = top_indices.detach()
+
+                # "grad_scale" protection: emit the per-slot update scale (1-u)^beta for the
+                # value params. Applied around optimizer.step() via _snapshot_protected_rows /
+                # _blend_protected_rows, only to rows inside the mask (rest are zero-grad).
+                if (
+                    protect_scale_out is not None
+                    and protect_mode == "grad_scale"
+                    and protect_usefulness_by_module is not None
+                    and protect_beta > 0
+                ):
+                    u = protect_usefulness_by_module.get(json_key)
+                    if u is not None and u.numel() == num_slots:
+                        scale = (1.0 - u.to(torch.float32)).clamp(min=0.0).pow(protect_beta)
+                        for vp in value_params:
+                            protect_scale_out[vp] = scale
 
                 # If keys are trainable, mask their gradients to rows corresponding to the
                 # selected value slots. Each value slot index encodes a pair of sub-keys
@@ -1243,6 +1322,48 @@ def _apply_gradient_mask_to_memory_values(allowed_by_param: dict[torch.nn.Parame
             continue
 
 
+def _snapshot_protected_rows(
+    allowed_by_param: dict[torch.nn.Parameter, torch.Tensor],
+    scale_by_param: dict[torch.nn.Parameter, torch.Tensor] | None,
+) -> list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """Snapshot mask rows carrying a protection scale < 1 before optimizer.step().
+
+    Returns [(param, rows, pre_values, row_scales)] for _blend_protected_rows. Applying the
+    scale to the post-step delta (rather than the gradient) makes the attenuation exact
+    per-slot LR scaling under any optimizer — Adam's update is invariant to a time-constant
+    gradient scale, so gradient scaling would silently do ~nothing.
+    """
+    snap: list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]] = []
+    if not scale_by_param:
+        return snap
+    for p, allowed_rows in allowed_by_param.items():
+        scale = scale_by_param.get(p)
+        if scale is None or scale.numel() != p.shape[0]:
+            continue
+        try:
+            rows = allowed_rows.to(device=p.device)
+            sc = scale.to(device=p.device, dtype=torch.float32)[rows]
+            need = sc < 1.0
+            if not bool(need.any()):
+                continue
+            r = rows[need]
+            snap.append((p, r, p.data[r].clone(), sc[need]))
+        except Exception:
+            continue
+    return snap
+
+
+def _blend_protected_rows(snap: list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]]):
+    """theta[r] <- theta_pre[r] + scale * (theta_post[r] - theta_pre[r]), after optimizer.step()."""
+    with torch.no_grad():
+        for p, rows, pre, sc in snap:
+            try:
+                scv = sc.to(dtype=p.dtype).view(-1, *([1] * (p.dim() - 1)))
+                p.data[rows] = pre + scv * (p.data[rows] - pre)
+            except Exception:
+                continue
+
+
 def _update_policy_with_tfidf(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
@@ -1261,6 +1382,7 @@ def _update_policy_with_tfidf(
     weighting_method: str = "raw",
     protect_usefulness_by_module: dict[str, torch.Tensor] | None = None,
     protect_beta: float = 0.0,
+    protect_mode: str = "rank",
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -1326,8 +1448,12 @@ def _update_policy_with_tfidf(
 
         # Compute and apply TF-IDF gradient masks before clipping and step
         unwrapped = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        protect_snap: list = []
         if (idf_by_module is not None or tf_only) and top_t > 0:
             t0 = time.perf_counter()
+            protect_scale: dict[torch.nn.Parameter, torch.Tensor] | None = (
+                {} if protect_mode == "grad_scale" else None
+            )
             allowed = _compute_tfidf_top_indices_for_batch(
                 unwrapped, idf_by_module, top_t, tf_only=tf_only,
                 override_indices=override_indices,
@@ -1335,6 +1461,8 @@ def _update_policy_with_tfidf(
                 weighting_method=weighting_method,
                 protect_usefulness_by_module=protect_usefulness_by_module,
                 protect_beta=protect_beta,
+                protect_mode=protect_mode,
+                protect_scale_out=protect_scale,
             )
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
@@ -1342,6 +1470,7 @@ def _update_policy_with_tfidf(
             if allowed:
                 t1 = time.perf_counter()
                 _apply_gradient_mask_to_memory_values(allowed)
+                protect_snap = _snapshot_protected_rows(allowed, protect_scale)
                 mask_apply_s = time.perf_counter() - t1
                 if use_cuda_events:
                     ev_apply.record()
@@ -1356,6 +1485,10 @@ def _update_policy_with_tfidf(
         from contextlib import nullcontext
         with (lock if lock is not None else nullcontext()):
             optimizer.step()
+        if protect_snap:
+            # "grad_scale" protection: rescale the applied update on protected rows
+            # (exact per-slot LR scaling; see _snapshot_protected_rows).
+            _blend_protected_rows(protect_snap)
         optimizer.zero_grad()
         if use_cuda_events:
             ev_opt.record()
@@ -1851,6 +1984,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                                 _protect_usefulness_by_module if cfg.protect_prior_slots else None
                             ),
                             protect_beta=cfg.protect_beta,
+                            protect_mode=cfg.protect_mode,
                         )
                     else:
                         train_tracker, output_dict = update_policy(
@@ -1920,12 +2054,14 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         if cfg.protect_prior_slots:
             try:
                 _finalize_protect_usefulness(
-                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
+                    u_norm=cfg.protect_u_norm,
                 )
                 if is_main:
                     logging.info(
                         f"Updated prior-usefulness protection store after task {idx + 1} "
-                        f"(protect_beta={cfg.protect_beta})."
+                        f"(protect_beta={cfg.protect_beta}, mode={cfg.protect_mode}, "
+                        f"u_norm={cfg.protect_u_norm})."
                     )
             except Exception:
                 pass
