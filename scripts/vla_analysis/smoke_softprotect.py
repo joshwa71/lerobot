@@ -50,9 +50,12 @@ def try_validate(**over):
         # validate() calls super().validate() which needs full init; test the new checks directly
         pm = over.get("protect_mode", "rank")
         pu = over.get("protect_u_norm", "peak")
+        ph = over.get("protect_hard_u", 0.0)
         if pm not in {"rank", "grad_scale"}:
             raise ValueError
         if pu not in {"peak", "corefrac"}:
+            raise ValueError
+        if not (0.0 <= ph <= 1.0):
             raise ValueError
     except ValueError:
         ok = False
@@ -283,6 +286,94 @@ h, mem, allowed, scale = run_case("grad_scale", 4.0, STORE, keys_grad=True)
 keys_p = mem.keys
 check("S11a keys in mask set", keys_p in allowed)
 check("S11b keys NOT in scale set", keys_p not in scale)
+
+# S12: THE MOMENTUM LEAK (E42) — a protected row that leaves the churning mask keeps moving
+# via Adam's exp_avg tail. Controlled fixture: row 0 (protected, scale s) and row 1 (free) get
+# gradient on step 1 only; steps 2-12 train row 1 alone (row 0 masked out, grad zero). The
+# optimizer still applies row 0's momentum tail on those steps.
+def churn_run(mechanism):  # "none" | "blend_only" (old, leaky) | "blend_opt" (fixed)
+    torch.manual_seed(0)
+    p = torch.nn.Parameter(torch.zeros(16, 4))
+    opt = torch.optim.Adam([p], lr=1e-2)
+    s = 0.0625
+    sv = torch.ones(16); sv[0] = s
+    def step(rows_with_grad, mask_rows):
+        opt.zero_grad()
+        g = torch.zeros_like(p)
+        g[rows_with_grad] = 1.0
+        p.grad = g
+        allowed = {p: torch.tensor(mask_rows)}
+        snap = [] if mechanism == "none" else ST._snapshot_protected_rows(allowed, {p: sv})
+        opt.step()
+        if snap:
+            ST._blend_protected_rows(snap, opt if mechanism == "blend_opt" else None)
+    step([0, 1], [0, 1])
+    for _ in range(11):
+        step([1], [1])
+    return p.data[0].norm().item(), p.data[1].norm().item()
+
+r0_ctrl, r1_ctrl = churn_run("none")
+r0_old, r1_old = churn_run("blend_only")
+r0_fix, r1_fix = churn_run("blend_opt")
+s = 0.0625
+check("S12a leak reproduced: old blend leaves most movement under churn",
+      r0_old / r0_ctrl > 0.5,
+      f"old/ctrl = {r0_old / r0_ctrl:.3f} (designed {s:.4f})")
+check("S12b fix: blend+exp_avg scaling == s x control under churn",
+      abs(r0_fix / r0_ctrl - s) < 0.15 * s,
+      f"fix/ctrl = {r0_fix / r0_ctrl:.4f} vs s = {s:.4f}")
+check("S12c free row identical in all mechanisms",
+      abs(r1_old - r1_ctrl) < 1e-6 and abs(r1_fix - r1_ctrl) < 1e-6)
+# s=0 must freeze the row outright even with the tail
+def churn_run_s0(mechanism):
+    torch.manual_seed(0)
+    p = torch.nn.Parameter(torch.zeros(16, 4))
+    opt = torch.optim.Adam([p], lr=1e-2)
+    sv = torch.ones(16); sv[0] = 0.0
+    for k in range(12):
+        opt.zero_grad()
+        g = torch.zeros_like(p)
+        g[[0, 1] if k == 0 else [1]] = 1.0
+        p.grad = g
+        allowed = {p: torch.tensor([0, 1] if k == 0 else [1])}
+        snap = ST._snapshot_protected_rows(allowed, {p: sv})
+        opt.step()
+        if snap:
+            ST._blend_protected_rows(snap, opt if mechanism == "blend_opt" else None)
+    return p.data[0].norm().item()
+check("S12d s=0: old blend still moves the row (the u=1 finding)", churn_run_s0("blend_only") > 1e-4,
+      f"{churn_run_s0('blend_only'):.5f}")
+check("S12e s=0: fixed blend freezes the row exactly", churn_run_s0("blend_opt") == 0.0,
+      f"{churn_run_s0('blend_opt'):.2e}")
+
+# S13: hard veto — u >= threshold never enters the mask, in both modes; 0 disables
+h13 = make_wrapped(seed=3)
+x13 = torch.randn(4, 5, 32)
+h13.layers[0].mlp(x13)
+mem13 = h13.layers[0].mlp.mem
+h13.layers[0].mlp(x13).sum().backward()
+hot = torch.unique(mem13.last_indices.reshape(-1))
+u_veto = torch.zeros(NUM_SLOTS)
+u_veto[hot[:4]] = 0.95   # above threshold
+u_veto[hot[4:8]] = 0.5   # below threshold
+VSTORE = {jk0: u_veto}
+for mode in ("rank", "grad_scale"):
+    for hard_u, expect_in in ((0.0, True), (0.9, False)):
+        sc_out = {} if mode == "grad_scale" else None
+        allowed13 = _compute_tfidf_top_indices_for_batch(
+            h13, idf_by_module=None, top_t=NUM_SLOTS, tf_only=True,
+            protect_usefulness_by_module=VSTORE, protect_beta=0.0, protect_mode=mode,
+            protect_scale_out=sc_out, protect_hard_u=hard_u,
+        )
+        sel13 = set(allowed13[ST._get_value_params(mem13)[0]].tolist())
+        got_in = all(int(r) in sel13 for r in hot[:4])
+        check(f"S13 {mode} hard_u={hard_u}: u=0.95 slots {'in' if expect_in else 'OUT of'} mask",
+              got_in == expect_in)
+        if hard_u > 0:
+            check(f"S13 {mode} hard_u={hard_u}: u=0.5 slots stay in mask",
+                  all(int(r) in sel13 for r in hot[4:8]))
+# config validation for the new field
+check("S13z protect_hard_u validation rejects 1.5", not try_validate(protect_hard_u=1.5))
 
 print()
 if FAILS:

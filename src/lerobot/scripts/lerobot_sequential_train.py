@@ -189,6 +189,13 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     #   decays proportionally with read density. Density-proportional, so (1 - u)^beta tracks the
     #   mass-weighted damage integral the protection is meant to suppress.
     protect_u_norm: str = "peak"
+    # Hard-veto threshold on u (E42): slots with u >= protect_hard_u have their TF-IDF score
+    # zeroed before top-t selection, in BOTH protect modes. 0 disables (default, legacy).
+    # A vetoed slot never enters the mask, so it never receives gradient and never builds
+    # optimizer momentum — airtight where the grad_scale blend can only attenuate. E42 measured
+    # that at corefrac normalization u >= ~0.9 marks the prior tasks' true read cores (a few
+    # hundred mask slots per layer per writer), carrying ~19-34% of the victim-perceived bleed.
+    protect_hard_u: float = 0.0
 
     # ---- Optional visualization logging (WandB) ----
     # When enabled, build an interactive Plotly HTML visualization of:
@@ -218,6 +225,8 @@ class SequentialOnlineConfig(TrainPipelineConfig):
             raise ValueError(
                 f"protect_u_norm must be one of {{'peak', 'corefrac'}}, got {self.protect_u_norm!r}"
             )
+        if not (0.0 <= self.protect_hard_u <= 1.0):
+            raise ValueError(f"protect_hard_u must be in [0, 1], got {self.protect_hard_u}")
 
 
 def _render_cumulative_eval_bar_chart(
@@ -1150,6 +1159,7 @@ def _compute_tfidf_top_indices_for_batch(
     protect_beta: float = 0.0,
     protect_mode: str = "rank",
     protect_scale_out: dict[torch.nn.Parameter, torch.Tensor] | None = None,
+    protect_hard_u: float = 0.0,
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -1163,6 +1173,8 @@ def _compute_tfidf_top_indices_for_batch(
     `protect_scale_out` is provided, it is filled with value_param -> per-slot update scale
     vector (1-u)^beta (full num_slots, float32, CPU); the caller applies it to the optimizer
     step via _snapshot_protected_rows/_blend_protected_rows. Keys are never scaled, only masked.
+    protect_hard_u > 0 additionally zeroes the score of slots with u >= threshold in BOTH modes
+    (never in mask => no gradient, no momentum; see SequentialOnlineConfig.protect_hard_u).
     """
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor] = {}
     for _, mem_module, value_params, json_key in _iter_memory_modules(unwrapped_policy):
@@ -1222,6 +1234,15 @@ def _compute_tfidf_top_indices_for_batch(
                 if u is not None and u.numel() == num_slots:
                     u = u.to(device=tf.device, dtype=torch.float32)
                     tfidf = tfidf * (1.0 - u).clamp_(min=0.0).pow(protect_beta)
+            # Hard veto (both modes, E42): remove slots at/above the u threshold from candidacy
+            # entirely (not just zero their score — with top_t >= candidate count a zero-score
+            # slot would still be selected). Never in mask => no gradient, no momentum.
+            if protect_hard_u > 0 and protect_usefulness_by_module is not None:
+                u_hard = protect_usefulness_by_module.get(json_key)
+                if u_hard is not None and u_hard.numel() == num_slots:
+                    keep = u_hard.to(device=tf.device, dtype=torch.float32) < protect_hard_u
+                    tfidf = tfidf * keep
+                    counts = counts * keep
             # Consider only slots with c(i) > 0
             used_mask = counts > 0
             if used_mask.any():
@@ -1353,13 +1374,31 @@ def _snapshot_protected_rows(
     return snap
 
 
-def _blend_protected_rows(snap: list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]]):
-    """theta[r] <- theta_pre[r] + scale * (theta_post[r] - theta_pre[r]), after optimizer.step()."""
+def _blend_protected_rows(
+    snap: list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]],
+    optimizer: Optimizer | None = None,
+):
+    """theta[r] <- theta_pre[r] + scale * (theta_post[r] - theta_pre[r]), after optimizer.step().
+
+    When `optimizer` is given, the row's Adam first moment (exp_avg) is scaled by the same
+    factor. Without this the blend LEAKS (E42, measured): it rescales only steps where the row
+    is in the snapshot (= in the top-t mask), but Adam keeps applying the row's momentum tail
+    (~1/(1-beta1) steps) after the row leaves the churning mask — those steps are unblended and
+    carried ~90% of the movement in the softprotect run (u=1.0 slots that should have been
+    frozen moved at ~0.86x the unprotected rate). Scaling exp_avg at blend time attenuates the
+    tail at its source, restoring the intended per-slot-LR semantics. exp_avg_sq is left
+    untouched (it only normalizes step magnitude; shrinking it would inflate later steps).
+    """
+    opt = getattr(optimizer, "optimizer", optimizer)  # unwrap AcceleratedOptimizer
     with torch.no_grad():
         for p, rows, pre, sc in snap:
             try:
                 scv = sc.to(dtype=p.dtype).view(-1, *([1] * (p.dim() - 1)))
                 p.data[rows] = pre + scv * (p.data[rows] - pre)
+                if opt is not None:
+                    state = opt.state.get(p)
+                    if state is not None and "exp_avg" in state:
+                        state["exp_avg"][rows] *= scv.to(dtype=state["exp_avg"].dtype)
             except Exception:
                 continue
 
@@ -1383,6 +1422,7 @@ def _update_policy_with_tfidf(
     protect_usefulness_by_module: dict[str, torch.Tensor] | None = None,
     protect_beta: float = 0.0,
     protect_mode: str = "rank",
+    protect_hard_u: float = 0.0,
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -1463,6 +1503,7 @@ def _update_policy_with_tfidf(
                 protect_beta=protect_beta,
                 protect_mode=protect_mode,
                 protect_scale_out=protect_scale,
+                protect_hard_u=protect_hard_u,
             )
             mask_build_s = time.perf_counter() - t0
             if use_cuda_events:
@@ -1487,8 +1528,9 @@ def _update_policy_with_tfidf(
             optimizer.step()
         if protect_snap:
             # "grad_scale" protection: rescale the applied update on protected rows
-            # (exact per-slot LR scaling; see _snapshot_protected_rows).
-            _blend_protected_rows(protect_snap)
+            # (exact per-slot LR scaling; see _snapshot_protected_rows) and scale their
+            # momentum so the attenuation survives mask churn (see _blend_protected_rows).
+            _blend_protected_rows(protect_snap, optimizer)
         optimizer.zero_grad()
         if use_cuda_events:
             ev_opt.record()
@@ -1985,6 +2027,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             ),
                             protect_beta=cfg.protect_beta,
                             protect_mode=cfg.protect_mode,
+                            protect_hard_u=cfg.protect_hard_u,
                         )
                     else:
                         train_tracker, output_dict = update_policy(
@@ -2061,7 +2104,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     logging.info(
                         f"Updated prior-usefulness protection store after task {idx + 1} "
                         f"(protect_beta={cfg.protect_beta}, mode={cfg.protect_mode}, "
-                        f"u_norm={cfg.protect_u_norm})."
+                        f"u_norm={cfg.protect_u_norm}, hard_u={cfg.protect_hard_u})."
                     )
             except Exception:
                 pass

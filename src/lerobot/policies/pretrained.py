@@ -328,6 +328,15 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
         # Mark config as using PEFT for proper loading later
         peft_model.config.use_peft = True
 
+        # The wrapped model must expose optimizer params itself: PeftModel.__getattr__ would
+        # forward get_optim_params to the BASE policy, whose param groups enumerate the (now
+        # frozen) base weights and know nothing about the adapter params — the optimizer would
+        # silently train nothing. Return only trainable (adapter + modules_to_save) params.
+        def _peft_optim_params():
+            return [p for p in peft_model.parameters() if p.requires_grad]
+
+        peft_model.get_optim_params = _peft_optim_params
+
         logging.info(f"Wrapped {self.name} with PEFT ({type(final_config).__name__})")
         return peft_model
 

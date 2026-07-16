@@ -2823,3 +2823,78 @@ All three land ~16 Jul; read via retention matrices + slot JSONs + the probe bat
 - Instruments PERSISTED to scripts/vla_analysis/ (mse_matrix2, probe_conversion [gain+chunk], probe_bias, probe_offbridge, probe_coherence, calibrate_beta, arms_{slots,displacement,wandb}, smoke_{softprotect,affine}, run_*.sh) — the E39 instruments died in a scratchpad; not again. Results: outputs/analysis/e41/*.jsonl.
 - Job scripts (git add -f, dir gitignored): stageB_seq5_lr2x_softprotect.sh, stageB_seq5_bs64.sh (+ the E40 four from a8ac9fff/reconstructions).
 - Eval-comparability note: stageB's final row is 20-ep; all E41-era finals are 50-ep.
+
+---
+## Entry 42 - 16 Jul 26 (E41 3-arm verdicts: bs64 EXONERATED-AND-RETIRED (no accum bug; chunk parity at 2x cost); softprotect = new 50-ep frontier 41.2 BUT the blend mechanism is DEFECTIVE (Adam momentum leak, ~90% passthrough) — the number is the lr2x family + eval fortune, not protection; topt3072 FALSIFIES the bleed->rollout model on schedule and identifies COVERAGE as the second fit lever. Fixes shipped (momentum-aware blend + hard veto, smoked); LoRA-FT baseline support built+smoked; next: lr2x+3072 / lr4xsched+3072 / LoRA-FT. 12 days to 70%)
+
+### The three landed arms (stageB-verbatim + single delta; final rows 50-ep; baselines from E41)
+
+| arm | e4 | e6 | e9 | e2 | e7 | mean init | final | give-back |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| stageB | 10 | 60 | 5 | 70 | 30 | 35.0 | 32.0 (20ep) | -3.0 |
+| lr2x | 35 | 65 | 25 | 80 | 32 | 47.4 | 35.6 | -11.8 |
+| steps7k | 10 | 55 | 10 | 70 | 32 | 35.4 | 36.0 | +0.6 |
+| **bs64** | 10 | 40 | 0 | 60 | 26 | 27.2 | 30.4 | +3.2 |
+| **softprotect** | 35 | 50 | 30 | 70 | 38 | 44.6 | **41.2** | -3.4 |
+| **topt3072** | 15 | 35 | 5 | 85 | 34 | 34.8 | **37.6** | +2.8 |
+
+Loss (wandb block-min/block-end mean): stageB .1274/.1410, lr2x .1132/.1239, bs64 .1176/.1355, softp .1139/.1270, **top3k .1086/.1215** (family-lowest). Probe battery run over ALL arms (chunk grid own-block AND final for t0-t3; slot autopsy L14+L8 with realized-write counts, displacement, self-coverage, full bleed matrix; softp MSE matrix): outputs/analysis/e42/.
+
+### Arm 1 verdict — bs64: no gradient-accumulation bug; parity at 2x cost; RETIRED
+
+- Full code audit CLEAN: Accelerate 1.13 scales loss under accumulation (averaged grads); mask/clip/step/zero + LR scheduler gated on sync_gradients; TF-IDF ranks the merged 64-frame indices; value-LR schedule = 5000 optimizer steps (wandb: 125 points, peak 9.82e-4); DF/IDF/protect stats scale-invariant. Config verified from checkpoint.
+- "Lower loss, worse rollouts" dissolves: loss -8% is real (cleaner gradients); the FUNCTION (chunk) is at parity with stageB, slightly better (e4 .189 vs .191, e9 .448 vs .459, e2 .282 vs .304, e6 .115 vs .126); the init deficit was 20-ep cells; 50-ep finals ~= stageB per task.
+- The E41 mask-stability mechanism fired EXACTLY as designed and bought nothing: written sets shrank 39-46% (e9 35.8k->21.9k L14), ev/slot up — but SELF-COVERAGE (task read mass on own-adapted slots) fell ~10pp/task (e9 67->56%). Concentration gain == coverage loss. At fixed top_t the two are the same budget spent differently; bs32's mask churn was a free coverage scan, not a pathology. Batch size was never the causal variable — retire the axis (and the "dilution" frame with it).
+
+### Arm 2 verdict — softprotect: the mechanism did NOT bind (Adam momentum leak); the run is a second lr2x
+
+- **THE DEFECT**: the post-step blend rescales a row only on steps the row is in the snapshot (mask ∩ scale<1). Adam keeps applying the row's momentum tail (~1/(1-beta1) steps) after it leaves the churning mask — unblended. Median mask slot is selected ~17-22 of 5000 steps => ~90% of movement leaks. PROOF from the run's own checkpoints: e9's block contains 79 mask slots with u=1.0 EXACTLY (blend scale exactly 0 — must be bitwise frozen); NONE are frozen, p50 |d| 1.55 vs lr2x's same-bin 1.75. Measured attenuation -11..-14% vs designed -59..-100%. The E41 smokes used a FIXED mask (every tail recaptured by the next step's blend) — structurally blind to churn. Second time Adam's statefulness defeated this mechanism (E41 caught grad-scale invariance pre-launch; the momentum tail is its sequel).
+- Design itself validated: airtight (1-u)^4 applied offline to the run's real deltas keeps 48.1% of the e9->e6 bleed at L14 — matches the E41 calibration (48%) to 0.1%.
+- What actually ran: grad_scale mode also removes the rank discount => softp ~= lr2x with PURE-TF ranking. Its bleed onto e6 was HIGHER than lr2x's (1.85% vs 1.62 full; core50 0.51 vs 0.16 — 3x, the discount used to deflect the very top slots).
+- Twin comparison in function space (chunk, own-block -> final): e4 +1.6% vs +1.2%; e6 FLAT in both (.0968->.0965 / .0958->.0958); e9 lr2x .366->.382 (+4.4%) vs softp .344->.352 (+2.3%) — softp's small real edge (ranking purity made it a better writer; best e6/e9 own-block fits on record); e2 lr2x .224 vs softp .248 (-11%) — softp's e2 rollout deficit (70 vs 84) is REAL, the writer paid by task 4. Paired final-row diff +5.6 ± ~4.5 (p~0.2).
+- **Attribution of 41.2**: the 2xLR family's true 50-ep level is ~36-41; softp drew the high end (small genuine e9/e6-fit edge, real e2 cost, remainder eval fortune). "Protection recovered r2244" is NOT demonstrated — the pre-registered e6 gate passes only via cells whose function shows no drop in either twin. lr2x's infamous -11.8 give-back is likewise mostly init-draw artifact: its function-space give-back is +0.5..+4.4%.
+- softp MSE matrix: flat (+0.0..+2.2% diag drift) — the blend machinery didn't disturb stationarity.
+
+### Arm 3 verdict — topt3072: real (+5.6 over stageB), mechanism = COVERAGE; and the pre-registered falsification LANDED
+
+- Per-task footprints (JSONs, arm-invariant: 0.996 overlap across arms): table = 147,456 slots/layer; core-50 = 2.1-7.1k (1.4-4.8%); effnum 4.6-15.3k; core-90 17-41k. e9's warm-up dilution in slot units: core50 7,081 = 2.7x everyone (its footprint alone dwarfs any fixed budget).
+- At top_t=1536, self-coverage was 62-86% (the un-adapted remainder = stale A-content in every retrieval mixture; the 1536 budget reaches ~the core-70-85 mass point). At 3072: 74-95% (+9-14pp/task) — and per-slot |d| UNCHANGED (p50 .88 vs .83) with ev/slot UP (26 vs 17): the bigger budget stops the mask ROTATING (holds core+shoulder continuously) rather than splitting gradient thinner. Family-lowest loss; give-backs flat-to-IMPROVED in function space (e4 -4.3%, e6 -1.8%, e9 -3.1%, e2 -0.1%).
+- **Falsification**: writes ~1.8x broader, function-space bleed 2-3x LARGER everywhere (e9->e6 3.06% vs 1.3-1.9; e2->e9 6.0%!) — with ZERO rollout retention cost. Across 6 arms, bleed magnitude vs e6-drop correlates ~0.
+- Caveats: inits FLAT (34.8 ~= stageB) — coverage converts to loss/finals, weakly to fresh inits (the Layer-2 conversion gap rules); e9 rollout unmoved at 80% coverage (amplitude-limited on every instrument, only LR moved it: 5 -> 25-30); one chunk misrank (top3k e2 own-block .287 near-worst vs its best-ever e2 rollouts 85/78 — the chunk metric resolves large gaps, not the mid-field).
+
+### The e6-after-e9 story, revised (E41 partially corrected)
+
+- Pooled post-e9 e6 (episode-weighted, all post cells): stageB 28.3, affine 41.1, lr2x 37.8, steps7k 37.8, bs64 38.9, softp 42.2, top3k 40.0 — ~38-42 in 6/7 arms. The dramatic per-arm drops were inflated by high 20-ep init draws (regression to the mean); a real average drop ~-15 remains in the four 1x-amplitude E40 arms (E41's pooled 3-sigma stands).
+- **e6's FUNCTION on demo states is flat across e9's block in ALL SIX arms measured** (chunk own->final: -3%..+0.5%), at bleeds 0.8-3.1%. Whatever converts theta-drift into the residual rollout wobble is invisible on demo states and NOT proportional to bleed — most consistent with off-demo-distribution damage (closed-loop excursion states) + eval noise. softp-vs-lr2x (near-identical physics, 19pp apart on this statistic) bounds the per-arm noise at ~the effect size.
+- **Model update**: at stageB-family exposure (RTO 10-13%, flat matrices, flat chunk retention), write-side interference management earns ~0 rollout points. E41's three arms optimized a solved margin. The bleed model is DEMOTED as a cross-arm decision tool; protection's value case moves to the 10-task extension (2x+ cumulative exposure) and bigger-write regimes.
+
+### Fixes shipped (smoked, not launched)
+
+1. **Momentum-aware blend**: `_blend_protected_rows(snap, optimizer)` scales the row's exp_avg by the same factor (kills the tail at source; exp_avg_sq untouched). New smoke S12 reproduces the leak (old blend keeps 0.79x movement under churn; designed 0.0625) and verifies the fix (0.0625 exactly; s=0 freezes bitwise).
+2. **`protect_hard_u`** (both modes, default 0=off): slots with u >= threshold removed from top-t CANDIDACY (not just score-zeroed — with top_t >= candidates a zero-score slot still gets selected; smoke S13 caught this, veto made structural via counts masking). Never in mask => no grad, no momentum — airtight. At corefrac, u>=0.9 = the victims' true cores: ~19%/34% (L14/L8) of e9->e6 bleed mass on a few hundred mask slots.
+3. Smokes: softprotect suite now 44 checks incl. S12a-e/S13 (ALL PASS); affine regression 20/20; boundary log now prints hard_u. NB the honest expectation even for the FIXED mechanism: per-slot LR scaling suppresses ENDPOINT displacement only where s x 5000 steps can't converge (u>=~0.4-0.5); the shoulder still converges slowly — the implementable ceiling is closer to the veto-mass curve (26% of bleed @ u*=0.5, L14) than the calibration's 48%.
+
+### LoRA-FT per-task baseline: support built + smoked end-to-end
+
+- Existing plumbing: `--peft.*` CLI -> `wrap_with_peft` -> pi05 default targets; `--dataset.episodes` filter; `--env.task_ids` single-task eval; PEFT save/load via factory `use_peft`.
+- Missing pieces found+fixed: **peft not installed** (added 0.19.1); **`get_optim_params` on the wrapped model forwarded to the BASE policy => optimizer over 4.2B frozen params, 0 trainable — training would silently no-op**. Fixed in `wrap_with_peft` (returns trainable params). Smoked: attach (53.2M adapters: LM 39.2M + expert 13.9M + proj 0.1M at r=32, attn+MLP both towers, vision untouched), 4-step CLI train (num_learnable=53M/4B, loss+grads healthy, grad-ckpt composes, episodes filter live), checkpoint saves adapter_model.safetensors, lerobot-eval loads it and rolls out on env.task_ids=[4].
+
+### Storage (was 94% full)
+
+Deleted (analyses discharged; probes/matrices/autopsies persisted to outputs/analysis/e42): per-task intermediate checkpoints + ALL training_state for the six 5-task arms (finals + last + JSONs + evals + wandb kept); r2244-pretrain and frozenbase-40k intermediates (final weights kept); affine-A training_state; smoke dirs. **Freed ~1.1T -> disk 51%** (1.2T free). Untouched: stage-1 base, warmed router, stageB A, realworld_v2, all audits.
+
+### Next (3 VMs; 12 days to 70% avg)
+
+| VM | script | config | pre-registered reads |
+|---|---|---|---|
+| 1 | staged/stageB_seq5_lr2x_topt3072.sh | value_lr 2e-3->2e-4 + top_t 3072 | inits >=~47 AND give-back >=~0 => final >=42-45 (50ep) = new frontier; e9 init >=20; FAIL: give-back <=-8 (levers interact) |
+| 2 | staged/stageB_seq5_lr4xsched_topt3072.sh | value_lr 4e-3->2e-4 + top_t 3072 | e9 init/chunk vs VM1 (the amplitude-limited cell); block-ENDs vs VM1 (worse => L14 saturation binding, 2x = plateau, axis closed) |
+| 3 | baselines/loraft_pertask_baseline.sh | 5x independent LoRA r32 on stage-1 base, 5k steps, 50-ep evals | e4/e9 ~35-50 => our machinery's conversion tax, priced; <=15 => frozen-backbone ceiling, scope the thesis claim; >=60 => rethink value path |
+
+The 70% arithmetic, honestly: best staged 41.2; base-joint ceiling 74.8 on these 5. The compositions plausibly buy mid-40s. The remaining ~25pp is Layer 2/3 — which is exactly what VM3 prices. If LoRA-FT lands high, the known gap-closers in-protocol are r4-at-L12/14 on the staged track (never run; r2244's +6 came from it in the joint era), the top-p (mass-quantile) mask (e9's 2.4x footprint needs an adaptive budget), and inference-side seed-averaging (E41 #2, still unrun). If LoRA-FT lands low, 70% is not reachable by ANY frozen-backbone adapter method on this suite and the target needs renegotiating toward "joint-adapter-level fit with zero forgetting". Decision point lands with VM3 (~14h).
+
+### Artifacts
+- Code: lerobot_sequential_train.py (blend+veto fix), pretrained.py (PEFT get_optim_params), smoke_softprotect.py (S12/S13).
+- Instruments: scripts/vla_analysis/{run_e42.sh,run_e42b.sh,e42_slots.py}; results outputs/analysis/e42/{probe_conversion.jsonl,mse_matrix_arms.jsonl,slots_summary.json,slots.out}.
+- Scripts: staged/stageB_seq5_{lr2x_topt3072,lr4xsched_topt3072}.sh, baselines/loraft_pertask_baseline.sh (git add -f).
+- Eval-comparability: all E42 finals 50-ep; init cells remain 20-ep (retired from decisions per E41; the probe battery is the ranking instrument, with the e2-misrank caveat above).
