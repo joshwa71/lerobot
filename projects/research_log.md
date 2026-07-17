@@ -2918,3 +2918,73 @@ Long discussion with Josh on THE standing question (why sequential loss == multi
 2. **Benefit is plausibly CONCENTRATED where the freeze is cheap.** The structural-anchor value rides on off-trail routing drift landing on the hottest, most scene-generic slots — i.e. exactly the top-~2k, not the top-25k. Overlap mass is not the currency the benefit is paid in, so the 1:1 table cannot rule the shallow freeze out.
 3. **It is the CHEAPEST bake-off arm to implement** (protect_hard_u shipped+smoked; the A-phase usage profile now on disk; missing piece = a ~20-line seed-the-store-from-stats hook), with no hyperparameters beyond the mass threshold — the opposite of the demotion rationale.
 Honest cautions that stand: the benefit is contingent on the off-trail mechanism (instrument still to run — the gate for the whole remedy family), and the preserved fallback is a policy with 0-2% floors on these tasks (the bet is coherent-generic motion off-trail beats corrupted-mixture motion, keeping states recoverable — plausible, unproven). What the table genuinely killed: the deep freeze, and the paper's protect-most-of-the-substrate framing (our router sends new tasks INTO the pretraining core; theirs evidently didn't).
+
+---
+## Entry 43 - 17 Jul 26 (Composition arms: levers COMPOSE in function space (block-min 0.0880, project-lowest; 4x does NOT saturate) but 50-ep finals stay in the 40+/-2 band — the conversion slope measured across a 31% loss range (~+2pp per −10% loss, far too shallow for 70). FIRST real function-space give-back ladder (e9 own->final: 1x −3% / 2x +7.7% / 4x +14.5%, pre-registered predictions hit). LoRA-FT partials REPRICE the gap: e4=58 (above base-joint 52) with clean chunk 0.018 vs our 0.153 (9x) — the e4 deficit is substantially FIT, not pure conversion; e6=44 (BELOW staged 54-56). Freeze mechanism shipped (protect_seed_path); softprotect-fixed + freeze5k arms launched on the VMs; jitter probe built+smoked; LoRA compass (expert-only vs VLM-only) queued)
+
+### The two composition arms (stageB-verbatim + deltas; init cells 20-ep, finals 50-ep; seed 1000; configs verified from checkpoints)
+
+| arm | e4 | e6 | e9 | e2 | e7 | mean init | final |
+|---|---|---|---|---|---|---:|---:|
+| VM1 lr2x+topt3072 | 20->[32] | 55->[56] | 10->[14] | 70->[64] | [36] | 38.2 | **40.4** |
+| VM2 lr4xsched+topt3072 | 30->[20] | 60->40->[54] | 35->[14] | 100->[80] | [44] | 53.8 | **42.4** |
+
+Loss (block-min/block-END means): VM1 **0.0969/0.1077**, VM2 **0.0880/0.1019** — the two lowest in project history (top3k 0.1086, stageB 0.1274). Grad norms clean at 4e-3 (max 0.020); schedules honored (peaks 1.96e-3/3.92e-3). e7's loss response at 4x is the outlier: 0.1167 -> 0.0891 (−24%).
+
+**Pre-registered gates scored:** VM1 "inits>=47 AND give-back>=0 -> final>=42-45": inits FAILED (38.2), give-back passed (+2.2), final missed (40.4) — neither the frontier nor the FAIL branch fired; the arm is a wash vs softp/lr2x. VM2 "block-ENDs worse => saturation binding": block-ENDs were BETTER — **the amplitude axis did not saturate in function space.** e9 init >=20: VM1 failed (10), VM2 passed (35) then gave it back to 14.
+
+### What the family now measures: the conversion slope
+
+Six sibling arms span a 31% loss range (0.127->0.088); their 50-ep final averages sit in [37.6, 42.4] (per-cell se +/-5-7 => family mean se ~+/-3 — all within ~1.5 sigma of each other). Across the eight staged arms loss rank DOES weakly predict rollout rank (Spearman ~0.6-0.7; softp the positive outlier, steps7k negative) at ~+2pp per −10% loss. At that slope, +28pp to 70% needs another ~90% loss reduction — arithmetically impossible (e9's loss floor alone is 2.4x e6's). The conversion slope exists and cannot be ridden to the target.
+
+**Narrative self-check (E41 discipline applied in real time):** "e2/e7 converted amplitude to rollouts" survived until checking top3k's own e2 = 85 at 1x LR — family e2 finals 85/70/64/80 across near-identical physics = mid-field wobble, not an amplitude effect. Only e7 shows a monotone loss-backed response (finals 34/38/36/44 with the −24% loss jump), itself ~1sigma. 50-ep cells have a smaller noise radius than 20-ep cells, not a zero one.
+
+**Give-back numbers are init-draw artifacts, again:** VM1 +2.2 vs VM2 −11.4 at near-identical write physics (bleeds within ~7% relative). VM2 drew high init cells (e2=100 at 20 eps = a ~4% draw of a true ~0.83; e9=35; e6=60). The "inits>=47" arm of my own pre-registration was built on the retired instrument — pre-registration design error, owned.
+
+### Slot autopsy: the cleanest lever isolation the project has produced
+
+Write topology is ARM-INVARIANT across the three 3072 arms (identical masks to the slot: t2 = 58,455-58,483 at L14; identical ev/slot, self-coverage 80.6% on e9 in all three) — frozen-route + same seed doing its job. The ONLY variable is per-slot endpoint displacement: L14 d_p50 = 0.88 / 1.38 / 2.05 at 1x/2x/4x => **displacement ~ LR^0.57** (sublinear — blocks converge, endpoint is landscape-limited — but nowhere near capped). Probe A reproduces the instantaneous L14 saturation (2x injected delta transmits 0.62-0.64x) on both new arms — training optimizes THROUGH the saturating layer norm; saturation caps the naive lever, not the optimizer. Total velocity-space throw stays ~25 (arm-invariant): higher LR re-places the correction, not enlarges it. At 4x, T_feat falls to 1.02-1.03 (vs 1.16-1.18 at 2x) — the extra correction is increasingly generic in direction.
+
+Bleed grows sub-linearly with displacement (L14 full-mass): e2blk->e9 6.00/7.02/7.55%, e7blk->e9 6.60/7.90/8.43%, e7blk->e4 5.20/6.24/6.45%, e9blk->e6 3.06/3.64/4.06%. Cumulative absorbed field change: e9 ~15-16%, e6 ~12-13%, e4 ~10% (L8 e4 ~15%).
+
+### THE new fact: a real function-space give-back ladder (chunk probe, e9 own-block -> final)
+
+| arm | own (015k) | final (025k) | give-back |
+|---|---:|---:|---:|
+| top3k (1x) | 0.4067 | 0.3942 | −3.1% |
+| VM1 (2x) | 0.3037 | 0.3271 | **+7.7%** |
+| VM2 (4x) | **0.2792** | 0.3197 | **+14.5%** |
+
+Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; final 0.31-0.32 -> 0.3197). E42's "bleed doesn't convert" was scoped to <=6% channels at <=2x amplitude; at 2-4x + 3072 it converts, lawfully. VM2's endpoint is STILL family-best — the 4x fit edge survives its own bleed — and still rolls out at 14. **Chunk-rollout misrank #2 on e9:** softp chunk 0.3516 -> rollout 30; VM1 chunk 0.3271 -> rollout 14 (~2sigma). Our best function instrument cannot rank e9's mid-field; both misranks (e2 E42, e9 now) sit on marginal tasks where success rides states demos never visit. e9 seed-spread 0.21-0.23 ~ 2/3 of its chunk error — dwarfs every arm difference.
+
+### LoRA-FT baseline partials (r32, attn+MLP on ALL 18 VLM-LM blocks AND all 18 expert blocks + action/state projections; vision untouched; 53.2M/task; per-task specialists, 5k steps, 50 eps)
+
+- **t0/e4 = 58.0** — ABOVE base-joint e4 (52), 1.7-2.9x every staged e4 ever (best softp 35). Frozen backbone exonerated on e4; per the pre-registered rule this sits at the "~>=60 => rethink value path" boundary.
+- **t1/e6 = 44.0** — BELOW staged e6 (54-56). The dense-adapter advantage is task-shaped: biggest exactly on the dual-cycle integration task.
+- **Jitter first-read (MINI): LoRA e4 clean chunk 0.018 vs best staged e4 ~0.153 — 9x better on-demo function.** Its perturbed errors (state@0.1 0.048, image@0.05 0.146) stay below our CLEAN error. If it holds at full size, the e4 gap is substantially FIT (the achievable function level is far beyond ours), not pure conversion — a real reframe of the Layer-2/3 split: chunk~0.15 may simply be insufficient for >50% on e4, and our "conversion gap" partly = "everyone at our fit level converts like this".
+- Params accounting for the machinery-tax discussion: our per-slot 4.1k params (r2 on the 1024-dim expert hidden). Per optimizer step the 3072x4-layer mask = ~50M eligible params (parity with LoRA's 53M); per task realized ~130-190k slots = 0.6-0.8B touched (>10x LoRA); per token per forward <=144 slots x 4 layers = **2.4M active vs LoRA's 53M in every token** (~22x density gap). We are not budget-starved; we differ in per-forward density, placement breadth (4 expert-MLP sites vs 36 blocks incl. attention), and perception adaptation (LoRA moves the prefix; ours frozen by construction).
+- e9 cell lands mid-afternoon (watcher armed); e2/e7 tonight; full table ~02:00.
+
+### Discussion outcomes (Josh, 17 Jul) — the plan
+
+1. **Off-trail instrument, jitter version BUILT** (`scripts/vla_analysis/probe_jitter.py`, smoked both model classes): perturb raw demo obs (state sigma x per-dim std; image pixel noise; RNG seeded per task/batch/scale so all models see identical inputs), score the 10-step-denoised chunk vs the demo chunk; the READ is across-model degradation slopes at matched clean error (shared target bias cancels). Full version (score on rollout-visited states; target-free drift ||f_after − f_own_block|| on- vs off-trail) needs an obs-dump in the eval loop — deferred pending jitter results. Grid running: staged finals (VM1/VM2/softp/top3k/stageB) x {e4,e9} + LoRA t0; r2244 skipped (10-task exposure = protocol mismatch).
+2. **Softprotect retest LAUNCHED (VM A)**: `stageB_seq5_lr4xsched_topt3072_softprotect_fixed.sh` — single delta vs VM2 = momentum-FIXED grad_scale blend + corefrac. Pre-registered: e9 own ~0.28 held, own->final <=+4% (vs +14.5%), e9/e4 finals up; FAIL = writer block-min MSE +10%. Framing: mechanism validation + de-taxing the LR axis (bank 4x fit for whenever conversion improves), not a points bet.
+3. **Generalist freeze LAUNCHED (VM B)**: `stageB_seq5_lr4xsched_topt3072_freeze5k.sh` — top-5000 A-phase read-mass slots/layer (18-19% of A-phase mass; committed artifact `scripts/vla_analysis/data/a_phase_top5k_slots.json`) seeded u=1.0 + protect_hard_u=0.9 structural veto; single conceptual delta vs VM2. **Correction from discussion (Josh): my "freeze buys no fit so it can't push the frontier" was the fit=perf error this project exists to kill.** The mechanism: hottest A-slots = the generalist transforms in every mixture; sequential writes erode them; on-demo MSE never registers (own-task adaptation compensates on-trail); off-trail the eroded generalists are the fallback => rollout cost invisible in loss. Freeze removes the erosion; expected signature = flat MSE, better rollouts, shallower jitter slope. Pre-registered reads in the script header.
+4. **LoRA compass QUEUED** (`baselines/loraft_compass_e4.sh`, auto-launch watcher armed for LoRA-table completion ~02:00): two e4-only arms — expert-only (attn+MLP+proj) vs VLM-only (attn+MLP+proj) vs the full-LoRA 58 anchor. A~58/B-low => n256/r4 staged build, VLM memory dead; A-low/B~58 => VLM-side memory is the build (placement chosen by running the E36 feature probe on PREFIX layers, not by guess — and low placement is allowed if the dual-path trick extends to the prefix KV, one extra prefix forward/batch); both mid => expert first; both high => cheapest wins. C (expert-MLP-only, attention ablation) dropped: we are not building attention-path memory regardless (parked; per-token routing makes it feasible in principle — each token routes itself, no seq-level router — but k/v corrections make interference cross-token), so its content only prices a caveat the 1-day n256/r4 arm tests directly.
+5. **n256/r4 dose fixed**: n_keys 384->256 (65.5k slots, ~0.9x current param budget) x r=4, NOT n/4 (36.9k would dip below the A-phase's 58-64k effective slot usage => forced collisions at pretrain fill). Staged rebuild = warm-up ~3h + A ~3h + seq ~14h ~ 1 day/arm. Note: values-only stage-2/3 could likely afford r4-on-all-4-layers at the CURRENT bank too (the config joint training OOM'd on).
+6. **Rejected**: seed-averaged inference (Josh: a hack, from other papers, lifts baselines too). Attention memory parked. r2244 as jitter anchor skipped.
+
+### Code/artifacts shipped (commits 75f69f1c, c0facc6f)
+- `--protect_seed_path` (trainer): seeds the prior-usefulness store u=1.0 from {module_key: [slots]} JSON before the task loop; with hard_u => structural candidacy veto for the whole run; validation requires protection on + file exists; '' = legacy byte-identical. Smoke S14a-e (suite 55/55; affine 20/20).
+- `scripts/vla_analysis/data/a_phase_top5k_slots.json` (committed so clone VMs need no audit rsync).
+- `scripts/vla_analysis/probe_jitter.py` + the E43 analysis artifacts: `outputs/analysis/e43/{slots_summary.json,slots.out,probe_conversion.jsonl,probe_jitter.jsonl}`, scratchpad e43 scripts mirrored in the session dir.
+
+### ETA board (from 17 Jul ~12:00 UTC)
+| when | what |
+|---|---|
+| ~15:40 | LoRA t2/e9 — the Layer-3 decision cell (watcher armed) |
+| ~16:00 | jitter grid (staged x {e4,e9} + LoRA t0) |
+| ~02:00 | full LoRA table -> compass auto-queue fires |
+| ~03:30 | VM A (softprotect-fixed) + VM B (freeze5k) land -> chunk/jitter probes on landing |
+| ~07:15 | compass A (expert-only) |
+| ~12:30 (18th) | compass B (VLM-only) -> capacity-build decision (n256/r4 vs VLM memory) |
