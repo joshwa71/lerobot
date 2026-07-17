@@ -13,6 +13,7 @@ S9  all value-param shapes (slot_down 3D / slot_up 3D / slot_bias 2D) scaled row
 S10 empty store / task-0: no scaling, plain mask
 S11 trainable keys: masked, never scaled
 """
+import os
 import sys
 from types import SimpleNamespace
 
@@ -57,6 +58,12 @@ def try_validate(**over):
             raise ValueError
         if not (0.0 <= ph <= 1.0):
             raise ValueError
+        sp = over.get("protect_seed_path", "")
+        if sp:
+            if not over.get("protect_prior_slots", False):
+                raise ValueError
+            if not os.path.isfile(sp):
+                raise ValueError
     except ValueError:
         ok = False
     return ok
@@ -374,6 +381,75 @@ for mode in ("rank", "grad_scale"):
                   all(int(r) in sel13 for r in hot[4:8]))
 # config validation for the new field
 check("S13z protect_hard_u validation rejects 1.5", not try_validate(protect_hard_u=1.5))
+
+# ---- S14: generalist-slot freeze — seed the store from a JSON (E42 addendum) ----
+import json as _json, tempfile as _tempfile
+from lerobot.scripts.lerobot_sequential_train import _seed_protect_usefulness
+
+h14 = make_wrapped(seed=5)
+x14 = torch.randn(4, 5, 32)
+h14.layers[0].mlp(x14)
+mem14 = h14.layers[0].mlp.mem
+hot14 = torch.unique(mem14.last_indices.reshape(-1))
+jk14 = next(j for _, _, _, j in ST._iter_memory_modules(h14))
+_hotset14 = set(int(r) for r in hot14)
+_cold14 = next(i for i in range(NUM_SLOTS) if i not in _hotset14)
+seed_rows = [int(r) for r in hot14[:3]] + [_cold14]  # 3 hot slots + 1 guaranteed-cold slot
+with _tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f14:
+    _json.dump({jk14: seed_rows}, f14)
+    seed_path14 = f14.name
+
+# a) loader sets u=1.0 exactly at listed slots
+_protect_usefulness_by_module.clear()
+seeded14 = _seed_protect_usefulness(h14, seed_path14)
+u14 = _protect_usefulness_by_module[jk14]
+check("S14a seed count reported", seeded14 == {jk14: len(seed_rows)})
+check("S14a seeded slots u=1.0", all(float(u14[r]) == 1.0 for r in seed_rows))
+check("S14a unseeded slots u=0", float(u14.sum()) == float(len(seed_rows)))
+
+# b) with hard_u, seeded slots are structurally OUT of the mask even at top_t=all
+allowed14 = _compute_tfidf_top_indices_for_batch(
+    h14, idf_by_module=None, top_t=NUM_SLOTS, tf_only=True,
+    protect_usefulness_by_module=_protect_usefulness_by_module, protect_beta=4.0,
+    protect_mode="rank", protect_hard_u=0.9,
+)
+sel14 = set(allowed14[ST._get_value_params(mem14)[0]].tolist())
+check("S14b seeded hot slots vetoed from mask", all(int(r) not in sel14 for r in hot14[:3]))
+check("S14b unseeded hot slots still in mask", all(int(r) in sel14 for r in hot14[3:]))
+
+# c) later tasks max-fold WITHOUT diluting seeds
+counts14 = torch.zeros(NUM_SLOTS)
+counts14[int(hot14[3])] = 50.0
+fold_counts(h14, counts14, "corefrac")
+u14b = _protect_usefulness_by_module[jk14]
+check("S14c seeds survive task fold", all(float(u14b[r]) == 1.0 for r in seed_rows))
+check("S14c task core folds in alongside", float(u14b[int(hot14[3])]) == 1.0)
+
+# d) bad seeds raise
+try:
+    with _tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fbad:
+        _json.dump({jk14: [NUM_SLOTS + 5]}, fbad)
+        bad_path = fbad.name
+    _seed_protect_usefulness(h14, bad_path); ok_d1 = False
+except ValueError:
+    ok_d1 = True
+try:
+    with _tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fbad2:
+        _json.dump({"not.a.module": [1]}, fbad2)
+        bad_path2 = fbad2.name
+    _seed_protect_usefulness(h14, bad_path2); ok_d2 = False
+except ValueError:
+    ok_d2 = True
+check("S14d out-of-range slot index raises", ok_d1)
+check("S14d unknown module key raises", ok_d2)
+
+# e) config validation
+check("S14e seed_path without protect_prior_slots rejected",
+      not try_validate(protect_seed_path=seed_path14))
+check("S14e nonexistent seed_path rejected",
+      not try_validate(protect_prior_slots=True, protect_seed_path="/nonexistent/seed.json"))
+check("S14e valid seed_path + protection accepted",
+      try_validate(protect_prior_slots=True, protect_seed_path=seed_path14))
 
 print()
 if FAILS:

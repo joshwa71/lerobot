@@ -196,6 +196,15 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # that at corefrac normalization u >= ~0.9 marks the prior tasks' true read cores (a few
     # hundred mask slots per layer per writer), carrying ~19-34% of the victim-perceived bleed.
     protect_hard_u: float = 0.0
+    # Path to a JSON of {module_json_key: [slot_index, ...]} used to SEED the prior-usefulness
+    # store with u = 1.0 at the listed slots before any sequential task trains (E42 addendum:
+    # "freeze the generalist slots" — e.g. the top-K A-phase read-mass slots per layer). Seeded
+    # slots behave exactly like a maximally-useful prior task from step 0: in "rank" mode their
+    # score gets (1-1)^beta = 0, and with protect_hard_u > 0 they are removed from top-t
+    # candidacy entirely (never in mask => no gradient, no momentum => frozen for the whole
+    # sequential run). Later tasks' own profiles max-fold into the store as usual, so seeds are
+    # never diluted. Empty string (default) = legacy behavior, no seeding.
+    protect_seed_path: str = ""
 
     # ---- Optional visualization logging (WandB) ----
     # When enabled, build an interactive Plotly HTML visualization of:
@@ -227,6 +236,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
             )
         if not (0.0 <= self.protect_hard_u <= 1.0):
             raise ValueError(f"protect_hard_u must be in [0, 1], got {self.protect_hard_u}")
+        if self.protect_seed_path:
+            if not self.protect_prior_slots:
+                raise ValueError(
+                    "protect_seed_path requires protect_prior_slots=True (the seed lives in the "
+                    "prior-usefulness store, which is only consulted when protection is enabled)."
+                )
+            if not os.path.isfile(self.protect_seed_path):
+                raise ValueError(f"protect_seed_path does not exist: {self.protect_seed_path}")
 
 
 def _render_cumulative_eval_bar_chart(
@@ -1017,6 +1034,43 @@ def _finalize_protect_usefulness(unwrapped_policy: PreTrainedPolicy, u_norm: str
             _protect_usefulness_by_module[json_key] = torch.maximum(u, rnorm)
         # Reset current-task counts for the next task.
         _protect_cur_counts_by_module[json_key] = torch.zeros_like(cur)
+
+
+def _seed_protect_usefulness(unwrapped_policy: PreTrainedPolicy, path: str) -> dict[str, int]:
+    """Seed the prior-usefulness store with u = 1.0 at the slots listed in `path`.
+
+    JSON format: {module_json_key: [slot_index, ...]} — same module keys as the
+    memory_by_task usage dumps. Seeds are max-folded, so calling this before the task loop
+    makes the listed slots look like a maximally-useful prior task from step 0; combined with
+    protect_hard_u > 0 they are structurally vetoed from the top-t mask for the whole run
+    (the generalist-slot freeze, E42 addendum). Returns {json_key: n_seeded} for logging.
+    """
+    with open(path) as f:
+        seed = json.load(f)
+    seeded: dict[str, int] = {}
+    for _, mem, _, json_key in _iter_memory_modules(unwrapped_policy):
+        if json_key not in seed:
+            continue
+        num_slots = int(mem.size)
+        idx = torch.as_tensor(seed[json_key], dtype=torch.long)
+        if idx.numel() == 0:
+            continue
+        if int(idx.min()) < 0 or int(idx.max()) >= num_slots:
+            raise ValueError(
+                f"protect seed for {json_key} has out-of-range slot indices "
+                f"(min {int(idx.min())}, max {int(idx.max())}, table {num_slots})"
+            )
+        u = _protect_usefulness_by_module.get(json_key)
+        if u is None or u.numel() != num_slots:
+            u = torch.zeros(num_slots, dtype=torch.float32)
+        u = u.clone()
+        u[idx] = 1.0
+        _protect_usefulness_by_module[json_key] = u
+        seeded[json_key] = int(idx.numel())
+    missing = [k for k in seed if k not in seeded]
+    if missing:
+        raise ValueError(f"protect seed contains module keys not found on the policy: {missing}")
+    return seeded
 
 
 def _seed_online_idf_from_pretrain(
@@ -1877,6 +1931,18 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     # (a task's loss right after it was trained, used to report forgetting).
     loss_eval_history: list[dict] = []
     loss_baseline: dict[int, float] = {}
+
+    # Seed the prior-usefulness store (generalist-slot freeze) before any task trains.
+    if cfg.protect_prior_slots and cfg.protect_seed_path:
+        seeded = _seed_protect_usefulness(
+            accelerator.unwrap_model(policy, keep_fp32_wrapper=True), cfg.protect_seed_path
+        )
+        if accelerator.is_main_process:
+            logging.info(
+                f"Seeded prior-usefulness store from {cfg.protect_seed_path}: "
+                + ", ".join(f"{k.rsplit('.', 1)[-1] if k.count('.') else k}={v}" for k, v in seeded.items())
+                + f" (hard_u={cfg.protect_hard_u}, beta={cfg.protect_beta}, mode={cfg.protect_mode})"
+            )
 
     # Iterate sequentially over dataset tasks
     for idx, dataset_task_id in enumerate(cfg.online_task_ids):
