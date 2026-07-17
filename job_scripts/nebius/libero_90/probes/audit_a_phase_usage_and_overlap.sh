@@ -4,7 +4,7 @@
 # read profile is VALUE-INDEPENDENT (router + backbone only), so a forward-only inert-LR
 # sweep of the libero-90 demos through the A-checkpoint reproduces it exactly.
 #
-# Stage 1: audit sweep — 90 tasks x 40 batches through the stageB A checkpoint (same
+# Stage 1: audit sweep — 73 tasks (this libero_90 build: task_index 0-72) x 40 batches through the stageB A checkpoint (same
 #          instrument as audit_heldout_routing.sh, pointed at libero_90). ~1.5h.
 # Stage 2: analysis (scripts/vla_analysis/generalist_overlap.py) — aggregate per-slot
 #          A-phase read mass per layer; intersect with each sequential task's read mass
@@ -24,7 +24,7 @@ conda activate lerobot-memory-updated
 cd "$ROOT_DIR"
 [ -d "$CKPT" ] || { echo "ERROR: A checkpoint missing"; exit 1; }
 
-if [ -f "$OUTPUT_DIR/memory_by_task/memory_usage_task_89.json" ]; then
+if [ -f "$OUTPUT_DIR/memory_by_task/memory_usage_task_72.json" ]; then
   echo "[audit] all 90 task JSONs exist - skipping sweep."
 else
   lerobot-sequential-train \
@@ -43,7 +43,7 @@ else
     --log_freq=200 \
     --wandb.enable=false \
     --job_name="$RUN" \
-    --online_task_ids="[$(seq -s, 0 89)]" \
+    --online_task_ids="[$(seq -s, 0 72)]" \
     --online_steps_per_task=40 \
     --policy.memory_layer.aggregate_usage=false \
     --save_checkpoint=false \

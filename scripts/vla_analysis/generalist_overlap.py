@@ -45,10 +45,19 @@ def profile(run_dir, t, L, field):
     return a
 
 
+def audit_task_ids(run_dir):
+    """This libero_90 build has 73 task_index entries (0-72), not 90 — glob what exists."""
+    import glob
+    files = glob.glob(os.path.join(run_dir, "memory_by_task", "memory_usage_task_*.json"))
+    return sorted(int(f.rsplit("_", 1)[1][:-5]) for f in files)
+
+
 out = {}
+AUDIT_TASKS = audit_task_ids(AUDIT)
+print(f"A-phase audit tasks found: {len(AUDIT_TASKS)} (idx {AUDIT_TASKS[0]}..{AUDIT_TASKS[-1]})")
 for L in LAYERS:
     agg = np.zeros(N)
-    for t in range(90):
+    for t in AUDIT_TASKS:
         agg += profile(AUDIT, t, L, "total_accesses")
     order = np.argsort(agg)[::-1]
     cum = np.cumsum(agg[order]) / max(agg.sum(), 1e-12)
