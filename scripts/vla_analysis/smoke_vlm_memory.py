@@ -127,6 +127,27 @@ rank_par = [p for n, p in m16.mem.named_parameters() if "slot_down" in n][0]
 check("S8e rank applied", rank_par.shape[-1] == 4 or rank_par.shape[0] == 64 * 4 or 4 in rank_par.shape,
       f"slot_down shape {tuple(rank_par.shape)}")
 
+# S9: token-mask (pad fix) — masked positions: zero memory output, excluded from stats
+w9 = MLPPlusMemory(nn.Linear(DIM, DIM), DIM, mk_cfg(SPAN))
+base9 = w9.mlp
+with torch.no_grad():
+    for n_, p_ in w9.mem.named_parameters():
+        if getattr(p_, "pk_value_param", False):
+            p_.add_(torch.randn_like(p_) * 0.1)
+x9 = torch.randn(3, SEQ, DIM)
+vm9 = torch.zeros(3, SPAN, dtype=torch.bool); vm9[:, :3] = True  # first 3 of span valid
+w9.train(); w9._ctx_valid_mask = vm9
+out9 = w9(x9)
+pad_delta = (out9[:, -SPAN + 3:] - base9(x9)[:, -SPAN + 3:]).abs().max()
+val_delta = (out9[:, -SPAN:-SPAN + 3] - base9(x9)[:, -SPAN:-SPAN + 3]).abs().max()
+check("S9a masked positions bitwise plain-mlp", float(pad_delta) == 0.0, f"pad delta {float(pad_delta):.2e}")
+check("S9b valid positions carry memory", float(val_delta) > 0)
+li9 = w9.mem.last_indices
+check("S9c stats cover valid tokens only", li9.shape[0] == 3 * 3, f"rows {li9.shape[0]} (expect 9)")
+w9._ctx_valid_mask = torch.zeros(2, SPAN, dtype=torch.bool)  # stale/mismatched batch dim
+out9b = w9(x9)
+check("S9d stale-mask shape guard -> unmasked behavior", out9b.shape == x9.shape and w9.mem.last_indices.shape[0] == 3 * SPAN)
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)

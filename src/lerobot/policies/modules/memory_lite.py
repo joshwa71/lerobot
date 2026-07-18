@@ -519,13 +519,15 @@ class HashingMemoryLite(nn.Module):
         )
 
     @torch.no_grad()
-    def _stage_routing_queries(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor) -> None:
+    def _stage_routing_queries(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor,
+                               size_T: int | None = None) -> None:
         if self.routing_query_queue <= 0 or _is_checkpoint_recompute():
             return
         # query: (B*T*heads, k_dim) in (bs, heads) row-major order with bs = B*T.
+        # size_T pins the ring-buffer sizing when T varies batch-to-batch (token-mask slice).
         q_rows = query.detach().view(B * T, self.heads, self.k_dim)
         labels = task_ids.view(B, 1).expand(B, T).reshape(B * T).detach().to(torch.long)
-        self._pending_routing_batches.append((q_rows, labels, int(T)))
+        self._pending_routing_batches.append((q_rows, labels, int(size_T or T)))
 
     def _router_trainable(self) -> bool:
         """True iff the router (query proj or keys) can receive gradient.
@@ -633,7 +635,7 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None, token_mask: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, T, C)
         # lang_emb: (B, lang_dim) or None
         # task_ids: (B,) optional task indices for contrastive loss
@@ -697,13 +699,29 @@ class HashingMemoryLite(nn.Module):
         # only in the pretrain loop (lerobot_train.py), so in the sequential loop the
         # pending list would otherwise grow every step and OOM (~1k steps).
         router_trainable = self._router_trainable()
+        # Token-mask (E44 pad fix): valid tokens are a CONTIGUOUS PREFIX of the span (the
+        # tokenized language field pads at the tail), so the loss/queue machinery runs on a
+        # rectangular [:, :Tv] slice (Tv = min valid count in the batch) — pads never reach
+        # the contrastive means, routing histograms, or the cross-batch queues.
+        q_loss, T_loss = query, T
+        if token_mask is not None and T > 1:
+            tv = max(int(token_mask.sum(dim=1).min().item()), 1)
+            if tv < T:
+                q_loss = query.view(B, T, self.heads, self.k_dim)[:, :tv].reshape(B * tv * self.heads, self.k_dim)
+                T_loss = tv
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None and router_trainable:
             if self.contrastive_method == "sample":
-                self.last_contrastive_loss = self._compute_sample_contrastive_loss(query, B, T, task_ids)
+                self.last_contrastive_loss = self._compute_sample_contrastive_loss(q_loss, B, T_loss, task_ids)
             else:
-                self.last_contrastive_loss = self._compute_contrastive_loss(query, B, T, task_ids)
+                self.last_contrastive_loss = self._compute_contrastive_loss(q_loss, B, T_loss, task_ids)
 
         s1_full, s2_full = self._compute_subkey_scores(query)
+        s1_loss, s2_loss = s1_full, s2_full
+        if T_loss != T:
+            def _slice_scores(sf):
+                # subkey scores are (bs=B*T, heads, n_keys); keep that layout after slicing
+                return sf.view(B, T, self.heads, -1)[:, :T_loss].reshape(B * T_loss, self.heads, -1)
+            s1_loss, s2_loss = _slice_scores(s1_full), _slice_scores(s2_full)
         if self.training and task_ids is not None and router_trainable and (
             self.routing_intra_task_locality_weight > 0
             or self.routing_inter_task_separation_weight > 0
@@ -716,7 +734,7 @@ class HashingMemoryLite(nn.Module):
                 self.last_routing_intra_task_entropy,
                 self.last_routing_intra_task_support,
                 self.last_routing_global_entropy,
-            ) = self._compute_routing_losses(s1_full, s2_full, B, T, task_ids)
+            ) = self._compute_routing_losses(s1_loss, s2_loss, B, T_loss, task_ids)
             self.last_routing_compactness_loss = self.last_routing_intra_task_locality_loss
             self.last_routing_separation_loss = self.last_routing_inter_task_similarity_loss
             self.last_routing_task_entropy = self.last_routing_intra_task_entropy
@@ -725,7 +743,7 @@ class HashingMemoryLite(nn.Module):
         # (flushed after the optimizer step in the pretrain loop; skipped when the
         # router is frozen so the pending list cannot leak — see note above).
         if self.training and self.routing_query_queue > 0 and task_ids is not None and router_trainable:
-            self._stage_routing_queries(query, B, T, task_ids)
+            self._stage_routing_queries(q_loss, B, T_loss, task_ids, size_T=T)
 
         # Indices and scores
         scores, indices = self._get_indices_from_subkey_scores(s1_full, s2_full)  # (bs*heads, knn)
@@ -743,8 +761,13 @@ class HashingMemoryLite(nn.Module):
 
         # Record selected indices/weights during training when log_usage is enabled
         if self.training and self.log_usage:
-            self.last_indices = indices.view(bs, self.heads, self.knn).detach()
-            self.last_weights = weights.view(bs, self.heads, self.knn).detach()
+            if token_mask is not None:
+                keep = token_mask.reshape(-1).bool()
+                self.last_indices = indices.view(bs, self.heads, self.knn)[keep].detach()
+                self.last_weights = weights.view(bs, self.heads, self.knn)[keep].detach()
+            else:
+                self.last_indices = indices.view(bs, self.heads, self.knn).detach()
+                self.last_weights = weights.view(bs, self.heads, self.knn).detach()
 
             # Per-task slot diagnostics (unique count and entropy)
             if task_ids is not None:
@@ -756,7 +779,10 @@ class HashingMemoryLite(nn.Module):
                         mask = (task_ids == int(t))
                         if not mask.any():
                             continue
-                        t_idx = idx_by_sample[mask].reshape(-1).to(torch.long)
+                        if token_mask is not None:
+                            t_idx = idx_by_sample[mask][token_mask[mask].bool()].reshape(-1).to(torch.long)
+                        else:
+                            t_idx = idx_by_sample[mask].reshape(-1).to(torch.long)
                         self.last_per_task_unique_slots[int(t)] = int(torch.unique(t_idx).numel())
                         counts = torch.bincount(t_idx, minlength=self.size).float()
                         total = counts.sum()
@@ -1523,7 +1549,16 @@ class MLPPlusMemory(nn.Module):
                 return self.mlp(x)
             xs = x[:, -n:].contiguous()
             rs = router_x[:, -n:].contiguous() if router_x is not None else None
-            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs)
+            # Pad exclusion (E44 fix): the language field pads at the tail; without masking,
+            # ~70% of span queries are near-identical pad hiddens that collapse onto a tiny
+            # shared slot core and drown the usage stats, TF-IDF counts, and routing losses.
+            vm = getattr(self, "_ctx_valid_mask", None)
+            if vm is not None and (vm.shape[0] != x.shape[0] or vm.shape[1] != n):
+                vm = None  # shape mismatch (e.g. stale context) -> behave unmasked
+            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
+                               token_mask=vm)
+            if vm is not None:
+                mem_out = mem_out * vm.to(dtype=mem_out.dtype, device=mem_out.device).unsqueeze(-1)
             out = self.mlp(x)
             return torch.cat([out[:, :-n], out[:, -n:] + mem_out], dim=1)
         mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)

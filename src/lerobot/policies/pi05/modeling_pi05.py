@@ -636,6 +636,13 @@ class PaliGemmaWithExpertModel(
                 f"span=last {vlm_cfg.text_span} positions (the tokenized language field)."
             )
 
+    def set_vlm_token_mask(self, masks: torch.Tensor | None):
+        """E44 pad fix: hand the language-field attention mask (B, tokenizer_max_length) to
+        the VLM text-span memory wrappers so pad positions are excluded from memory output,
+        usage statistics, TF counts, and the routing/contrastive losses."""
+        for i in getattr(self, "_vlm_mem_layer_indices", []) or []:
+            self.paligemma.model.language_model.layers[i].mlp._ctx_valid_mask = masks
+
     def _frozen_routing_enabled(self) -> bool:
         cfg = getattr(self, "_mem_cfg", None)
         return bool(
@@ -1039,6 +1046,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        self.paligemma_with_expert.set_vlm_token_mask(masks)
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
         if (
@@ -1112,6 +1120,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        self.paligemma_with_expert.set_vlm_token_mask(masks)
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 
