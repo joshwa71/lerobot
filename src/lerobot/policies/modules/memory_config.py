@@ -171,6 +171,25 @@ class MemoryLayerConfig:
     # scalar `lora_rank` for every layer (backward compatible).
     layer_ranks: List[int] = field(default_factory=list)
 
+    # ---- VLM-side (prefix / paligemma language-model) memory layers (E44 build) ----
+    # When vlm_layers is non-empty, an ADDITIONAL set of memory modules is attached to the
+    # listed paligemma language_model layers, with their OWN bank geometry below (the expert
+    # fields above keep governing the expert-side modules). The VLM modules attach to the
+    # TEXT SPAN only: memory output is added to the last `vlm_text_span` prefix positions
+    # (the tokenized language field = instruction + state-as-text in pi05), and retrieval is
+    # computed only on that slice — the span carries 36-57% of loss leverage at 20x the
+    # per-position density of image tokens, with far more open routing geometry
+    # (inter-task cos 0.73-0.86 vs 0.96+; E44 span-attribution + placement probes).
+    # Empty list (default) = no VLM memory = byte-identical legacy behavior.
+    vlm_layers: List[int] = field(default_factory=list)
+    vlm_mem_n_keys: int = 256
+    vlm_lora_rank: int = 2
+    vlm_mem_knn: int = 16
+    vlm_text_span: int = 200  # = pi05 tokenizer_max_length (the whole language field)
+    # INTERNAL (set by the attach path on the derived per-side config; not a CLI knob):
+    # when > 0 on a module's cfg, that module applies memory to the last-N positions only.
+    text_span: int = 0
+
     # Affine LoRA slots ("lora + value", only used when value_type="lora"). When True,
     # each slot additionally stores a per-slot bias vector b_i (v_dim), added to the
     # slot's LoRA output before the retrieval-weighted sum:

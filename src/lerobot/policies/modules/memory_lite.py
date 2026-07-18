@@ -1474,6 +1474,12 @@ class MLPPlusMemory(nn.Module):
         self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override)
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
+        # Text-span attachment (E44, VLM-side memory): when > 0, memory applies ONLY to the
+        # last-N sequence positions (pi05's tokenized language field) — retrieval is computed
+        # on that slice alone, the rest of the sequence passes through the plain MLP.
+        self.text_span = int(getattr(cfg, "text_span", 0) or 0)
+        if self.text_span > 0 and self.memory_only:
+            raise ValueError("text_span attachment is incompatible with memory_only")
         # Frozen-base routing, inference path (suffix-only denoise forward): the
         # dual pass is driven by plain module state because the HF layer stack
         # between PaliGemmaWithExpertModel and this wrapper cannot thread a new
@@ -1509,6 +1515,17 @@ class MLPPlusMemory(nn.Module):
             return self.mlp(x)
         if router_x is None and self._frozen_stash:
             router_x = self._frozen_stash.pop(0)
+        if self.text_span > 0:
+            n = self.text_span
+            if x.dim() != 3 or x.shape[1] < n:
+                # Sequence without a full language field (never expected on the pi05 prefix):
+                # skip memory rather than misapply it to non-text positions.
+                return self.mlp(x)
+            xs = x[:, -n:].contiguous()
+            rs = router_x[:, -n:].contiguous() if router_x is not None else None
+            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs)
+            out = self.mlp(x)
+            return torch.cat([out[:, :-n], out[:, -n:] + mem_out], dim=1)
         mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)
         if self.memory_only:
             return mem_out

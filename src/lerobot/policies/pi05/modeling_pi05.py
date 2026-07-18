@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import builtins
+import dataclasses
 import copy
 import logging
 import math
@@ -591,6 +592,48 @@ class PaliGemmaWithExpertModel(
             logging.info(
                 f"Frozen-base routing ENABLED: memory layers {self._mem_layer_indices} route on the "
                 "memory-free backbone features (dual-path)."
+            )
+        # ---- VLM-side text-span memory (E44): additional modules on the paligemma LM ----
+        # Placed ABOVE the highest expert memory layer so the prefix KV the expert's frozen
+        # routing branch consumes (layers <= max(expert layers)) is untouched; the lowest VLM
+        # module's own router input is memory-free by construction. The joint training path
+        # (compute_layer_complete) dispatches wrapped MLPs generically for BOTH towers, so
+        # task_ids/lang_emb reach these modules with no extra threading; the prefix-only
+        # inference path calls mlp(x) plain (losses off, memory active) — also correct.
+        vlm_layers = list(getattr(cfg, "vlm_layers", []) or [])
+        if vlm_layers:
+            exp_max = max(self._mem_layer_indices) if self._mem_layer_indices else -1
+            if min(vlm_layers) <= exp_max:
+                raise ValueError(
+                    f"vlm_layers {vlm_layers} must all sit ABOVE the highest expert memory layer "
+                    f"({exp_max}) to preserve expert routing stationarity (prefix KV <= {exp_max})."
+                )
+            vlm_cfg = dataclasses.replace(
+                cfg,
+                layers=vlm_layers,
+                mem_n_keys=int(getattr(cfg, "vlm_mem_n_keys", 256)),
+                lora_rank=int(getattr(cfg, "vlm_lora_rank", 2)),
+                mem_knn=int(getattr(cfg, "vlm_mem_knn", 16)),
+                layer_ranks=[],
+                lang_to_query=False,
+                use_frozen_base_input_features=False,
+                text_span=int(getattr(cfg, "vlm_text_span", 200)),
+                vlm_layers=[],
+            )
+            vlm_targets = attach_memory_to_layer_list(
+                self.paligemma.model.language_model.layers,
+                dim=self.paligemma.config.text_config.hidden_size,
+                cfg=vlm_cfg,
+                label="VLM",
+            )
+            self._vlm_mem_layer_indices = sorted(
+                i for i, layer in enumerate(self.paligemma.model.language_model.layers)
+                if isinstance(layer.mlp, MLPPlusMemory)
+            )
+            logging.info(
+                f"VLM text-span memory attached at LM layers {vlm_targets}: n_keys={vlm_cfg.mem_n_keys} "
+                f"(bank {vlm_cfg.mem_n_keys ** 2}), r={vlm_cfg.lora_rank}, knn={vlm_cfg.mem_knn}, "
+                f"span=last {vlm_cfg.text_span} positions (the tokenized language field)."
             )
 
     def _frozen_routing_enabled(self) -> bool:
