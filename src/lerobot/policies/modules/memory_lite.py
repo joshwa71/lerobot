@@ -1511,6 +1511,13 @@ class MLPPlusMemory(nn.Module):
         self.text_span = int(getattr(cfg, "text_span", 0) or 0)
         if self.text_span > 0 and self.memory_only:
             raise ValueError("text_span attachment is incompatible with memory_only")
+        # Pooled routing for the state sub-span (E45; see MemoryLayerConfig.vlm_router_pool).
+        # Router keys only — the value path always consumes the live per-position hidden.
+        self.router_pool = str(getattr(cfg, "vlm_router_pool", "") or "") if self.text_span > 0 else ""
+        _w = list(getattr(cfg, "vlm_router_pool_weights", [1.0, 1.0]) or [1.0, 1.0])
+        self.router_pool_w = (float(_w[0]), float(_w[1]) if len(_w) > 1 else 1.0)
+        if self.router_pool not in ("", "anchored", "state"):
+            raise ValueError(f"unknown vlm_router_pool mode: {self.router_pool!r}")
         # Frozen-base routing, inference path (suffix-only denoise forward): the
         # dual pass is driven by plain module state because the HF layer stack
         # between PaliGemmaWithExpertModel and this wrapper cannot thread a new
@@ -1536,6 +1543,53 @@ class MLPPlusMemory(nn.Module):
     def assert_frozen_stash_consumed(self):
         if self._frozen_stash:
             raise RuntimeError("frozen-routing stash not consumed by the live pass")
+
+    def _pooled_router_keys(self, base: torch.Tensor, vm2: torch.Tensor) -> torch.Tensor:
+        """Router keys for pooled state-sub-span routing (E45). Router keys ONLY — the
+        value path always consumes the live per-position hidden.
+
+        base: (B, T, D) routing features on the batch-max valid slice; vm2: (B, T) bool.
+        Instruction positions [0, b_i) keep per-token keys. Every position from the
+        boundary on (", State: ..." + tail) shares ONE per-sample key from RMS-normalized
+        region means: "anchored" = a*nrm(instr pool) + b*nrm(state pool); "state" =
+        nrm(state pool). Instr pool skips the constant "<bos> Task :" prefix (3 tokens);
+        state pool skips the ", State :" markers (3) and the ";\\nAction: " tail (5).
+        The composite is rescaled to the batch-mean valid-token RMS so keys stay
+        in-distribution for the query projection. Rows without a usable boundary
+        (marker missing / degenerate spans) fall back to per-token keys.
+        """
+        il = getattr(self, "_ctx_instr_len", None)
+        B, T, D = base.shape
+        if il is None or il.shape[0] != B:
+            return base
+        il = il.to(base.device)
+        v = vm2.sum(dim=1)
+        pos = torch.arange(T, device=base.device).unsqueeze(0)
+        bnd = il.unsqueeze(1)
+        imask = (pos >= 3) & (pos < bnd) & vm2
+        smask = (pos >= bnd + 3) & (pos < (v - 5).unsqueeze(1)) & vm2
+        row_ok = (il > 4) & (smask.sum(dim=1) > 0) & (imask.sum(dim=1) > 0)
+        if not bool(row_ok.any()):
+            return base
+        bf = base.float()
+
+        def _pool(mask):
+            m = mask.unsqueeze(-1).float()
+            return (bf * m).sum(dim=1) / m.sum(dim=1).clamp_min(1.0)
+
+        def _nrm(u):
+            return u / u.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-6)
+
+        vmf = vm2.float()
+        target = (bf.pow(2).mean(-1).sqrt() * vmf).sum(dim=1) / vmf.sum(dim=1).clamp_min(1.0)
+        k = _nrm(_pool(smask))
+        if self.router_pool == "anchored":
+            a, b = self.router_pool_w
+            k = a * _nrm(_pool(imask)) + b * k
+        k = _nrm(k) * target.unsqueeze(-1)
+        bmask = (pos >= bnd) & vm2 & row_ok.unsqueeze(1)
+        out = torch.where(bmask.unsqueeze(-1), k.unsqueeze(1).expand(B, T, D), bf)
+        return out.to(base.dtype)
 
     def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None,
                 router_x: torch.Tensor | None = None):
@@ -1569,6 +1623,8 @@ class MLPPlusMemory(nn.Module):
                 xs = x[:, lo:hi].contiguous()
                 rs = router_x[:, lo:hi].contiguous() if router_x is not None else None
                 vm2 = vm[:, :tmax]
+                if self.router_pool:
+                    rs = self._pooled_router_keys(xs if rs is None else rs, vm2)
                 mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
                                    token_mask=vm2)
                 mem_out = mem_out * vm2.to(dtype=mem_out.dtype, device=mem_out.device).unsqueeze(-1)

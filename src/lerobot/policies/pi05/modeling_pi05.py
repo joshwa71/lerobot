@@ -68,6 +68,22 @@ from ..rtc.modeling_rtc import RTCProcessor
 from .configuration_pi05 import DEFAULT_IMAGE_SIZE, PI05Config
 
 
+# Paligemma tokenizer id of "▁State" in pi05's fixed prompt template
+# "Task: {instr}, State: {bins};\nAction: " (tokenizer name pinned in processor_pi05.py;
+# a capitalized " State" cannot occur inside LIBERO instruction strings). The
+# instruction/state boundary handed to the pooled-router modes (E45) is the index of the
+# "," immediately before this marker; rows without the marker fall back to per-token
+# routing inside the wrapper.
+_VLM_STATE_MARKER_TOKEN_ID = 3040
+
+
+def _vlm_instr_len_from_tokens(tokens: torch.Tensor) -> torch.Tensor:
+    is_m = tokens == _VLM_STATE_MARKER_TOKEN_ID
+    has = is_m.any(dim=1)
+    first = is_m.float().argmax(dim=1).long()
+    return torch.where(has, first - 1, torch.zeros_like(first))
+
+
 class ActionSelectKwargs(TypedDict, total=False):
     inference_delay: int | None
     prev_chunk_left_over: Tensor | None
@@ -636,12 +652,19 @@ class PaliGemmaWithExpertModel(
                 f"span=last {vlm_cfg.text_span} positions (the tokenized language field)."
             )
 
-    def set_vlm_token_mask(self, masks: torch.Tensor | None):
+    def set_vlm_token_mask(self, masks: torch.Tensor | None, instr_len: torch.Tensor | None = None):
         """E44 pad fix: hand the language-field attention mask (B, tokenizer_max_length) to
         the VLM text-span memory wrappers so pad positions are excluded from memory output,
-        usage statistics, TF counts, and the routing/contrastive losses."""
+        usage statistics, TF counts, and the routing/contrastive losses.
+
+        instr_len (E45, pooled state routing): per-sample field index of the "," preceding
+        the "State" marker in pi05's "Task: {instr}, State: {bins};" prompt — the
+        instruction/state boundary the pooled-router modes key on. None = per-token routing.
+        """
         for i in getattr(self, "_vlm_mem_layer_indices", []) or []:
-            self.paligemma.model.language_model.layers[i].mlp._ctx_valid_mask = masks
+            mlp = self.paligemma.model.language_model.layers[i].mlp
+            mlp._ctx_valid_mask = masks
+            mlp._ctx_instr_len = instr_len
 
     def _frozen_routing_enabled(self) -> bool:
         cfg = getattr(self, "_mem_cfg", None)
@@ -1046,7 +1069,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        self.paligemma_with_expert.set_vlm_token_mask(masks)
+        self.paligemma_with_expert.set_vlm_token_mask(masks, instr_len=_vlm_instr_len_from_tokens(tokens))
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
         if (
@@ -1120,7 +1143,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        self.paligemma_with_expert.set_vlm_token_mask(masks)
+        self.paligemma_with_expert.set_vlm_token_mask(masks, instr_len=_vlm_instr_len_from_tokens(tokens))
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 

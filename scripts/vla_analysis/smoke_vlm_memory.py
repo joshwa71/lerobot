@@ -177,6 +177,66 @@ _ = w10(x10)
 check("S10g eval-path stats also mask-filtered", w10.mem.last_indices.shape[0] == 9,
       f"rows {w10.mem.last_indices.shape[0]}")
 
+# S11: pooled state-sub-span routing (E45) — router keys only, value path per-position
+SPAN11, SEQ11 = 20, 26
+x11 = torch.randn(3, SEQ11, DIM)
+vm11 = torch.zeros(3, SPAN11, dtype=torch.bool)
+vm11[0, :18] = True; vm11[1, :16] = True; vm11[2, :18] = True
+il11 = torch.tensor([8, 8, 0])  # row 2: no marker -> per-token fallback
+
+
+def build11(mode, w=(1.0, 0.0), seed=7):
+    torch.manual_seed(seed)
+    m = MLPPlusMemory(nn.Linear(DIM, DIM), DIM,
+                      mk_cfg(SPAN11, vlm_router_pool=mode, vlm_router_pool_weights=list(w)))
+    with torch.no_grad():
+        for n_, p_ in m.mem.named_parameters():
+            if getattr(p_, "pk_value_param", False):
+                torch.manual_seed(seed + 1); p_.add_(torch.randn_like(p_) * 0.1)
+    m.train(); m._ctx_valid_mask = vm11; m._ctx_instr_len = il11
+    return m
+
+
+def rows_by_pos(m):
+    li = m.mem.last_indices.reshape(m.mem.last_indices.shape[0], -1)
+    v = vm11.sum(dim=1).tolist()
+    out, r = {}, 0
+    for s, vi in enumerate(v):
+        for p in range(vi):
+            out[(s, p)] = set(li[r].tolist()); r += 1
+    return out
+
+w11 = build11("anchored", (1.0, 0.0))
+out11 = w11(x11)
+rp = rows_by_pos(w11)
+bcast_same = all(rp[(0, p)] == rp[(0, 8)] for p in range(8, 18))
+instr_diff = sum(rp[(0, p)] != rp[(0, 0)] for p in range(1, 8))
+check("S11a broadcast region routes identically (row 0, pos 8-17)", bcast_same)
+check("S11b instr positions route per-token", instr_diff >= 5, f"{instr_diff}/7 differ")
+bc_out = out11[0, SEQ11 - SPAN11 + 8:SEQ11 - SPAN11 + 18]
+check("S11c broadcast outputs differ per position (value path live)",
+      not torch.allclose(bc_out[0], bc_out[1]))
+fb_same = all(rp[(2, p)] == rp[(2, 8)] for p in range(8, 18))
+check("S11d marker-less row falls back to per-token", not fb_same)
+w11e = build11("")
+w11f = build11("anchored", (1.0, 0.0))
+w11f._ctx_instr_len = None
+check("S11e missing instr_len -> legacy per-token output", torch.equal(w11f(x11), w11e(x11)))
+w11g = build11("state")
+w11h = build11("anchored", (1.0, 1.0))
+_ = w11g(x11); _ = w11h(x11)
+rg, rh = rows_by_pos(w11g), rows_by_pos(w11h)
+check("S11f state vs anchored(1,1) select different palettes",
+      rg[(0, 9)] != rp[(0, 9)] or rh[(0, 9)] != rp[(0, 9)])
+check("S11g pre-span bitwise plain-mlp under pooling",
+      torch.equal(out11[:, :SEQ11 - SPAN11], w11.mlp(x11)[:, :SEQ11 - SPAN11]))
+pad_delta = (out11[1, SEQ11 - SPAN11 + 16:] - w11.mlp(x11)[1, SEQ11 - SPAN11 + 16:]).abs().max()
+check("S11h ragged tail still zeroed under pooling", float(pad_delta) == 0.0)
+w11.zero_grad(set_to_none=True)
+w11(x11)[:, -SPAN11:].pow(2).sum().backward()
+gk11 = w11.mem.keys.grad
+check("S11i grads reach keys through pooled routing", gk11 is not None and float(gk11.abs().sum()) > 0)
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)

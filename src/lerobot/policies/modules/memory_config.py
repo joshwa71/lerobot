@@ -186,6 +186,20 @@ class MemoryLayerConfig:
     vlm_lora_rank: int = 2
     vlm_mem_knn: int = 16
     vlm_text_span: int = 200  # = pi05 tokenizer_max_length (the whole language field)
+    # Pooled routing for the state-as-text sub-span (E45). The language field is two
+    # different objects: instruction tokens are task-pure routing keys; state tokens are
+    # shared digit vocabulary whose per-token routing sprawls task-generically (the E44
+    # sweep failure: state-region famIoU 0.38-0.40 vs instruction 0.21-0.22). Modes:
+    #   ""         - legacy per-token routing over the whole span (the swept design)
+    #   "anchored" - instruction positions route per-token; every position from the
+    #                ", State:" boundary on routes with ONE shared per-sample key
+    #                a*rms_nrm(mean instr tokens) + b*rms_nrm(mean state tokens)
+    #                (task anchor + smooth state offset; value path stays per-position)
+    #   "state"    - as "anchored" but the shared key is rms_nrm(mean state tokens) only
+    # Component RMS-normalization corrects the coherence-dependent norm shrinkage of
+    # pooled means (a mean of N unit-RMS vectors has norm ~sqrt(rho)).
+    vlm_router_pool: str = ""
+    vlm_router_pool_weights: List[float] = field(default_factory=lambda: [1.0, 1.0])
     # INTERNAL (set by the attach path on the derived per-side config; not a CLI knob):
     # when > 0 on a module's cfg, that module applies memory to the last-N positions only.
     text_span: int = 0
