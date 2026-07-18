@@ -750,8 +750,13 @@ class HashingMemoryLite(nn.Module):
 
         # Record selected indices/scores for analysis during eval
         if not self.training and self.EVAL_MEMORY:
-            self.last_indices = indices.view(bs, self.heads, self.knn).detach().cpu()
-            self.last_scores = scores.view(bs, self.heads, self.knn).detach().cpu().float()
+            if token_mask is not None:
+                keep_e = token_mask.reshape(-1).bool()
+                self.last_indices = indices.view(bs, self.heads, self.knn)[keep_e].detach().cpu()
+                self.last_scores = scores.view(bs, self.heads, self.knn)[keep_e].detach().cpu().float()
+            else:
+                self.last_indices = indices.view(bs, self.heads, self.knn).detach().cpu()
+                self.last_scores = scores.view(bs, self.heads, self.knn).detach().cpu().float()
 
         # Softmax in float32 for numerical stability; we will cast as needed later
         weights = F.softmax(scores.float(), dim=-1)
@@ -1547,18 +1552,31 @@ class MLPPlusMemory(nn.Module):
                 # Sequence without a full language field (never expected on the pi05 prefix):
                 # skip memory rather than misapply it to non-text positions.
                 return self.mlp(x)
-            xs = x[:, -n:].contiguous()
-            rs = router_x[:, -n:].contiguous() if router_x is not None else None
-            # Pad exclusion (E44 fix): the language field pads at the tail; without masking,
-            # ~70% of span queries are near-identical pad hiddens that collapse onto a tiny
-            # shared slot core and drown the usage stats, TF-IDF counts, and routing losses.
+            # Pad exclusion (E44): the language field pads at the tail. With a valid-token
+            # mask present, PADS NEVER REACH THE MODULE — the mem call runs on the batch-max
+            # valid prefix of the field only (valid tokens are a contiguous field prefix), so
+            # no query projection, routing, or value gather happens at pad positions at all.
+            # Within the slice, shorter samples' tails are mask-zeroed (and mask-filtered from
+            # stats/losses inside the mem). No mask context -> full-span legacy behavior.
             vm = getattr(self, "_ctx_valid_mask", None)
             if vm is not None and (vm.shape[0] != x.shape[0] or vm.shape[1] != n):
                 vm = None  # shape mismatch (e.g. stale context) -> behave unmasked
-            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
-                               token_mask=vm)
+            S = x.shape[1]
+            lo = S - n
             if vm is not None:
-                mem_out = mem_out * vm.to(dtype=mem_out.dtype, device=mem_out.device).unsqueeze(-1)
+                tmax = max(int(vm.sum(dim=1).max().item()), 1)
+                hi = lo + tmax
+                xs = x[:, lo:hi].contiguous()
+                rs = router_x[:, lo:hi].contiguous() if router_x is not None else None
+                vm2 = vm[:, :tmax]
+                mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
+                                   token_mask=vm2)
+                mem_out = mem_out * vm2.to(dtype=mem_out.dtype, device=mem_out.device).unsqueeze(-1)
+                out = self.mlp(x)
+                return torch.cat([out[:, :lo], out[:, lo:hi] + mem_out, out[:, hi:]], dim=1)
+            xs = x[:, -n:].contiguous()
+            rs = router_x[:, -n:].contiguous() if router_x is not None else None
+            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs)
             out = self.mlp(x)
             return torch.cat([out[:, :-n], out[:, -n:] + mem_out], dim=1)
         mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)

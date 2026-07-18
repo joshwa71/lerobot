@@ -148,6 +148,35 @@ w9._ctx_valid_mask = torch.zeros(2, SPAN, dtype=torch.bool)  # stale/mismatched 
 out9b = w9(x9)
 check("S9d stale-mask shape guard -> unmasked behavior", out9b.shape == x9.shape and w9.mem.last_indices.shape[0] == 3 * SPAN)
 
+# S10: never-attach — the mem call runs on the batch-max valid prefix only
+w10 = MLPPlusMemory(nn.Linear(DIM, DIM), DIM, mk_cfg(SPAN))
+base10 = w10.mlp
+with torch.no_grad():
+    for n_, p_ in w10.mem.named_parameters():
+        if getattr(p_, "pk_value_param", False):
+            p_.add_(torch.randn_like(p_) * 0.1)
+x10 = torch.randn(3, SEQ, DIM)
+vm10 = torch.zeros(3, SPAN, dtype=torch.bool)
+vm10[0, :2] = True; vm10[1, :4] = True; vm10[2, :3] = True   # ragged; tmax=4
+w10.train(); w10._ctx_valid_mask = vm10
+out10 = w10(x10)
+lo, hi = SEQ - SPAN, SEQ - SPAN + 4
+check("S10a beyond-tmax bitwise plain-mlp (never routed)", torch.equal(out10[:, hi:], base10(x10)[:, hi:]))
+check("S10b pre-span bitwise plain-mlp", torch.equal(out10[:, :lo], base10(x10)[:, :lo]))
+check("S10c ragged tails zeroed in-slice",
+      torch.equal(out10[0, lo + 2:hi], base10(x10)[0, lo + 2:hi])
+      and torch.equal(out10[2, lo + 3:hi], base10(x10)[2, lo + 3:hi]))
+check("S10d longest sample carries memory through its full span",
+      not torch.allclose(out10[1, lo:hi], base10(x10)[1, lo:hi]))
+li10 = w10.mem.last_indices
+check("S10e stats rows == sum(valid) == 9", li10.shape[0] == 9, f"rows {li10.shape[0]}")
+check("S10f module never saw beyond tmax", li10.shape[0] <= 3 * 4)
+# eval-path filter
+w10.eval(); w10.mem.EVAL_MEMORY = True
+_ = w10(x10)
+check("S10g eval-path stats also mask-filtered", w10.mem.last_indices.shape[0] == 9,
+      f"rows {w10.mem.last_indices.shape[0]}")
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)
