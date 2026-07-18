@@ -37,8 +37,14 @@ def main():
     ml, vml = cfg["memory_layer"], vcfg["memory_layer"]
     assert ml["layers"] == [8, 10, 12, 14] and ml["mem_n_keys"] == 256, (ml["layers"], ml["mem_n_keys"])
     assert vml["vlm_layers"] == [15, 16], vml["vlm_layers"]
+    defaults = {"vlm_router_pool": "", "vlm_router_pool_weights": [1.0, 1.0]}
     for k in VLM_FIELDS:
-        ml[k] = vml[k]
+        if k in vml:
+            ml[k] = vml[k]
+        elif k not in ml:
+            if k not in defaults:
+                raise KeyError(f"{k} missing from both configs")
+            ml[k] = defaults[k]
 
     tensors = {}
     with safe_open(f"{vlm_dir}/model.safetensors", framework="pt") as f:
