@@ -1610,6 +1610,10 @@ class MLPPlusMemory(nn.Module):
         self.router_pool = str(getattr(cfg, "vlm_router_pool", "") or "") if self.text_span > 0 else ""
         _w = list(getattr(cfg, "vlm_router_pool_weights", [1.0, 1.0]) or [1.0, 1.0])
         self.router_pool_w = (float(_w[0]), float(_w[1]) if len(_w) > 1 else 1.0)
+        # E46: gate on the compact route-once path. False forces the legacy broadcast
+        # path (shared key routed at every state position -> losses/queues weight the
+        # palette by served positions). See MemoryLayerConfig.vlm_route_once.
+        self.route_once = bool(getattr(cfg, "vlm_route_once", True))
         if self.router_pool not in ("", "anchored", "state"):
             raise ValueError(f"unknown vlm_router_pool mode: {self.router_pool!r}")
         # Frozen-base routing, inference path (suffix-only denoise forward): the
@@ -1774,12 +1778,14 @@ class MLPPlusMemory(nn.Module):
                 if self.router_pool:
                     base = xs if rs is None else rs
                     comp = self._pooled_components(base, vm2)
-                    if comp is not None and bool(comp[3].all()) and not self.mem._slots_offloaded:
+                    if (self.route_once and comp is not None and bool(comp[3].all())
+                            and not self.mem._slots_offloaded):
                         mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids)
                         out = self.mlp(x)
                         return torch.cat([out[:, :lo], out[:, lo:hi] + mem_out, out[:, hi:]], dim=1)
-                    # Degenerate rows (missing boundary) or offloaded slots: fall back to
-                    # the broadcast-key path (identical routing, redundant compute).
+                    # Flag off, degenerate rows (missing boundary), or offloaded slots: the
+                    # broadcast-key path (identical routing; the shared key is routed at every
+                    # state position, so losses/queues carry served-position multiplicity).
                     rs = self._pooled_router_keys(base, vm2)
                 mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
                                    token_mask=vm2)

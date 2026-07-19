@@ -313,6 +313,70 @@ check("S12h keys grad nonzero", gk14 is not None and float(gk14.abs().sum()) > 0
 check("S12i slot-value grads nonzero",
       any(g is not None and float(g.abs().sum()) > 0 for g in gv14))
 
+# ---- S13: vlm_route_once flag (E46) ----
+# False forces the legacy broadcast path: the shared state key is routed independently
+# at every state position, so the losses/queues weight the palette by its served
+# positions (the pre-route-once semantics warm-ups need); output must be unchanged.
+w13on = build11("anchored", (1.0, 0.0))
+w13on._ctx_instr_len = il_ok
+check("S13a default flag True -> compact attr", w13on.route_once is True)
+out13on = w13on(x11)
+
+torch.manual_seed(7)
+w13 = MLPPlusMemory(nn.Linear(DIM, DIM), DIM,
+                    mk_cfg(SPAN11, vlm_router_pool="anchored",
+                           vlm_router_pool_weights=[1.0, 0.0], vlm_route_once=False))
+with torch.no_grad():
+    for n_, p_ in w13.mem.named_parameters():
+        if getattr(p_, "pk_value_param", False):
+            torch.manual_seed(8); p_.add_(torch.randn_like(p_) * 0.1)
+w13.train(); w13._ctx_valid_mask = vm11; w13._ctx_instr_len = il_ok
+calls13 = spy_mem(w13)
+out13 = w13(x11)
+tmax13 = int(vm11.sum(dim=1).max())
+check("S13b flag off -> broadcast call (T == tmax, not max(il)+1)",
+      calls13[-1][1] == tmax13, f"T={calls13[-1][1]} (tmax={tmax13})")
+check("S13c flag off output == flag on output", float((out13 - out13on).abs().max()) < 1e-5,
+      f"max|d|={float((out13 - out13on).abs().max()):.2e}")
+# stats layout back to true position order: instr rows [0, il) per-token, state rows
+# [il, v) all the shared palette
+li13 = w13.mem.last_indices.reshape(w13.mem.last_indices.shape[0], -1)
+v13 = vm11.sum(dim=1).tolist()
+r0 = 0
+ins13 = [set(li13[r0 + j].tolist()) for j in range(int(il_ok[0]))]
+pal13 = [set(li13[r0 + int(il_ok[0]) + j].tolist()) for j in range(v13[0] - int(il_ok[0]))]
+check("S13d flag off stats layout per-position (instr first, palette after)",
+      sum(a != ins13[0] for a in ins13[1:]) >= 4 and all(g == pal13[0] for g in pal13),
+      f"instr-distinct {sum(a != ins13[0] for a in ins13[1:])}, palette-identical {all(g == pal13[0] for g in pal13)}")
+check("S13e flag off stats rows == sum(valid)", li13.shape[0] == int(vm11.sum()),
+      f"rows {li13.shape[0]}")
+
+# S13f/S13g: THE semantic point — loss/queue multiplicity. The ROUTING queue stages
+# per-token rows: flag off restores ~n_state palette rows per sample (vs 1 deduped).
+# The CONTRASTIVE loss stages one per-sample MEAN query: flag off restores the
+# palette's ~2/3 weight inside that mean (row count unchanged, value changes).
+def staged(flag):
+    torch.manual_seed(7)
+    m = MLPPlusMemory(nn.Linear(DIM, DIM), DIM,
+                      mk_cfg(SPAN11, vlm_router_pool="anchored",
+                             vlm_router_pool_weights=[1.0, 0.0], vlm_route_once=flag,
+                             contrastive_loss_weight=0.05, contrastive_method="sample",
+                             contrastive_query_queue=64, routing_query_queue=64,
+                             routing_inter_task_separation_weight=1.0))
+    m.train(); m._ctx_valid_mask = vm11; m._ctx_instr_len = il_ok
+    m(x11, task_ids=torch.tensor([0, 1, 2]))
+    r_rows = sum(q.shape[0] for q, _, _ in m.mem._pending_routing_batches)
+    z_cat = torch.cat([z for z, _ in m.mem._pending_contrastive_batches])
+    return r_rows, z_cat
+
+r_on, z_on = staged(True)
+r_off, z_off = staged(False)
+check("S13f routing-queue rows: off restores palette multiplicity",
+      r_off > 1.5 * r_on, f"off {r_off} vs on {r_on}")
+check("S13g contrastive per-sample mean z shifts (palette weight restored)",
+      z_on.shape == z_off.shape and float((z_on - z_off).abs().max()) > 1e-4,
+      f"max|dz|={float((z_on - z_off).abs().max()):.2e}")
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)

@@ -2,7 +2,7 @@
 # E46 joint both-tower router warm-up — COMMON BODY (sourced by arm wrappers setting
 # ARM_TAG / EXP_N / EXP_R / EXP_KNN / VLM_N / VLM_R / VLM_KNN).
 #
-# All three E46 arms share ONE protocol so the certificates are like-for-like:
+# All E46/E47 arms share ONE protocol so the certificates are like-for-like:
 # (1) retrain BOTH towers' routers jointly (values pinned at zero, aux losses only,
 #     router lr 1e-4, 10k compressed schedule) with FROZEN-ROUTE ON — the routers
 #     train on exactly the memory-free features they deploy on (no value_proj-bias
@@ -11,9 +11,18 @@
 # (2) held-out audit (inert sweep of libero_10) -> expert + VLM analyses + the
 #     region-split sub-span probe;
 # (3) STOP. A-phases run only on arms whose routers certify (no point filling
-#     values on a useless router). These warm-ups are the first trained with the
-#     route-once DEDUPLICATED losses (each unique routing row counted once; usage/
-#     TF stats keep served-position multiplicity).
+#     values on a useless router).
+#
+# E47: warm-ups run vlm_route_once=false — the legacy BROADCAST loss semantics, in
+# which the shared state-region key enters the routing/contrastive losses and queues
+# once per served position (~35x). The E46 arms ran the route-once DEDUPLICATED
+# losses and the palette's spreading force collapsed (palette famIoU 0.08 -> 0.19-0.24,
+# effnum -> ~2 query-draws): dedup under-weights the palette relative to its
+# deployment read mass. Downstream stages (A-phase / sequential / inference) keep
+# vlm_route_once=true — with the router frozen the two paths are numerically
+# interchangeable and the compact path saves ~6-10GB VRAM.
+# OOM fallback: BATCH_SIZE=16 GRAD_ACCUM=2 (effective 32; NB accumulation shrinks the
+# in-batch contrastive pool per the E11 caveat — queues cover it, but note it in the log).
 #
 # Reads at the audit: expert side expect the bank-scaling law (n384->n256 held
 # famIoU at exactly 0.145 with core50 scaling ~1.7x per 2.25x bank) — at n128
@@ -57,8 +66,8 @@ else
     --output_dir="$OUT" \
     --save_freq=10000 \
     --steps=10000 \
-    --batch_size=32 \
-    --gradient_accumulation_steps=1 \
+    --batch_size=${BATCH_SIZE:-32} \
+    --gradient_accumulation_steps=${GRAD_ACCUM:-1} \
     --num_workers=8 \
     --eval.batch_size=1 \
     --eval.n_episodes=4 \
@@ -91,6 +100,7 @@ else
     --policy.memory_layer.vlm_text_span=200 \
     --policy.memory_layer.vlm_router_pool=anchored \
     --policy.memory_layer.vlm_router_pool_weights='[1.0,0.5]' \
+    --policy.memory_layer.vlm_route_once=false \
     --policy.memory_layer.use_frozen_base_input_features=true \
     --policy.memory_layer.log_usage=true \
     --policy.memory_layer.aggregate_usage=true \

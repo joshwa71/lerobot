@@ -205,6 +205,18 @@ class MemoryLayerConfig:
     # pooled means (a mean of N unit-RMS vectors has norm ~sqrt(rho)).
     vlm_router_pool: str = ""
     vlm_router_pool_weights: List[float] = field(default_factory=lambda: [1.0, 1.0])
+    # Route-once for the pooled state sub-span (E46). True (default): the shared key is
+    # routed ONCE per sample on a compact sequence and the slot palette is applied to
+    # every state position — identical forward output, but the routing/contrastive
+    # losses and queues then count the shared key ONCE (deduped). False: the legacy
+    # broadcast path — the shared key is routed independently at every state position,
+    # so the losses/queues weight it by its served-position count (n_state, ~35x).
+    # The E46 audits showed the deduped losses under-weight the palette relative to its
+    # deployment read mass and collapse it to ~2 draws (famIoU 0.08 -> 0.19-0.24), so
+    # ROUTER WARM-UPS should run False (mass-correct training signal); value-training
+    # and inference stages keep True for the VRAM savings — with the router frozen the
+    # two paths are numerically interchangeable (parity ~1e-7) and the losses inert.
+    vlm_route_once: bool = True
     # INTERNAL (set by the attach path on the derived per-side config; not a CLI knob):
     # when > 0 on a module's cfg, that module applies memory to the last-N positions only.
     text_span: int = 0

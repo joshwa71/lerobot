@@ -3202,3 +3202,123 @@ famIoU ~0.145 = scaling law holds; famIoU up at scaled cores = the per-query-dra
 3. Queued behind selection: 10-task extension; LoRA specialist cells e2/e7; the sep-response
    question in the anchored regime; protection-store decay fix before any multi-task run that
    needs it.
+
+---
+## Entry 47 - 19 Jul 26 (E46 three-arm audit verdict: the new protocol re-certifies the incumbent EXPERT router to the third decimal, but the route-once LOSS DEDUP collapsed the VLM state palette to ~2 query-draws (famIoU 0.08 -> 0.19-0.24) — the deduped loss under-weights the palette relative to its deployment read mass; arm 2 (n128) breaks the bank-scaling law on both towers. Fix: vlm_route_once flag (warm-ups broadcast, downstream compact) + arm 1'/3' re-warms LAUNCHING)
+
+### Results — the three like-for-like joint router warm-ups (all completed + audited 19 Jul)
+
+Recap of the design: each arm retrains BOTH towers' routers from the stage-1 backbone
+(values pinned at zero, aux losses only, frozen-route inputs, per-tower routing-loss
+topk aligned to knn), then runs the held-out audit and stops. famIoU = read-mass overlap
+between the three near-identical basket tasks; core50 = slots carrying half a task's
+read mass; effnum = effective slot count (exp of read-mass entropy). Anchors: the old
+expert n256 certificate (E44 protocol) and the E45 pooled-router winner "poolB"
+(anchored (1.0, 0.5) state key, VLM tower).
+
+EXPERT tower (famIoU L8/L10/L12/L14; mean core50):
+
+| arm | famIoU | core50 |
+|---|---|---|
+| anchor (old n256 cert) | 0.172 / 0.145 / 0.142 / 0.145 | ~1700-1800 |
+| arm 1 incumbent (n256/r2/knn36) | 0.167 / 0.152 / 0.149 / 0.146 | ~1650-1840 |
+| arm 3 (same expert config) | 0.167 / 0.152 / 0.150 / 0.146 | ~1650-1840 |
+| arm 2 uniform (n128/r4/knn36) | 0.231 / 0.218 / 0.183 / 0.214 | ~715-930 |
+
+VLM tower (audit famIoU L15/L16; audit bg; palette = the shared state-region key's
+slot set, decomposed below):
+
+| arm | famIoU | bg | palette famIoU | palette core50/effnum |
+|---|---|---|---|---|
+| anchor poolB (E45 protocol) | 0.149 / 0.147 | 0.071 / 0.085 | 0.087 / 0.076 | 258-342 / 619-803 |
+| arm 1 (vlm knn16) | 0.229 / 0.220 | 0.024 / 0.032 | 0.239 / 0.223 | 46-50 / 126-139 |
+| arm 3 (vlm knn36) | 0.204 / 0.210 | 0.030 / 0.038 | 0.191 / 0.186 | 109-110 / 306-310 |
+| arm 2 (n128) | 0.326 / 0.267 | 0.048 / 0.055 | 0.301 / 0.224 | 89-102 / 246-282 |
+
+Instrument note (fix deferred): route-once reordered the per-sample stats rows to
+[palette x n_state, then instruction tokens], so the sub-span probe's position->region
+labels are scrambled on route-once checkpoints — its "instr[0:16)" block is pure
+palette. The audit summaries are position-agnostic and unaffected; the palette numbers
+above were recovered from the constant-prefix block. The probe needs a route-once-aware
+row mapping before its labels can be trusted on compact checkpoints (the E47 re-warms
+run broadcast, where labels are correct again).
+
+### Conclusions
+
+1. **The E46 protocol changes are benign where intended.** Arms 1/3 reproduce the old
+   expert certificate to the third decimal — frozen-route-consistent inputs and topk
+   alignment cost nothing. Arms 1 and 3 matching each other that closely is the built-in
+   control (with values pinned, the VLM knn difference cannot reach the expert stream).
+2. **The bank-scaling law has a measured floor.** At n128 (16,384 slots), cores scaled
+   into the predicted 400-800 band but famIoU rose ~47% and background ~50% on the
+   expert tower — the pre-registered "per-query draw floor" branch fired: 144 drawn
+   slots is 0.88% of the bank per query, and per-task cores ~5% of the table make
+   collisions geometric. The VLM tower is worst-of-three on every number. **Arm 2 dead**
+   (n256/r4 remains a possible future concentration arm — VRAM now plausible with
+   route-once — but n128 is closed).
+3. **The route-once loss dedup moved the VLM router's equilibrium, adversely.** In the
+   aux-only warm-up regime, MSE has exactly zero router gradient; the palette's only
+   spreading force is the contrastive same-task-denominator (uniformity) term (E45
+   finding 1). Deduped, the palette key enters the losses/queues once per sample
+   instead of once per served position (~35x): palette-palette pair mass fell ~3
+   orders of magnitude, the uniformity pressure collapsed, and the trained projection
+   stopped amplifying the pooled key's within-task contextual variation. Signature:
+   palette effnum landed at almost exactly 2 query-draws in BOTH knn variants
+   (126 ~ 2x64, 306 ~ 2x144 — footprint set by retrieval geometry, not the losses)
+   vs poolB's 10-12 draws. Consequences: family palette overlap tripled (near-identical
+   anchors' small palettes collide), background halved (small footprints separate
+   everywhere else). Confounds ruled out: warm-up grad norms 0.048-0.058 (clip 1.0
+   never engages -> no cross-tower clip sharing), frozen-input delta is the known
+   0.98-transfer term.
+4. **The principle (Josh's read, adopted): the warm-up loss should weight routing keys
+   by their deployment read mass.** The palette serves ~2/3 of the language field's
+   read mass every forward; the audit weights it accordingly (stat_repeat); the deduped
+   loss weighted it at 1/18 of a sample. The old broadcast semantics were mass-correct.
+   Dedup optimized a router for a read distribution we do not deploy.
+5. Why the certificates matter beyond geometry: the palette is the ALWAYS-READ block —
+   family overlap there is maximally-leveraged sequential exposure (a later basket task
+   writing shared palette slots perturbs the earlier one at every state), and palette
+   constancy hands all within-task state-conditionality to the value path (untested
+   regime; poolB's state-conditional palette is the certified, fit-measured one at
+   chunk 0.0994). Counterweight recorded honestly: a near-constant per-task palette is
+   an even more degenerate-perfect read-write product (LoRA-shaped), so the fit
+   consequence is genuinely unknown — testable cheaply as an A-phase hedge on today's
+   arm 3 if wanted.
+
+### Builds shipped (with this entry's commit)
+
+- **`--policy.memory_layer.vlm_route_once`** (default true, memory_config.py /
+  memory_lite.py): gates the compact route-once dispatch. False forces the byte-exact
+  legacy broadcast path (shared key routed at every state position -> losses/queues
+  carry served-position multiplicity). Warm-ups run false; A-phase/sequential/inference
+  keep true (router frozen -> paths numerically interchangeable, parity 1.19e-07, and
+  the compact path saves ~6-10GB VRAM at knn16/36). Smokes S13a-g appended to
+  smoke_vlm_memory.py (suite ALL PASS): default-true attr, flag-off broadcast call
+  shape, output parity 1.19e-07, per-position stats layout restored, stats row count,
+  routing-queue rows 48-vs-24 (multiplicity restored), contrastive per-sample mean
+  shifts 0.58 (palette weight back). Also verified the field rides the derived-VLM-cfg
+  dataclasses.replace path.
+- Scripts: joint_rwarmup_common.sh now passes vlm_route_once=false (+ header rationale,
+  + BATCH_SIZE/GRAD_ACCUM env fallback for OOM); new wrappers
+  joint_rwarmup_arm1p_incumbent_bcast.sh (VM2) / joint_rwarmup_arm3p_vlmknn36_bcast.sh
+  (VM3), tags arm1p_n256r2_vlmknn16_bcast / arm3p_n256r2_vlmknn36_bcast.
+
+### Next steps
+
+1. **LAUNCHING: arms 1'/3' re-warms on VM2/VM3** (local-Claude instructions issued;
+   same chain shape: warm-up -> audit -> analyses -> sub-span -> STOP, ~4.5-5h).
+   Pre-registered reads: arm 1' ~ poolB's certificate (VLM famIoU ~0.149/0.147, palette
+   ~0.08 / effnum 600-800) — it is poolB's exact replica plus the protocol
+   improvements; arm 3' answers the knn36 palette-capacity question at matched loss
+   semantics (the E46 comparison was confounded by the dedup pinning palette size to
+   ~2 draws in both variants). Expert side expected unchanged (~0.145-0.17) for both.
+   A broadcast joint warm-up at knn36 has never run — VRAM estimated ~125-135GB; the
+   BS/ACC fallback covers an OOM.
+2. This box idle pending discussion (options on the table: A-phase hedge on today's
+   compact-palette arm 3 to price the fit hypothesis, vs holding for the winner's
+   5-task).
+3. After the audits: A-phases on certified arms -> filled e4 probes + chunk (anchors
+   0.153 / 0.0994 / 0.020) -> select -> 5-task attribution run (C-config, vs stageB
+   32.0/35.0).
+4. Deferred: sub-span probe route-once-aware row mapping; protection-store decay fix
+   before multi-task runs needing it; 10-task extension behind selection.
