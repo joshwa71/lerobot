@@ -635,7 +635,7 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None, token_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None, token_mask: torch.Tensor | None = None, stat_repeat: torch.Tensor | None = None, return_retrieval: bool = False) -> torch.Tensor:
         # x: (B, T, C)
         # lang_emb: (B, lang_dim) or None
         # task_ids: (B,) optional task indices for contrastive loss
@@ -674,6 +674,15 @@ class HashingMemoryLite(nn.Module):
         else:
             xr = x
             xr_flat = x_flat
+
+        # stat_repeat (E45 route-once): per-position multiplicity for usage statistics.
+        # A compact routed row that SERVES n live positions (the shared state palette)
+        # counts n times in TF/usage/audit stats — preserving the write-demand and audit
+        # semantics of the redundant per-position routing it replaces — while losses and
+        # queues see each unique routing row once (the dedup).
+        rep = None
+        if stat_repeat is not None:
+            rep = stat_repeat.reshape(-1).to(device=device, dtype=torch.long)
 
         # Query (with optional language conditioning)
         query = self.query_proj(xr, lang_emb=lang_emb)  # (bs*heads, k_dim)
@@ -750,13 +759,20 @@ class HashingMemoryLite(nn.Module):
 
         # Record selected indices/scores for analysis during eval
         if not self.training and self.EVAL_MEMORY:
+            sel_i = indices.view(bs, self.heads, self.knn)
+            sel_s = scores.view(bs, self.heads, self.knn)
             if token_mask is not None:
                 keep_e = token_mask.reshape(-1).bool()
-                self.last_indices = indices.view(bs, self.heads, self.knn)[keep_e].detach().cpu()
-                self.last_scores = scores.view(bs, self.heads, self.knn)[keep_e].detach().cpu().float()
-            else:
-                self.last_indices = indices.view(bs, self.heads, self.knn).detach().cpu()
-                self.last_scores = scores.view(bs, self.heads, self.knn).detach().cpu().float()
+                sel_i, sel_s = sel_i[keep_e], sel_s[keep_e]
+                if rep is not None:
+                    r = rep[keep_e]
+                    sel_i = sel_i.repeat_interleave(r, dim=0)
+                    sel_s = sel_s.repeat_interleave(r, dim=0)
+            elif rep is not None:
+                sel_i = sel_i.repeat_interleave(rep, dim=0)
+                sel_s = sel_s.repeat_interleave(rep, dim=0)
+            self.last_indices = sel_i.detach().cpu()
+            self.last_scores = sel_s.detach().cpu().float()
 
         # Softmax in float32 for numerical stability; we will cast as needed later
         weights = F.softmax(scores.float(), dim=-1)
@@ -766,13 +782,20 @@ class HashingMemoryLite(nn.Module):
 
         # Record selected indices/weights during training when log_usage is enabled
         if self.training and self.log_usage:
+            sel_i = indices.view(bs, self.heads, self.knn)
+            sel_w = weights.view(bs, self.heads, self.knn)
             if token_mask is not None:
                 keep = token_mask.reshape(-1).bool()
-                self.last_indices = indices.view(bs, self.heads, self.knn)[keep].detach()
-                self.last_weights = weights.view(bs, self.heads, self.knn)[keep].detach()
-            else:
-                self.last_indices = indices.view(bs, self.heads, self.knn).detach()
-                self.last_weights = weights.view(bs, self.heads, self.knn).detach()
+                sel_i, sel_w = sel_i[keep], sel_w[keep]
+                if rep is not None:
+                    r = rep[keep]
+                    sel_i = sel_i.repeat_interleave(r, dim=0)
+                    sel_w = sel_w.repeat_interleave(r, dim=0)
+            elif rep is not None:
+                sel_i = sel_i.repeat_interleave(rep, dim=0)
+                sel_w = sel_w.repeat_interleave(rep, dim=0)
+            self.last_indices = sel_i.detach()
+            self.last_weights = sel_w.detach()
 
             # Per-task slot diagnostics (unique count and entropy)
             if task_ids is not None:
@@ -785,7 +808,15 @@ class HashingMemoryLite(nn.Module):
                         if not mask.any():
                             continue
                         if token_mask is not None:
-                            t_idx = idx_by_sample[mask][token_mask[mask].bool()].reshape(-1).to(torch.long)
+                            rows = idx_by_sample[mask][token_mask[mask].bool()]
+                            if rep is not None:
+                                rr = rep.view(B, T)[mask][token_mask[mask].bool()]
+                                rows = rows.repeat_interleave(rr, dim=0)
+                            t_idx = rows.reshape(-1).to(torch.long)
+                        elif rep is not None:
+                            rows = idx_by_sample[mask].reshape(-1, self.heads * self.knn)
+                            rr = rep.view(B, T)[mask].reshape(-1)
+                            t_idx = rows.repeat_interleave(rr, dim=0).reshape(-1).to(torch.long)
                         else:
                             t_idx = idx_by_sample[mask].reshape(-1).to(torch.long)
                         self.last_per_task_unique_slots[int(t)] = int(torch.unique(t_idx).numel())
@@ -813,7 +844,10 @@ class HashingMemoryLite(nn.Module):
         # Accumulate per-slot usage counts across training
         if self.training and self.aggregate_usage:
             with torch.no_grad():
-                flat_idx = indices.reshape(-1).to(torch.long).detach().cpu()
+                if rep is not None:
+                    flat_idx = indices.repeat_interleave(rep, dim=0).reshape(-1).to(torch.long).detach().cpu()
+                else:
+                    flat_idx = indices.reshape(-1).to(torch.long).detach().cpu()
                 # Lazily initialize accumulator on first use
                 if self.usage_counts is None or self.usage_counts.numel() != self.size:
                     self.usage_counts = torch.zeros(self.size, dtype=torch.long)
@@ -848,7 +882,67 @@ class HashingMemoryLite(nn.Module):
             if self.training and self.log_usage:
                 self.last_gate_mean = float(gate.mean().item())
             out = gate * out
+        if return_retrieval:
+            return (
+                out,
+                indices.view(B, T, self.heads * self.knn),
+                weights.view(B, T, self.heads * self.knn),
+            )
         return out
+
+    def apply_shared_palette(
+        self,
+        x_pos: torch.Tensor,
+        pos_mask: torch.Tensor,
+        idx_row: torch.Tensor,
+        w_row: torch.Tensor,
+        router_key: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply ONE retrieved slot mixture per sample to MANY live positions (E45
+        route-once). The slot parameters are gathered once per row — never expanded
+        per position — which removes the redundant per-position gather that made the
+        broadcast-key path expensive.
+
+        x_pos: (B, N, C) live value inputs (padded); pos_mask: (B, N) bool;
+        idx_row/w_row: (B, heads*knn) the row's retrieval (post-softmax/dropout
+        weights from the compact routed call); router_key: (B, C) the shared key
+        (feeds the gate, mirroring the broadcast path where the gate read the key).
+        Returns (B, N, v_dim) with masked positions zeroed.
+        """
+        B, N, C = x_pos.shape
+        x32 = x_pos.float()
+        if self.value_type == "vector":
+            vals = self.values.float()[idx_row]  # (B, K, V)
+            row_out = (vals * w_row.float().unsqueeze(-1)).sum(dim=1)  # (B, V)
+            out32 = row_out.unsqueeze(1).expand(B, N, -1)
+        elif self.value_type == "lora":
+            down = self.slot_down[idx_row]  # (B, K, C, r) fp32 value params
+            up = self.slot_up[idx_row]  # (B, K, r, V)
+            hidden = F.silu(torch.einsum("bnc,bkcr->bnkr", x32, down))
+            slot_outputs = torch.einsum("bnkr,bkrv->bnkv", hidden, up)
+            if getattr(self, "lora_slot_bias", False):
+                slot_outputs = slot_outputs + self.slot_bias[idx_row].unsqueeze(1)
+            if self.training and self.corruption_prob > 0:
+                corruption_mask = torch.bernoulli(
+                    torch.full((B, idx_row.shape[1]), self.corruption_prob, device=x_pos.device)
+                ).bool()
+                noise = torch.randn_like(slot_outputs) * self.corruption_std
+                slot_outputs = slot_outputs + corruption_mask[:, None, :, None].float() * noise
+            out32 = (slot_outputs * w_row.float()[:, None, :, None]).sum(dim=2)  # (B, N, V)
+        else:
+            raise ValueError(f"Unknown value_type: {self.value_type}")
+        out = out32.to(x_pos.dtype)
+        x_flat = x_pos.reshape(B * N, C)
+        out = out.reshape(B * N, -1)
+        if self.v_proj and not self.swilu_proj:
+            out = self.value_proj(out)
+        if self.swilu_proj:
+            out = self.value_proj(out * F.silu(self.swilu_projection(x_flat)))
+        out = out.view(B, N, -1)
+        if self.gating is not None:
+            gate = torch.sigmoid(self.gating(router_key.to(x_pos.dtype)))  # (B, 1)
+            out = gate.view(B, 1, 1) * out
+        return out * pos_mask.to(dtype=out.dtype).unsqueeze(-1)
 
     def _forward_vector_values(
         self, x_flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor, device: torch.device
@@ -1558,10 +1652,24 @@ class MLPPlusMemory(nn.Module):
         in-distribution for the query projection. Rows without a usable boundary
         (marker missing / degenerate spans) fall back to per-token keys.
         """
+        comp = self._pooled_components(base, vm2)
+        if comp is None:
+            return base
+        k, il, v, row_ok = comp
+        B, T, D = base.shape
+        pos = torch.arange(T, device=base.device).unsqueeze(0)
+        bmask = (pos >= il.unsqueeze(1)) & vm2 & row_ok.unsqueeze(1)
+        out = torch.where(bmask.unsqueeze(-1), k.unsqueeze(1).expand(B, T, D), base.float())
+        return out.to(base.dtype)
+
+    def _pooled_components(self, base: torch.Tensor, vm2: torch.Tensor):
+        """Shared math for the pooled router modes: returns (k, instr_len, valid, row_ok)
+        with k the (B, C) float32 shared state-region key, or None when no row has a
+        usable instruction/state boundary (callers fall back to per-token routing)."""
         il = getattr(self, "_ctx_instr_len", None)
         B, T, D = base.shape
         if il is None or il.shape[0] != B:
-            return base
+            return None
         il = il.to(base.device)
         v = vm2.sum(dim=1)
         pos = torch.arange(T, device=base.device).unsqueeze(0)
@@ -1570,7 +1678,7 @@ class MLPPlusMemory(nn.Module):
         smask = (pos >= bnd + 3) & (pos < (v - 5).unsqueeze(1)) & vm2
         row_ok = (il > 4) & (smask.sum(dim=1) > 0) & (imask.sum(dim=1) > 0)
         if not bool(row_ok.any()):
-            return base
+            return None
         bf = base.float()
 
         def _pool(mask):
@@ -1587,9 +1695,49 @@ class MLPPlusMemory(nn.Module):
             a, b = self.router_pool_w
             k = a * _nrm(_pool(imask)) + b * k
         k = _nrm(k) * target.unsqueeze(-1)
-        bmask = (pos >= bnd) & vm2 & row_ok.unsqueeze(1)
-        out = torch.where(bmask.unsqueeze(-1), k.unsqueeze(1).expand(B, T, D), bf)
-        return out.to(base.dtype)
+        return k, il, v, row_ok
+
+    def _route_once_pooled(self, xs, rs, vm2, comp, lang_emb, task_ids):
+        """E45 route-once: every state-region position shares one router key, so the
+        retrieval is computed ONCE per sample on a compact sequence [state key,
+        instruction tokens] (key first so valid tokens stay a contiguous prefix for
+        the loss machinery), then the shared palette is applied to each live state
+        position via apply_shared_palette (params gathered once per row). Losses and
+        queues see each unique routing row once; usage/TF stats keep the served-
+        position multiplicity via stat_repeat. Returns the assembled (B, T, out)
+        span memory output, zeroed outside valid positions."""
+        k, il, v, row_ok = comp
+        B, T, C = xs.shape
+        bmax = max(int(il.max().item()), 1)
+        xc = torch.cat([k.to(xs.dtype).unsqueeze(1), xs[:, :bmax]], dim=1)
+        rc = None
+        if rs is not None:
+            rc = torch.cat([k.to(rs.dtype).unsqueeze(1), rs[:, :bmax]], dim=1)
+        pos_i = torch.arange(bmax, device=xs.device).unsqueeze(0)
+        instr_valid = (pos_i < il.unsqueeze(1)) & vm2[:, :bmax]
+        mc = torch.cat(
+            [torch.ones(B, 1, dtype=torch.bool, device=xs.device), instr_valid], dim=1
+        )
+        n_state = (v - il).clamp(min=1)
+        srep = torch.cat(
+            [n_state.unsqueeze(1), torch.ones(B, bmax, dtype=torch.long, device=xs.device)],
+            dim=1,
+        )
+        mem_c, idx_v, w_v = self.mem(
+            xc, lang_emb=lang_emb, task_ids=task_ids, router_x=rc,
+            token_mask=mc, stat_repeat=srep, return_retrieval=True,
+        )
+        mem_out = xs.new_zeros(B, T, mem_c.shape[-1])
+        mem_out[:, :bmax] = mem_c[:, 1:1 + bmax] * instr_valid.to(mem_c.dtype).unsqueeze(-1)
+        nmax = max(int((v - il).max().item()), 1)
+        offs = il.unsqueeze(1) + torch.arange(nmax, device=xs.device).unsqueeze(0)
+        smask_pos = offs < v.unsqueeze(1)
+        offs_c = offs.clamp(max=T - 1)
+        x_state = xs.gather(1, offs_c.unsqueeze(-1).expand(B, nmax, C))
+        pal = self.mem.apply_shared_palette(x_state, smask_pos, idx_v[:, 0], w_v[:, 0], k)
+        bidx = torch.arange(B, device=xs.device).unsqueeze(1).expand(B, nmax)[smask_pos]
+        mem_out[bidx, offs[smask_pos]] = pal[smask_pos].to(mem_out.dtype)
+        return mem_out
 
     def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None,
                 router_x: torch.Tensor | None = None):
@@ -1624,7 +1772,15 @@ class MLPPlusMemory(nn.Module):
                 rs = router_x[:, lo:hi].contiguous() if router_x is not None else None
                 vm2 = vm[:, :tmax]
                 if self.router_pool:
-                    rs = self._pooled_router_keys(xs if rs is None else rs, vm2)
+                    base = xs if rs is None else rs
+                    comp = self._pooled_components(base, vm2)
+                    if comp is not None and bool(comp[3].all()) and not self.mem._slots_offloaded:
+                        mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids)
+                        out = self.mlp(x)
+                        return torch.cat([out[:, :lo], out[:, lo:hi] + mem_out, out[:, hi:]], dim=1)
+                    # Degenerate rows (missing boundary) or offloaded slots: fall back to
+                    # the broadcast-key path (identical routing, redundant compute).
+                    rs = self._pooled_router_keys(base, vm2)
                 mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs,
                                    token_mask=vm2)
                 mem_out = mem_out * vm2.to(dtype=mem_out.dtype, device=mem_out.device).unsqueeze(-1)

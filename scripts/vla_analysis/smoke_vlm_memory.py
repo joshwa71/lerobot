@@ -177,12 +177,17 @@ _ = w10(x10)
 check("S10g eval-path stats also mask-filtered", w10.mem.last_indices.shape[0] == 9,
       f"rows {w10.mem.last_indices.shape[0]}")
 
-# S11: pooled state-sub-span routing (E45) — router keys only, value path per-position
+# ---- S11/S12: pooled routing + route-once (E45) ----
+# Layout note: with route-once, training/eval stats rows per sample are
+# [palette x n_state, instr tokens 0..il) ] (the compact call puts the shared state
+# key FIRST so valid tokens stay a contiguous prefix for the loss machinery, and
+# stat_repeat restores the served-position multiplicity).
 SPAN11, SEQ11 = 20, 26
 x11 = torch.randn(3, SEQ11, DIM)
 vm11 = torch.zeros(3, SPAN11, dtype=torch.bool)
 vm11[0, :18] = True; vm11[1, :16] = True; vm11[2, :18] = True
-il11 = torch.tensor([8, 8, 0])  # row 2: no marker -> per-token fallback
+il_ok = torch.tensor([8, 7, 8])       # all rows usable -> compact route-once path
+il_mix = torch.tensor([8, 7, 0])      # row 2 lacks the boundary -> whole-batch fallback
 
 
 def build11(mode, w=(1.0, 0.0), seed=7):
@@ -193,49 +198,120 @@ def build11(mode, w=(1.0, 0.0), seed=7):
         for n_, p_ in m.mem.named_parameters():
             if getattr(p_, "pk_value_param", False):
                 torch.manual_seed(seed + 1); p_.add_(torch.randn_like(p_) * 0.1)
-    m.train(); m._ctx_valid_mask = vm11; m._ctx_instr_len = il11
+    m.train(); m._ctx_valid_mask = vm11
     return m
 
 
-def rows_by_pos(m):
+def spy_mem(w):
+    calls = []
+    orig = w.mem.forward
+
+    def f(x, **kw):
+        calls.append(tuple(x.shape))
+        return orig(x, **kw)
+
+    w.mem.forward = f
+    return calls
+
+
+def stat_groups(m, il, vm):
+    """Split last_indices rows into per-sample (palette_rows, instr_rows) under the
+    compact layout."""
     li = m.mem.last_indices.reshape(m.mem.last_indices.shape[0], -1)
-    v = vm11.sum(dim=1).tolist()
-    out, r = {}, 0
-    for s, vi in enumerate(v):
-        for p in range(vi):
-            out[(s, p)] = set(li[r].tolist()); r += 1
-    return out
+    v = vm.sum(dim=1).tolist()
+    groups, r = [], 0
+    for s_, vi in enumerate(v):
+        n = vi - int(il[s_])
+        pal = [set(li[r + j].tolist()) for j in range(n)]
+        ins = [set(li[r + n + j].tolist()) for j in range(int(il[s_]))]
+        groups.append((pal, ins)); r += vi
+    return groups, r
 
 w11 = build11("anchored", (1.0, 0.0))
+w11._ctx_instr_len = il_ok
+calls11 = spy_mem(w11)
 out11 = w11(x11)
-rp = rows_by_pos(w11)
-bcast_same = all(rp[(0, p)] == rp[(0, 8)] for p in range(8, 18))
-instr_diff = sum(rp[(0, p)] != rp[(0, 0)] for p in range(1, 8))
-check("S11a broadcast region routes identically (row 0, pos 8-17)", bcast_same)
-check("S11b instr positions route per-token", instr_diff >= 5, f"{instr_diff}/7 differ")
-bc_out = out11[0, SEQ11 - SPAN11 + 8:SEQ11 - SPAN11 + 18]
-check("S11c broadcast outputs differ per position (value path live)",
-      not torch.allclose(bc_out[0], bc_out[1]))
-fb_same = all(rp[(2, p)] == rp[(2, 8)] for p in range(8, 18))
-check("S11d marker-less row falls back to per-token", not fb_same)
-w11e = build11("")
-w11f = build11("anchored", (1.0, 0.0))
-w11f._ctx_instr_len = None
-check("S11e missing instr_len -> legacy per-token output", torch.equal(w11f(x11), w11e(x11)))
-w11g = build11("state")
-w11h = build11("anchored", (1.0, 1.0))
-_ = w11g(x11); _ = w11h(x11)
-rg, rh = rows_by_pos(w11g), rows_by_pos(w11h)
-check("S11f state vs anchored(1,1) select different palettes",
-      rg[(0, 9)] != rp[(0, 9)] or rh[(0, 9)] != rp[(0, 9)])
-check("S11g pre-span bitwise plain-mlp under pooling",
-      torch.equal(out11[:, :SEQ11 - SPAN11], w11.mlp(x11)[:, :SEQ11 - SPAN11]))
-pad_delta = (out11[1, SEQ11 - SPAN11 + 16:] - w11.mlp(x11)[1, SEQ11 - SPAN11 + 16:]).abs().max()
-check("S11h ragged tail still zeroed under pooling", float(pad_delta) == 0.0)
-w11.zero_grad(set_to_none=True)
-w11(x11)[:, -SPAN11:].pow(2).sum().backward()
-gk11 = w11.mem.keys.grad
-check("S11i grads reach keys through pooled routing", gk11 is not None and float(gk11.abs().sum()) > 0)
+check("S11a compact call: T == max(il)+1", calls11[-1][1] == int(il_ok.max()) + 1,
+      f"T={calls11[-1][1]}")
+groups, rows = stat_groups(w11, il_ok, vm11)
+check("S11b stats rows == sum(valid) (multiplicity preserved)", rows == int(vm11.sum()),
+      f"{rows} vs {int(vm11.sum())}")
+pal0, ins0 = groups[0]
+check("S11c palette rows identical within sample", all(g == pal0[0] for g in pal0)
+      and all(g == groups[1][0][0] for g in groups[1][0]))
+check("S11d instr rows route per-token", sum(a != ins0[0] for a in ins0[1:]) >= 4,
+      f"{sum(a != ins0[0] for a in ins0[1:])}/7 differ")
+lo11 = SEQ11 - SPAN11
+st0 = lo11 + int(il_ok[0])
+check("S11e state outputs differ per position (value path live)",
+      not torch.allclose(out11[0, st0], out11[0, st0 + 1]))
+check("S11f pre-span bitwise plain-mlp", torch.equal(out11[:, :lo11], w11.mlp(x11)[:, :lo11]))
+check("S11g ragged tail zeroed", torch.equal(out11[1, lo11 + 16:], w11.mlp(x11)[1, lo11 + 16:]))
+
+# S12a: PARITY vs the broadcast-key path (same seed -> identical params; reference
+# bypasses the wrapper and runs the redundant per-position computation manually)
+w_ref = build11("anchored", (1.0, 0.0))
+w_ref._ctx_instr_len = il_ok
+xs_ref = x11[:, -SPAN11:].contiguous()
+rs_b = w_ref._pooled_router_keys(xs_ref, vm11)
+mem_ref = w_ref.mem(xs_ref, router_x=rs_b, token_mask=vm11)
+mem_ref = mem_ref * vm11.unsqueeze(-1).to(mem_ref.dtype)
+out_ref = torch.cat([w_ref.mlp(x11)[:, :lo11], w_ref.mlp(x11)[:, lo11:] + mem_ref], dim=1)
+d12 = (out11 - out_ref).abs().max()
+check("S12a route-once output == broadcast path", float(d12) < 1e-5, f"max|d|={float(d12):.2e}")
+
+# S12b: eval-path stats multiplicity
+w11.eval(); w11.mem.EVAL_MEMORY = True
+_ = w11(x11)
+check("S12b eval stats rows == sum(valid)",
+      w11.mem.last_indices.shape[0] == int(vm11.sum()),
+      f"rows {w11.mem.last_indices.shape[0]}")
+w11.train(); w11.mem.EVAL_MEMORY = False
+
+# S12c: degenerate row -> whole-batch fallback to the broadcast path
+w12 = build11("anchored", (1.0, 0.0))
+w12._ctx_instr_len = il_mix
+calls12 = spy_mem(w12)
+out12 = w12(x11)
+tmax11 = int(vm11.sum(dim=1).max())
+check("S12c fallback call: T == tmax (broadcast)", calls12[-1][1] == tmax11,
+      f"T={calls12[-1][1]}")
+li12 = w12.mem.last_indices.reshape(w12.mem.last_indices.shape[0], -1)
+v12 = vm11.sum(dim=1).tolist()
+r0 = 0  # sample 0 rows are per-position in the fallback layout
+sets0 = [set(li12[r0 + p].tolist()) for p in range(v12[0])]
+check("S12d fallback: state positions share the palette (usable row)",
+      all(sets0[p] == sets0[8] for p in range(8, v12[0])))
+r2 = v12[0] + v12[1]
+sets2 = [set(li12[r2 + p].tolist()) for p in range(v12[2])]
+check("S12e fallback: boundary-less row routes per-token",
+      sum(sets2[p] != sets2[8] for p in range(9, v12[2])) >= 4)
+
+# S12f: frozen-route composition — routing keys from router_x, values from live x
+w13 = build11("anchored", (1.0, 0.0))
+w13._ctx_instr_len = il_ok
+rx_sim = torch.randn(3, SEQ11, DIM)  # stands in for the frozen stream
+out13a = w13(x11, router_x=rx_sim)
+g13a, _ = stat_groups(w13, il_ok, vm11)
+out13b = w13(x11 + 0.05 * torch.randn_like(x11), router_x=rx_sim)
+g13b, _ = stat_groups(w13, il_ok, vm11)
+check("S12f routing stationary under value-input change",
+      all(ga[0][0] == gb[0][0] for ga, gb in zip(g13a, g13b)))
+check("S12g outputs move with the value input",
+      not torch.allclose(out13a[:, -SPAN11:], out13b[:, -SPAN11:]))
+
+# S12h: grads flow through the compact path (keys via palette weights, slot values
+# via the grouped einsum)
+w14 = build11("anchored", (1.0, 0.0))
+w14._ctx_instr_len = il_ok
+w14.zero_grad(set_to_none=True)
+w14(x11)[:, -SPAN11:].pow(2).sum().backward()
+gk14 = w14.mem.keys.grad
+gv14 = [p.grad for n_, p_ in [] ] or [p.grad for n_, p in w14.mem.named_parameters()
+                                      if getattr(p, "pk_value_param", False)]
+check("S12h keys grad nonzero", gk14 is not None and float(gk14.abs().sum()) > 0)
+check("S12i slot-value grads nonzero",
+      any(g is not None and float(g.abs().sum()) > 0 for g in gv14))
 
 print()
 if FAILS:
