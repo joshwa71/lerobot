@@ -3314,11 +3314,26 @@ run broadcast, where labels are correct again).
    ~2 draws in both variants). Expert side expected unchanged (~0.145-0.17) for both.
    A broadcast joint warm-up at knn36 has never run — VRAM estimated ~125-135GB; the
    BS/ACC fallback covers an OOM.
-2. This box idle pending discussion (options on the table: A-phase hedge on today's
-   compact-palette arm 3 to price the fit hypothesis, vs holding for the winner's
-   5-task).
-3. After the audits: A-phases on certified arms -> filled e4 probes + chunk (anchors
-   0.153 / 0.0994 / 0.020) -> select -> 5-task attribution run (C-config, vs stageB
-   32.0/35.0).
-4. Deferred: sub-span probe route-once-aware row mapping; protection-store decay fix
+2. **RUNNING on VM1 (this box): arm 2' = uniform n192/r4/knn36 both towers,
+   broadcast losses** (decided with Josh; script
+   joint_rwarmup_arm2p_uniform_n192r4_bcast.sh, run
+   libero_90_pi05_jointwarm10k_arm2p_n192r4_knn36_bcast, BS16/ACC2 for the
+   broadcast+r4 VRAM term). Why: n192 is the unmeasured scaling-law midpoint (4x
+   cumulative from n384; the law held at 2.25x, broke at 9x), and n192/r4 is the
+   CLEAN iso-budget concentration arm (147,456 rank-units/layer vs n256/r2's
+   131,072; the original n128/r4 arm was only HALF the budget — a mislabeling in the
+   E46 design). Pre-registered: famIoU ~0.145-0.16 at core50 ~1,100-1,300 = law
+   holds; ~0.18+ = branch closed.
+3. **Tonight (~21:30-22:15 BST): review ALL THREE audits together** (arm 1' knn16,
+   arm 3' knn36, arm 2' n192 — every n and knn variant in one place) and graduate
+   the winners. Realistic outcome sketched in discussion: discard knn16; graduate
+   some subset of {arm 3-old (n256/knn36, compact "one state token" palette — its
+   certificate defects are family-side and the 5-task window has one basket task),
+   arm 3' (n256/knn36 broadcast), arm 2' (n192/knn36 broadcast)} to A-phase ->
+   sequential. The compact-vs-broadcast pair at matched shape would also isolate the
+   palette-equilibrium fit question at full pipeline fidelity.
+4. After graduation: A-phases -> t0-block chunk (== the e4 probe: same C-config 5k
+   steps; anchors 0.153 / 0.0994 / 0.020, kill >= ~0.12) -> 5-task attribution runs
+   (C-config, vs stageB 32.0/35.0).
+5. Deferred: sub-span probe route-once-aware row mapping; protection-store decay fix
    before multi-task runs needing it; 10-task extension behind selection.
