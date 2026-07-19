@@ -3337,3 +3337,121 @@ run broadcast, where labels are correct again).
    (C-config, vs stageB 32.0/35.0).
 5. Deferred: sub-span probe route-once-aware row mapping; protection-store decay fix
    before multi-task runs needing it; 10-task extension behind selection.
+
+---
+## Entry 48 - 19 Jul 26 (E47 broadcast re-warm verdict: arm 1' REPRODUCES the poolB certificate (dedup attribution closed end-to-end); knn36's apparent advantage was a dedup artifact (score-profile-depth mechanism) but remains a 2.25x per-forward capacity lever; n192 FAILS via a newly measured mechanism — per-half subkey utilization crosses the pigeonhole knee (demand ~ n^0.74; n256 sits AT the knee) — the bank axis is closed with a sizing rule. GRADUATION: three chains on the palette-constancy axis (arm 1' / arm 3' / arm 3-old) -> A-phase -> 5-task, RUNNING)
+
+### Results — the three broadcast re-warms (vlm_route_once=false; audited + analyzed 19 Jul eve)
+
+Recap: the E46/47 arms retrain both towers' routers from the stage-1 backbone with
+values pinned (aux losses only), frozen-route inputs, per-tower topk=knn — differing
+only in bank size / knn / loss semantics. famIoU = read-mass overlap among the three
+near-identical basket tasks; palette = the slot set selected by the shared state-region
+key; core50/effnum = footprint size measures. Anchors: the n256 expert certificate and
+the E45 winner poolB (VLM tower, old broadcast protocol).
+
+EXPERT (famIoU L8/L10/L12/L14; mean core50):
+
+| arm | famIoU | core50 |
+|---|---|---|
+| n256 certificate | 0.172 / 0.145 / 0.142 / 0.145 | ~1700-1800 |
+| arm 1' (n256/r2) | 0.166 / 0.151 / 0.149 / 0.146 | ~1650-1840 |
+| arm 3' (same expert) | 0.167 / 0.151 / 0.150 / 0.146 | ~1650-1840 |
+| **arm 2' (n192/r4)** | **0.212 / 0.205 / 0.157 / 0.211** | ~1280-1480 |
+
+VLM (audit famIoU L15/L16 | palette famIoU | palette effnum | instr famIoU (instr bg)):
+
+| arm | audit | palette | pal effnum | instr |
+|---|---|---|---|---|
+| poolB anchor | 0.149/0.147 | 0.087/0.076 | 619/803 | 0.190/0.207 (0.13/0.15) |
+| **arm 1' knn16** | **0.136/0.156** | **0.074/0.084** | **685/851** | 0.198/0.219 (0.13/0.16) |
+| arm 3' knn36 | 0.170/0.192 | 0.111/0.125 | 765/1039 | 0.261/0.283 (0.17/0.21) |
+| arm 2' n192 | 0.202/0.195 | 0.136/0.111 | 650/851 | 0.309/0.330 (0.21/0.25) |
+| arm 3-old (dedup) | 0.204/0.210 | 0.191/0.186 | 306/310 | ~0.09-0.10 per-pos |
+
+Incident note: arm 2''s audit OOMed twice (the audit script ran the checkpoint's saved
+broadcast+r4 config; 8.4GB short at bs32, then 1.5GB short with the route-once
+override). Fixes shipped: audit_heldout_routing.sh now forces the compact route-once
+path (routing-identical; parity-smoked) and takes AUDIT_BS/AUDIT_STEPS env overrides —
+arm 2' re-audited at bs16 x 200 steps/task (total audited samples MATCHED to every
+other audit; famIoU/core50/effnum are mass-normalized aggregates, invariant to the
+batch/step split at matched coverage).
+
+### Conclusions
+
+1. **The dedup attribution is closed end-to-end.** Restoring the broadcast loss
+   semantics (one flag) reproduced poolB's certificate within noise on both regions —
+   palette famIoU 0.074/0.084, palette effnum 685/851 (the state-conditional ~10-draw
+   palette), instruction region at its word-sharing floor — while KEEPING the two
+   protocol improvements poolB lacked (frozen-route training inputs; topk alignment).
+   Arm 1' is the best-certified router in the project. Expert side: four warm-up
+   variants now land on the same certificate to the third decimal — axis closed.
+2. **knn36's apparent E46 advantage was a dedup artifact, but knn remains a genuine
+   per-forward capacity lever (Josh's catch).** Two mechanisms, now separated:
+   (a) FOOTPRINT: under broadcast losses the palette footprint is set by the loss
+   equilibrium (~700-1000 effnum at either knn), not the draw — so knn36 buys no
+   footprint. Under dedup the footprint HAD collapsed to ~one draw, so the bigger draw
+   masqueraded as capacity. (b) OVERLAP — the score-profile-depth mechanism: a query's
+   slot-score profile is steep at the top (key-specific) and flattens into a generic
+   shoulder (shared structure); knn sets how deep the read cuts. Family keys agree in
+   the shoulder and differ at the peak, so reading 144 slots instead of 64 pulls in
+   the shared shoulder: palette famIoU 0.074 -> 0.111, instr 0.198 -> 0.261 at
+   identical recipes. BUT (c) per FORWARD, knn36 places 144 x r2 adaptive params in
+   every mixture vs knn16's 64 — 2.25x the read-participation half of the read-write
+   product, with the E14-16 expert-tower precedent (fit monotone in knn 8->36) behind
+   it. Certificates favor knn16; per-forward capacity favors knn36; the t0 chunk
+   arbitrates. Sequential-side caveat both ways: E13-14 showed smaller knn makes each
+   shared slot MORE load-bearing per overwrite.
+3. **The bank-scaling law's breakdown mechanism is measured: subkey pigeonhole.**
+   Each slot is an (i1,i2) pair of per-half subkeys (bank n^2 = n x n). Per-task
+   effective subkeys used per half at L14: n384 ~192 (50% of the half), n256 140-144
+   (55%), n192 114-120 (61%), n128 80-84 (64%) — demand compresses SUBLINEARLY,
+   fitting demand ~ n^0.74 across all four points. Once two tasks' half-marginals each
+   cover >~60% of the same n subkeys, the pigeonhole principle forces overlap no
+   matter how well separation translates footprints (two 62% subsets of 128 must share
+   >=24%; two 55% subsets of 256 only >=10%). The forced floor tracks the measured
+   famIoU rise (0.145 -> ~0.21 -> 0.21-0.23). n256 sits AT the knee — which is WHY it
+   held and everything below broke, and why n192 was nearly as bad as n128. **Sizing
+   rule: keep per-half subkey demand under ~55-60% of n.** Bank axis closed: 384 ok,
+   256 ok (operating point), 192 dead, 128 dead. The n192/r4 iso-budget concentration
+   bet dies with it (the failure is routing-side; no value configuration can rescue a
+   colliding router).
+4. **The three graduates form ONE axis: palette constancy** (footprint/draw = how
+   state-conditional palette selection is): arm 1' ~13 draws per footprint (most
+   state-conditional) -> arm 3' ~6 -> arm 3-old ~2 (near-constant per task = the
+   LoRA-like degenerate-perfect read-write product). Tonight's chains are a 3-point
+   read-out of the constancy-vs-fit curve, not just pairwise contrasts.
+
+### Graduation (decided with Josh) — RUNNING
+
+Each chain (grad scripts, commit c8d301f0): A-phase (10k values-only both towers on
+libero_90, routers frozen, frozen-route ON, compact path restored downstream) -> 5-task
+sequential (C-config: beta4, top_t 1536, 5k steps/task, value lr 1e-3->1e-4, 20-ep
+intermediates + 50-ep final; comparator stageB 32.0 final / 35.0 init). Arm 2' NOT
+graduated (pre-registered kill: famIoU >= ~0.18 at 3 of 4 expert layers).
+
+| box | chain | axis position |
+|---|---|---|
+| base box (RUNNING, tmux grad_a1p) | arm 1' | state-conditional end, best certificates |
+| VM3 (instructions issued) | arm 3' | middle; the knn/per-forward-capacity contender |
+| VM2 (instructions issued) | arm 3-old | constant end; compact-palette fit hypothesis |
+
+**Gate 2 (pre-registered, checked at breakfast ~07:30 BST):** each sequential's t0
+block IS the e4 probe (same C-config 5k steps) — chunk error on checkpoints/005000 vs
+anchors 0.153 (old staged best) / 0.0994 (poolB) / 0.020 (LoRA specialist); kill any
+run >= ~0.12 before its remaining blocks waste the morning. VM claudes rsync t0
+checkpoints to the base box when they appear (~02:30-04:00); chunk probes run
+centrally with the standard instrument.
+
+### Next steps
+
+1. Breakfast: Gate-2 chunk read on all three t0 checkpoints (+ kill/continue calls).
+2. Midday: 5-task finals + probe battery -> select the 10-task carrier. If arm 3'
+   wins fit materially, the knn choice becomes capacity-vs-family-exposure and the
+   10-task decides; if fit ~equal, arm 1' wins outright on certificates.
+3. Deferred (unchanged): sub-span probe route-once-aware row mapping (only needed for
+   compact checkpoints); protection-store decay fix before 10-task; 10-task extension
+   behind selection.
+4. Cleanup this session: arm 2' warm-up checkpoints deleted (dead branch; audit +
+   sub-span + wandb retained); arm 3-old's staged local checkpoint copy kept until its
+   VM2 chain completes.
