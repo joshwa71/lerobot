@@ -701,6 +701,9 @@ class PaliGemmaWithExpertModel(
                 mem_n_keys=int(getattr(cfg, "vlm_mem_n_keys", 256)),
                 lora_rank=int(getattr(cfg, "vlm_lora_rank", 2)),
                 mem_knn=int(getattr(cfg, "vlm_mem_knn", 16)),
+                # E45: the routing-loss candidate pool must match the tower's actual
+                # retrieval set (the E14-16 alignment rule) — derive it per tower.
+                routing_loss_topk=int(getattr(cfg, "vlm_mem_knn", 16)),
                 layer_ranks=[],
                 lang_to_query=False,
                 use_frozen_base_input_features=False,

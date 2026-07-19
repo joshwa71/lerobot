@@ -20,7 +20,11 @@ import sys
 import numpy as np
 
 BASE = "/home/josh/lerobot/outputs/train"
-PREFIX = "model.paligemma_with_expert.paligemma.model.language_model.layers."
+PREFIXES = {
+    "vlm": "model.paligemma_with_expert.paligemma.model.language_model.layers.",
+    "expert": "model.paligemma_with_expert.gemma_expert.model.layers.",
+}
+PREFIX = PREFIXES["vlm"]
 FAMILY = [(4, 5), (4, 7), (5, 7)]
 
 
@@ -37,9 +41,12 @@ def profile(run_dir, t, L, n_slots):
 
 
 def main():
+    global PREFIX
     run = sys.argv[1]
     layers = [int(x) for x in (sys.argv[2] if len(sys.argv) > 2 else "15,16").split(",")]
     n_slots = int(sys.argv[3]) if len(sys.argv) > 3 else 256 * 256
+    tower = sys.argv[4] if len(sys.argv) > 4 else "vlm"
+    PREFIX = PREFIXES[tower]
     rd = os.path.join(BASE, run)
     tasks = sorted(
         int(f.rsplit("_", 1)[1][:-5])
@@ -75,7 +82,7 @@ def main():
         fam_s = "/".join(f"{ious[p]:.3f}" for p in FAMILY if p in ious)
         print(f"famIoU mean={np.mean(fam):.3f} ({fam_s})  bgIoU={np.mean(bg):.3f}  "
               f"offdiag max={max(ious.values()):.3f}")
-    dst = os.path.join(rd, "vlm_audit_summary.json")
+    dst = os.path.join(rd, f"{tower}_audit_summary.json" if tower != "vlm" else "vlm_audit_summary.json")
     json.dump(out, open(dst, "w"), indent=1)
     print(f"\nsaved {dst}")
 

@@ -3088,3 +3088,117 @@ Options for the router input: (1) pool everything (rejected — sacrifices the m
 **Merge tooling tested end-to-end** (old armA ckpt + the shipped bank): 895 tensors (22 VLM mem + 60 expert mem), config graft correct (expert [8,10,12,14]/n256/knn36 + VLM fields); the merged artifact loads in exact A-phase mode — **48/847 trainable** (= values + gate/value_proj/swilu x 6 memory layers, both towers), forward/backward clean at 1.0s/step. Tolerance fix for pre-pool configs (66d46b84). Mode flags (train_router_only=True etc.) ride in checkpoint configs and are explicitly overridden at every downstream stage's CLI (E37 rule, applied).
 
 **Launch board (21:15-21:30 BST):** arm A anchor10 (1,0) = base box, tmux `poolA`, log outputs/e45_armA.log; arm B anchor1005 (1,0.5) = VM2 `poolB`; arm C statepool = VM3 `poolC`. Bank files shipped to both VMs; local-Claude instructions issued (launch, health signs, no-relaunch rule, morning rsync list, final sync ~07:30 UTC). Chains land ~07:00-08:15 BST. Morning protocol: chunk probes on the three e4 checkpoints (pass toward <=0.08; staged-best 0.153, LoRA target 0.020) + audits + subspan region reads -> winner -> 5-task attribution run (C-config) at breakfast. A hard-gate stop overnight ("GATE: HARD FAIL") is a result, not a bug.
+
+---
+## Entry 46 - 19 Jul 26 (Pooled-router sweep verdict: BOTH anchored variants hit the expert-certificate routing level (famIoU 0.145-0.151) and produce the largest e4 fit gain in the project (chunk 0.153 -> 0.099, -35%); winner = anchor+state (arm B). Discussion corrections: capacity ledger = read-write product (params fell 11% while the palette became an always-read/always-trained block); L16 routing was NON-stationary (Josh's catch) -> frozen-route extended to the VLM tower (bitwise-exact smoke); route-once shipped (retrieval computed once per shared key; knn36 VRAM 136 -> 127GB); bank-scaling law measured (footprints track bank size, famIoU invariant). -> E46: three like-for-like joint router re-warms (incumbent / vlm-knn36 / uniform n128-r4) LAUNCHED, stop-after-audit)
+
+### Results — the overnight pooled-router sweep (three chains, all completed unattended)
+
+Each chain: VLM router warm-up (10k, aux losses only) -> held-out audit -> merge with the
+certified expert n256 bank -> joint A-phase (values both towers, 10k on libero_90) -> single-task
+e4 adaptation probe (5k steps, C-config) + executed-chunk error. famIoU = read-mass overlap
+between the three near-identical basket tasks (pass <= 0.25); chunk error = deviation of the
+executed 50-step action sequence from the demonstration (the rollout-predictive fit metric;
+previous staged best 0.153, single-task LoRA specialist 0.020).
+
+| arm (state-region key) | famIoU L15/L16 | e4 chunk | e4 roll (20 ep) | e4 block loss |
+|---|---|---|---|---|
+| A anchor only (1,0) | 0.151/0.145 | 0.0996 | 25 | 0.092 |
+| B anchor+state (1,0.5) | 0.149/0.147 | **0.0994** | **35** | 0.091 |
+| C state-only pool | 0.227/0.248 | 0.1132 | 25 | 0.094 |
+
+- Routing: the anchored variants land AT the expert-side certificate level (0.145) — 3x better
+  than the failed per-token design (0.42-0.53). Region split (sub-span probe): the state region,
+  0.38-0.40 under per-token routing, sits at 0.08-0.10 with near-private palettes (background
+  ~0.01); the instruction region keeps its measured word-sharing floor (~0.19-0.21).
+- Fit: chunk 0.153 -> 0.099 is the largest single-move e4 improvement recorded (ten prior levers
+  each moved it <= 10%); one-step block loss 0.091-0.094 vs best-ever 0.114. Against the
+  pre-registered gate (<= 0.08 validated / ~0.12 fallback): between, leaning pass; the 25-35%
+  rollouts sit exactly on the fit-to-success curve through the compass anchors.
+- Controls: the expert tower's usage was BITWISE identical across all three arms (same shipped
+  bank + stationary routing + same seed) — differences attributable purely to the VLM change.
+  Arm C validates the querystats probe's ORDERING while showing trained projections recover more
+  than raw-feature geometry suggests (predicted near-hopeless at family-cos 0.98, trained to
+  0.227) — probes rank, never veto.
+- Expert side-by-side (same day): n384 and n256 audits both famIoU exactly 0.145; the shared-soup
+  task pair floors at 0.23-0.27 on BOTH towers under three different routers — the residual
+  overlap is task-semantic, not router-specific.
+
+### Conclusions
+
+1. Routing content determines routing geometry: dose-sweeping losses never fixed digit-token
+   routing; changing the KEY CONSTRUCTION fixed it in one shot at unchanged doses. The anchored
+   key implements footprint translation structurally; the losses only arrange anchors.
+2. The correct capacity ledger is the READ-WRITE PRODUCT, not parameter count (Josh): total
+   adaptation params FELL 11% in the new build while e4 fit jumped 35% — because the pooled
+   palette is an always-read, always-trained block (top-100 palette slots inside the write mask
+   4,886/5,000 steps — the degenerate-perfect product that makes dense LoRA strong). Placement
+   and product are now separately evidenced: placement by the compass (expert-side dense adapter
+   train-loss CEILINGS at ~0.18 — no exposure story rescues it); product by arm C (same
+   placement/params, broader palettes -> worse fit).
+3. The "chunk ~0.03 for 50%+" target is the CONSERVATIVE (specialist-anchored) bound; the breadth
+   law says our 90-task support should discount it (not yet visible on e4 — 0.099 -> 25-35 sits
+   on the specialist curve).
+4. Bank-scaling law (answers the n128 sizing question): per-task footprints are NOT a fixed
+   absolute — the n384->n256 shrink (2.25x) shrank core50 1.7x (2955->1713) at famIoU exactly
+   0.145 both. The losses re-express the same angular geometry at the bank's resolution. Residual
+   risk at a further 4x: the fixed 144-slot per-query draw becomes a floor.
+5. L16 routing was non-stationary (Josh's catch): its router read the live stream containing
+   L15's memory output, and was certified with values at zero — the one-layer edition of the E38
+   drift channel, silently accepted in the E44 build. Also: knn deployment must match the
+   routing-loss candidate pool the keys were trained with (E14-16 alignment) — flipping knn on
+   16-trained keys is an uncertified router.
+
+### Builds shipped today (all smoked + pushed: 543cb4e1, c74862de, + topk alignment)
+
+- **Frozen-route extended to the VLM tower** (same flag governs both towers): a no-grad fork
+  advances a memory-free prefix stream from L15 and recomputes L16's attention front on it;
+  inference reuses the capture/stash dual pass. 15/15 smokes; router features BITWISE-exact on
+  every valid token (the only diffs live on pad rows, which attend nothing and are excluded from
+  memory — they also explain the first smoke run's spurious failures). No router retrain needed
+  in principle (memory-free = the certification distribution up to the value_proj-bias residual,
+  the known 0.98-transfer term).
+- **Route-once** for shared router keys: the state region routes ONCE per sample on a compact
+  sequence [state key, instruction tokens] (key first keeps valid tokens a contiguous prefix for
+  the loss machinery); slot params gathered once per row, applied per-position
+  (apply_shared_palette). Output parity with the redundant path 1.2e-07; usage/TF/audit stats
+  keep served-position multiplicity (numbers comparable); routing/contrastive losses now count
+  each unique key ONCE — the pre-registered dedup, a deliberate change to future warm-ups'
+  training signal. VRAM: A-phase 127.8 -> 122.1GB (knn16); **knn36 136.4 -> 126.9GB** — the knn
+  axis is unblocked (was ~4GB headroom, now ~13.5GB).
+- **Per-tower routing_loss_topk alignment** codified: the derived VLM cfg sets topk = vlm_knn.
+- Also measured: knn is now a per-task palette-capacity lever (64 -> 144 slots x r) under pooled
+  routing.
+
+### Discussion -> the E46 design (with Josh)
+
+Selection of the next frontier config runs as THREE like-for-like joint router re-warms — one
+protocol, one loss semantics (the deduped losses), frozen-route-consistent inputs, per-tower topk
+alignment — differing only in declared shape knobs. Rationale for re-warming even the incumbent:
+(a) arm 3's knn36 requires keys TRAINED at topk 36; (b) the old warm-up carried the bias-residual
+input gap and the old multiplicity-weighted losses; (c) uniform protocol makes the certificates
+comparable. Each arm: warm-up -> audit (expert + VLM analyses + sub-span probe) -> STOP — no
+value-filling on an uncertified router. Plasticity comparison happens AFTER certification via
+A-phase -> filled e4 probe + chunk (comparable to last night's anchors; the blank-bank shortcut
+was considered and rejected for cross-session comparability).
+
+| arm | box | expert | VLM | question |
+|---|---|---|---|---|
+| 1 incumbent | VM2 | n256/r2/knn36 | n256/r2/knn16 | the baseline, re-certified under the new protocol |
+| 3 knn axis | VM3 | n256/r2/knn36 | n256/r2/**knn36** | does palette capacity 64->144 pay? |
+| 2 uniform | **base box (RUNNING, tmux jointA2)** | **n128/r4/knn36** | **n128/r4/knn36** | iso-rank-unit concentration: 4x fewer, stronger slots |
+
+All: sep 5.0, c 0.05, anchored (1.0, 0.5), 10k compressed, router lr 1e-4. Audits land
+~18:30-19:00 BST (the re-assess point). Pre-registered arm-2 read: expert core50 ~400-800 at
+famIoU ~0.145 = scaling law holds; famIoU up at scaled cores = the per-query-draw floor binds.
+
+### Next steps
+
+1. **RUNNING: arm 2 uniform warm-up on the base box** (launched 09:49 UTC); arms 1/3 to launch on
+   the VMs (local-Claude instructions issued).
+2. Afternoon re-assess on the three audit certificates -> A-phases on survivors (VRAM-gated for
+   arm 2's r4) -> filled e4 probes + chunk -> select -> graduate ONE config to the 5-task
+   sequential (C-config, vs stageB 32.0/35.0).
+3. Queued behind selection: 10-task extension; LoRA specialist cells e2/e7; the sep-response
+   question in the anchored regime; protection-store decay fix before any multi-task run that
+   needs it.
