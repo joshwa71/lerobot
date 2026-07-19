@@ -260,6 +260,7 @@ def compute_layer_complete(
     task_emb=None,
     task_ids=None,
     router_x=None,
+    vlm_router_x=None,
 ):
     models = [paligemma.model.language_model, gemma_expert.model]
     query_states = []
@@ -326,7 +327,10 @@ def compute_layer_complete(
             if base_mlp.up_proj.weight.dtype == torch.bfloat16:
                 out_emb = out_emb.to(dtype=torch.bfloat16)
             out_emb = layer.mlp(
-                out_emb, lang_emb=task_emb, task_ids=task_ids, router_x=router_x if i == 1 else None
+                out_emb,
+                lang_emb=task_emb,
+                task_ids=task_ids,
+                router_x=router_x if i == 1 else vlm_router_x,
             )
         else:
             # Convert to bfloat16 if the next layer (mlp) uses bfloat16
@@ -420,6 +424,73 @@ def compute_frozen_suffix_layer(
     )
 
     base_mlp = expert_layer.mlp.mlp if isinstance(expert_layer.mlp, MLPPlusMemory) else expert_layer.mlp
+    if base_mlp.up_proj.weight.dtype == torch.bfloat16:
+        out_emb = out_emb.to(dtype=torch.bfloat16)
+    mlp_input = out_emb if collect_mlp_input else None
+    if not run_mlp:
+        return mlp_input, None
+    out = base_mlp(out_emb)
+    out = _gated_residual(after_first_residual, out, mlp_gate)
+    return mlp_input, out
+
+
+def compute_frozen_prefix_layer(
+    layer_idx,
+    frozen_hidden,
+    attention_mask,
+    position_ids,
+    adarms_cond,
+    paligemma,
+    collect_mlp_input,
+    run_mlp,
+):
+    """One paligemma-LM-layer step of the FROZEN (memory-free) PREFIX stream (E45).
+
+    The VLM-side twin of compute_frozen_suffix_layer: when memory sits on more than
+    one prefix layer, every VLM memory layer above the first must route (query + gate
+    + pooled anchor keys) on the prefix features as they would be WITHOUT any memory
+    contribution — otherwise value training at the lower layer re-points the upper
+    layer's frozen router (the E38 routing-drift channel, one-layer edition). The
+    prefix attends ONLY prefix positions (prefix-LM mask), so the frozen stream is
+    fully self-contained: q/k/v all come from the frozen hidden and the joint mask's
+    prefix rows x prefix columns slice loses nothing.
+
+    Returns (mlp_input if collect_mlp_input else None, layer_output if run_mlp else None).
+    """
+    layer = paligemma.model.language_model.layers[layer_idx]
+    prefix_len = frozen_hidden.shape[1]
+
+    normed, attn_gate = layernorm_forward(layer.input_layernorm, frozen_hidden, adarms_cond[0])
+    shape = (*normed.shape[:-1], -1, layer.self_attn.head_dim)
+    q = layer.self_attn.q_proj(normed).view(shape).transpose(1, 2)
+    k = layer.self_attn.k_proj(normed).view(shape).transpose(1, 2)
+    v = layer.self_attn.v_proj(normed).view(shape).transpose(1, 2)
+
+    dummy_tensor = torch.zeros(
+        q.shape[0], position_ids.shape[1], q.shape[-1], device=q.device, dtype=q.dtype
+    )
+    cos, sin = paligemma.model.language_model.rotary_emb(dummy_tensor, position_ids)
+    q, k = modeling_gemma.apply_rotary_pos_emb(
+        q, k, cos[:, :prefix_len], sin[:, :prefix_len], unsqueeze_dim=1
+    )
+
+    att_output, _ = modeling_gemma.eager_attention_forward(
+        layer.self_attn,
+        q,
+        k,
+        v,
+        attention_mask[..., :prefix_len, :prefix_len],
+        layer.self_attn.scaling,
+    )
+    att_output = att_output.reshape(frozen_hidden.shape[0], -1, 1 * 8 * layer.self_attn.head_dim)
+    if att_output.dtype != layer.self_attn.o_proj.weight.dtype:
+        att_output = att_output.to(layer.self_attn.o_proj.weight.dtype)
+    out_emb = layer.self_attn.o_proj(att_output)
+    out_emb = _gated_residual(frozen_hidden, out_emb, attn_gate)
+    after_first_residual = out_emb.clone()
+    out_emb, mlp_gate = layernorm_forward(layer.post_attention_layernorm, out_emb, adarms_cond[0])
+
+    base_mlp = layer.mlp.mlp if isinstance(layer.mlp, MLPPlusMemory) else layer.mlp
     if base_mlp.up_proj.weight.dtype == torch.bfloat16:
         out_emb = out_emb.to(dtype=torch.bfloat16)
     mlp_input = out_emb if collect_mlp_input else None
@@ -674,6 +745,18 @@ class PaliGemmaWithExpertModel(
             and getattr(self, "_mem_layer_indices", None)
         )
 
+    def _vlm_frozen_routing_enabled(self) -> bool:
+        # Same flag as the expert side: "routing reads memory-free features" now covers
+        # both towers. With a single VLM memory layer the fork is unnecessary (its router
+        # input is memory-free by placement), so it activates only at >= 2 VLM layers.
+        cfg = getattr(self, "_mem_cfg", None)
+        vlm_idx = getattr(self, "_vlm_mem_layer_indices", None) or []
+        return bool(
+            cfg is not None
+            and getattr(cfg, "use_frozen_base_input_features", False)
+            and len(vlm_idx) >= 2
+        )
+
     def forward(
         self,
         attention_mask: torch.Tensor | None = None,
@@ -688,6 +771,36 @@ class PaliGemmaWithExpertModel(
         if adarms_cond is None:
             adarms_cond = [None, None]
         if inputs_embeds[1] is None:
+            # Prefix-only pass (inference: builds the KV caches the denoise loop consumes).
+            # VLM frozen routing (E45), pass A: run the prefix once with every VLM memory
+            # bypassed so each VLM wrapper stashes its memory-free mlp input; the live pass
+            # (B) pops the stash as router_x. Mirrors the suffix-side dual pass below. No
+            # KV hygiene needed here: pass A runs cache-less and its output is discarded.
+            vlm_frozen = self._vlm_frozen_routing_enabled()
+            if vlm_frozen:
+                vlm_wrappers = [
+                    self.paligemma.model.language_model.layers[i].mlp
+                    for i in self._vlm_mem_layer_indices
+                ]
+                for m in vlm_wrappers:
+                    m.begin_frozen_capture()
+                try:
+                    with torch.no_grad():
+                        self.paligemma.model.language_model.forward(
+                            inputs_embeds=inputs_embeds[0],
+                            attention_mask=attention_mask,
+                            position_ids=position_ids,
+                            past_key_values=None,
+                            use_cache=False,
+                            adarms_cond=adarms_cond[0] if adarms_cond is not None else None,
+                        )
+                except Exception:
+                    for m in vlm_wrappers:
+                        m._frozen_capture = False
+                        m._frozen_stash = []
+                    raise
+                for m in vlm_wrappers:
+                    m.end_frozen_capture()
             prefix_output = self.paligemma.model.language_model.forward(
                 inputs_embeds=inputs_embeds[0],
                 attention_mask=attention_mask,
@@ -696,6 +809,9 @@ class PaliGemmaWithExpertModel(
                 use_cache=use_cache,
                 adarms_cond=adarms_cond[0] if adarms_cond is not None else None,
             )
+            if vlm_frozen:
+                for m in vlm_wrappers:
+                    m.assert_frozen_stash_consumed()
             prefix_past_key_values = prefix_output.past_key_values
             prefix_output = prefix_output.last_hidden_state
             suffix_output = None
@@ -776,10 +892,44 @@ class PaliGemmaWithExpertModel(
             fork_lo = mem_idx[0] if frozen_routing else -1
             fork_hi = mem_idx[-1] if frozen_routing else -1
             frozen_hidden = None
+            # VLM-side frozen prefix routing (E45): same lazy-fork pattern on the prefix
+            # tower. The first VLM memory layer's live mlp-input is memory-free by
+            # placement (router_x stays None there); every later VLM memory layer routes
+            # on the frozen prefix stream advanced with memory bypassed.
+            vlm_frozen = self._vlm_frozen_routing_enabled()
+            vlm_idx = self._vlm_mem_layer_indices if vlm_frozen else []
+            vlm_fork_lo = vlm_idx[0] if vlm_frozen else -1
+            vlm_fork_hi = vlm_idx[-1] if vlm_frozen else -1
+            vlm_frozen_hidden = None
 
             # Process all layers with gradient checkpointing if enabled
             for layer_idx in range(num_layers):
                 router_x = None
+                vlm_router_x = None
+                if vlm_frozen and vlm_fork_lo <= layer_idx <= vlm_fork_hi:
+                    with torch.no_grad():
+                        if layer_idx == vlm_fork_lo:
+                            _, vlm_frozen_hidden = compute_frozen_prefix_layer(
+                                layer_idx,
+                                inputs_embeds[0],
+                                attention_mask,
+                                position_ids,
+                                adarms_cond,
+                                self.paligemma,
+                                collect_mlp_input=False,
+                                run_mlp=True,
+                            )
+                        else:
+                            vlm_router_x, vlm_frozen_hidden = compute_frozen_prefix_layer(
+                                layer_idx,
+                                vlm_frozen_hidden,
+                                attention_mask,
+                                position_ids,
+                                adarms_cond,
+                                self.paligemma,
+                                collect_mlp_input=layer_idx in vlm_idx,
+                                run_mlp=layer_idx < vlm_fork_hi,
+                            )
                 if frozen_routing and fork_lo <= layer_idx <= fork_hi:
                     with torch.no_grad():
                         if layer_idx == fork_lo:
@@ -829,6 +979,7 @@ class PaliGemmaWithExpertModel(
                         task_emb=task_emb,
                         task_ids=task_ids,
                         router_x=router_x,
+                        vlm_router_x=vlm_router_x,
                     )
                 else:
                     inputs_embeds = compute_layer_complete(
@@ -842,6 +993,7 @@ class PaliGemmaWithExpertModel(
                         task_emb=task_emb,
                         task_ids=task_ids,
                         router_x=router_x,
+                        vlm_router_x=vlm_router_x,
                     )
 
             # final norm

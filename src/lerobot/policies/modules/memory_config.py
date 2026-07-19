@@ -78,6 +78,11 @@ class MemoryLayerConfig:
     # immutable) — every earlier task's reads slide off the slots it adapted.
     # Frozen-base routing makes the addressing stationary by construction at every
     # memory layer. Default False = original behavior, byte-identical.
+    # E45: the same flag now also governs the VLM tower — with >= 2 VLM memory layers,
+    # every VLM layer above the first routes on a frozen (memory-free) prefix stream
+    # (compute_frozen_prefix_layer / the inference dual pass), closing the one-layer
+    # routing-drift channel L15 -> L16. A single VLM layer needs no fork (its router
+    # input is memory-free by placement).
     use_frozen_base_input_features: bool = False
 
     # Dropout probability applied to retrieved memory slots during training.
