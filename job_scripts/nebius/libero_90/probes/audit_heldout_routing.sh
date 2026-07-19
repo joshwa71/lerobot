@@ -57,6 +57,7 @@ lerobot-sequential-train \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
   --online_steps_per_task=100 \
   --policy.memory_layer.aggregate_usage=false \
+  --policy.memory_layer.vlm_route_once=true \
   --save_checkpoint=false \
   --save_after_each_task=false \
   --reinit_optimizer_each_task=true \
