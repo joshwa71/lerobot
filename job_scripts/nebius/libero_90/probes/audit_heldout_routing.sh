@@ -48,14 +48,14 @@ lerobot-sequential-train \
   --rename_map='{"observation.images.image":"observation.images.base_0_rgb","observation.images.image2":"observation.images.left_wrist_0_rgb"}' \
   --output_dir="$OUTPUT_DIR" \
   --steps=200000 \
-  --batch_size=32 \
+  --batch_size=${AUDIT_BS:-32} \
   --gradient_accumulation_steps=1 \
   --num_workers=8 \
   --log_freq=100 \
   --wandb.enable=false \
   --job_name="$RUN" \
   --online_task_ids='[0,1,2,3,4,5,6,7,8,9]' \
-  --online_steps_per_task=100 \
+  --online_steps_per_task=${AUDIT_STEPS:-100} \
   --policy.memory_layer.aggregate_usage=false \
   --policy.memory_layer.vlm_route_once=true \
   --save_checkpoint=false \
