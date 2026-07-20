@@ -3455,3 +3455,166 @@ centrally with the standard instrument.
 4. Cleanup this session: arm 2' warm-up checkpoints deleted (dead branch; audit +
    sub-span + wandb retained); arm 3-old's staged local checkpoint copy kept until its
    VM2 chain completes.
+
+---
+## Entry 49 - 20 Jul 26 (E48 graduation verdict: arm 1' = NEW FRONTIER 40.0 at plain C-config — the palette-constancy axis is monotone on every instrument incl. all 15 cross-arm final-chunk cells; knn axis closed at 16; the read-write product heuristic gains a STATE-CONDITIONALITY factor; new protection-x-palette starvation mechanism measured; retention POSITIVE in function space. -> composition + VLM-r4 arms scripted for the VMs (graft tooling shipped); image-span plan fixed (step 1 keep-expert single-delta / step 2 drop-expert reallocation); 1A running)
+
+### Results — the three graduation chains (all completed; battery in outputs/analysis/e48/)
+
+Recap: three chains from the E47/48 certified joint router warm-ups, differing ONLY in
+the VLM router — arm 1' knn16 broadcast-loss keys (state-conditional palette, ~11-13
+slot-draws per footprint), arm 3' knn36 broadcast (~5-7 draws), arm 3-old knn36
+dedup-loss keys (near-constant ~2-draw palette). Expert tower config-identical
+(n256/r2/knn36); each chain = A-phase (10k values-only, both towers) -> 5-task
+sequential (C-config: beta4, top_t 1536, 5k steps/task, value lr 1e-3->1e-4, 50-ep
+finals). Terms: palette = the slot set retrieved by the pooled state-region key (the
+always-read block); chunk error = executed 50-step action-sequence deviation after a
+real 10-step denoise (rollout-predictive fit metric; anchors 0.153 old staged best /
+0.0994 poolB / 0.020 LoRA specialist); RTO = fraction of a task's read mass on slots
+later tasks updated.
+
+| arm | final (50ep) | e4/e6/e9/e2/e7 | block-min loss | e4 own chunk |
+|---|---|---|---|---|
+| arm 1' | **40.0** | 14/58/16/82/30 | **0.0940** | **0.112** |
+| arm 3' | 37.2 | 16/56/14/72/28 | 0.0984 | 0.126 |
+| arm 3-old | 32.4 | 24/42/12/66/18 | 0.1082 | 0.127 |
+| stageB (comparator) | 32.0 (20ep) | — | 0.1274 | 0.160 |
+
+Comparators (50-ep finals): lr2x 35.6 / steps7k 36.0 / top3k 37.6 / softp 41.2 /
+lr2x+3072 40.4 / lr4x+3072 42.4. Josh's read on first sight — "similar boost as higher
+lr and higher top-t" — is correct at the scoreboard level AND the crucial difference:
+arm 1' reaches the composition band at 1x LR / top_t 1536, i.e. with those levers
+still unspent on this substrate.
+
+Probe battery (all pre-registered instruments run):
+- arm 1' own-block chunk grid vs stageB: e4 0.112 (0.160), e6 0.078 (0.127), e9
+  **0.223** (0.407 — best e9 function ever measured, beats the 4x-LR arms), e2 0.164
+  (0.287), e7 0.096 (first-ever e7 cell). Mean −40-45%.
+- Cross-arm FINAL-checkpoint grid: **all 15 cells monotone** on the constancy axis
+  (means 0.130 / 0.148 / 0.167). arm 3-old's worst relative cells are the mechanism
+  cells: e6 +53% (see protection-x-palette below), e7 +40% (last writer).
+- own->final: arm 1' IMPROVED on all four earlier tasks (−2.3..−5.0%) — the first
+  uniformly-improving retention grid in the project (lr-era e9 gave back +7.7/+14.5%).
+  Rollout give-back +5.0.
+- MSE forgetting matrix (arm 1', 5x5 paired-noise): flat — diag drift e4 +4.8%, e6
+  +2.2%, e9 +2.4%, e2 +1.4%, e7 +0.0%. Forgetting stays solved in the 6-module
+  architecture. e4's +4.8% (~3x the stageB-era ceiling) is the one-step fingerprint of
+  the new VLM exposure — its chunk moved the OTHER way (−3.5%), so no functional cost
+  in-window.
+- Slot autopsy: expert tower ARM-INVARIANT to ~1% (the built-in control — all deltas
+  are VLM-side); computed read-IoU matches logged memory_iou to 4 decimals on all
+  three runs. VLM footprints track the warm-up certificates into production (VLM15
+  c50, e2: 365 / 376 / 95). NEW exposure surface: VLM RTO on early tasks 47-55% (arm
+  1' e4, L15/L16) vs expert ~16-18% — currently benign (above). e9's expert footprint
+  dilution persists at n256 (c50 2.4x median; its read-write product lowest).
+- NEW MECHANISM (measured): protection x palette constancy. In arm 3-old, e6 holds
+  11.1% of its VLM read mass on prior-hot (u>=0.5) slots and updated 0.0% of them —
+  beta4's peak-normalized u vetoes the always-read palette core when the palette is
+  near-constant (the palette IS the mega-hot set), so every later task is locked out of
+  writing where it always reads. In the state-conditional arms the same number is ~0%
+  (protection inert on the VLM tower). Note the semantics: e6 (mug+pudding) collides
+  with e4 (two mugs) on shared "mug" content — palette overlap follows objects.
+
+### Conclusions
+
+1. **The VLM build is the largest fit mover of the staged era** (−26% one-step, −40-45%
+   chunk at matched optimization), and rollouts moved exactly where the threshold law
+   allows: e6 (0.078 -> 58, best-ever) and e2 (0.164 -> 82) converted; e4/e9 stayed
+   pinned at 3-4x their thresholds despite best-ever function. Threshold law now ~9/9.
+2. **State-conditionality of the read set is the capacity currency — the read-write
+   product heuristic (E43) gains a third factor.** arm 3-old has the HIGHEST product
+   ever measured (3.9-4.3k read-mass-weighted update events, the "degenerate-perfect"
+   shape) and the worst fit: a constant palette is a fixed ~64-slot adapter per task,
+   while a state-conditional palette addresses 600-850 slots across the task's state
+   distribution at the same parameter count. Product x conditionality converts; product
+   alone does not.
+3. **knn axis closed at 16.** knn36 lost on every instrument despite 2.25x per-forward
+   read participation — the score-profile shoulder carries into production (extra
+   slots are family-generic; selfcov lower; the stable shoulder TF stops the write
+   mask rotating over task-specific slots). Read participation without task-specific
+   content is not capacity.
+4. **The deployment-mass-weighting principle is validated at rollout level**: arm 3-old
+   (dedup keys) == stageB (32.4 vs 32.0) — the identical architecture under collapsed
+   palettes buys ~nothing; the one-flag broadcast fix is worth +7.6pp.
+5. Honest negatives: arm 1' did NOT reproduce poolB's e4 chunk (0.112 vs 0.0994,
+   mid-field gap at instrument resolution, one-step loss BETTER — the two protocol
+   fixes bought nothing measurable); Gate-2 counterfactual — the ~0.12 kill line would
+   have killed arm 3' (0.126) and arm 3-old (0.127), right that neither graduates,
+   slightly conservative on arm 3' (final 37.2 > stageB); 20-ep init cells
+   re-vindicated as retired (arm 3-old init-mean 25.6 -> final 32.4; arm 1' e6 init 20
+   -> final 58).
+6. Warm-up certificates are predictive through the full pipeline for the third
+   consecutive time. The 3h certificate continues to be worth ~30 GPU-hours.
+
+### Discussion (Josh) -> decisions
+
+- **The 8-day / 70% arithmetic, corrected and re-anchored.** Josh challenged the
+  pessimism citing three lifters; the ledger has TWO (freeze-top-5k was misremembered
+  — E44 measured it null-to-negative, 39.2 vs twin 42.4; protection is insurance
+  already baked into every run). Composition of the two real lifters (arm 1'
+  substrate + lr2x/top3k) projects loss ~0.070-0.080 and front-5 ~44-49; 70 requires
+  dual-cycle chunk ~0.03-0.07, and the one place with compass-measured headroom of
+  that size is the un-adapted image span (VLM-only dense LoRA = 0.030 on e4 vs our
+  0.099; span attribution: image tokens carry 43-64% of dL/dh). 10-task PARKED (Josh:
+  no point reaching for 10 if we can't nail 5).
+- **steps/task stays 5k for the composition arm** (7k considered, rejected): E41
+  measured staged blocks converging by ~2.5-3k (the steps7k arm's endpoint function
+  matched every 5k arm; "5k->7k retired"), 2x LR moves the knee EARLIER, and all
+  three new arms show the converged signature (block-end ~11% above block-min =
+  oscillation band). Revisit trigger: t0 block still descending at 4.5-5k.
+- **Two VM arms scripted + shipped (commit 6edb54e7), launch via Josh's local claude**
+  (VM aliases: nebius3 = the arm-3-old box, gets the r4 arm; nebius4 = the arm-3' box,
+  gets the composition arm; A-checkpoint staged there):
+  1. seq5_arm1p_lr2x_topt3072.sh — composition, sequential-only from arm 1's existing
+     A checkpoint (lr 2e-3->2e-4, top_t 3072).
+  2. grad_arm1p_vlmr4.sh — VLM rank 4 via graft_vlm_rank.py: the warm-up trains
+     keys/proj only and frozen-route makes routing values-independent, so the r2
+     certificate transfers WITHOUT re-warming; torch raises on shape-mismatched
+     tensors even at strict=False, so the graft drops the 4 r2-shaped VLM slot tensors
+     (fresh r4 init; slot_up zero => memory output 0 at start). Smoked: 4 tensors
+     fresh, 34 router tensors bit-identical, 48/895 trainable. Sequential forced to
+     bs16xacc2 (r4 ~135GiB at bs32 vs ~137-139 usable; accum overhead measured +12%).
+  The common chain body gained SEQ_* env overrides (defaults byte-identical to E47).
+- **Image-span design settled** (one history inversion corrected en route: pooling was
+  never the collapse — per-token state routing was the E45 failure and the E47
+  collapse was the loss DEDUP; pooled retrieval + broadcast loss accounting is the
+  settled, now rollout-validated pattern): image region keys = a*nrm(pool(instr)) +
+  b*nrm(pool(image region)), route-once, broadcast losses at TRUE deployment mass (NO
+  per-region loss normalization — Josh; the ~94% image loss share is watched, not
+  pre-engineered), write-budget allocation likewise watched. Region count + (a,b) +
+  normalization constants to be FROZEN FROM MEASUREMENT (querystats-image probe, the
+  E45 playbook that correctly ordered the pooled-key arms).
+- **Two-step experiment plan:** STEP 1 = keep expert memory, add image-pooled routing
+  at VLM [15,16] — the single-delta attribution cell vs arm 1' (1A: probe -> design
+  freeze -> joint warm-up -> audit + REVIEW; 1B: A-phase + 5-task). STEP 2 = drop the
+  expert tower's memory entirely (compass: VLM-only LoRA 0.030/40 vs expert-only
+  0.229/14) — this voids the placement guard (it exists to protect expert routing), so
+  VLM memory can go to lower layers where image leverage concentrates; freed budget =
+  16GiB. Capacity split (4 layers r2 vs 2 layers r4, both budget-neutral ~122GiB;
+  r4x3 marginal at bs16xacc2) decided by 1A's audit + the nebius3 r4 arm (which IS the
+  rank-axis measurement on the right tower). Step 2 runs the full chain without a
+  human review stop but keeps automated hard-fail tripwires. Lean: layers > rank
+  (rank's record is weak everywhere tested; layers buy new routing surfaces =
+  conditional capacity, the currency conclusion 2 just validated; image leverage sits
+  earlier in the stack). Bonus physics: prefix memory runs 1x per 50-action chunk at
+  inference (cached) vs the expert tower's 10x per denoise.
+- 1A scope addition: the sub-span probe's route-once-aware row mapping (deferred since
+  E47) is now load-bearing — audits force the compact path and the compact row layout
+  with image keys ([region keys, state key, instr tokens]) can't be recovered by the
+  constant-prefix trick.
+
+### Next steps
+
+1. [LAUNCHING via local claude] nebius4: composition arm; nebius3: VLM-r4 arm. Gate-2
+   chunk probes on their t0 checkpoints run centrally here as they land (~0.12 kill).
+2. [RUNNING here] **1A**: querystats-image probe (layers incl. candidates below 15 to
+   inform step 2) -> freeze region count / (a,b) / normalization -> code (vlm span
+   extension, k region keys, row mapping) + smokes -> joint warm-up (broadcast) ->
+   audit with image-region gates -> review with Josh.
+3. Then 1B (A + 5-task, single delta vs arm 1' 40.0/0.0940/chunk grid); then step 2.
+4. Deferred, unchanged: protection-store decay before amplitude-at-scale; e9
+   warm-up footprint-dispersion gate; 10-task behind nailing 5.
+
+Artifacts: outputs/analysis/e48/{working_tables.md,slots.out,probe_conversion.jsonl,
+mse_matrix.jsonl}; graft at outputs/train/libero_90_pi05_jointwarm10k_arm1p_vlmknn16_r4graft;
+commits 6edb54e7 (tooling+scripts) + this entry.
