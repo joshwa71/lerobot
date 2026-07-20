@@ -3660,3 +3660,27 @@ Review gates (wrapper header): image-region famIoU <= ~0.25 at per-region effnum
 ~300 (no ~2-draw collapse), state/instr regions within ~20% of arm 1' (0.074/0.084
 palette, ~0.20 instr), expert certificate reproduced. The audit famIoU topline is
 image-mass-weighted — read the sub-span region table, not the topline.
+
+---
+### Entry 49 addendum 2 (20 Jul night) — composition Gate-2: the amplitude levers COMPOSE on the new substrate (e4 chunk 0.112 -> 0.0753, -33%); first e4 cell at the edge of its conversion window
+
+The composition arm (arm 1' substrate + lr 2e-3->2e-4 + top_t 3072, running on the
+VMs alongside the VLM-r4 arm) delivered its t0 checkpoint; Gate-2 chunk probe run
+here concurrently with the 1A warm-up:
+
+- **e4 own-block chunk 0.0753** (late10 0.0794, seed spread 0.061) vs arm 1' 0.1119
+  (0.1275 / 0.079) — the best e4 function ever measured outside the LoRA compass
+  anchors, beating even poolB's 1-task probe (0.0994). 20-ep t0 init 35 (arm 1' 25;
+  retired instrument, but now with function-space support behind it).
+- **The composition is the news**: on the expert-only substrate the amplitude levers
+  never moved e4 (chunk 0.160 -> 0.156 across the whole lr/top-t family — E42); on
+  the VLM substrate the same levers cut it 33%. Mechanistically coherent: e4's
+  deficit is perception-side and the levers now feed the always-read VLM palette
+  that carries that content.
+- 0.0753 sits at the edge of e4's conversion window (specialist bound ~0.03;
+  breadth-law discount per E43 — e9 converted at 0.068). Late-chunk error improved
+  MORE than the mean (-38%) and seed spread tightened — the compounding tail is
+  cleaner, which is where rollouts live.
+- Residuals: one cell; rollout conversion unproven until the 50-ep final (~11h);
+  amplitude give-back is the known risk — re-check own->final at 025000 against
+  arm 1's uniformly-improving retention grid.
