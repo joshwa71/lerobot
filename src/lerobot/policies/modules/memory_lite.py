@@ -1,6 +1,7 @@
 import ast
 import contextlib
 import json
+import logging
 import math
 import threading
 from typing import List
@@ -10,6 +11,8 @@ from torch import nn
 from torch.nn import functional as F
 
 from .memory_config import MemoryLayerConfig
+
+logger = logging.getLogger(__name__)
 
 
 EMBEDDING_DIM_MAP = {
@@ -214,6 +217,15 @@ class HashingMemoryLite(nn.Module):
         # Value corruption parameters
         self.corruption_prob = getattr(cfg, "corruption_prob", 0.0)
         self.corruption_std = getattr(cfg, "corruption_std", 0.1)
+
+        # Router-only fast path (E49, warm-ups): substitute exact zeros for the
+        # pre-projection value output, skipping the per-row slot gather. Bitwise-equal
+        # to the real path while every slot_up is at zero init (lora slot output
+        # up @ silu(down @ x) == 0 exactly); the projection/gate tail still runs so
+        # the value_proj bias survives. Corruption would break the equivalence.
+        self.router_only_fast = bool(getattr(cfg, "router_only_fast", False))
+        if self.router_only_fast and self.corruption_prob > 0:
+            raise ValueError("router_only_fast requires corruption_prob=0 (exactness)")
 
         # Query contrastive loss parameters
         self.contrastive_loss_weight = getattr(cfg, "contrastive_loss_weight", 0.0)
@@ -863,7 +875,12 @@ class HashingMemoryLite(nn.Module):
         # Weighted aggregation with optional value corruption
         # embedding_bag backward with per_sample_weights is not implemented for bf16 on CUDA.
         # Perform the op in float32 and cast back to the model dtype afterwards.
-        if self.value_type == "vector":
+        if self.router_only_fast:
+            # E49 warm-up fast path: values pinned at zero init => the real value path
+            # returns exact zeros; skip the gather and substitute them directly. The
+            # projection/gate tail below is shared, so output == real path bitwise.
+            out_fp32 = x_flat.new_zeros(bs, self.v_dim, dtype=torch.float32)
+        elif self.value_type == "vector":
             out_fp32 = self._forward_vector_values(x_flat, indices, weights, device)
         elif self.value_type == "lora":
             out_fp32 = self._forward_lora_values(x_flat, indices, weights, device)
@@ -1616,6 +1633,17 @@ class MLPPlusMemory(nn.Module):
         self.route_once = bool(getattr(cfg, "vlm_route_once", True))
         if self.router_pool not in ("", "anchored", "state"):
             raise ValueError(f"unknown vlm_router_pool mode: {self.router_pool!r}")
+        # E49 image-span pooled routing: side of the per-camera region grid (0 = off).
+        # Requires the anchored pooled mode (the design is instr-anchor + region offset).
+        self.image_regions = int(getattr(cfg, "image_regions", 0) or 0) if self.text_span > 0 else 0
+        _iw = list(getattr(cfg, "image_pool_weights", [1.0, 0.5]) or [1.0, 0.5])
+        self.image_pool_w = (float(_iw[0]), float(_iw[1]) if len(_iw) > 1 else 0.5)
+        if self.image_regions > 0 and self.router_pool != "anchored":
+            raise ValueError("vlm_image_regions requires vlm_router_pool='anchored'")
+        if self.image_regions > 0 and 16 % self.image_regions != 0:
+            raise ValueError(f"vlm_image_regions must divide 16, got {self.image_regions}")
+        self._img_region_idx = None  # (s*s, (16//s)^2) flat patch ids within one camera
+        self._warned_img_fallback = False
         # Frozen-base routing, inference path (suffix-only denoise forward): the
         # dual pass is driven by plain module state because the HF layer stack
         # between PaliGemmaWithExpertModel and this wrapper cannot thread a new
@@ -1743,6 +1771,164 @@ class MLPPlusMemory(nn.Module):
         mem_out[bidx, offs[smask_pos]] = pal[smask_pos].to(mem_out.dtype)
         return mem_out
 
+    def _image_region_index(self, device):
+        """Flat patch ids (within one camera's 256-position block) per spatial region:
+        (s*s, (16//s)^2) long tensor, cached. Region order: row-major over the s x s grid."""
+        if self._img_region_idx is None or self._img_region_idx.device != device:
+            s = self.image_regions
+            step = 16 // s
+            grid = torch.arange(256, device=device).view(16, 16)
+            self._img_region_idx = torch.stack([
+                grid[r * step:(r + 1) * step, c * step:(c + 1) * step].reshape(-1)
+                for r in range(s) for c in range(s)
+            ])
+        return self._img_region_idx
+
+    def _image_span_context(self, x: torch.Tensor):
+        """Validate the image-span preconditions on this batch. Returns
+        (n_img, n_cam, n_act) or None (callers fall back to text-span-only).
+        Active cameras are a contiguous prefix of the image block (prepare_images
+        appends empty_cameras last with mask False) and activity must be row-constant."""
+        ia = getattr(self, "_ctx_img_active", None)
+        if ia is None or x.dim() != 3:
+            return None
+        n_img = x.shape[1] - self.text_span
+        if n_img <= 0 or n_img % 256 != 0:
+            return None
+        n_cam = n_img // 256
+        if ia.shape[0] != x.shape[0] or ia.shape[1] != n_cam:
+            return None
+        n_act_rows = ia.long().sum(dim=1)
+        n_act = int(n_act_rows[0].item())
+        if n_act == 0 or not bool((n_act_rows == n_act).all()):
+            return None
+        # contiguous-prefix check: the first n_act slots are the active ones
+        if not bool(ia[:, :n_act].all()):
+            return None
+        return n_img, n_cam, n_act
+
+    def _image_region_keys(self, base: torch.Tensor, n_act: int, instr_pool_nrm: torch.Tensor,
+                           target: torch.Tensor):
+        """Anchored pooled router keys for the image regions (E49). base: (B, S, D)
+        routing features (full prefix); returns keys (B, K_act, D) float32 with
+        K_act = n_act * s^2, plus the per-key GLOBAL position ids (K_act, region_size).
+        k = rms_nrm( a * instr_pool_nrm + b * rms_nrm(region mean) ) * target — the same
+        construction as the state key, so one query projection serves every key type."""
+        s2 = self.image_regions ** 2
+        ridx = self._image_region_index(base.device)          # (s2, rsize)
+        cam_off = (torch.arange(n_act, device=base.device) * 256).view(n_act, 1, 1)
+        pos_ids = (ridx.unsqueeze(0) + cam_off).reshape(n_act * s2, -1)  # (K_act, rsize)
+        bf = base.float()
+        gathered = bf[:, pos_ids.reshape(-1)].view(bf.shape[0], n_act * s2, pos_ids.shape[1], -1)
+        region_mean = gathered.mean(dim=2)                     # (B, K_act, D)
+
+        def _nrm(u):
+            return u / u.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-6)
+
+        a, b = self.image_pool_w
+        k = a * instr_pool_nrm.unsqueeze(1) + b * _nrm(region_mean)
+        k = _nrm(k) * target.view(-1, 1, 1)
+        return k, pos_ids
+
+    def _instr_pool_nrm(self, base_lang: torch.Tensor, vm2: torch.Tensor, il: torch.Tensor):
+        """RMS-normalized instruction pool (B, D) float32 (positions [3, il), the anchor)."""
+        pos = torch.arange(base_lang.shape[1], device=base_lang.device).unsqueeze(0)
+        imask = (pos >= 3) & (pos < il.unsqueeze(1)) & vm2
+        m = imask.unsqueeze(-1).float()
+        pool = (base_lang.float() * m).sum(dim=1) / m.sum(dim=1).clamp_min(1.0)
+        return pool / pool.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-6)
+
+    def _route_once_pooled_img(self, x_full, r_full, xs, rs, vm2, comp, img_ctx, lang_emb, task_ids):
+        """E49 route-once over image + language: ONE retrieval per (region key | state
+        key | instruction token) on the compact sequence [K_act image keys, state key,
+        instruction tokens], palettes applied per-position via apply_shared_palette.
+        Returns the full-prefix (B, S, out) memory output (zeros at unserved positions)."""
+        k_state, il, v, row_ok = comp
+        n_img, n_cam, n_act = img_ctx
+        B, S, C = x_full.shape
+        base_full = x_full if r_full is None else r_full
+        base_lang = xs if rs is None else rs
+        target = (base_lang.float().pow(2).mean(-1).sqrt() * vm2.float()).sum(dim=1) / vm2.float().sum(dim=1).clamp_min(1.0)
+        ip = self._instr_pool_nrm(base_lang, vm2, il)
+        k_img, pos_ids = self._image_region_keys(base_full, n_act, ip, target)  # (B, K, D), (K, rs)
+        K = k_img.shape[1]
+        rsize = pos_ids.shape[1]
+        bmax = max(int(il.max().item()), 1)
+        xc = torch.cat([k_img.to(xs.dtype), k_state.to(xs.dtype).unsqueeze(1), xs[:, :bmax]], dim=1)
+        rc = None
+        if rs is not None:
+            rc = torch.cat([k_img.to(rs.dtype), k_state.to(rs.dtype).unsqueeze(1), rs[:, :bmax]], dim=1)
+        pos_i = torch.arange(bmax, device=xs.device).unsqueeze(0)
+        instr_valid = (pos_i < il.unsqueeze(1)) & vm2[:, :bmax]
+        mc = torch.cat([
+            torch.ones(B, K + 1, dtype=torch.bool, device=xs.device), instr_valid,
+        ], dim=1)
+        n_state = (v - il).clamp(min=1)
+        srep = torch.cat([
+            torch.full((B, K), rsize, dtype=torch.long, device=xs.device),
+            n_state.unsqueeze(1),
+            torch.ones(B, bmax, dtype=torch.long, device=xs.device),
+        ], dim=1)
+        mem_c, idx_v, w_v = self.mem(
+            xc, lang_emb=lang_emb, task_ids=task_ids, router_x=rc,
+            token_mask=mc, stat_repeat=srep, return_retrieval=True,
+        )
+        mem_out = x_full.new_zeros(B, S, mem_c.shape[-1])
+        lo = S - self.text_span
+        # instruction tokens: per-token outputs from the compact call
+        mem_out[:, lo:lo + bmax] = mem_c[:, K + 1:K + 1 + bmax] * instr_valid.to(mem_c.dtype).unsqueeze(-1)
+        # state palette (row K)
+        T_l = xs.shape[1]
+        nmax = max(int((v - il).max().item()), 1)
+        offs = il.unsqueeze(1) + torch.arange(nmax, device=xs.device).unsqueeze(0)
+        smask_pos = offs < v.unsqueeze(1)
+        offs_c = offs.clamp(max=T_l - 1)
+        x_state = xs.gather(1, offs_c.unsqueeze(-1).expand(B, nmax, C))
+        pal = self.mem.apply_shared_palette(x_state, smask_pos, idx_v[:, K], w_v[:, K], k_state)
+        bidx = torch.arange(B, device=xs.device).unsqueeze(1).expand(B, nmax)[smask_pos]
+        mem_out[bidx, lo + offs[smask_pos]] = pal[smask_pos].to(mem_out.dtype)
+        # image region palettes (rows 0..K-1); positions are always valid for active cams
+        ones_mask = torch.ones(B, rsize, dtype=torch.bool, device=xs.device)
+        for j in range(K):
+            x_reg = x_full[:, pos_ids[j]]
+            pal_j = self.mem.apply_shared_palette(x_reg, ones_mask, idx_v[:, j], w_v[:, j], k_img[:, j])
+            mem_out[:, pos_ids[j]] = pal_j.to(mem_out.dtype)
+        return mem_out
+
+    def _broadcast_img(self, x_full, r_full, xs, rs, vm2, comp, img_ctx, lang_emb, task_ids):
+        """E49 literal-broadcast path over image + language (warm-ups): every position
+        routes with its own key — image positions carry their region key, so the
+        losses/queues weight each region key by its served-position count. Inactive
+        camera positions are DROPPED from the mem input (valid tokens must be a
+        contiguous prefix for the loss machinery). Pair with router_only_fast for VRAM."""
+        k_state, il, v, row_ok = comp
+        n_img, n_cam, n_act = img_ctx
+        B, S, C = x_full.shape
+        base_full = x_full if r_full is None else r_full
+        base_lang = xs if rs is None else rs
+        target = (base_lang.float().pow(2).mean(-1).sqrt() * vm2.float()).sum(dim=1) / vm2.float().sum(dim=1).clamp_min(1.0)
+        ip = self._instr_pool_nrm(base_lang, vm2, il)
+        k_img, pos_ids = self._image_region_keys(base_full, n_act, ip, target)
+        K, rsize = pos_ids.shape
+        n_ia = n_act * 256
+        # router keys per position: image block <- region keys; language <- pooled state key
+        r_img = base_full.new_zeros(B, n_ia, C)
+        for j in range(K):
+            r_img[:, pos_ids[j]] = k_img[:, j].unsqueeze(1).to(r_img.dtype)
+        r_lang = self._pooled_router_keys(base_lang, vm2)
+        x_in = torch.cat([x_full[:, :n_ia], xs], dim=1)
+        r_in = torch.cat([r_img, r_lang], dim=1)
+        m_in = torch.cat([
+            torch.ones(B, n_ia, dtype=torch.bool, device=x_full.device), vm2,
+        ], dim=1)
+        mem_o = self.mem(x_in, lang_emb=lang_emb, task_ids=task_ids, router_x=r_in, token_mask=m_in)
+        mem_o = mem_o * m_in.to(dtype=mem_o.dtype).unsqueeze(-1)
+        mem_out = x_full.new_zeros(B, S, mem_o.shape[-1])
+        mem_out[:, :n_ia] = mem_o[:, :n_ia]
+        lo = S - self.text_span
+        mem_out[:, lo:lo + xs.shape[1]] = mem_o[:, n_ia:]
+        return mem_out
+
     def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None,
                 router_x: torch.Tensor | None = None):
         if self._frozen_capture:
@@ -1778,6 +1964,25 @@ class MLPPlusMemory(nn.Module):
                 if self.router_pool:
                     base = xs if rs is None else rs
                     comp = self._pooled_components(base, vm2)
+                    # E49 image-span dispatch: needs a usable state/instr boundary on
+                    # every row (the instr pool anchors the image keys) plus a valid
+                    # camera layout; anything missing falls back to text-span-only.
+                    if self.image_regions > 0 and comp is not None and bool(comp[3].all()):
+                        img_ctx = self._image_span_context(x)
+                        if img_ctx is not None:
+                            if self.route_once and not self.mem._slots_offloaded:
+                                mem_full = self._route_once_pooled_img(
+                                    x, router_x, xs, rs, vm2, comp, img_ctx, lang_emb, task_ids)
+                            else:
+                                mem_full = self._broadcast_img(
+                                    x, router_x, xs, rs, vm2, comp, img_ctx, lang_emb, task_ids)
+                            return self.mlp(x) + mem_full
+                        elif not self._warned_img_fallback:
+                            self._warned_img_fallback = True
+                            logger.warning(
+                                "vlm_image_regions>0 but no usable image context "
+                                "(img_active missing / layout mismatch) — text-span-only fallback."
+                            )
                     if (self.route_once and comp is not None and bool(comp[3].all())
                             and not self.mem._slots_offloaded):
                         mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids)

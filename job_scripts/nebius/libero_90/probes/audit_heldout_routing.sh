@@ -58,6 +58,7 @@ lerobot-sequential-train \
   --online_steps_per_task=${AUDIT_STEPS:-100} \
   --policy.memory_layer.aggregate_usage=false \
   --policy.memory_layer.vlm_route_once=true \
+  --policy.memory_layer.router_only_fast=false \
   --save_checkpoint=false \
   --save_after_each_task=false \
   --reinit_optimizer_each_task=true \

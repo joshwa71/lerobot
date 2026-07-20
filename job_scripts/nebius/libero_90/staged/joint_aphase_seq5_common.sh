@@ -74,6 +74,7 @@ a_phase () {
     --policy.freeze_memory_router=true \
     --policy.memory_layer.use_frozen_base_input_features=true \
     --policy.memory_layer.vlm_route_once=true \
+    --policy.memory_layer.router_only_fast=false \
     --policy.optimizer_lr=2.5e-5 \
     --policy.scheduler_warmup_steps=4000 \
     --policy.scheduler_decay_steps=40000 \
@@ -125,6 +126,7 @@ else
     --online_steps_per_task=5000 \
     --policy.train_router_only=false \
     --policy.memory_layer.vlm_route_once=true \
+    --policy.memory_layer.router_only_fast=false \
     --policy.memory_layer.aggregate_usage=false \
     --policy.memory_layer.use_frozen_base_input_features=true \
     --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \

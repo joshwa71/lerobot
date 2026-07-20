@@ -101,6 +101,9 @@ else
     --policy.memory_layer.vlm_router_pool=anchored \
     --policy.memory_layer.vlm_router_pool_weights='[1.0,0.5]' \
     --policy.memory_layer.vlm_route_once=false \
+    --policy.memory_layer.vlm_image_regions=${IMG_REGIONS:-0} \
+    --policy.memory_layer.vlm_image_pool_weights="${IMG_POOL_W:-[1.0,0.5]}" \
+    --policy.memory_layer.router_only_fast=${ROUTER_FAST:-false} \
     --policy.memory_layer.use_frozen_base_input_features=true \
     --policy.memory_layer.log_usage=true \
     --policy.memory_layer.aggregate_usage=true \

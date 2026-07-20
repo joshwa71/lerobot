@@ -377,6 +377,142 @@ check("S13g contrastive per-sample mean z shifts (palette weight restored)",
       z_on.shape == z_off.shape and float((z_on - z_off).abs().max()) > 1e-4,
       f"max|dz|={float((z_on - z_off).abs().max()):.2e}")
 
+# ---------------------------------------------------------------------------
+# S15 (E49): image-span pooled routing — region keys, route-once/broadcast parity,
+# empty-camera exclusion, router_only_fast exactness, stats multiplicity, grads.
+# Image block = n_cam x 256 positions (16x16 patch grid per camera) BEFORE the span.
+# ---------------------------------------------------------------------------
+N_CAM15 = 2
+SEQ15 = N_CAM15 * 256 + SPAN11
+torch.manual_seed(15)
+x15 = torch.randn(3, SEQ15, DIM)
+ia_all = torch.ones(3, N_CAM15, dtype=torch.bool)
+ia_one = torch.tensor([[True, False]] * 3)
+
+
+def build15(route_once, regions=2, fill=True, seed=15, fast=False):
+    torch.manual_seed(seed)
+    m = MLPPlusMemory(nn.Linear(DIM, DIM), DIM,
+                      mk_cfg(SPAN11, vlm_router_pool="anchored",
+                             vlm_router_pool_weights=[1.0, 0.5],
+                             image_regions=regions, image_pool_weights=[1.0, 0.5],
+                             vlm_route_once=route_once, router_only_fast=fast))
+    if fill:
+        with torch.no_grad():
+            for n_, p_ in m.mem.named_parameters():
+                if getattr(p_, "pk_value_param", False):
+                    torch.manual_seed(seed + 1); p_.add_(torch.randn_like(p_) * 0.1)
+    m.train(); m._ctx_valid_mask = vm11; m._ctx_instr_len = il_ok; m._ctx_img_active = ia_all
+    return m
+
+
+# S15a: no img_active context -> bitwise identical to an image_regions=0 module (fallback == legacy)
+m15_img = build15(True)
+m15_img._ctx_img_active = None
+m15_leg = build15(True, regions=0)
+check("S15a no-img-context fallback == legacy text-span", torch.equal(m15_img(x15), m15_leg(x15)))
+
+# S15b: dispatch + compact shape: T == K_act + 1 + max(il); image positions get memory deltas
+m15 = build15(True)
+calls15 = spy_mem(m15)
+out15 = m15(x15)
+K_act = N_CAM15 * 4
+check("S15b1 compact call T == K_act+1+max(il)", calls15[-1][1] == K_act + 1 + int(il_ok.max()),
+      f"T={calls15[-1][1]} expect {K_act + 1 + int(il_ok.max())}")
+img_delta = (out15[:, :N_CAM15 * 256] - m15.mlp(x15)[:, :N_CAM15 * 256]).abs().max()
+check("S15b2 image positions served (nonzero delta)", float(img_delta) > 1e-4, f"{float(img_delta):.4f}")
+
+# S15c: route-once vs literal broadcast parity at NONZERO values
+m15b = build15(False)
+out15b = m15b(x15)
+par = (out15 - out15b).abs().max()
+check("S15c route-once vs broadcast parity", float(par) < 5e-5, f"max|d|={float(par):.2e}")
+
+# S15d: palette sharing — identical inputs in the SAME region get identical outputs;
+# in different regions (different palettes) they differ.
+x15d = x15.clone()
+x15d[:, 1] = x15d[:, 0]          # same region (region 0 covers an 8x8 block: pos 0,1 both in it)
+x15d[:, 200] = x15d[:, 0]        # pos 200 = row 12 -> region 2 (different palette), same input
+out15d = build15(True)(x15d)
+same_reg = (out15d[:, 0] - out15d[:, 1]).abs().max()
+diff_reg = (out15d[:, 0] - out15d[:, 200]).abs().max()
+check("S15d1 same-region same-input -> same output", float(same_reg) < 1e-5, f"{float(same_reg):.2e}")
+check("S15d2 cross-region same-input -> different output", float(diff_reg) > 1e-4, f"{float(diff_reg):.2e}")
+
+# S15e: empty camera excluded — inactive camera positions bitwise == plain mlp; K_act shrinks
+m15e = build15(True)
+m15e._ctx_img_active = ia_one
+calls15e = spy_mem(m15e)
+out15e = m15e(x15)
+check("S15e1 inactive-cam positions == plain mlp", torch.equal(out15e[:, 256:512], m15e.mlp(x15)[:, 256:512]))
+check("S15e2 compact T shrinks to 1-cam keys", calls15e[-1][1] == 4 + 1 + int(il_ok.max()),
+      f"T={calls15e[-1][1]}")
+check("S15e3 active cam still served",
+      float((out15e[:, :256] - m15e.mlp(x15)[:, :256]).abs().max()) > 1e-4)
+
+# S15f: router_only_fast bitwise exactness at zero-init values (both paths)
+for ro in (True, False):
+    m_slow = build15(ro, fill=False, seed=77, fast=False)
+    m_fast = build15(ro, fill=False, seed=77, fast=True)
+    o_slow, o_fast = m_slow(x15), m_fast(x15)
+    check(f"S15f router_only_fast bitwise (route_once={ro})", torch.equal(o_slow, o_fast))
+
+# S15g: stats multiplicity — last_indices rows = sum per sample of (K_act*64 + n_state + il)
+m15g = build15(True)
+_ = m15g(x15)
+v = vm11.sum(dim=1)
+expect_rows = int(sum(K_act * 64 + (int(v[s]) - int(il_ok[s])) + int(il_ok[s]) for s in range(3)))
+got_rows = m15g.mem.last_indices.shape[0]
+check("S15g stats rows carry served multiplicity", got_rows == expect_rows,
+      f"rows={got_rows} expect {expect_rows}")
+
+# S15h: router grads flow through the image keys (contrastive + separation on)
+m15h = MLPPlusMemory(nn.Linear(DIM, DIM), DIM,
+                     mk_cfg(SPAN11, vlm_router_pool="anchored",
+                            vlm_router_pool_weights=[1.0, 0.5],
+                            image_regions=2, image_pool_weights=[1.0, 0.5],
+                            vlm_route_once=False,
+                            contrastive_loss_weight=0.05, contrastive_method="sample",
+                            routing_inter_task_separation_weight=5.0))
+m15h.train(); m15h._ctx_valid_mask = vm11; m15h._ctx_instr_len = il_ok; m15h._ctx_img_active = ia_all
+out15h = m15h(x15.requires_grad_(False))
+tids = torch.tensor([0, 1, 0])
+_ = m15h(x15)  # populate loss hooks with task ids on the second call
+m15h.zero_grad()
+o = m15h(x15)
+loss = o.sum() * 0.0
+for attr in ("last_contrastive_loss", "last_routing_inter_task_similarity_loss"):
+    lv = getattr(m15h.mem, attr, None)
+    if lv is not None:
+        loss = loss + lv
+# losses need task ids: rerun forward passing them through the mem call path
+m15h.zero_grad()
+mem_orig = m15h.mem.forward
+o = None
+
+
+def fwd_with_tasks(xx, **kw):
+    kw["task_ids"] = tids
+    return mem_orig(xx, **kw)
+
+
+m15h.mem.forward = fwd_with_tasks
+o = m15h(x15)
+loss = o.sum() * 0.0
+for attr in ("last_contrastive_loss", "last_routing_inter_task_similarity_loss"):
+    lv = getattr(m15h.mem, attr, None)
+    if lv is not None and lv.requires_grad:
+        loss = loss + lv
+loss.backward()
+kg = m15h.mem.keys.grad
+qg = None
+for n_, p_ in m15h.mem.named_parameters():
+    if "query_proj" in n_ and p_.grad is not None and float(p_.grad.abs().sum()) > 0:
+        qg = n_
+        break
+check("S15h1 keys grad nonzero through image keys", kg is not None and float(kg.abs().sum()) > 0)
+check("S15h2 query-proj grad nonzero", qg is not None, f"({qg})")
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)

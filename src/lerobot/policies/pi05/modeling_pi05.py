@@ -708,6 +708,8 @@ class PaliGemmaWithExpertModel(
                 lang_to_query=False,
                 use_frozen_base_input_features=False,
                 text_span=int(getattr(cfg, "vlm_text_span", 200)),
+                image_regions=int(getattr(cfg, "vlm_image_regions", 0) or 0),
+                image_pool_weights=list(getattr(cfg, "vlm_image_pool_weights", [1.0, 0.5]) or [1.0, 0.5]),
                 vlm_layers=[],
             )
             vlm_targets = attach_memory_to_layer_list(
@@ -726,7 +728,8 @@ class PaliGemmaWithExpertModel(
                 f"span=last {vlm_cfg.text_span} positions (the tokenized language field)."
             )
 
-    def set_vlm_token_mask(self, masks: torch.Tensor | None, instr_len: torch.Tensor | None = None):
+    def set_vlm_token_mask(self, masks: torch.Tensor | None, instr_len: torch.Tensor | None = None,
+                           img_active: torch.Tensor | None = None):
         """E44 pad fix: hand the language-field attention mask (B, tokenizer_max_length) to
         the VLM text-span memory wrappers so pad positions are excluded from memory output,
         usage statistics, TF counts, and the routing/contrastive losses.
@@ -734,11 +737,17 @@ class PaliGemmaWithExpertModel(
         instr_len (E45, pooled state routing): per-sample field index of the "," preceding
         the "State" marker in pi05's "Task: {instr}, State: {bins};" prompt — the
         instruction/state boundary the pooled-router modes key on. None = per-token routing.
+
+        img_active (E49, image-span pooled routing): (B, n_cam) bool — per camera-slot
+        validity from prepare_images (empty_cameras slots are False). Real cameras are
+        appended FIRST, so active image positions form a contiguous prefix of the image
+        block. None disables the image span (modules fall back to text-span-only).
         """
         for i in getattr(self, "_vlm_mem_layer_indices", []) or []:
             mlp = self.paligemma.model.language_model.layers[i].mlp
             mlp._ctx_valid_mask = masks
             mlp._ctx_instr_len = instr_len
+            mlp._ctx_img_active = img_active
 
     def _frozen_routing_enabled(self) -> bool:
         cfg = getattr(self, "_mem_cfg", None)
@@ -1224,7 +1233,10 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        self.paligemma_with_expert.set_vlm_token_mask(masks, instr_len=_vlm_instr_len_from_tokens(tokens))
+        self.paligemma_with_expert.set_vlm_token_mask(
+            masks, instr_len=_vlm_instr_len_from_tokens(tokens),
+            img_active=torch.stack(img_masks, dim=1) if img_masks else None,
+        )
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
         if (
@@ -1298,7 +1310,10 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        self.paligemma_with_expert.set_vlm_token_mask(masks, instr_len=_vlm_instr_len_from_tokens(tokens))
+        self.paligemma_with_expert.set_vlm_token_mask(
+            masks, instr_len=_vlm_instr_len_from_tokens(tokens),
+            img_active=torch.stack(img_masks, dim=1) if img_masks else None,
+        )
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 

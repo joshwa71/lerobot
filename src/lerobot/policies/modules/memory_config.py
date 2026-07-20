@@ -217,9 +217,33 @@ class MemoryLayerConfig:
     # and inference stages keep True for the VRAM savings — with the router frozen the
     # two paths are numerically interchangeable (parity ~1e-7) and the losses inert.
     vlm_route_once: bool = True
+    # IMAGE-SPAN pooled routing (E49/1A). When > 0 (and vlm_router_pool="anchored"),
+    # the VLM modules ALSO serve the image block: each ACTIVE camera's 16x16 patch grid
+    # is split into vlm_image_regions x vlm_image_regions spatial regions, and every
+    # position in a region shares ONE per-sample router key
+    #   rms_nrm( a*rms_nrm(mean instr tokens) + b*rms_nrm(mean region patches) )
+    # rescaled to the language-field token RMS (keys stay in-distribution for the one
+    # query projection serving all key types). Empty-camera slots (img_mask False) are
+    # excluded entirely. Per-token image routing is deliberately unsupported: patch-level
+    # between/within task variance is 0.06-0.22 (the state-digit sprawl band; E49 probe).
+    # Value path stays per-position on the live hidden, as with the state palette.
+    # 0 (default) = text-span only, byte-identical legacy behavior. 2 => 4 regions/cam.
+    vlm_image_regions: int = 0
+    vlm_image_pool_weights: List[float] = field(default_factory=lambda: [1.0, 0.5])
+    # Router-only fast path (warm-ups only): skip the per-row slot gather / value math
+    # and substitute exact zeros for the pre-projection value output. BITWISE-identical
+    # to the real path when all slot_up tensors are at zero init (router warm-ups pin
+    # values; lora slot output = up @ silu(down @ x) = 0 exactly) — the projection/gate
+    # tail still runs so the value_proj bias term is preserved. Makes the literal
+    # broadcast warm-up affordable over the ~560-position image+language span.
+    # NEVER set when values are trained (A-phase/sequential) — outputs would be wrong.
+    router_only_fast: bool = False
     # INTERNAL (set by the attach path on the derived per-side config; not a CLI knob):
     # when > 0 on a module's cfg, that module applies memory to the last-N positions only.
     text_span: int = 0
+    # INTERNAL mirrors of vlm_image_regions / vlm_image_pool_weights on the derived cfg.
+    image_regions: int = 0
+    image_pool_weights: List[float] = field(default_factory=lambda: [1.0, 0.5])
 
     # Affine LoRA slots ("lora + value", only used when value_type="lora"). When True,
     # each slot additionally stores a per-slot bias vector b_i (v_dim), added to the

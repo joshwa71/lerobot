@@ -31,7 +31,8 @@ BS = int(os.environ.get("BS", "8"))
 OUT = os.environ.get("OUT", f"/home/josh/lerobot/outputs/analysis/e44/subspan_{ARM}.json")
 TASKS = list(range(10))
 FAMILY = [(4, 5), (4, 7), (5, 7)]
-REGIONS = {"instr[0:16)": (0, 16), "mid[16:28)": (16, 28), "state[28:]": (28, 200)}
+REGIONS = {"instr[0:16)": (0, 16), "mid[16:28)": (16, 28), "state[28:]": (28, 200),
+           "img[300:340)": (300, 340)}
 
 
 @parser.wrap()
@@ -87,13 +88,58 @@ def main(cfg: SequentialOnlineConfig):
             with torch.no_grad():
                 policy.forward(b, task_emb=None, task_ids=tids)
             for L, m in wrappers.items():
-                li = m.mem.last_indices  # (sum_valid, heads, knn) order-preserving
+                li = m.mem.last_indices  # (rows, heads, knn) order-preserving
                 vm = getattr(m, "_ctx_valid_mask", None)
                 if li is None or vm is None:
                     continue
                 v = vm.sum(dim=1).cpu().numpy().astype(int)  # per-sample valid counts
-                assert li.shape[0] == int(v.sum()), (li.shape, v.sum())
-                pos = np.concatenate([np.arange(vi) for vi in v])
+                # E49 route-once-aware row mapping. Three layouts, detected by row count:
+                #   legacy broadcast (text span):    rows = sum(v_i), per-position order
+                #   compact route-once (text span):  rows = sum(v_i): [state x n_state, instr x il]
+                #   compact route-once (image span): rows = sum(K*64 + v_i):
+                #       [region_j x 64 ...(j<K), state x n_state, instr x il]
+                #   literal broadcast (image span):  rows = sum(n_act*256 + v_i), per-position
+                il_t = getattr(m, "_ctx_instr_len", None)
+                ia = getattr(m, "_ctx_img_active", None)
+                K = 0
+                n_ia = 0
+                if getattr(m, "image_regions", 0) > 0 and ia is not None:
+                    s2 = int(m.image_regions) ** 2
+                    K = int(ia[0].long().sum().item()) * s2
+                    n_ia = int(ia[0].long().sum().item()) * 256
+                rows = li.shape[0]
+                pooled = bool(getattr(m, "router_pool", "")) and il_t is not None
+                if K > 0 and rows == int(v.sum()) + K * (256 // (int(m.image_regions) ** 2)) * len(v):
+                    rsize = 256 // (int(m.image_regions) ** 2)
+                    pos_list = []
+                    for i, vi in enumerate(v):
+                        ili = int(il_t[i])
+                        img = np.concatenate([np.full(rsize, 300 + j) for j in range(K)])
+                        st = ili + np.arange(max(vi - ili, 1))[: vi - ili] if vi > ili else np.empty(0, int)
+                        pos_list.append(np.concatenate([img, st, np.arange(ili)]))
+                    pos = np.concatenate(pos_list).astype(int)
+                elif K > 0 and rows == n_ia * len(v) + int(v.sum()):
+                    # literal broadcast image layout: rows are per-POSITION over
+                    # [n_ia image positions (camera-major, 16x16 row-major), language].
+                    s = int(m.image_regions)
+                    step = 16 // s
+                    q = np.arange(256)
+                    reg_in_cam = (q // 16 // step) * s + (q % 16) // step
+                    img_pos = np.concatenate([
+                        300 + c * s * s + reg_in_cam for c in range(n_ia // 256)
+                    ])
+                    pos_list = [np.concatenate([img_pos, np.arange(vi)]) for vi in v]
+                    pos = np.concatenate(pos_list).astype(int)
+                elif pooled and getattr(m, "route_once", False) and rows == int(v.sum()):
+                    # compact text-span layout (the deferred E47 mapping): state rows first
+                    pos_list = []
+                    for i, vi in enumerate(v):
+                        ili = int(il_t[i])
+                        pos_list.append(np.concatenate([ili + np.arange(vi - ili), np.arange(ili)]))
+                    pos = np.concatenate(pos_list).astype(int)
+                else:
+                    assert rows == int(v.sum()), (li.shape, v.sum(), K)
+                    pos = np.concatenate([np.arange(vi) for vi in v])
                 flat = li.reshape(li.shape[0], -1).numpy()  # rows x (heads*knn)
                 cdict = counts[L][t]
                 for r in range(flat.shape[0]):
@@ -139,7 +185,8 @@ def main(cfg: SequentialOnlineConfig):
             w = {}
             for t in TASKS:
                 agg = defaultdict(int)
-                for p in range(lo, min(hi, vmax)):
+                hi_eff = min(hi, vmax) if hi <= 200 else hi  # synthetic img codes live at 300+
+                for p in range(lo, hi_eff):
                     for s, c in counts[L][t].get(p, {}).items():
                         agg[s] += c
                 if not agg:
