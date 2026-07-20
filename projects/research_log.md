@@ -3618,3 +3618,45 @@ Probe battery (all pre-registered instruments run):
 Artifacts: outputs/analysis/e48/{working_tables.md,slots.out,probe_conversion.jsonl,
 mse_matrix.jsonl}; graft at outputs/train/libero_90_pi05_jointwarm10k_arm1p_vlmknn16_r4graft;
 commits 6edb54e7 (tooling+scripts) + this entry.
+
+---
+### Entry 49 addendum (20 Jul eve) — 1A design frozen from the querystats-image probe; build shipped (smoked 15/15 + policy-level); warm-up chain RUNNING
+
+**Probe results** (`outputs/analysis/e49/querystats_image_stage1.json`, layers 7-16, stage-1
+features, libero_10): (1) patch-level between/within task variance on real cameras =
+0.06-0.22 — squarely the state-digit sprawl band (state 0.11-0.13, instruction 0.81-0.99)
+→ per-token image routing confirmed dead before spending a warm-up. (2) Pooled image
+geometry MORE degenerate than the state pool was (family cos 0.975-0.988) and composites
+degrade separation monotonically in b — the same init pattern the state pool showed,
+where trained (1.0,0.5) still won; probes rank, never veto. (3) NEW: the instruction
+anchor's separation is best LOW in the stack and degrades monotonically with depth
+(composite b=0 inter: L7 0.722 → L9 0.785 → L11 0.820 → L13 0.869 → L15 0.840 → L16
+0.898), and patch-level task signal is also strongest early — both strengthen step 2's
+guard-free lower-layer placement, and mean step 1 at [15,16] tests image pooling at the
+least-favorable depth (the price of single-delta discipline). (4) The two empty camera
+slots are unambiguous in the stats (identical, ~15x lower variance) — excluded in-model
+via img_masks. **Frozen: g2 (2x2 regions per real camera → 8 image keys/sample, 64
+positions each), a=1.0 b=0.5, layers [15,16], component-RMS normalization rescaled to
+the language-field token RMS.**
+
+**Build** (commit a8b8a85f): `vlm_image_regions`/`vlm_image_pool_weights` +
+`router_only_fast` (exact value-path skip at pinned-zero values — makes the literal
+571-row broadcast warm-up affordable; A/seq/audit gained explicit
+`router_only_fast=false` overrides per the E37 rule, without which the A-phase would
+silently train nothing). Route-once compact layout [8 region keys, state key, instr
+tokens] with per-region palette application; literal-broadcast path drops inactive-camera
+positions so valid tokens stay a contiguous prefix for the loss machinery. Smokes S15a-h
+ALL PASS — the load-bearing two: route-once↔broadcast parity 1.19e-07 at NONZERO values,
+and router_only_fast bitwise-exact on both paths. Policy-level smoke on stage-1:
+broadcast T=571, keys grads live through the image keys, no fallback. The sub-span
+probe's route-once-aware row mapping (deferred since E47) shipped — auto-detects
+image-compact / state-compact / literal layouts by row count.
+
+**RUNNING** (tmux `imgspan`, log `outputs/e49_imgspan_warmup.log`): warm-up
+`libero_90_pi05_jointwarm10k_imgspan_g2_n256_vlmknn16_bcast` — 0.87 s/step at bs32,
+32 GiB (the value-skip makes the image-broadcast warm-up FASTER than the text-only
+ones), ETA ~2.5h → audit → analyses → region-split sub-span → STOP for review.
+Review gates (wrapper header): image-region famIoU <= ~0.25 at per-region effnum >=
+~300 (no ~2-draw collapse), state/instr regions within ~20% of arm 1' (0.074/0.084
+palette, ~0.20 instr), expert certificate reproduced. The audit famIoU topline is
+image-mass-weighted — read the sub-span region table, not the topline.
