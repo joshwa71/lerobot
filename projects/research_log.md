@@ -3684,3 +3684,22 @@ here concurrently with the 1A warm-up:
 - Residuals: one cell; rollout conversion unproven until the 50-ep final (~11h);
   amplitude give-back is the known risk — re-check own->final at 025000 against
   arm 1's uniformly-improving retention grid.
+
+---
+### Entry 49 addendum 3 (20 Jul night) — 1A CERTIFIES; 1B LAUNCHED (no further gates per Josh)
+
+Audit review: image regions famIoU 0.091/0.128 at effnum 548/665 (state-conditional
+~8-10 draws; sprawl and collapse branches both dead), bg 0.010/0.013; **the instruction
+region's word-sharing floor broke** (0.198-0.219 invariant across E45-47 -> 0.103/0.134,
+bg 0.015 — 8x cleaner; plausibly the image keys absorbing the loss-mass competition);
+state palette L16 0.127 (arm 1' 0.084, +51% relative — the one watch-item, at arm 3''s
+level which still made 37.2); topline 0.105/0.141 < arm 1's 0.136/0.156; expert
+certificate reproduced (5th consecutive). 2.5/3 gates -> certified.
+
+1B RUNNING (tmux grad_imgspan, log outputs/e49_grad_imgspan.log): grad_imgspan_g2.sh —
+C-config verbatim from the imgspan warm-up, the SINGLE-DELTA cell vs arm 1'
+(composition levers deliberately not stacked; they're being measured on the VMs in
+parallel). Health verified: router_only_fast=False + vlm_route_once=True overrides
+took, 48/895 trainable, bs32, 108GiB. A ~3.5h -> seq ~11h; t0 chunk vs 0.112 and the
+50-ep final vs 40.0 land tomorrow, alongside the composition final (its Gate-2:
+e4 chunk 0.0753) and the r4 arm.
