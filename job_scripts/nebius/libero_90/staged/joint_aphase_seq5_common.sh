@@ -23,7 +23,15 @@ WARM_CKPT="$ROOT_DIR/outputs/train/$WARM_RUN/checkpoints/last/pretrained_model"
 A_RUN=libero_90_pi05_jointA10k_${GRAD_TAG}
 A_OUT="$ROOT_DIR/outputs/train/$A_RUN"
 A_CKPT="$A_OUT/checkpoints/last/pretrained_model"
-SEQ_RUN=libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k
+# E48 parametrization (defaults = the E47 graduation config, byte-identical commands):
+# wrappers may override the sequential's write budget / value LR / micro-batching and
+# must then set SEQ_RUN so the run name reflects the actual config.
+SEQ_TOP_T=${SEQ_TOP_T:-1536}
+SEQ_VALUE_LR=${SEQ_VALUE_LR:-0.001}
+SEQ_VALUE_LR_END=${SEQ_VALUE_LR_END:-0.0001}
+SEQ_BS=${SEQ_BS:-32}
+SEQ_ACCUM=${SEQ_ACCUM:-1}
+SEQ_RUN=${SEQ_RUN:-libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k}
 SEQ_OUT="$ROOT_DIR/outputs/train/$SEQ_RUN"
 export MUJOCO_GL=osmesa; unset DISPLAY
 export TOKENIZERS_PARALLELISM=false
@@ -32,7 +40,11 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 source /home/josh/miniforge3/etc/profile.d/conda.sh
 conda activate lerobot-memory-updated
 cd "$ROOT_DIR"
-[ -d "$WARM_CKPT" ] || { echo "ERROR: warm-up checkpoint missing: $WARM_CKPT (rsync it to this box first)"; exit 1; }
+# The warm-up checkpoint is only needed when stage A actually runs (a seq-only reuse of
+# an existing A checkpoint on a box without the warm-up dir is legitimate — E48).
+if [ ! -d "$A_CKPT" ]; then
+  [ -d "$WARM_CKPT" ] || { echo "ERROR: warm-up checkpoint missing: $WARM_CKPT (rsync it to this box first)"; exit 1; }
+fi
 
 # ---------- stage A: joint A-phase (values both towers, routers frozen) ----------
 a_phase () {
@@ -99,8 +111,8 @@ else
     --env.task=libero_10 \
     --output_dir="$SEQ_OUT" \
     --steps=200000 \
-    --batch_size=32 \
-    --gradient_accumulation_steps=1 \
+    --batch_size=$SEQ_BS \
+    --gradient_accumulation_steps=$SEQ_ACCUM \
     --num_workers=8 \
     --eval.batch_size=1 \
     --eval.n_episodes=20 \
@@ -119,13 +131,13 @@ else
     --save_after_each_task=true \
     --reinit_optimizer_each_task=true \
     --tfidf_enable=true \
-    --tfidf_top_t=1536 \
+    --tfidf_top_t=$SEQ_TOP_T \
     --use_online_idf_stats=true \
     --idf_exponent=1 \
     --protect_prior_slots=true \
     --protect_beta=4 \
-    --memory_value_lr=0.001 \
-    --memory_value_lr_end=0.0001 \
+    --memory_value_lr=$SEQ_VALUE_LR \
+    --memory_value_lr_end=$SEQ_VALUE_LR_END \
     --memory_value_scheduler_type=linear
 fi
 echo "E47 graduation chain [$GRAD_TAG] COMPLETE at $(date)"
