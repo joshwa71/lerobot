@@ -88,12 +88,12 @@ else
     --policy.memory_layers=true \
     --policy.memory_layer.enabled=true \
     --policy.memory_layer.memory_only=false \
-    --policy.memory_layer.layers='[8,10,12,14]' \
+    --policy.memory_layer.layers="${EXP_LAYERS:-[8,10,12,14]}" \
     --policy.memory_layer.mem_n_keys=$EXP_N \
     --policy.memory_layer.lora_rank=$EXP_R \
     --policy.memory_layer.mem_knn=$EXP_KNN \
     --policy.memory_layer.routing_loss_topk=$EXP_KNN \
-    --policy.memory_layer.vlm_layers='[15,16]' \
+    --policy.memory_layer.vlm_layers="${VLM_LAYERS:-[15,16]}" \
     --policy.memory_layer.vlm_mem_n_keys=$VLM_N \
     --policy.memory_layer.vlm_lora_rank=$VLM_R \
     --policy.memory_layer.vlm_mem_knn=$VLM_KNN \
@@ -131,8 +131,10 @@ else
   bash "$AUDIT_SH" "$CKPT" "$AUDIT_RUN" || echo "[audit] AUDIT FAILED (warmup checkpoint retained; rerun manually)"
 fi
 VBANK=$((VLM_N * VLM_N)); EBANK=$((EXP_N * EXP_N))
-python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 15,16 $VBANK vlm || true
-python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 8,10,12,14 $EBANK expert || true
+VLM_L_CSV=$(echo "${VLM_LAYERS:-[15,16]}" | tr -d "[] ")
+python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" $VLM_L_CSV $VBANK vlm || true
+EXP_L_CSV=$(echo "${EXP_LAYERS:-[8,10,12,14]}" | tr -d "[] ")
+python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" $EXP_L_CSV $EBANK expert || true
 mkdir -p outputs/analysis/e46
 ARM="$ARM_TAG" OUT="$ROOT_DIR/outputs/analysis/e46/subspan_${ARM_TAG}.json" \
 python scripts/vla_analysis/probe_subspan.py \

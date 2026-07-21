@@ -132,6 +132,15 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     tfidf_enable: bool = True
     # Number of memory value slots per module allowed to receive gradients each step
     tfidf_top_t: int = 128
+    # E50 top-p adaptive write budget (0 = off). When > 0, the per-module per-batch update
+    # mask size becomes k = min(n_read, max(tfidf_top_t, ceil(tfidf_top_p * n_read))),
+    # capped at tfidf_top_p_cap: tasks whose per-batch read set fits inside top_t keep
+    # writing everything they read (today's behavior, un-truncated); diffuse tasks (whose
+    # reads exceed top_t) write the top-p fraction of their read set instead of a fixed
+    # top_t slice — the mask stops rotating over the footprint. The ranking score is
+    # unchanged (TF-IDF x protection gate); retrieval/knn untouched.
+    tfidf_top_p: float = 0.0
+    tfidf_top_p_cap: int = 16384
     # How to compute the TF term before applying IDF.
     # "raw": count every retrieved slot equally.
     # "weighted": accumulate retrieval weights per slot.
@@ -1214,6 +1223,8 @@ def _compute_tfidf_top_indices_for_batch(
     protect_mode: str = "rank",
     protect_scale_out: dict[torch.nn.Parameter, torch.Tensor] | None = None,
     protect_hard_u: float = 0.0,
+    top_p: float = 0.0,
+    top_p_cap: int = 16384,
 ) -> dict[torch.nn.Parameter, torch.Tensor]:
     """
     For each memory module, compute TF (or TF-IDF) over slots accessed in the current batch and
@@ -1302,9 +1313,19 @@ def _compute_tfidf_top_indices_for_batch(
             if used_mask.any():
                 tfidf_used = tfidf[used_mask]
                 used_indices = used_mask.nonzero(as_tuple=False).view(-1)
-                k = int(min(top_t, tfidf_used.numel()))
+                n_read = int(tfidf_used.numel())
+                if top_p > 0:
+                    # E50 top-p: never fewer than top_t (the floor), never more than the
+                    # read set or the cap; diffuse tasks get ceil(top_p * n_read).
+                    k = min(n_read, max(int(top_t), math.ceil(top_p * n_read)), int(top_p_cap))
+                else:
+                    k = min(int(top_t), n_read)
                 if k <= 0:
                     continue
+                try:
+                    mem_module.last_mask_k = (int(k), n_read)
+                except Exception:
+                    pass
                 vals, top_pos = torch.topk(tfidf_used, k=k, largest=True, sorted=False)
                 top_indices = used_indices[top_pos]
                 try:
@@ -1477,6 +1498,8 @@ def _update_policy_with_tfidf(
     protect_beta: float = 0.0,
     protect_mode: str = "rank",
     protect_hard_u: float = 0.0,
+    top_p: float = 0.0,
+    top_p_cap: int = 16384,
 ):
     """
     Variant of update_policy that masks gradients for memory value tables to only top-t TF-IDF slots.
@@ -1558,8 +1581,21 @@ def _update_policy_with_tfidf(
                 protect_mode=protect_mode,
                 protect_scale_out=protect_scale,
                 protect_hard_u=protect_hard_u,
+                top_p=top_p,
+                top_p_cap=top_p_cap,
             )
             mask_build_s = time.perf_counter() - t0
+            if top_p > 0:
+                _n = getattr(_update_policy_with_tfidf, "_topp_log_n", 0)
+                _update_policy_with_tfidf._topp_log_n = _n + 1
+                if _n % 500 == 0:
+                    sizes = []
+                    for _, _mm, _, _jk in _iter_memory_modules(unwrapped):
+                        mk = getattr(_mm, "last_mask_k", None)
+                        if mk:
+                            tag = ("V" if "language_model" in _jk else "E") + _jk.split("layers.")[-1].split(".")[0]
+                            sizes.append(f"{tag}:{mk[0]}/{mk[1]}")
+                    logging.info("[top_p] mask k/n_read per layer: " + " ".join(sizes))
             if use_cuda_events:
                 ev_mask.record()
             if allowed:
@@ -2094,6 +2130,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             protect_beta=cfg.protect_beta,
                             protect_mode=cfg.protect_mode,
                             protect_hard_u=cfg.protect_hard_u,
+                            top_p=cfg.tfidf_top_p,
+                            top_p_cap=cfg.tfidf_top_p_cap,
                         )
                     else:
                         train_tracker, output_dict = update_policy(

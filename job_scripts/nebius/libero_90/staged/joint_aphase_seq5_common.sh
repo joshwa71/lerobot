@@ -31,6 +31,7 @@ SEQ_VALUE_LR=${SEQ_VALUE_LR:-0.001}
 SEQ_VALUE_LR_END=${SEQ_VALUE_LR_END:-0.0001}
 SEQ_BS=${SEQ_BS:-32}
 SEQ_ACCUM=${SEQ_ACCUM:-1}
+SEQ_TOP_P=${SEQ_TOP_P:-0}
 SEQ_RUN=${SEQ_RUN:-libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k}
 SEQ_OUT="$ROOT_DIR/outputs/train/$SEQ_RUN"
 export MUJOCO_GL=osmesa; unset DISPLAY
@@ -134,6 +135,7 @@ else
     --reinit_optimizer_each_task=true \
     --tfidf_enable=true \
     --tfidf_top_t=$SEQ_TOP_T \
+    --tfidf_top_p=$SEQ_TOP_P \
     --use_online_idf_stats=true \
     --idf_exponent=1 \
     --protect_prior_slots=true \
