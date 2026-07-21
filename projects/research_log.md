@@ -3703,3 +3703,127 @@ parallel). Health verified: router_only_fast=False + vlm_route_once=True overrid
 took, 48/895 trainable, bs32, 108GiB. A ~3.5h -> seq ~11h; t0 chunk vs 0.112 and the
 50-ep final vs 40.0 land tomorrow, alongside the composition final (its Gate-2:
 e4 chunk 0.0753) and the r4 arm.
+
+---
+## Entry 50 - 21 Jul 26 (Morning-review verdicts: COMPOSITION = new frontier 46.0 (amplitude converts on the VLM substrate; e4 14->34 as its Gate-2 chunk predicted); BOTH substrate bets FAIL with BETTER on-demo function (vlmr4 30.4, imgspan 28.8) — the conversion gap re-surfaces at substrate scale; jitter probe + Josh's amplification model relocate the imgspan failure to the VALUE PATH at image positions (image stack parked); r4 axis closed on both towers. -> E50 wave: layer-max gated chain (RUNNING here), top-p write budget + lr4x arms (VMs))
+
+### Results — the three overnight arms (50-ep finals; battery in outputs/analysis/e50/)
+
+Recap: all three built on the E48 frontier, arm 1' (expert n256/r2/knn36 at [8,10,12,14],
+VLM text-field n256/r2/knn16 at [15,16], famIoU-0.145-certified router; 40.0 final /
+block-min 0.0940). Composition = same substrate + value-LR 2e-3->2e-4 + top_t 3072
+(sequential-only, reused A-checkpoint). VLM-r4 = vlm_lora_rank 4 via checkpoint graft
+(fresh r4 VLM values; router certificate transfers bitwise), plain C-config. Image-span
+1B = the E49 image-region-routing warm-up graduated through the identical chain, plain
+C-config. Chunk error = executed 50-step action deviation after a real 10-step denoise.
+
+| arm | e4 | e6 | e9 | e2 | e7 | FINAL | block-min | final-grid chunk mean |
+|---|--|--|--|--|--|--|--|--|
+| arm 1' (E48) | 14 | 58 | 16 | 82 | 30 | 40.0 | 0.0940 | 0.130 |
+| composition | 34 | 60 | 26 | 84 | 26 | **46.0** | 0.0687 | **0.097** |
+| vlm-r4 | 18 | 38 | 14 | 68 | 14 | 30.4 | 0.0813 | 0.111 |
+| imgspan 1B | 20 | 36 | 24 | 58 | 6 | 28.8 | 0.0858 | 0.108 |
+
+- **Composition converts end-to-end.** The Gate-2 prediction landed (e4 chunk 0.0753 ->
+  rollout 34, the best staged e4 ever); every final-grid chunk cell beat arm 1' by
+  22-33%; give-back small (e4 own->final +7.6%; rollout give-back ~0 vs the same
+  levers' -11.4 on the old expert-only substrate). Exposure roughly doubled (selfcov
+  0.96, VLM16-e4 RTO 71.5%, e4-perceived VLM field drift 86-92%) at zero measured cost
+  — bleed-doesn't-convert holds at 2x amplitude here. E48's projection (loss
+  0.070-0.080 -> 44-49) landed at 0.0687 -> 46.0.
+- **Both substrate arms invert fit and rollout.** Each has BETTER on-demo function than
+  arm 1' on all five final-grid cells and rolls ~10pp worse. The deficits sit on cells
+  retention cannot explain (r4: e7 — the last task, zero later exposure — 14 vs 30 at
+  better loss; imgspan: e2 58 vs 82 at better chunk). Eliminated by measurement: r4
+  exposure topology == arm 1' (footprints bitwise-same under frozen-route; RTO within
+  ~4pp; e4-perceived drift identical), r4 A-bank magnitudes fine; imgspan A-phase loss
+  IDENTICAL to arm 1''s (0.1029 both), forgetting matrix flat (+1.6..+5.5%), retention
+  grid flat-to-improving. Function-space ranking across the four arms (comp 0.097 <
+  imgspan 0.108 < r4 0.111 < arm1p 0.130) is ANTI-correlated with rollouts across
+  substrates while remaining correlated within one (comp vs arm1p).
+
+### The jitter instrument + the mechanism correction (Josh)
+
+Jitter probe (perturb demo observations, re-denoise, score the chunk; state sigma 0.1/0.2
+per-dim std, image pixel sigma 0.05) on the four final checkpoints:
+
+| relative degradation | arm1p | comp | vlmr4 | imgspan |
+|---|---|---|---|---|
+| image@0.05 (t0/t3/t4) | 2.06/2.09/2.77 | 2.33/2.51/3.44 | 2.27/2.35/3.05 | **2.70/2.61/4.11** |
+| state@0.1 (t0/t3/t4) | 1.35/1.49/1.81 | 1.37/1.45/1.77 | 1.50/1.55/1.87 | **1.27/1.34/1.49** |
+
+- imgspan: steepest image slope of all arms on every task AND flattest state slope —
+  the brittleness is channel-specific to the one input its new pathway reads; its
+  ABSOLUTE image-perturbed error crosses above arm 1' on all three tasks (worst on
+  e7, 0.368 vs 0.264 — the cell that fell 30->6). comp/r4 stay absolutely BELOW arm 1'
+  everywhere (so the shell explains imgspan, and does NOT explain r4 — r4's residual
+  deficit stays formally unexplained: noisier within-block optimization (block-end
+  1.4-2.0x block-min vs ~1.1-1.25x), two historically chunk-unrankable cells among its
+  losses, and an unsynced A-phase health number).
+- **Attribution corrected in discussion (Josh): the amplification model.** My initial
+  "image-conditioned ADDRESSING is unstable" claim had zero direct evidence (no
+  retrieved-set measurement). Josh's alternative — the slot transforms applied AT image
+  positions amplify the function's dependence on image features, so off-demo visual
+  drift moves the function proportionally more — fits the data better on three counts:
+  (1) comp and r4 raised the image slope with routing bitwise-FIXED (value mass alone
+  moves this metric); (2) imgspan's transforms take image hiddens as DIRECT input at
+  512 positions (vs attention-mediated in every other arm) and its excess slope exceeds
+  comp's at half the write budget; (3) the E43 VLM-LoRA specialists — dense adapters on
+  image processing — were the most image-brittle models ever measured and survived only
+  by level (clean error far below the brittleness cost; imgspan's did not get that far).
+  Rerouting remains possible but unevidenced and second-order.
+
+### Conclusions
+
+1. **Frontier = arm 1' substrate + lr2x + top_t 3072 at 46.0**; amplitude converts
+   through the VLM palette (the levers never moved e4 on the expert-only substrate).
+2. **The on-demo chunk metric is ranked-instrument WITHIN a substrate and ranks
+   BACKWARDS across substrates** (twice in one night). Substrate changes are henceforth
+   judged on 50-ep finals + the jitter battery, never chunk alone. This also
+   retro-explains Gate-2 passing the r4 arm (t0 chunk 0.0977 — an on-demo gate).
+3. **The threshold law gains a support axis**: both failed arms lowered chunk while
+   raising the effective threshold (brittler off-demo behavior); composition lowered
+   chunk with support untouched and converted fully. Fit gains count only when the
+   substrate's off-distribution behavior is preserved.
+4. **Rank axis closed on both towers** (expert +2 in E33; VLM -10 here). Layers, not
+   rank, is the remaining capacity direction.
+5. **Image stack parked for the deadline (Josh's channel-ranking argument, measured
+   support):** instruction constant, state ~linear in deviation (and pooled+anchored),
+   image features noisiest relative to task signal (querystats: patch within-task
+   variance dominates; pooled family cos 0.975-0.988). With image-perturbation training
+   off the table ("we train on the same data"), the main de-brittling lever for
+   image-position serving is unavailable. The perception-leverage evidence (compass)
+   stands; the banked text-field VLM serving IS the usable share of it.
+6. Freeze-top-5k stays retired (E44 ran the direct test: no jitter dividend, real fit
+   bill, 0.2-0.5% erosion = protected non-damage), and the amplification model argues
+   against it structurally (brittleness lives in NEW content's gain, not old content's
+   erosion). Revisit only if VLM A-core erosion under composition-scale writes measures
+   >~5% (cheap check: arm 1' A-usage inert sweep + checkpoint diff — not scheduled).
+7. Protection-store decay rejected as insufficiently general (Josh). e9's remaining
+   budget starvation is real but small: at top_t 3072, e4/e2/e7 are effectively
+   un-truncated (selfcov 0.90-0.97) while e9 (~0.80 expert-side) and e6 (0.68-0.83)
+   still rotate — hence top-p.
+
+### Next steps (the E50 wave; all three = single deltas, 50-ep finals)
+
+1. **[RUNNING, base box, tmux layermax] Layer-max gated chain**: expert [2,4,6,8] +
+   VLM text-field [10,12,14,16], n256/r2 everywhere (3.2B values; seq bs16xacc2).
+   Rationale: parameter-max the tower the compass says carries fit, at depths where the
+   anchor geometry is best (E49 probe: separation improves monotonically downward);
+   Josh's split satisfies the placement guard with EXISTING code (all VLM layers above
+   expert max; policy smoke 8/8 attach + live grads + multi-layer fork verified).
+   Automated gate (gate_layermax.py, validated PASS on the imgspan audit / FAIL on
+   frozenbase): fail -> auto-fallback compact split expert [9,10,11,12] + VLM
+   [13,14,15,16] -> re-gate -> fail = STOP (drawing board). Known risk the gate
+   watches: expert routing at L2/L4 (feat-probe separability L4 89.5% vs 98 plateau).
+2. **[VM] top-p write budget** (seq5_arm1p_lr2x_topp09.sh): k = min(n_read, max(3072,
+   ceil(0.9*n_read)), 16384) per module per batch — "write ~everything you read";
+   single delta vs composition. Smoked S16a-e; [top_p] mask-size logging in-run.
+3. **[VM] lr-max** (seq5_arm1p_lr4xsched_topt3072.sh): 4e-3 -> 2e-4 on the composition
+   substrate; the amplitude-headroom cell (E43: function did not saturate at 4x;
+   give-back is the accepted risk).
+4. Storage: ~560G freed (closed-branch E40-44 sequential dirs deleted entirely — wandb
+   server + outputs/analysis archives retain their numbers; imgspan/arm1p seq
+   intermediates + training states; imgspan A-phase; r4 graft). Kept: stageB baseline
+   run, all warm-up certificates, arm 1' A-checkpoint (the shared substrate for the VM
+   arms), r2244/sep5/frozenbase-40k era anchors, stage-1 base, realworld_v2.
