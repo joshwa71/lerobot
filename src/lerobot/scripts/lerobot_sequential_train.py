@@ -133,12 +133,14 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # Number of memory value slots per module allowed to receive gradients each step
     tfidf_top_t: int = 128
     # E50 top-p adaptive write budget (0 = off). When > 0, the per-module per-batch update
-    # mask size becomes k = min(n_read, max(tfidf_top_t, ceil(tfidf_top_p * n_read))),
-    # capped at tfidf_top_p_cap: tasks whose per-batch read set fits inside top_t keep
-    # writing everything they read (today's behavior, un-truncated); diffuse tasks (whose
-    # reads exceed top_t) write the top-p fraction of their read set instead of a fixed
-    # top_t slice — the mask stops rotating over the footprint. The ranking score is
-    # unchanged (TF-IDF x protection gate); retrieval/knn untouched.
+    # E51 MASS-based (nucleus) adaptive write budget: mask size k = min(n_read,
+    # max(tfidf_top_t, k_p), tfidf_top_p_cap) where k_p = smallest k covering
+    # tfidf_top_p of the batch's total ranking-score mass (protection-discounted in
+    # rank mode). Concentrated tasks pin at the top_t floor (static, measured-best);
+    # diffuse tasks get up to cap. NB the E50 count-of-unique-slots semantics are
+    # RETIRED (they measured the binary read tail — ~90% incidental — and produced the
+    # 19.2 catastrophe; see E51 Parts 2/6). Ranking score unchanged; retrieval/knn
+    # untouched.
     tfidf_top_p: float = 0.0
     tfidf_top_p_cap: int = 16384
     # How to compute the TF term before applying IDF.
@@ -1399,9 +1401,22 @@ def _compute_tfidf_top_indices_for_batch(
                         )
                     continue
                 if top_p > 0:
-                    # E50 top-p: never fewer than top_t (the floor), never more than the
-                    # read set or the cap; diffuse tasks get ceil(top_p * n_read).
-                    k = min(n_read, max(int(top_t), math.ceil(top_p * n_read)), int(top_p_cap))
+                    # E51 MASS-based top-p (nucleus rule; replaces the E50 count-of-unique-
+                    # slots rule, which measured the binary read tail and died at 19.2 —
+                    # Part 2). k_p = smallest k covering top_p of the batch's TOTAL ranking-
+                    # score mass; tfidf_used is already protection-discounted in rank mode,
+                    # so mass is measured on the deployed score. Guards: never below top_t
+                    # (the measured-best static floor), never above top_p_cap or the read
+                    # set — both kill channels of the E50 incident scale with mask size, so
+                    # the cap bounds them to cap/top_t x the known-benign static leak.
+                    s_sorted, _ = torch.sort(tfidf_used, descending=True)
+                    cum = torch.cumsum(s_sorted.to(torch.float32), dim=0)
+                    total = float(cum[-1])
+                    if total > 0:
+                        k_p = int(torch.searchsorted(cum, top_p * total).item()) + 1
+                    else:
+                        k_p = n_read
+                    k = min(n_read, max(int(top_t), k_p), int(top_p_cap))
                 else:
                     k = min(int(top_t), n_read)
                 if k <= 0:

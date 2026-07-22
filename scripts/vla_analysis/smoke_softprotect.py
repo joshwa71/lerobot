@@ -561,6 +561,46 @@ check("S19g v2 unclamped momentum reproduces the divergence",
       (not bool(torch.isfinite(m_bug[0]).all())) or float(m_bug[0].abs().max()) > 1e30,
       f"|exp_avg| max = {float(m_bug[0].abs().max()):.2e}")
 
+# ---- S20: mass-based (nucleus) top-p (E51 — replaces the E50 count rule) ----
+# a) end-to-end: concentrated scores pin at the top_t floor
+h20 = make_wrapped(seed=3)
+x20 = torch.randn(4, 5, 32)
+h20.layers[0].mlp(x20)
+mem20 = h20.layers[0].mlp.mem
+allowed20 = _compute_tfidf_top_indices_for_batch(
+    h20, idf_by_module=None, top_t=8, tf_only=True, top_p=0.9, top_p_cap=12,
+)
+n_read20 = int(torch.unique(mem20.last_indices.reshape(-1)).numel())
+k20 = len(allowed20[ST._get_value_params(mem20)[0]])
+check("S20a mass rule end-to-end: floor <= k <= cap", 8 <= k20 <= 12, f"k={k20} n_read={n_read20}")
+check("S20a2 last_mask_k records the mass k", mem20.last_mask_k[0] == k20)
+
+# b) hand distributions through the same arithmetic
+def mass_k(scores, p, floor, cap):
+    s = torch.sort(torch.tensor(scores, dtype=torch.float32), descending=True).values
+    cum = torch.cumsum(s, 0)
+    kp = int(torch.searchsorted(cum, p * float(cum[-1])).item()) + 1
+    return min(len(scores), max(floor, kp), cap)
+
+check("S20b1 concentrated: [.5,.2,.1,.1,.05,.05] p=.9 -> k_p=4 -> floor 5 binds",
+      mass_k([.5, .2, .1, .1, .05, .05], 0.9, 5, 100) == 5)
+check("S20b2 same, floor 3 -> k=4 (adaptive band engaged)",
+      mass_k([.5, .2, .1, .1, .05, .05], 0.9, 3, 100) == 4)
+check("S20b3 flat 100 scores p=.9 -> k_p=90 -> cap 50 binds",
+      mass_k([1.0] * 100, 0.9, 10, 50) == 50)
+check("S20b4 p=1.0 -> whole read set (subject to cap)",
+      mass_k([.4, .3, .2, .1], 1.0, 1, 100) == 4)
+# the E50 failure shape: a huge BINARY tail with negligible mass must not drag k up.
+# NB the rule only ignores a tail whose AGGREGATE mass < 1-p; a tail carrying more than
+# that is walked into by design — which is why the cap (not p) is the real guard when
+# per-batch TF tails are fat (the measured comp block-k90 of 8-22k says they are).
+heavy = [100.0, 50, 25, 12] + [0.001] * 5000
+check("S20b5 negligible-mass tail ignored: k ~= head", mass_k(heavy, 0.9, 2, 4000) <= 10,
+      f"k={mass_k(heavy, 0.9, 2, 4000)}")
+fat = [100.0, 50, 25, 12] + [0.01] * 5000  # tail = 21% of mass -> walked into -> cap binds
+check("S20b6 fat-mass tail: rule reaches in, cap binds", mass_k(fat, 0.9, 2, 4000) == 2634
+      and mass_k(fat, 0.9, 2, 1000) == 1000, f"k={mass_k(fat, 0.9, 2, 4000)}")
+
 print()
 if FAILS:
     print(f"FAILED: {FAILS}"); sys.exit(1)

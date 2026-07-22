@@ -4110,3 +4110,30 @@ curve predicts ~15-30 — decorative post-kill); the MLP-only arm (auto-queued n
 nebius4, lands overnight; predicted chunk ~0.03-0.045 = the our-site-is-right
 confirmation). Colleague's suggestion 1 resolved: right method (compass-first — one
 VM-evening priced the direction), negative answer.
+
+### Part 6 — MLP-only compass arm KILLED (Josh's call; the site question rests on subtraction: VLM-full 0.030 works, attn-only 0.106 doesn't ⇒ MLP carries it) -> nebius4 reassigned to CLAMPED MASS-BASED TOP-P; design frozen from measurement; arm launching
+
+**Design freeze (the E45 playbook).** Block-aggregate k90 (slots covering 90% of a
+task-block's read mass) from comp's JSONs, per module: expert L8-14 = 8.9-21.9k with
+e9 ~2x every other task (its diffuseness re-measured at the mass level); VLM L15/16
+FLIP: e4 is the most diffuse (19.3/21.5k vs e9's 12.6/15.5k) — the adaptive rule
+hands e4 extra VLM budget, aligned with its perception-side deficit. Per-batch k90
+~0.2-0.3x block => working band ~2.5-6.5k => **clip [3072, 5120]**, p=0.9 on the
+protection-discounted ranking score (mass on the deployed score, NOT count of unique
+slots — the E50 rule measured the ~90%-incidental binary tail and produced the 19.2;
+the mass semantics REPLACE it in code, count rule retired).
+
+**Honest degeneracy note (pre-registered):** the mass rule only ignores tails whose
+aggregate mass < 1-p (S20b5/b6); if per-batch TF tails are fat, every module pins at
+the 5120 cap and the arm degenerates to static top_t=5120 — still the two-sided band
+test, and the in-run [top_p] k/n_read lines identify the regime within the first hour.
+The cap (not p) is the load-bearing guard; both E50 kill channels scale with mask
+size and are bounded to ~1.7x comp's known-benign leak.
+
+**Shipped:** mass-based k rule replacing the count rule in the top_p branch (+config
+docstring), SEQ_TOP_P_CAP threaded through the chain body, smokes S20a-b6 (end-to-end
+floor/cap/band, negligible-vs-fat tail semantics) ALL PASS. Wrapper
+`seq5_arm1p_lr2x_topp09mass_f3072c5120.sh` — single delta vs comp 46.0; pre-registered
+reads + kill line in header. What was given up: the MLP-only confirmation cell (~4h
+from landing) — the our-site-is-right claim now rests on the strong subtraction
+inference rather than direct measurement; recorded as an accepted trade.

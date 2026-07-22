@@ -32,6 +32,7 @@ SEQ_VALUE_LR_END=${SEQ_VALUE_LR_END:-0.0001}
 SEQ_BS=${SEQ_BS:-32}
 SEQ_ACCUM=${SEQ_ACCUM:-1}
 SEQ_TOP_P=${SEQ_TOP_P:-0}
+SEQ_TOP_P_CAP=${SEQ_TOP_P_CAP:-16384}
 SEQ_PROTECT_MODE=${SEQ_PROTECT_MODE:-rank}
 SEQ_PROTECT_UNORM=${SEQ_PROTECT_UNORM:-peak}
 SEQ_RUN=${SEQ_RUN:-libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k}
@@ -138,6 +139,7 @@ else
     --tfidf_enable=true \
     --tfidf_top_t=$SEQ_TOP_T \
     --tfidf_top_p=$SEQ_TOP_P \
+    --tfidf_top_p_cap=$SEQ_TOP_P_CAP \
     --use_online_idf_stats=true \
     --idf_exponent=1 \
     --protect_prior_slots=true \
