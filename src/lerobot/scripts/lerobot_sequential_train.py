@@ -1234,14 +1234,14 @@ def _compute_tfidf_top_indices_for_batch(
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
 
     Protection: with protect_mode="rank" (legacy) the (1-u)^beta factor discounts the ranking
-    score before top-t. With protect_mode="budget" (E51) the ranking stays pure TF-IDF and
-    slots are selected by walking the ranking while each slot consumes (1-u)^beta of a fixed
-    budget B = min(top_t, n_read) full-LR slot-equivalents; selection stops when B is spent
-    (cap top_p_cap); each selected slot's update is scaled by its (1-u)^beta via the same
-    post-step blend as grad_scale. Total effective plasticity == B for EVERY writer no matter
-    how large the accumulated protection union grows (kills the E44 last-writer starvation):
-    protection becomes pure REALLOCATION - budget deflected off prior cores rolls down the
-    ranking into unprotected slots. With protect_mode="grad_scale" the ranking stays pure
+    score before top-t. With protect_mode="budget" (E51, Josh's spec) the top-t FILTER is
+    byte-identical to a plain run (pure TF-IDF top-t; same slots, same breadth); within the
+    fixed mask each slot's update is scaled by (1-u)^beta via the post-step blend, and the
+    deducted mass D = sum(1 - scale) is redistributed onto the mask in SCORE order
+    (water-filling to a 2.0x cap; remainder unspent + logged). The writer's total effective
+    plasticity == mask size for EVERY task no matter how large the protection union grows
+    (kills the E44 last-writer starvation); the conserved budget concentrates on the writer's
+    own hottest UNPROTECTED slots. With protect_mode="grad_scale" the ranking stays pure
     TF-IDF at fixed top-t and, when
     `protect_scale_out` is provided, it is filled with value_param -> per-slot update scale
     vector (1-u)^beta (full num_slots, float32, CPU); the caller applies it to the optimizer
@@ -1323,28 +1323,57 @@ def _compute_tfidf_top_indices_for_batch(
                 used_indices = used_mask.nonzero(as_tuple=False).view(-1)
                 n_read = int(tfidf_used.numel())
                 if protect_mode == "budget" and protect_usefulness_by_module is not None and protect_beta > 0:
+                    # E51 (Josh's spec): the top-t FILTER is unchanged - same slots, same
+                    # breadth as a plain run. Within the fixed mask, each slot's LR is scaled
+                    # by (1-u)^beta and the deducted mass D = sum(1 - scale) is redistributed
+                    # onto mask slots in SCORE order (water-filling: hottest unprotected
+                    # slots filled to the cap first) so the writer's total effective
+                    # plasticity == mask size, invariant to how large the protection union
+                    # grows. Cap 2.0x; any capped-out remainder goes unspent (logged).
+                    k = min(int(top_t), n_read)
+                    if k <= 0:
+                        continue
+                    vals, top_pos = torch.topk(tfidf_used, k=k, largest=True, sorted=True)
+                    top_indices = used_indices[top_pos]
                     u_full = protect_usefulness_by_module.get(json_key)
                     if u_full is not None and u_full.numel() == num_slots:
-                        u_used = u_full.to(device=tfidf_used.device, dtype=torch.float32)[used_indices]
-                        s_used = (1.0 - u_used).clamp(min=0.0).pow(protect_beta)
+                        u_mask = u_full.to(device=tfidf_used.device, dtype=torch.float32)[top_indices]
+                        s_mask = (1.0 - u_mask).clamp(min=0.0).pow(protect_beta)
                     else:
-                        u_full = None
-                        s_used = torch.ones_like(tfidf_used)
-                    order = torch.argsort(tfidf_used, descending=True)
-                    cs = torch.cumsum(s_used[order], dim=0)
-                    budget = float(min(int(top_t), n_read))
-                    n_sel = int(torch.searchsorted(cs, budget).item()) + 1
-                    n_sel = max(1, min(n_sel, n_read, int(top_p_cap)))
-                    top_indices = used_indices[order[:n_sel]]
+                        s_mask = torch.ones(k, dtype=torch.float32, device=tfidf_used.device)
+                    deficit = float((1.0 - s_mask).sum())
+                    if deficit > 0:
+                        # Boost ONLY unprotected slots (u == 0 -> scale exactly 1): raising a
+                        # protected slot back toward the cap would undo its own attenuation.
+                        # Mask is score-sorted, so the fill lands hottest-unprotected-first.
+                        headroom = torch.where(
+                            s_mask >= 1.0, (2.0 - s_mask).clamp(min=0.0), torch.zeros_like(s_mask)
+                        )
+                        ch = torch.cumsum(headroom, dim=0)
+                        n_fill = int(torch.searchsorted(ch, deficit).item())
+                        boosted = s_mask.clone()
+                        if n_fill > 0:
+                            boosted[:n_fill] = s_mask[:n_fill] + headroom[:n_fill]
+                        if n_fill < k:
+                            spent_before = float(ch[n_fill - 1]) if n_fill > 0 else 0.0
+                            boosted[n_fill] = s_mask[n_fill] + (deficit - spent_before)
+                        unspent = deficit - float((boosted - s_mask).sum())
+                        if unspent > 0.5:
+                            _n = getattr(_compute_tfidf_top_indices_for_batch, "_bg_log_n", 0)
+                            _compute_tfidf_top_indices_for_batch._bg_log_n = _n + 1
+                            if _n % 500 == 0:
+                                logging.info(f"[budget] {json_key.split('layers.')[-1]}: unspent {unspent:.0f}/{deficit:.0f} slot-equivalents (cap bound)")
+                        s_mask = boosted
                     try:
-                        mem_module.last_mask_k = (int(n_sel), n_read)
+                        mem_module.last_mask_k = (int(k), n_read)
                         mem_module.last_update_indices = top_indices.detach().cpu()
                     except Exception:
                         pass
                     for vp in value_params:
                         allowed_by_param[vp] = top_indices.detach()
-                    if protect_scale_out is not None and u_full is not None:
-                        scale = (1.0 - u_full.to(torch.float32)).clamp(min=0.0).pow(protect_beta)
+                    if protect_scale_out is not None:
+                        scale = torch.ones(num_slots, dtype=torch.float32)
+                        scale[top_indices.cpu()] = s_mask.cpu()
                         for vp in value_params:
                             protect_scale_out[vp] = scale
                     continue
@@ -1456,7 +1485,7 @@ def _snapshot_protected_rows(
     allowed_by_param: dict[torch.nn.Parameter, torch.Tensor],
     scale_by_param: dict[torch.nn.Parameter, torch.Tensor] | None,
 ) -> list[tuple[torch.nn.Parameter, torch.Tensor, torch.Tensor, torch.Tensor]]:
-    """Snapshot mask rows carrying a protection scale < 1 before optimizer.step().
+    """Snapshot mask rows carrying a protection scale != 1 before optimizer.step().
 
     Returns [(param, rows, pre_values, row_scales)] for _blend_protected_rows. Applying the
     scale to the post-step delta (rather than the gradient) makes the attenuation exact
@@ -1473,7 +1502,7 @@ def _snapshot_protected_rows(
         try:
             rows = allowed_rows.to(device=p.device)
             sc = scale.to(device=p.device, dtype=torch.float32)[rows]
-            need = sc < 1.0
+            need = sc != 1.0
             if not bool(need.any()):
                 continue
             r = rows[need]

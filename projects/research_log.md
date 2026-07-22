@@ -3868,31 +3868,37 @@ grows, every later writer's mask carries more scaled-down LRs — total effectiv
 plasticity shrinks monotonically with task index (the measured E44 bill: e7 block-min
 +49%, rollout 44->28, net wash 39.6 vs 42.4).
 
-**The fix (Josh's design): budget-conserving reallocation** (`protect_mode=budget`).
-Ranking stays pure TF-IDF; walk down the ranking with a fixed budget B = min(top_t,
-n_read) full-LR slot-equivalents; each slot consumes (1-u)^beta of B and receives
-exactly that scaled LR (the momentum-aware post-step blend); stop when B is spent
-(cap 16384). Properties: (i) total effective plasticity == B for EVERY writer,
-invariant to task count — the accumulation problem dies at the SPEND side without
-touching the store (more general than the rejected decay, which edits the store);
-(ii) protection becomes pure reallocation — budget deflected off prior cores rolls
-down the ranking into unprotected slots, so a constrained writer writes DEEPER, not
-weaker; (iii) u-norm corefrac -> whole prior cores at u~1 (near-frozen), shoulders
-graded. Watch-item inherited from the top-p incident (Part 2, pending): the rollover
-reaches into the low-TF tail (A-generalist content) — bounded by B (total spend ~=
-today's), unlike top-p's unbounded full-LR 90%-of-reads.
+**The fix (Josh's design, v2 after review): budget-conserving REDISTRIBUTION within
+the unchanged mask** (`protect_mode=budget`). The top-t filter stays byte-identical
+to a plain run (pure TF-IDF top-t: same slots, same breadth — v1's deeper-reach
+variant was rejected in discussion: it changed write breadth as a second delta and
+pushed budget into the low-TF tail the top-p incident implicates). Within the fixed
+mask: each slot's LR is scaled by (1-u)^beta, and the deducted mass D = sum(1-scale)
+is water-filled back onto the writer's own hottest UNPROTECTED slots in score order
+(cap 2.0x per slot; capped-out remainder unspent + logged). Properties: (i) total
+effective plasticity == mask size for EVERY writer, invariant to how large the
+protection union grows — the E44 accumulation problem dies at the SPEND side without
+touching the store (more general than the rejected decay); (ii) protection =
+redistribution, not suppression — and the conserved budget concentrates on the
+writer's private core, the read-write-product-positive allocation (E48 currency);
+(iii) u-norm corefrac (whole prior cores at u~1, shoulders graded); (iv) protected
+slots are NEVER boosted (fill skips any slot with u > 0 — two bugs of exactly this
+shape were caught in build review before smoking).
 
 **Build + smokes** (commit with this entry): budget branch in
-`_compute_tfidf_top_indices_for_batch` (pure-TF ordering, cumsum walk, scale emission
-into the existing blend), config validation extended, SEQ_PROTECT_MODE/UNORM threaded
-through the chain common body. Smokes S17a-g ALL PASS — the load-bearing three:
-no-store identity with legacy top-t; deep-reach (1000 fully-protected top slots stay
-selected at scale 0 and the mask extends to 4072); budget conservation EXACT (spent
-3072.0/3072 over a 4947-slot mask at 2000 half-protected slots).
+`_compute_tfidf_top_indices_for_batch` (legacy top-t selection, score-ordered
+water-fill, full-vector scale emission), blend snapshot predicate relaxed scale<1 ->
+scale!=1 (boosted rows must blend), config validation + SEQ_PROTECT_MODE/UNORM
+threaded through the chain common body. Smokes S18a-h ALL PASS — the load-bearing
+four: mask BITWISE-identical to legacy top-t with and without protection; budget
+conservation exact (sum(scale)=3072.000 over the mask); water-fill lands
+hottest-unprotected-first with protected slots never boosted; the blend moves rows at
+exactly 2x/1x/0x with momentum scaled to match.
 
 **The arm** (`seq5_arm1p_lr4xsched_topt3072_budgetprotect.sh`, nebius3 = the VM freed
 by lr4x; sequential-only from the arm 1' A-checkpoint already staged there): single
-delta vs lr4x 40.4 = protect_mode rank->budget + u_norm peak->corefrac. Pre-registered:
+delta vs lr4x 40.4 = protect_mode rank->budget + u_norm peak->corefrac, write
+breadth/mask unchanged by construction. Pre-registered:
 t0-t2 block-mins ~= 0.0651 (early writers untaxed by construction); e9 final back
 toward >=26; e7 block-min <= ~0.085 (the starvation tripwire; E44's grad_scale paid
 +49%, budget mode should hold ~0.075); **beat 46.0 to displace the composition

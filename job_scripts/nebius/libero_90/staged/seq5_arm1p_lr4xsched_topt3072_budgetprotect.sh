@@ -9,13 +9,16 @@
 # victims but taxes late writers cumulatively (E44: e7 block-min +49% - the union store
 # attenuates without reallocating).
 #
-# protect_mode=budget: ranking stays pure TF-IDF; each slot consumes (1-u)^beta of a
-# fixed budget B = min(top_t, n_read) full-LR slot-equivalents and receives that scaled
-# LR (post-step momentum-aware blend); selection walks DOWN the ranking until B is
-# spent. Total effective plasticity == B for every writer regardless of union size:
-# protection is pure reallocation (deflected budget rolls into unprotected slots).
-# u-norm corefrac (whole prior cores at u~1). Smoked S17a-g (identity/deep-reach/
-# conservation-exact/edge/veto/regressions).
+# protect_mode=budget (v2, Josh's spec): the top-t FILTER is byte-identical to a plain
+# run - same slots, same breadth. Within the fixed mask each slot's LR is scaled by
+# (1-u)^beta (post-step momentum-aware blend) and the deducted mass is redistributed
+# onto the writer's own hottest UNPROTECTED slots in score order (water-filling, cap
+# 2.0x, remainder unspent+logged). Total effective plasticity == mask size for every
+# writer regardless of union size: protection = redistribution, not suppression, and
+# the conserved budget concentrates on the writer's private core (the read-write-
+# product-positive allocation). Smoked S18a-h (fixed-mask identity, exact
+# conservation, fill order, no-boost-to-protected, cap-bound, 2x/1x/0x blend
+# movement + momentum, regressions).
 #
 # SINGLE delta vs the lr4x arm (40.4): protect_mode rank->budget + u_norm
 # peak->corefrac. Pre-registered: t0-t2 block-mins ~= 0.0651 (early writers untaxed by
