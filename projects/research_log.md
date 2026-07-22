@@ -3908,3 +3908,46 @@ suppress) the write pressure that produced the -5 give-back.
 (Parts 2+ today, pending landings: the top-p mid-run alert — record losses with
 collapsing rollouts, the implicit-protection-of-the-budget story; the compact
 layer-max sequential; the attempt-A re-audit.)
+
+### Part 2 — top-p verdict: 19.2, the worst 50-ep final of the staged era, on the BEST losses ever recorded — the write budget was load-bearing protection all along
+
+**Result** (`..._topp09f3072_lr2x_steps5k`, nebius4): final 2/10/0/64/20 = **19.2** (comp,
+its single-delta twin at fixed top_t 3072: 46.0). Block-min losses were the project's
+best at the time (0.050/0.037/0.089/0.052/0.055) — the starkest fit/rollout
+dissociation ever measured, and the first early-task cliffs since pre-stationarity
+(e4 25 -> 0 after ONE block and pinned there; e9 -> 0).
+
+**Autopsy (slot JSONs + checkpoint field analysis; footprints frozen-router-identical
+to comp, so every delta is write-side):**
+1. **Write breadth exploded**: 57-64k updated slots per task per module (~90% of the
+   65,536 bank, EVERY block) vs comp's 19-38k — the bank was rewritten ~5x over.
+   (Also falsifies my earlier claim that the VLM tower was un-truncated at 3072: its
+   writes doubled too, so VLM per-batch reads exceed 3072.)
+2. **The core-overwrite channel (retention killer, dominant on the EXPERT tower)**:
+   later tasks' update events into e4's core-50 rose 5-18x (L14 270k -> 3,776k), and
+   the delivered damage — e4's core-50-weighted relative value drift over blocks 1-4 —
+   went from **8-9% (comp, and every healthy run) to 67-74%** on the expert tower
+   (VLM: 32-44% -> 59-69%). The function e4 relied on was simply rewritten; 25 -> 0.
+   Mechanism: at "write 90% of reads," beta4's rank discount only excludes
+   bottom-decile slots — high-TF shared cores never fall there — so the
+   ranking+budget's implicit core exclusion died. **Scope condition on E42's
+   "bleed doesn't convert": that was shoulder-bleed, measured under masks that
+   steered writes OFF cores. Core-bleed converts immediately.**
+3. **The tail channel (conversion degrader)**: events outside the union of all five
+   cores went 53-77% -> 75-90% of a ~3x larger total — the stable A-content share of
+   every retrieval mixture churned continuously, consistent with fresh-task rollout
+   conversion dropping (e9 init 30 vs 50, e2 60 vs 75) while own-demo losses IMPROVED
+   (more DOF on-manifold). The accidental counterfactual of the freeze debate: the
+   fixed budget was implicitly preserving the generalist substrate.
+
+**Conclusions.** (i) top-p as built is DEAD — but the negative result is load-bearing:
+top_t was never just an interference knob; the budget+ranking pair silently provided
+BOTH core protection and tail preservation, and every "breadth is safe" datapoint
+(E42-43, comp's RTO 71% at zero cost) was conditional on them. (ii) Any future
+adaptive-coverage lever must carry magnitude control. (iii) This strengthens the
+budget arm (Part 1, running on nebius3) on both channels by construction: mask stays
+3072 (no tail explosion) and prior cores enter the mask only at (1-u)^beta ~ 0
+magnitude (STRONGER core protection than rank mode, which provably could not exclude
+high-TF cores at any budget). (iv) Chunk/MSE-matrix probes deferred (GPU busy with the
+compact layer-max sequential) and likely unnecessary — the mechanism question is
+answered at the slot/field level.
