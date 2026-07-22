@@ -10,5 +10,10 @@ export VLM_LAYERS='[13,14,15,16]'
 export EXP_N=256 EXP_R=2 EXP_KNN=36
 export VLM_N=256 VLM_R=2 VLM_KNN=16
 export ROUTER_FAST=true
+# 8-module audits run the FULL value path + backward (router_only_fast must be
+# false downstream) plus both frozen-route forks - bs32 OOMs (E50 attempt-A
+# incident, same shape as E48's arm-2' audit OOM). bs16 x 200 steps = matched
+# audited-sample coverage (E48 precedent; mass-normalized stats invariant).
+export AUDIT_BS=16 AUDIT_STEPS=200
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/joint_rwarmup_common.sh"
