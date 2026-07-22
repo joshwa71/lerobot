@@ -12,6 +12,11 @@ S8  end-to-end grads on real module: outside mask zero; inside scaled exactly; b
 S9  all value-param shapes (slot_down 3D / slot_up 3D / slot_bias 2D) scaled row-consistently
 S10 empty store / task-0: no scaling, plain mask
 S11 trainable keys: masked, never scaled
+S18 budget v3 (E51): conserved proportional allocation — lam-solver hand cases + conservation,
+    membership == rank-mode membership, u=1 exclusion, scale emission, empty-store TF-prop
+S19 MULTI-STEP momentum integration (the test the v2 NaN proved was missing): persistent
+    2x-capped row over 300 Adam steps == 2x-LR reference bitwise; attenuated/frozen rows
+    damped/frozen; the v2 unclamped momentum multiply reproduces the divergence
 """
 import os
 import sys
@@ -27,6 +32,7 @@ from lerobot.scripts.lerobot_sequential_train import (
     _accumulate_protect_counts_batch,
     _apply_gradient_mask_to_memory_values,
     _compute_tfidf_top_indices_for_batch,
+    _conserved_proportional_scales,
     _core50_boundary_count,
     _finalize_protect_usefulness,
     _protect_cur_counts_by_module,
@@ -52,7 +58,7 @@ def try_validate(**over):
         pm = over.get("protect_mode", "rank")
         pu = over.get("protect_u_norm", "peak")
         ph = over.get("protect_hard_u", 0.0)
-        if pm not in {"rank", "grad_scale"}:
+        if pm not in {"rank", "grad_scale", "budget"}:
             raise ValueError
         if pu not in {"peak", "corefrac"}:
             raise ValueError
@@ -153,7 +159,7 @@ def run_case(mode, beta, store, bias=False, keys_grad=False, top_t=8, seed=3):
     x = torch.randn(4, 5, 32)
     out = h.layers[0].mlp(x)
     out.sum().backward()
-    scale_out = {} if mode == "grad_scale" else None
+    scale_out = {} if mode in ("grad_scale", "budget") else None
     allowed = _compute_tfidf_top_indices_for_batch(
         h, idf_by_module=None, top_t=top_t, tf_only=True,
         protect_usefulness_by_module=store, protect_beta=beta, protect_mode=mode,
@@ -450,6 +456,110 @@ check("S14e nonexistent seed_path rejected",
       not try_validate(protect_prior_slots=True, protect_seed_path="/nonexistent/seed.json"))
 check("S14e valid seed_path + protection accepted",
       try_validate(protect_prior_slots=True, protect_seed_path=seed_path14))
+
+# ---- S18: budget v3 — conserved proportional allocation (E51) ----
+check("S18-pre budget mode accepted by validation", try_validate(protect_mode="budget"))
+
+# a) lam-solver hand cases
+sc = _conserved_proportional_scales(torch.tensor([4.0, 2, 1, 1]), 4.0)
+check("S18a1 hand case [4,2,1,1] -> [2,1,.5,.5]", torch.allclose(sc, torch.tensor([2.0, 1, 0.5, 0.5]), atol=1e-5), f"{sc.tolist()}")
+sc = _conserved_proportional_scales(torch.tensor([10.0, 1, 1, 1]), 4.0)
+check("S18a2 hand case [10,1,1,1] -> [2,2/3,2/3,2/3]", torch.allclose(sc, torch.tensor([2.0, 2/3, 2/3, 2/3]), atol=1e-5), f"{sc.tolist()}")
+sc = _conserved_proportional_scales(torch.full((6,), 3.7), 6.0)
+check("S18a3 flat scores -> flat 1.0 (t0-with-flat-TF == plain)", torch.allclose(sc, torch.ones(6), atol=1e-6))
+
+# b) random heavy-tail: conservation exact, cap respected, order preserved
+torch.manual_seed(7)
+s_ht = torch.sort(torch.distributions.Pareto(1.0, 1.2).sample((3072,)), descending=True).values
+sc = _conserved_proportional_scales(s_ht, 3072.0)
+check("S18b1 conservation exact on heavy tail", abs(float(sc.sum()) - 3072.0) < 1e-2, f"sum={float(sc.sum()):.4f}")
+check("S18b2 cap respected", float(sc.max()) <= 2.0 + 1e-5)
+check("S18b3 monotone non-increasing", bool((sc[1:] <= sc[:-1] + 1e-6).all()))
+check("S18b4 head capped, tail below 1", float(sc[0]) > 1.99 and float(sc[-1]) < 1.0)
+
+# c) end-to-end: membership identical to rank mode (same score, same store)
+h, mem, allowed_rank2, _ = run_case("rank", 4.0, STORE)
+sel_rank2 = allowed_rank2[ST._get_value_params(mem)[0]].tolist()
+h, mem, allowed_bg, scale_bg = run_case("budget", 4.0, STORE)
+vpb = ST._get_value_params(mem)[0]
+sel_bg = allowed_bg[vpb].tolist()
+check("S18c budget membership == rank-mode membership (twin masks)", set(sel_bg) == set(sel_rank2),
+      f"{len(set(sel_bg) ^ set(sel_rank2))} differ")
+
+# d) scale emission: sum over mask == k, off-mask == 1, cap respected
+sv_full = scale_bg[vpb]
+mask_scales = sv_full[torch.tensor(sel_bg)]
+off_mask = torch.ones(NUM_SLOTS, dtype=torch.bool); off_mask[torch.tensor(sel_bg)] = False
+check("S18d1 mask scales sum == k", abs(float(mask_scales.sum()) - len(sel_bg)) < 1e-2,
+      f"sum={float(mask_scales.sum()):.3f} k={len(sel_bg)}")
+check("S18d2 off-mask scale == 1", bool((sv_full[off_mask] == 1.0).all()))
+check("S18d3 cap respected end-to-end", float(mask_scales.max()) <= 2.0 + 1e-5)
+check("S18d4 scale emitted for all value params",
+      len(scale_bg) == len(ST._get_value_params(mem)) and all(v.numel() == NUM_SLOTS for v in scale_bg.values()))
+
+# e) u=1 slots never enter the mask (seats go to clean slots)
+h_e = make_wrapped(seed=3)
+x_e = torch.randn(4, 5, 32)
+h_e.layers[0].mlp(x_e)
+retr_e = torch.unique(h_e.layers[0].mlp.mem.last_indices.reshape(-1))
+u1_store = torch.zeros(NUM_SLOTS)
+u1_store[retr_e[:4]] = 1.0  # 4 retrieved slots fully protected
+h, mem, allowed_u1, scale_u1 = run_case("budget", 4.0, {jk0: u1_store})
+sel_u1 = set(allowed_u1[ST._get_value_params(mem)[0]].tolist())
+frozen = set(retr_e[:4].tolist())
+check("S18e1 u=1 slots excluded from mask", len(sel_u1 & frozen) == 0, f"overlap={sel_u1 & frozen}")
+check("S18e2 mask still full size (seats reallocated)", len(sel_u1) == 8, f"k={len(sel_u1)}")
+
+# f) task-0 store (dict exists, no entry for the module — the real t0 state):
+# membership == pure TF; allocation TF-proportional, conserved
+h, mem, allowed_e, scale_e = run_case("budget", 4.0, {})
+vpe = ST._get_value_params(mem)[0]
+sel_e = set(allowed_e[vpe].tolist())
+check("S18f1 empty store: membership == pure TF mask", sel_e == sel_none, f"{len(sel_e ^ sel_none)} differ")
+me = scale_e[vpe][torch.tensor(sorted(sel_e))]
+check("S18f2 empty store: conserved (sum == k)", abs(float(me.sum()) - len(sel_e)) < 1e-2)
+
+# ---- S19: MULTI-STEP momentum integration (would have caught the v2 NaN) ----
+def run_multistep(scales, steps=300, lr=1e-2, mode="fixed"):
+    """mode: 'fixed' = shipped blend; 'v2bug' = unclamped momentum multiply; 'plain'/'plain2x' = references."""
+    torch.manual_seed(0)
+    p = torch.nn.Parameter(torch.zeros(4, 3))
+    opt = torch.optim.Adam([p], lr=(2 * lr if mode == "plain2x" else lr))
+    sv = torch.tensor(scales, dtype=torch.float32)
+    rows = torch.arange(4)
+    for _ in range(steps):
+        opt.zero_grad()
+        p.grad = torch.ones_like(p)
+        snap = [] if mode in ("plain", "plain2x") else ST._snapshot_protected_rows({p: rows}, {p: sv})
+        opt.step()
+        if mode == "fixed":
+            ST._blend_protected_rows(snap, opt)
+        elif mode == "v2bug":
+            with torch.no_grad():
+                for pp, r, pre, s_ in snap:
+                    scv = s_.to(dtype=pp.dtype).view(-1, 1)
+                    pp.data[r] = pre + scv * (pp.data[r] - pre)
+                    st = opt.state.get(pp)
+                    if st is not None and "exp_avg" in st:
+                        st["exp_avg"][r] *= scv  # the v2 line, no clamp
+    return p.data.clone(), opt.state[p]["exp_avg"].clone()
+
+SC = [2.0, 0.4, 1.0, 0.0]
+th_fix, m_fix = run_multistep(SC, mode="fixed")
+th_ref, m_ref = run_multistep(SC, mode="plain")
+th_2x, _ = run_multistep(SC, mode="plain2x")
+check("S19a all finite after 300 boosted steps", bool(torch.isfinite(th_fix).all() and torch.isfinite(m_fix).all()))
+check("S19b boosted-row momentum untouched (== plain Adam)", torch.allclose(m_fix[0], m_ref[0], atol=1e-6),
+      f"{float(m_fix[0].abs().max()):.3f} vs {float(m_ref[0].abs().max()):.3f}")
+check("S19c boosted-row trajectory == 2x-LR Adam exactly", torch.allclose(th_fix[0], th_2x[0], atol=1e-5),
+      f"{float(th_fix[0][0]):.5f} vs {float(th_2x[0][0]):.5f}")
+check("S19d scale-1 row == plain Adam", torch.allclose(th_fix[2], th_ref[2], atol=1e-7))
+check("S19e attenuated row: 0 < movement < plain", 0 < float(th_fix[1].abs().max()) < float(th_ref[1].abs().max()))
+check("S19f s=0 row bitwise frozen", bool((th_fix[3] == 0).all()))
+th_bug, m_bug = run_multistep(SC, mode="v2bug")
+check("S19g v2 unclamped momentum reproduces the divergence",
+      (not bool(torch.isfinite(m_bug[0]).all())) or float(m_bug[0].abs().max()) > 1e30,
+      f"|exp_avg| max = {float(m_bug[0].abs().max()):.2e}")
 
 print()
 if FAILS:

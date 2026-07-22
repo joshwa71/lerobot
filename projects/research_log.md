@@ -3869,7 +3869,10 @@ plasticity shrinks monotonically with task index (the measured E44 bill: e7 bloc
 +49%, rollout 44->28, net wash 39.6 vs 42.4).
 
 **The fix (Josh's design, v2 after review): budget-conserving REDISTRIBUTION within
-the unchanged mask** (`protect_mode=budget`). The top-t filter stays byte-identical
+the unchanged mask** (`protect_mode=budget`). *[SUPERSEDED — see Part 4: v2 NaN'd ~200
+steps after the first task boundary (momentum-boost compounding) and its refund had a
+u==0 eligibility cliff; it never produced a valid run. The design below is recorded as
+history; the shipped mechanism is v3.]* The top-t filter stays byte-identical
 to a plain run (pure TF-IDF top-t: same slots, same breadth — v1's deeper-reach
 variant was rejected in discussion: it changed write breadth as a second delta and
 pushed budget into the low-TF tail the top-p incident implicates). Within the fixed
@@ -3984,3 +3987,90 @@ question (lands tomorrow).
    attempt-A verdict) x optimization package (2x+3072 +/- budget) into ONE frontier
    config, full battery, and reserve the final ~day for a clean confirmatory run of
    the frontier rather than one more speculative arm.
+
+### Part 4 — budget v2 NaN postmortem (momentum-boost compounding + the u==0 eligibility cliff) -> v3 REDESIGN (Josh's conserved proportional allocation), smoked, relaunching
+
+**The run.** `..._budgetcf_steps5k` (nebius3, v2 water-fill) diverged to loss=nan at
+~step 5.2k — ~200 steps after the FIRST task boundary — and kept stepping NaN until
+Josh killed it (~25 min). t0 artifacts are clean (empty store => budget provably inert
+=> t0 bitwise plain-lr4x; the 005000 checkpoint and boundary eval predate the
+corruption). Run dir deleted on relaunch; wandb retains the record.
+
+**Root cause 1 — the NaN: momentum-boost compounding.** The v2 water-fill assigns
+boosted slots scale up to 2.0; boosted slots are by construction the writer's hottest
+unprotected slots, which persist in the mask for hundreds of consecutive steps. The
+E42 momentum-aware blend multiplies the row's Adam exp_avg by its scale EVERY
+snapshotted step. For attenuation (s<1) that is a contraction — the designed tail-kill.
+For s=2.0 it compounds: exp_avg <- 2.0*(0.9*exp_avg + 0.1*g) => x1.8/step => overflow
+in ~150 steps (log(3e38)/log(1.8) ~ 150; observed fuse ~200). Third Adam-statefulness
+incident in the protection line (grad-scale invariance E41, momentum tail leak E42,
+momentum boost compounding E51): two individually-correct mechanisms (E42 fix; budget
+boost) composed divergently, and v2 was the first time any scale > 1 flowed through
+the E42 line.
+
+**Why the smokes missed it (owned).** S18h asserted the boost arithmetic for ONE step
+("moves rows at exactly 2x with momentum scaled to match") — true for one step,
+divergent across steps; no smoke ran a persistent boosted row for N steps. Worse, the
+S18 suite was run ephemerally during the build and never committed — the E41
+"instruments died in a scratchpad; not again" rule, violated for smokes.
+METHODOLOGY ADOPTED: (1) any change to the protection path gets a MULTI-STEP Adam
+integration test, not single-step algebra; (2) smokes persist to
+scripts/vla_analysis/ alongside instruments, same rule.
+
+**Root cause 2 — the design flaw the one pre-NaN log line exposed.** `[budget] 15:
+unspent 354/446` (the only trustworthy line; everything after the NaN is garbage
+masks): at VLM L15, t1's deficit was 446 slot-equivalents and only ~92 could be
+refunded — because v2's refund eligibility required u == 0 EXACTLY, and prior tasks'
+BINARY read tails blanket the bank (the top-p run measured 57-64k of 65,536 slots
+written per module on write-what-you-read masks => block read unions ~90% of the
+bank => ~97% of t1's mask carried u > 0, mostly at u ~ 0.001-0.01 where the deduction
+is ~nothing but eligibility dies). Read-MASS separation (the certificates, famIoU
+0.145) is real and did its job — the deficit was only 446/3072 ~ 15%; the eligibility
+rule conflated "touched once" with "relied on", and the max-fold store makes the
+u==0 set shrink monotonically (by t3-t4, ~nothing is refundable anywhere). Same
+binary-tail-vs-weighted-mass distinction as E8/E19, biting inside the protection
+mechanism. (En route, a v2 spec mis-read surfaced: I had implemented the v2 mask as
+PURE TF-IDF top-t — a silent second delta vs the lr4x twin, whose masks are
+rank-discounted. Josh's intended membership was the discounted ranking; v3 restores
+it.)
+
+**v3 (Josh's design, from the discussion): ONE score drives membership AND speed.**
+- score_i = tfidf_i * (1-u_i)^beta — the rank-mode ranking, so masks are BITWISE the
+  lr4x twin's (u evolves identically under the frozen router).
+- Mask = top-t by score. u=1 slots score 0 => never selected => frozen, their seats
+  going to clean slots (better than v2's in-mask-at-scale-0, which wasted seats).
+- scale_i = min(2.0, lam*score_i), lam solved EXACTLY so sum(scale) == mask size
+  (`_conserved_proportional_scales`: with the top m capped, lam = (k - m*cap)/suffix_m;
+  smallest feasible m; sort+cumsum, closed form). Conservation exact by construction —
+  no deficit, refund, eligibility set, or unspent remainder EXISTS. Below-average-score
+  slots donate LR to above-average ones continuously ("slot A would cause forgetting ->
+  deduct; slot B is clean and hot -> bump").
+- Momentum: exp_avg *= min(scale, 1). Attenuation keeps the exact E42 tail-kill
+  semantics (s=0 bitwise freeze; grad_scale mode byte-identical, scales <= 1); boost
+  acts on the delta blend only == per-row 2x-LR Adam while in-mask (bounded per step,
+  1x tail after mask exit). The v2 NaN is structurally impossible.
+- Accepted consequence, eyes open: with an EMPTY store (t0) score == tfidf, so t0 runs
+  TF-proportional (hot slots ~2x, mask tail <1x) where lr4x ran flat — the arm is now
+  "protection + proportional allocation package vs lr4x", not a pure protection delta.
+  t0 is the built-in tripwire: block-min > ~0.075 (twin 0.0651) => proportional
+  allocation hurts a clean writer => kill.
+
+**Shipped + smoked** (suite scripts/vla_analysis/smoke_softprotect.py, now the
+persistent home): momentum clamp; `_conserved_proportional_scales`; the v3 branch
+(replacing v2 wholesale); S18a-f (lam-solver hand cases [4,2,1,1]->[2,1,.5,.5] and
+[10,1,1,1]->[2,.667x3]; flat->flat; conservation exact on a 3072-slot Pareto tail,
+sum=3072.0000; twin-mask identity vs rank mode; u=1 exclusion with seats reallocated;
+t0 empty-store == pure-TF membership + conserved) and S19a-g MULTI-STEP (300 Adam
+steps with a persistent 2.0/0.4/1.0/0.0 scale pattern: all finite; boosted-row
+trajectory == an actual 2x-LR Adam run to 1e-5; boosted-row momentum == plain Adam's;
+s=0 bitwise frozen; and S19g re-runs the v2 unclamped line -> exp_avg = nan,
+the bug preserved as a regression test). Full suite ALL PASS. Wrapper header rewritten
+to v3 + tripwires; run name bumped `budgetcf` -> `budgetprop` (fresh dir + wandb row).
+
+**Relaunch** (nebius3, instructions issued): same wrapper, same substrate
+(arm 1' A-checkpoint), same schedule (4e-3 -> 2e-4, top_t 3072, beta4/corefrac,
+5 tasks x 5k, 50-ep final). Judged against lr4x 40.4 (nearest twin — masks bitwise
+shared) and composition 46.0 (the frontier). Pre-registered: t0 tripwire above; NaN
+watch at the first boundary (~5.2k — the v2 signature); e9 final back toward >=26;
+e7 block-min <= ~0.085 (last-writer starvation tripwire — conservation should hold
+~0.075); "[budget] ... sum 3072" lines = conservation in production. ETA ~15h + final.

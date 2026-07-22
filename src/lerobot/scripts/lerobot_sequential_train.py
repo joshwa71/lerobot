@@ -1210,6 +1210,31 @@ def _validate_idf_stats(unwrapped_policy: PreTrainedPolicy, idf_by_module: dict[
         )
 
 
+def _conserved_proportional_scales(s_sorted: torch.Tensor, total: float, cap: float = 2.0) -> torch.Tensor:
+    """Per-slot LR scales proportional to score under exact total conservation (E51 budget v3).
+
+    Given positive scores sorted DESCENDING, return scale_i = min(cap, lam * s_i) with lam
+    solved exactly so that sum(scale) == total. Solution structure: with the top m slots
+    capped, lam = (total - m*cap) / sum_{i>=m} s_i; the correct m is the smallest one where
+    the first uncapped slot indeed lands under the cap (unique — sum(min(cap, lam*s)) is
+    continuous and monotone in lam). Callers guarantee s_sorted > 0 and total <= cap * len(s).
+    """
+    k = int(s_sorted.numel())
+    if k == 0:
+        return s_sorted.new_zeros(0)
+    suffix = torch.flip(torch.cumsum(torch.flip(s_sorted, [0]), 0), [0])
+    m_arr = torch.arange(k, device=s_sorted.device, dtype=torch.float32)
+    remaining = float(total) - m_arr * cap
+    lam_arr = remaining / suffix.clamp(min=1e-12)
+    feas = (lam_arr * s_sorted <= cap * (1.0 + 1e-6)) & (remaining > 0)
+    if not bool(feas.any()):
+        # Defensive only (callers keep total <= cap*k): flat allocation.
+        return torch.full_like(s_sorted, min(cap, float(total) / k))
+    m = int(torch.nonzero(feas, as_tuple=False)[0].item())
+    lam = (float(total) - m * cap) / max(float(suffix[m].item()), 1e-12)
+    return (lam * s_sorted).clamp(max=cap)
+
+
 def _compute_tfidf_top_indices_for_batch(
     unwrapped_policy: PreTrainedPolicy,
     idf_by_module: dict[str, torch.Tensor] | None,
@@ -1234,15 +1259,19 @@ def _compute_tfidf_top_indices_for_batch(
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
 
     Protection: with protect_mode="rank" (legacy) the (1-u)^beta factor discounts the ranking
-    score before top-t. With protect_mode="budget" (E51, Josh's spec) the top-t FILTER is
-    byte-identical to a plain run (pure TF-IDF top-t; same slots, same breadth); within the
-    fixed mask each slot's update is scaled by (1-u)^beta via the post-step blend, and the
-    deducted mass D = sum(1 - scale) is redistributed onto the mask in SCORE order
-    (water-filling to a 2.0x cap; remainder unspent + logged). The writer's total effective
-    plasticity == mask size for EVERY task no matter how large the protection union grows
-    (kills the E44 last-writer starvation); the conserved budget concentrates on the writer's
-    own hottest UNPROTECTED slots. With protect_mode="grad_scale" the ranking stays pure
-    TF-IDF at fixed top-t and, when
+    score before top-t. With protect_mode="budget" (E51 v3, Josh's design) ONE score
+    score = tfidf * (1-u)^beta drives BOTH membership and speed: the mask is the top-t by that
+    score (selection rule identical to rank mode, so masks match a rank-mode twin bitwise), and
+    each masked slot's update is scaled by scale_i = min(cap, lam*score_i) with lam solved
+    exactly so sum(scale) == mask size (see _conserved_proportional_scales). Conservation is
+    exact by construction — there is no deficit/refund/eligibility machinery to strand budget
+    (the v2 u==0 cliff) and no >1 momentum multiplication to compound (the v2 NaN): u=1 slots
+    score 0 and never enter the mask (their seats go to clean slots), below-average-score slots
+    donate LR to above-average ones continuously. With an empty store (task 0) score == tfidf,
+    so allocation is TF-proportional from step 0 (accepted design consequence; the t0 block-min
+    tripwire watches it). The writer's total effective plasticity == mask size for EVERY task
+    no matter how large the protection union grows (kills the E44 last-writer starvation).
+    With protect_mode="grad_scale" the ranking stays pure TF-IDF at fixed top-t and, when
     `protect_scale_out` is provided, it is filled with value_param -> per-slot update scale
     vector (1-u)^beta (full num_slots, float32, CPU); the caller applies it to the optimizer
     step via _snapshot_protected_rows/_blend_protected_rows. Keys are never scaled, only masked.
@@ -1323,47 +1352,28 @@ def _compute_tfidf_top_indices_for_batch(
                 used_indices = used_mask.nonzero(as_tuple=False).view(-1)
                 n_read = int(tfidf_used.numel())
                 if protect_mode == "budget" and protect_usefulness_by_module is not None and protect_beta > 0:
-                    # E51 (Josh's spec): the top-t FILTER is unchanged - same slots, same
-                    # breadth as a plain run. Within the fixed mask, each slot's LR is scaled
-                    # by (1-u)^beta and the deducted mass D = sum(1 - scale) is redistributed
-                    # onto mask slots in SCORE order (water-filling: hottest unprotected
-                    # slots filled to the cap first) so the writer's total effective
-                    # plasticity == mask size, invariant to how large the protection union
-                    # grows. Cap 2.0x; any capped-out remainder goes unspent (logged).
-                    k = min(int(top_t), n_read)
+                    # E51 v3 (Josh's design; replaces the v2 deduct/water-fill that NaN'd):
+                    # ONE score = tfidf * (1-u)^beta drives membership AND speed. Mask =
+                    # top-t by score (selection rule identical to rank mode / the lr4x twin);
+                    # per-slot LR scale = min(cap, lam*score) with lam solved so the mask's
+                    # total == k exactly. No deficit/refund/eligibility machinery exists to
+                    # strand budget, and no scale > 1 ever multiplies momentum (see
+                    # _blend_protected_rows). u=1 slots score 0 -> never selected -> frozen,
+                    # their seats going to clean slots. Empty store (task 0): score == tfidf,
+                    # i.e. TF-proportional allocation from step 0 (t0 block-min = tripwire).
+                    u_full = protect_usefulness_by_module.get(json_key)
+                    score_used = tfidf_used.to(torch.float32)
+                    if u_full is not None and u_full.numel() == num_slots:
+                        u_used = u_full.to(device=tfidf_used.device, dtype=torch.float32)[used_indices]
+                        score_used = score_used * (1.0 - u_used).clamp(min=0.0).pow(protect_beta)
+                    cap = 2.0
+                    npos = int((score_used > 0).sum())
+                    k = min(int(top_t), n_read, npos)
                     if k <= 0:
                         continue
-                    vals, top_pos = torch.topk(tfidf_used, k=k, largest=True, sorted=True)
+                    s_sorted, top_pos = torch.topk(score_used, k=k, largest=True, sorted=True)
                     top_indices = used_indices[top_pos]
-                    u_full = protect_usefulness_by_module.get(json_key)
-                    if u_full is not None and u_full.numel() == num_slots:
-                        u_mask = u_full.to(device=tfidf_used.device, dtype=torch.float32)[top_indices]
-                        s_mask = (1.0 - u_mask).clamp(min=0.0).pow(protect_beta)
-                    else:
-                        s_mask = torch.ones(k, dtype=torch.float32, device=tfidf_used.device)
-                    deficit = float((1.0 - s_mask).sum())
-                    if deficit > 0:
-                        # Boost ONLY unprotected slots (u == 0 -> scale exactly 1): raising a
-                        # protected slot back toward the cap would undo its own attenuation.
-                        # Mask is score-sorted, so the fill lands hottest-unprotected-first.
-                        headroom = torch.where(
-                            s_mask >= 1.0, (2.0 - s_mask).clamp(min=0.0), torch.zeros_like(s_mask)
-                        )
-                        ch = torch.cumsum(headroom, dim=0)
-                        n_fill = int(torch.searchsorted(ch, deficit).item())
-                        boosted = s_mask.clone()
-                        if n_fill > 0:
-                            boosted[:n_fill] = s_mask[:n_fill] + headroom[:n_fill]
-                        if n_fill < k:
-                            spent_before = float(ch[n_fill - 1]) if n_fill > 0 else 0.0
-                            boosted[n_fill] = s_mask[n_fill] + (deficit - spent_before)
-                        unspent = deficit - float((boosted - s_mask).sum())
-                        if unspent > 0.5:
-                            _n = getattr(_compute_tfidf_top_indices_for_batch, "_bg_log_n", 0)
-                            _compute_tfidf_top_indices_for_batch._bg_log_n = _n + 1
-                            if _n % 500 == 0:
-                                logging.info(f"[budget] {json_key.split('layers.')[-1]}: unspent {unspent:.0f}/{deficit:.0f} slot-equivalents (cap bound)")
-                        s_mask = boosted
+                    scale_mask = _conserved_proportional_scales(s_sorted, float(k), cap)
                     try:
                         mem_module.last_mask_k = (int(k), n_read)
                         mem_module.last_update_indices = top_indices.detach().cpu()
@@ -1373,9 +1383,18 @@ def _compute_tfidf_top_indices_for_batch(
                         allowed_by_param[vp] = top_indices.detach()
                     if protect_scale_out is not None:
                         scale = torch.ones(num_slots, dtype=torch.float32)
-                        scale[top_indices.cpu()] = s_mask.cpu()
+                        scale[top_indices.cpu()] = scale_mask.cpu()
                         for vp in value_params:
                             protect_scale_out[vp] = scale
+                    _n = getattr(_compute_tfidf_top_indices_for_batch, "_bg_log_n", 0)
+                    _compute_tfidf_top_indices_for_batch._bg_log_n = _n + 1
+                    if _n % 3000 == 0:
+                        n_cap = int((scale_mask >= cap - 1e-6).sum())
+                        logging.info(
+                            f"[budget] {json_key.split('layers.')[-1]}: capped {n_cap}/{k} "
+                            f"med-scale {float(scale_mask.median()):.2f} "
+                            f"min {float(scale_mask.min()):.3f} sum {float(scale_mask.sum()):.0f}"
+                        )
                     continue
                 if top_p > 0:
                     # E50 top-p: never fewer than top_t (the floor), never more than the
@@ -1518,14 +1537,20 @@ def _blend_protected_rows(
 ):
     """theta[r] <- theta_pre[r] + scale * (theta_post[r] - theta_pre[r]), after optimizer.step().
 
-    When `optimizer` is given, the row's Adam first moment (exp_avg) is scaled by the same
-    factor. Without this the blend LEAKS (E42, measured): it rescales only steps where the row
-    is in the snapshot (= in the top-t mask), but Adam keeps applying the row's momentum tail
-    (~1/(1-beta1) steps) after the row leaves the churning mask — those steps are unblended and
-    carried ~90% of the movement in the softprotect run (u=1.0 slots that should have been
-    frozen moved at ~0.86x the unprotected rate). Scaling exp_avg at blend time attenuates the
-    tail at its source, restoring the intended per-slot-LR semantics. exp_avg_sq is left
-    untouched (it only normalizes step magnitude; shrinking it would inflate later steps).
+    When `optimizer` is given, the row's Adam first moment (exp_avg) is scaled by
+    min(scale, 1). Without the attenuation half the blend LEAKS (E42, measured): it rescales
+    only steps where the row is in the snapshot (= in the top-t mask), but Adam keeps applying
+    the row's momentum tail (~1/(1-beta1) steps) after the row leaves the churning mask — those
+    steps are unblended and carried ~90% of the movement in the softprotect run (u=1.0 slots
+    that should have been frozen moved at ~0.86x the unprotected rate). Scaling exp_avg at
+    blend time attenuates the tail at its source, restoring the intended per-slot-LR semantics.
+    The clamp at 1 is load-bearing (E51 budget NaN): for BOOSTED rows (budget-mode proportional
+    allocation, scale up to 2.0) multiplying exp_avg by s > 1 every in-mask step compounds it by ~(s*beta1)
+    per step — a persistently-boosted hot slot diverges to overflow in ~150 steps. Boosted rows
+    therefore keep honest momentum and take their boost through the delta blend alone, which is
+    exactly Adam at a per-row 2x LR while in-mask (bounded per step); their post-mask tail runs
+    at 1x, i.e. the boost simply does not outlive mask membership. exp_avg_sq is left untouched
+    (it only normalizes step magnitude; shrinking it would inflate later steps).
     """
     opt = getattr(optimizer, "optimizer", optimizer)  # unwrap AcceleratedOptimizer
     with torch.no_grad():
@@ -1536,7 +1561,7 @@ def _blend_protected_rows(
                 if opt is not None:
                     state = opt.state.get(p)
                     if state is not None and "exp_avg" in state:
-                        state["exp_avg"][rows] *= scv.to(dtype=state["exp_avg"].dtype)
+                        state["exp_avg"][rows] *= scv.clamp(max=1.0).to(dtype=state["exp_avg"].dtype)
             except Exception:
                 continue
 
