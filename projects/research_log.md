@@ -3842,3 +3842,63 @@ AUDIT_BS=16 fix committed, and a re-audit + gate is queued behind the compact ch
 (~45min). Until that lands, "compact beats max" is not a conclusion anywhere — the
 max-vs-compact placement question is open, and if A gates PASS its own A-phase +
 sequential is a ~1-day follow-up decision against the compact result.
+
+---
+## Entry 51 - 22 Jul 26
+
+### Part 1 — lr4x verdict (amplitude axis closed at 2x: an inverted-U dose-response) -> BUDGET-CONSERVING protection designed (Josh), built, smoked; arm LAUNCHING on the freed VM
+
+**The lr4x result that motivates the arm.** The 4x-LR cell on the frontier substrate
+(arm 1' + top_t 3072) landed 40.4 @ 50 eps (22/54/18/76/32), completing the amplitude
+dose-response: **1x -> 40.0, 2x -> 46.0, 4x -> 40.4** — an inverted U peaking at 2x.
+Decomposition (Josh's read, confirmed): 4x wins every boundary — best fresh 20-ep cells
+of the family, block-min mean 0.0651 (project-low at the time), grad norms clean — and
+gives it back (rollout init-mean->final -5.0 vs comp's +1.8; e9 45->15 timing-matched to
+its two biggest VLM16 bleed channels, 28.1% e2-block / 32.7% e7-block). The slot data
+isolates the channel exactly: exposure topology BITWISE-identical to comp (frozen
+router, same masks, same bleed masses) while displacement per unit exposure is up ~24%
+at every module (e4-perceived VLM drift 86->107% / 92->114%). Same where, harder hit —
+the E43 ladder replicated on the new substrate, now with a rollout price.
+
+**Why existing protection can't fix it.** Rank-mode beta4 is candidacy-only: a vetoed
+slot is replaced by the next-ranked at FULL LR (writer plasticity conserved,
+relocated) — but high-TF shared cores never rank out, and magnitude is untouched.
+grad_scale-mode attenuates magnitudes but never reallocates: as the max-union store
+grows, every later writer's mask carries more scaled-down LRs — total effective
+plasticity shrinks monotonically with task index (the measured E44 bill: e7 block-min
++49%, rollout 44->28, net wash 39.6 vs 42.4).
+
+**The fix (Josh's design): budget-conserving reallocation** (`protect_mode=budget`).
+Ranking stays pure TF-IDF; walk down the ranking with a fixed budget B = min(top_t,
+n_read) full-LR slot-equivalents; each slot consumes (1-u)^beta of B and receives
+exactly that scaled LR (the momentum-aware post-step blend); stop when B is spent
+(cap 16384). Properties: (i) total effective plasticity == B for EVERY writer,
+invariant to task count — the accumulation problem dies at the SPEND side without
+touching the store (more general than the rejected decay, which edits the store);
+(ii) protection becomes pure reallocation — budget deflected off prior cores rolls
+down the ranking into unprotected slots, so a constrained writer writes DEEPER, not
+weaker; (iii) u-norm corefrac -> whole prior cores at u~1 (near-frozen), shoulders
+graded. Watch-item inherited from the top-p incident (Part 2, pending): the rollover
+reaches into the low-TF tail (A-generalist content) — bounded by B (total spend ~=
+today's), unlike top-p's unbounded full-LR 90%-of-reads.
+
+**Build + smokes** (commit with this entry): budget branch in
+`_compute_tfidf_top_indices_for_batch` (pure-TF ordering, cumsum walk, scale emission
+into the existing blend), config validation extended, SEQ_PROTECT_MODE/UNORM threaded
+through the chain common body. Smokes S17a-g ALL PASS — the load-bearing three:
+no-store identity with legacy top-t; deep-reach (1000 fully-protected top slots stay
+selected at scale 0 and the mask extends to 4072); budget conservation EXACT (spent
+3072.0/3072 over a 4947-slot mask at 2000 half-protected slots).
+
+**The arm** (`seq5_arm1p_lr4xsched_topt3072_budgetprotect.sh`, nebius3 = the VM freed
+by lr4x; sequential-only from the arm 1' A-checkpoint already staged there): single
+delta vs lr4x 40.4 = protect_mode rank->budget + u_norm peak->corefrac. Pre-registered:
+t0-t2 block-mins ~= 0.0651 (early writers untaxed by construction); e9 final back
+toward >=26; e7 block-min <= ~0.085 (the starvation tripwire; E44's grad_scale paid
++49%, budget mode should hold ~0.075); **beat 46.0 to displace the composition
+frontier.** The claim under test: keep 4x's boundary wins, redistribute (not
+suppress) the write pressure that produced the -5 give-back.
+
+(Parts 2+ today, pending landings: the top-p mid-run alert — record losses with
+collapsing rollouts, the implicit-protection-of-the-budget story; the compact
+layer-max sequential; the attempt-A re-audit.)

@@ -235,9 +235,9 @@ class SequentialOnlineConfig(TrainPipelineConfig):
             )
         if self.protect_beta < 0:
             raise ValueError(f"protect_beta must be >= 0, got {self.protect_beta}")
-        if self.protect_mode not in {"rank", "grad_scale"}:
+        if self.protect_mode not in {"rank", "grad_scale", "budget"}:
             raise ValueError(
-                f"protect_mode must be one of {{'rank', 'grad_scale'}}, got {self.protect_mode!r}"
+                f"protect_mode must be one of {{'rank', 'grad_scale', 'budget'}}, got {self.protect_mode!r}"
             )
         if self.protect_u_norm not in {"peak", "corefrac"}:
             raise ValueError(
@@ -1234,7 +1234,15 @@ def _compute_tfidf_top_indices_for_batch(
     If tf_only is True, IDF is taken as 1 for all slots and no IDF stats are required.
 
     Protection: with protect_mode="rank" (legacy) the (1-u)^beta factor discounts the ranking
-    score before top-t. With protect_mode="grad_scale" the ranking stays pure TF-IDF and, when
+    score before top-t. With protect_mode="budget" (E51) the ranking stays pure TF-IDF and
+    slots are selected by walking the ranking while each slot consumes (1-u)^beta of a fixed
+    budget B = min(top_t, n_read) full-LR slot-equivalents; selection stops when B is spent
+    (cap top_p_cap); each selected slot's update is scaled by its (1-u)^beta via the same
+    post-step blend as grad_scale. Total effective plasticity == B for EVERY writer no matter
+    how large the accumulated protection union grows (kills the E44 last-writer starvation):
+    protection becomes pure REALLOCATION - budget deflected off prior cores rolls down the
+    ranking into unprotected slots. With protect_mode="grad_scale" the ranking stays pure
+    TF-IDF at fixed top-t and, when
     `protect_scale_out` is provided, it is filled with value_param -> per-slot update scale
     vector (1-u)^beta (full num_slots, float32, CPU); the caller applies it to the optimizer
     step via _snapshot_protected_rows/_blend_protected_rows. Keys are never scaled, only masked.
@@ -1314,6 +1322,32 @@ def _compute_tfidf_top_indices_for_batch(
                 tfidf_used = tfidf[used_mask]
                 used_indices = used_mask.nonzero(as_tuple=False).view(-1)
                 n_read = int(tfidf_used.numel())
+                if protect_mode == "budget" and protect_usefulness_by_module is not None and protect_beta > 0:
+                    u_full = protect_usefulness_by_module.get(json_key)
+                    if u_full is not None and u_full.numel() == num_slots:
+                        u_used = u_full.to(device=tfidf_used.device, dtype=torch.float32)[used_indices]
+                        s_used = (1.0 - u_used).clamp(min=0.0).pow(protect_beta)
+                    else:
+                        u_full = None
+                        s_used = torch.ones_like(tfidf_used)
+                    order = torch.argsort(tfidf_used, descending=True)
+                    cs = torch.cumsum(s_used[order], dim=0)
+                    budget = float(min(int(top_t), n_read))
+                    n_sel = int(torch.searchsorted(cs, budget).item()) + 1
+                    n_sel = max(1, min(n_sel, n_read, int(top_p_cap)))
+                    top_indices = used_indices[order[:n_sel]]
+                    try:
+                        mem_module.last_mask_k = (int(n_sel), n_read)
+                        mem_module.last_update_indices = top_indices.detach().cpu()
+                    except Exception:
+                        pass
+                    for vp in value_params:
+                        allowed_by_param[vp] = top_indices.detach()
+                    if protect_scale_out is not None and u_full is not None:
+                        scale = (1.0 - u_full.to(torch.float32)).clamp(min=0.0).pow(protect_beta)
+                        for vp in value_params:
+                            protect_scale_out[vp] = scale
+                    continue
                 if top_p > 0:
                     # E50 top-p: never fewer than top_t (the floor), never more than the
                     # read set or the cap; diffuse tasks get ceil(top_p * n_read).
@@ -1569,7 +1603,7 @@ def _update_policy_with_tfidf(
         if (idf_by_module is not None or tf_only) and top_t > 0:
             t0 = time.perf_counter()
             protect_scale: dict[torch.nn.Parameter, torch.Tensor] | None = (
-                {} if protect_mode == "grad_scale" else None
+                {} if protect_mode in ("grad_scale", "budget") else None
             )
             allowed = _compute_tfidf_top_indices_for_batch(
                 unwrapped, idf_by_module, top_t, tf_only=tf_only,

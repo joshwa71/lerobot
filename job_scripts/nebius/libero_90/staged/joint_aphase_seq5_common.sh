@@ -32,6 +32,8 @@ SEQ_VALUE_LR_END=${SEQ_VALUE_LR_END:-0.0001}
 SEQ_BS=${SEQ_BS:-32}
 SEQ_ACCUM=${SEQ_ACCUM:-1}
 SEQ_TOP_P=${SEQ_TOP_P:-0}
+SEQ_PROTECT_MODE=${SEQ_PROTECT_MODE:-rank}
+SEQ_PROTECT_UNORM=${SEQ_PROTECT_UNORM:-peak}
 SEQ_RUN=${SEQ_RUN:-libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k}
 SEQ_OUT="$ROOT_DIR/outputs/train/$SEQ_RUN"
 export MUJOCO_GL=osmesa; unset DISPLAY
@@ -140,6 +142,8 @@ else
     --idf_exponent=1 \
     --protect_prior_slots=true \
     --protect_beta=4 \
+    --protect_mode=$SEQ_PROTECT_MODE \
+    --protect_u_norm=$SEQ_PROTECT_UNORM \
     --memory_value_lr=$SEQ_VALUE_LR \
     --memory_value_lr_end=$SEQ_VALUE_LR_END \
     --memory_value_scheduler_type=linear
