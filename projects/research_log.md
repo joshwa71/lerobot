@@ -3827,3 +3827,18 @@ per-dim std, image pixel sigma 0.05) on the four final checkpoints:
    intermediates + training states; imgspan A-phase; r4 graft). Kept: stageB baseline
    run, all warm-up certificates, arm 1' A-checkpoint (the shared substrate for the VM
    arms), r2244/sep5/frozenbase-40k era anchors, stage-1 base, realworld_v2.
+
+### Entry 50 addendum (22 Jul) — CORRECTION: the original layer-max split was accidentally SKIPPED, not rejected; the placement direction is UNSETTLED
+
+The chain's fallback fired on an instrumentation failure, not a measurement: attempt A's
+(expert [2,4,6,8] / VLM [10,12,14,16]) warm-up trained fine, but its AUDIT OOMed at
+bs32 (the audit runs the full value path + backward + both frozen-route forks, and A's
+forks span the maximum depth — 0.7GiB over the ceiling; same failure shape as E48's
+arm-2' audit, whose AUDIT_BS fix existed and was not carried into the 8-module chain).
+The gate saw zero task JSONs and fail-safed to attempt B (compact, [9,10,11,12] +
+[13,14,15,16]), which certified well (famIoU 0.140-0.154 uniform over all 8 modules)
+and is now in its sequential. Attempt A's router is UNMEASURED — checkpoint retained,
+AUDIT_BS=16 fix committed, and a re-audit + gate is queued behind the compact chain
+(~45min). Until that lands, "compact beats max" is not a conclusion anywhere — the
+max-vs-compact placement question is open, and if A gates PASS its own A-phase +
+sequential is a ~1-day follow-up decision against the compact result.
