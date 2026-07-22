@@ -4137,3 +4137,85 @@ floor/cap/band, negligible-vs-fat tail semantics) ALL PASS. Wrapper
 reads + kill line in header. What was given up: the MLP-only confirmation cell (~4h
 from landing) — the our-site-is-right claim now rests on the strong subtraction
 inference rather than direct measurement; recorded as an accepted trade.
+
+### Part 7 — COMPACT LAYER-MAX VERDICT: 44.8 at plain C-config — the layers axis pays where rank/imgspan failed; battery + attempt-A re-audit close the placement question; FOLD-IN (layermax + lr2x + top_t 3072) auto-launched overnight
+
+**The result** (`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt1536_steps5k`,
+50-ep final; substrate = expert [9,10,11,12] + VLM text-field [13,14,15,16], 8 modules,
+n256/r2, bs16xacc2):
+
+| | arm 1' (6 mod) | **layermax (8 mod)** | comp (arm1p + levers) |
+|---|---|---|---|
+| config | C @1536, 1x | **C @1536, 1x (identical)** | lr2x @3072 |
+| final | 40.0 | **44.8** | 46.0 |
+| e4/e6/e9/e2/e7 | 14/58/16/82/30 | **34/36/44/78/32** | 34/60/26/84/26 |
+| block-min mean | 0.0940 | **0.0528 (-44%)** | 0.0687 |
+
+The largest matched-config substrate win on record — and it CONVERTS (both prior
+substrate bets, vlmr4 and imgspan, improved fit and rolled worse; this is the first
+substrate change since the original VLM build where fit and rollout move together).
+The E50 branch gate (>= ~40) clears decisively.
+
+**Per-cell noise calibration** (finals 50-ep, +/-7pp): e4 +20 and e9 +28 vs arm 1' are
+REAL (~2-3 sigma, backed by block-min moves of -49%/-36%; e9's 44 is the best e9
+rollout in project history, prior best 26). e6 -22 is ~2.2 sigma — probably partially
+real but it is the 4-time chunk-misrank cell, and its FUNCTION is the best e6 ever
+measured anywhere (block-min 0.0188, -72% vs arm 1'; exposure clean: VLM RTO at
+matched layers 36/44% vs arm1p's 35/42%). e2 -4 / e7 +2: noise. Summary: the gains
+landed where the fit went; the one loss is on the cell whose rollout has never
+tracked its function in either direction.
+
+**Battery (substrate rule):**
+- Final-grid chunk (jitter clean rows; 025000 checkpoint, i.e. WITH all retention
+  baked in): t0 0.0452 / t1 0.0353 / t3 0.0538 / t4 0.0503 — beats comp WITH ITS
+  LEVERS ON per-cell by 24-55% (comp: 0.0810/0.0506/0.1200/0.0662) at plain config.
+  t0's 0.0452 approaches the e4 conversion window (~0.02-0.03); the fold-in's levers
+  aim exactly there. [t2/e9 cell missing: probe_conversion.py hardcodes LAYERS=[14,8]
+  for its gain probe and crashed on the new layout — instrument debt, parameterize
+  before the next battery; e9's rollout 44 is the primary read regardless.]
+- Jitter: relative slopes are elevated (image@0.05 3.4-4.1x, state@0.1 2.0-2.9x)
+  BECAUSE the clean floor halved; ABSOLUTE perturbed errors stay at-or-below arm 1'
+  everywhere (t0 image 0.173 vs arm1p ~0.234) — the imgspan kill signature (absolute
+  crossing above the baseline) is absent. Substrate certified on both battery axes.
+- Slot autopsy: the win's mechanism is the E48 currency again — four VLM layers carry
+  much SHARPER per-layer palettes (e2 core50 197-380 across four banks vs 365-631
+  across two; e7 238-357 vs 484-648), always-read capacity spread over more,
+  more-concentrated banks; expert selfcov up ~5-9pp on the diffuse tasks (e6
+  0.65-0.70 vs 0.56-0.61). Read-write product raised by LAYERS, which converts —
+  where raising it by rank (r4: -10) did not.
+
+**Attempt-A re-audit** (`audit_heldout_jointwarm_layermax_e2468_v10121416_10k`,
+AUDIT_BS=16; closes the E50-addendum "direction unsettled"): **GATE PASS, but
+strictly weaker than compact where it matters.** Expert famIoU 0.163 (L8) worsening
+to 0.212 (L2) — L2 individually violates the <=0.20 band; the gate passes on the
+3-of-4 rule — vs compact's uniform 0.140-0.154. The E36 feature-probe prediction
+(expert separability degrades below ~L8: L4 89.5% vs the >=98 plateau) is confirmed
+at the certificate level. VLM at [10,12,14,16] healthy (0.132-0.152) — depth-
+extension works on that tower, per the E49 geometry probe. **Max-vs-compact SETTLED:
+compact >= A on certificates AND compact converted at rollout; A's chain stays unrun
+(decided with Josh before the verdict: audit-only, stop after).** Design input
+banked for any further layer push: the expert stack should not go below ~L8 — a 6+6
+build's forced expert [5-10] is half inside the flagged band; the evidence-clean
+extension is **expert [8-11] + VLM [12-16] = 9 modules** (every layer inside
+measured-good territory). Decision deferred behind the fold-in + budget verdicts.
+
+**FOLD-IN LAUNCHED** (auto-queue fired 22:03 UTC after the battery freed the GPU;
+tmux `foldin`, log `outputs/e51_foldin.log`, run
+`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt3072_lr2x_steps5k`):
+layermax substrate + the composition levers (lr 2e-3 -> 2e-4, top_t 3072),
+sequential-only from the existing A-checkpoint; config verified in-log (3072 /
+2e-3 / bs16xacc2 / beta4 / frozen-route / 50-ep final). Pre-registered: beat 46.0
+to take the frontier; **>= 49.2 crosses the multitask-LoRA line (the recalibrated
+"must" target)**; e4 >= 34 and e9 >= ~40 must survive amplitude (the lr4x
+displacement lesson); give-back tripwire <= ~-3; block-min mean pushing below
+~0.045. Lands 23 Jul evening.
+
+**Board state at close of 22 Jul:** budget-v3 (nebius3) t0 healthy under proportional
+allocation (0.073 @ 4k, under the 0.075 tripwire; conservation sum=3072 exact every
+line) — boundary + final land 23 Jul AM. Mass top-p (nebius4) relaunched on the
+frontier config; regime verdict (adaptive vs cap-pinned) in its t1 [top_p] k-lines
+23 Jul AM. Attention-side memory killed by compass (Part 5); MLP-only arm traded for
+the top-p slot (Part 6). Target ladder recalibrated (discussion): must = beat
+multitask-LoRA 49.2; good = 52-55 (~85-90% of the specialist oracle at none of its
+advantages); the missing table cells (e2/e7 specialists, naive sequential LoRA — the
+headline forgetting baseline) queue on whichever box frees first.
