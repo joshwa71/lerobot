@@ -4074,3 +4074,39 @@ shared) and composition 46.0 (the frontier). Pre-registered: t0 tripwire above; 
 watch at the first boundary (~5.2k — the v2 signature); e9 final back toward >=26;
 e7 block-min <= ~0.085 (last-writer starvation tripwire — conservation should hold
 ~0.075); "[budget] ... sum 3072" lines = conservation in production. ETA ~15h + final.
+
+### Part 5 — attention-family compass (e4): KILL branch fires — dense VLM-attention-only LoRA (chunk 0.106, plateaued) loses to our own sparse MLP-site frontier (0.081); the "architectural shift" does not carry the dense-adapter gap
+
+**Design** (nebius4, ~4h; wrapper `loraft_compass_e4_attnsplit.sh`, pre-registered gates
+in header): dense per-task LoRA on e4, byte-identical recipe to the E43/44 compass
+anchors, targets = VLM LM self_attn q/k/v/o (all 18 blocks) + common action/state
+projections, r32, 7.5M trainable (GQA makes k/v adapters small). The superset cell for
+any attention-side memory: its failure kills o-only a fortiori.
+
+**Train-loss plateau ladder** (same recipe, last-25% mean / end-trend):
+expert-only 0.195 / +0.6% (hard plateau) -> chunk 0.229 / roll 14;
+**attn-only 0.128 / −1.8% (converged)**;
+VLM-full 0.063 / **−7.2% (still descending)** -> 0.030 / 40.
+Attention alone recovers ~a third of the expert->VLM-full gap and flattens at 2x
+VLM-full's loss.
+
+**Chunk (same jitter instrument, t0/e4 clean):** full specialist 0.0204 < VLM-full
+0.0298 < **comp (ours) 0.0812** < vlmr4 0.0995 < **attn-only 0.1056** < arm1p@1536
+0.1134 < multitask-LoRA 0.1210 < expert-only 0.2292. The unconstrained dense adapter
+restricted to the attention family lands MID-PACK among our sparse arms and BELOW the
+composition frontier. Jitter profile ordinary (image@0.05 2.07x, state@0.1 1.31x —
+≈ arm1p's slopes): a pure LEVEL deficit, no smoothness story.
+
+**Verdict:** the pre-registered kill fires (chunk ≥ ~0.10 AND plateaued). The e4
+dense-adapter gain is carried by the VLM MLP family, not attention; attention-side
+sparse memory (o-first build) is DEAD as the +15 vehicle. The r64 param-matched escape
+hatch is declined: even a 2x improvement would not approach sufficiency (0.05 ≫ 0.03),
+and our existing substrate already beats the cell. Notable positive: our sparse
+MLP-site system outperforms a dense adapter on the wrong family — placement beats
+density again (E44's compass lesson, now within-tower).
+
+**Pending to consolidate tomorrow:** the 50-ep cell (nebius4, mid-eval; fit-threshold
+curve predicts ~15-30 — decorative post-kill); the MLP-only arm (auto-queued next on
+nebius4, lands overnight; predicted chunk ~0.03-0.045 = the our-site-is-right
+confirmation). Colleague's suggestion 1 resolved: right method (compass-first — one
+VM-evening priced the direction), negative answer.
