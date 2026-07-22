@@ -3951,3 +3951,36 @@ magnitude (STRONGER core protection than rank mode, which provably could not exc
 high-TF cores at any budget). (iv) Chunk/MSE-matrix probes deferred (GPU busy with the
 compact layer-max sequential) and likely unnecessary — the mechanism question is
 answered at the slot/field level.
+
+### Part 3 — top-p post-mortem discussion (dose vs structure) + the agreed board (nebius4 PAUSED pending the compact-LM read)
+
+**Was 0.9 simply too big?** (Josh's question, discussed): partly — but the structure is
+fragile at any useful dose. Both kill channels scale CONTINUOUSLY with mask fraction
+(the rank-veto's strength is exactly "how far below the cut (1-u)^beta can push a
+core"; comp already leaked 270k-1.1M core events at top-3072 — top-p multiplied a
+known leak 5-18x, it did not create one), and the useful range (materially more e9/e6
+coverage) overlaps the dangerous range (veto degraded over the score band where shared
+cores live). No p-sweep scheduled. If adaptive coverage is ever revisited it is
+adaptive-B INSIDE budget mode ("top-p with teeth": mask growth only with the magnitude
+layer on) — and the motivation has weakened anyway: comp at fixed 3072 already rolled
+e9 at 26 (its best ever), and e9's residual deficit is threshold-shaped (chunk ~0.17
+vs ~0.07), which no write budget fixes.
+
+**Static mask is now measured-best from both sides** (comp 46.0 above, top-p 19.2
+below); whether static SCALES beats static full-LR is exactly the budget arm's
+question (lands tomorrow).
+
+**Agreed board (Josh: "agree on all points"; nebius4 paused, holding):**
+1. [automatic, this afternoon] compact layer-max final + full battery incl. jitter
+   (substrate rule) + the attempt-A re-audit (settles max-vs-compact placement).
+2. [tomorrow morning] budget-4x final (nebius3) — needs >46.0 to displace the frontier;
+   mechanism validated at the autopsy either way.
+3. [nebius4, HELD] branch on the compact-LM final: >= ~40 at plain C-config ->
+   compact-LM + composition levers (lr2x + top_t 3072; the arm-1' one-two, 40.0->46.0,
+   on a substrate with 2x the VLM layers — the highest-EV cell on the board);
+   < ~40 -> layer axis dead, nebius4 takes budget@2x instead (clean comp's residual
+   +7.6% e4 own->final give-back).
+4. Endgame (6 days): converge substrate (arm 1' vs compact-LM, informed by the
+   attempt-A verdict) x optimization package (2x+3072 +/- budget) into ONE frontier
+   config, full battery, and reserve the final ~day for a clean confirmatory run of
+   the frontier rather than one more speculative arm.
