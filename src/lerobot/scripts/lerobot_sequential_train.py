@@ -1388,7 +1388,9 @@ def _compute_tfidf_top_indices_for_batch(
                             protect_scale_out[vp] = scale
                     _n = getattr(_compute_tfidf_top_indices_for_batch, "_bg_log_n", 0)
                     _compute_tfidf_top_indices_for_batch._bg_log_n = _n + 1
-                    if _n % 3000 == 0:
+                    # 2999 is coprime with the module count so the periodic print rotates
+                    # through all modules (3000 % 6 == 0 pinned it to one layer).
+                    if _n % 2999 == 0:
                         n_cap = int((scale_mask >= cap - 1e-6).sum())
                         logging.info(
                             f"[budget] {json_key.split('layers.')[-1]}: capped {n_cap}/{k} "
