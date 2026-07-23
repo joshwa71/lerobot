@@ -28,7 +28,25 @@ MINI = os.environ.get("MINI", "0") == "1"
 N_BATCHES = 2 if MINI else 6
 BS = 8 if MINI else 12
 SEEDS_B = 2 if MINI else 3
-LAYERS = [14, 8]
+
+
+def _parse_layers(spec):
+    """"expert:12,vlm:14" -> [("expert",12),("vlm",14)]; bare ints keep legacy
+    first-match behavior as (None, L). PROBE_LAYERS="" skips probe A entirely."""
+    out = []
+    for tok in spec.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ":" in tok:
+            tower, l = tok.split(":")
+            out.append((tower.strip(), int(l)))
+        else:
+            out.append((None, int(tok)))
+    return out
+
+
+LAYERS = _parse_layers(os.environ.get("PROBE_LAYERS", "14,8"))
 
 
 def load_slots(unwrapped, run_dir, st):
@@ -44,11 +62,17 @@ def load_slots(unwrapped, run_dir, st):
     print(f"[load] {st}: {len(sd)} slot tensors", flush=True)
 
 
-def get_wrapper(unwrapped, layer):
+def get_wrapper(unwrapped, layer, tower=None):
+    """tower: "expert" (gemma_expert), "vlm" (paligemma LM), or None = first match
+    (legacy — ambiguous when both towers carry memory at the same layer index)."""
     for name, mod in unwrapped.named_modules():
         if name.endswith(f"layers.{layer}.mlp") and hasattr(mod, "mem"):
+            if tower == "expert" and "gemma_expert" not in name:
+                continue
+            if tower == "vlm" and "gemma_expert" in name:
+                continue
             return mod
-    raise RuntimeError(f"no memory wrapper at layer {layer}")
+    return None
 
 
 class MemPatch:
@@ -173,8 +197,12 @@ def main(cfg: SequentialOnlineConfig):
             batches = make_batches(t)
 
             # ---------- Probe A ----------
-            for L in LAYERS:
-                patch = MemPatch(get_wrapper(unwrapped, L))
+            for tower, L in LAYERS:
+                w = get_wrapper(unwrapped, L, tower)
+                if w is None:
+                    print(f"[gainA] t{t} {tower or 'any'}:{L}: no memory wrapper — skipped", flush=True)
+                    continue
+                patch = MemPatch(w)
                 patch.install()
                 agg = {k: [] for k in ["dnorm", "throw", "g_learn", "g_rand", "g_feat", "g_x2"]}
                 for j, b in enumerate(batches):
@@ -193,7 +221,7 @@ def main(cfg: SequentialOnlineConfig):
                     agg["g_x2"].append(float((v_x2 - v_full).norm()) / dn)
                 patch.restore()
                 rec = {"probe": "gain", "run": os.path.basename(run_dir), "task": t, "ckpt": st,
-                       "layer": L, **{k: sum(v) / len(v) for k, v in agg.items()}}
+                       "layer": L, "tower": tower, **{k: sum(v) / len(v) for k, v in agg.items()}}
                 rec["T_rand"] = rec["g_learn"] / max(rec["g_rand"], 1e-9)
                 rec["T_feat"] = rec["g_learn"] / max(rec["g_feat"], 1e-9)
                 results.append(rec)

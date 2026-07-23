@@ -4384,3 +4384,126 @@ gates/LN/residual = division of labor), never the addressing level.
 (depth gradient continues down); L13-16 footprints ~= the compact certificate's (no
 shrink from banks added below). All seven uniformly smaller than compact's would
 falsify this and revive a coupling channel.**
+
+---
+## Entry 52 - 23 Jul 26 (Fold-in verdict 43.6: the give-back postmortem — best per-task functions ever recorded (e4/e9 cross their conversion thresholds for the first time), then 2x-LR write drift pushes both back across: FIRST rising MSE-forgetting diagonal of the stationary era (e4 +22.6%), e4 V16 core-drift dose ladder 36/44/55/59-69% -> finals 34/34/18/0. Give-back is created by the AMPLITUDE, not the substrate (plain give-backs 0-3%). Patch cell scripted: rank+corefrac on the fold-in config -> free VM)
+
+### The result
+
+`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt3072_lr2x_steps5k`
+(layermax compact substrate + lr 2e-3->2e-4 + top_t 3072; 50-ep final): **43.6** =
+e4 18 / e6 58 / e9 30 / e2 76 / e7 36 — below BOTH parents (comp 46.0, layermax-plain
+44.8). Trajectory (20-ep intermediates): e4 **55**->40->25->35->**18**; e9 **55**->25->
+**30**; e6 50->40->55->58 (recovers); e2 75->76 (flat); e7 36 (best in family).
+init-mean 54.2 -> 43.6 = **give-back -10.6** (tripwire <=-3 FIRED). e4's 55 and e9's 55
+are the best cells ever recorded for those tasks by ~20pp. Two parent anchors: comp's e9
+did the IDENTICAL crash at e2's block (50->25->26; fold-in 55->25->30), and both parents
+IMPROVED e4 across e7's final block (comp +14, plain +4) where the fold-in fell -17.
+
+### Battery (full; artifacts outputs/analysis/e52/, instruments persisted to scripts/vla_analysis/)
+
+**1. Fit: the levers composed perfectly.** Block-min mean **0.0409 (project low**; plain
+0.0528, comp 0.0687), every block best-ever, grad norms clean (max 0.029). Own-block
+chunk errors best-ever on ALL FIVE tasks by ~2x: e4 **0.0333** (comp own 0.0753; dense
+VLM-LoRA specialist 0.0298 — matched for the first time), e6 0.0240, e9 **0.0784**,
+e2 0.0421, e7 0.0376. **e4 and e9 crossed their rollout-conversion thresholds for the
+first time in the project** (e4 window ~0.02-0.04: specialist 0.020->58; e9 ~0.07:
+specialist 0.0675->70) — the 55-inits were real conversion, not draws.
+
+**2. MSE forgetting matrix (paired-noise, 16 batches): the stationary-era flat matrix
+BREAKS.** Diagonal drift just-trained->final: **e4 +22.6%** (0.0500->0.0613), e6 +13.0%,
+e9 +11.0%, e2 +3.7%, e7 own=final. Historical band since frozen-route: +0-5% total
+(prior max: arm 1' e4 +4.8%). Real function-space forgetting is back at 2x LR on the
+8-module substrate.
+
+**3. Delivered damage (read-mass-weighted value drift on victim cores; new instrument
+e52_drift.py).** e4's damage is VLM-core overwrite: V16 core drift 17% (after e6's
+block) -> 36% (e9's) -> 45% (e2's) -> **55%** (e7's); expert side only 6-11%. Cross-run
+dose-response, e4 V16 core drift -> e4 final: **plain 36% -> 34; comp ~44% (recorded
+E51P2) -> 34; fold-in 55% -> 18; top-p count-rule 59-69% -> 0.** The cliff sits between
+~44 and ~55%. foldin/plain drift ratio ~1.5x = 2^0.57 — the E43 sublinear displacement
+law reproduced exactly. Internal controls: e6 (32% V16 drift) RECOVERED to 58; e2 (7%)
+flat — drift converts to rollout loss only at the threshold. Writer attribution into
+e4's V16 core: e6 472k, e9 365k events (the mug tasks — e4 two-mugs / e6 mug+pudding /
+e9 mugs+microwave: object-sharing again), e2 256k, e7 314k. **e9's damage is a different
+channel**: core drift small (8-16%), SHOULDER (core50-90 band) 25-33% (~2x plain) —
+and its crash replicates comp's e2-block collapse, the known 2x-era channel budget-v3
+rescued (+22) by core exclusion.
+
+**4. Static exposure does NOT discriminate** (the E42 lesson at substrate scale):
+core-RTO and events are twin-like vs comp (e4 V15/16 core-RTO 53/59% vs comp 54/58%;
+e9 expert-core events from e2 304-412k vs comp 310-536k). The delta is displacement per
+event (2x LR) landing on the sharper 8-bank VLM cores. Protection (rank+peak) inert as
+always: u ~0.035 at core boundary -> (1-u)^4 ~ 0.87 vetoes nothing.
+
+**5. Jitter: NO in-shell brittleness — fold-in's absolute perturbed errors are the
+LOWEST of all three runs at every sigma** (e4 image@0.05: 0.153 vs plain 0.173 / comp
+0.189; same relative slopes as plain). The imgspan kill signature is absent. The
+rollout magnitude beyond what chunk explains (fold-in final e4 chunk 0.0402 is 2x
+BETTER than comp's 0.0810 yet rolls 18 vs 34 — cross-substrate misrank #3, now
+cross-CONFIG) is the known off-trail conversion layer, operating for the first time on
+cliff-edge tasks.
+
+**6. Layermax-plain backfill (own-block cells + the missing t2 final; probe_conversion
+LAYERS hardcode parameterized — instrument debt discharged): the give-back is created
+by the LEVERS, not the substrate.** Plain (1x) own->final: e4 0.0450->0.0448 (flat!),
+e6 +2.7%, e9 +1.4%, e2 +1.8% — the healthy stationary-era pattern. And plain's e4 own
+0.0450 NEVER crossed the threshold: 1x buys retention by never winning the fit.
+(Cross-instrument validation: plain e4 final 0.0448 probe_conversion vs 0.0452 jitter
+clean — the E51 cross-instrument caution retires.)
+
+**7. Intermediate cells (e4 checkpoint-by-checkpoint): two-phase damage.** e4's on-demo
+chunk is FLAT through 20k (0.0333->0.0345->0.0333->0.0345) and breaks only in e7's
+block (->0.0402, +17%) — while V16 core drift accumulated 17->45% underneath and
+rollouts declined from 55. So the early decline is OFF-demo damage tracking value
+drift (invisible on demo states — the E42 mechanism), and the final block breaks
+through on-demo. e9@020000: 0.0811 (+3.4% at its crash boundary — the crash is
+threshold sensitivity, not on-demo collapse).
+
+### Mechanism synthesis
+
+The fold-in is not an anti-composition — it is the composition WORKING: fit landed at
+the specialist level and converted (best inits ever). What broke is that the operating
+points it reached sit on the steep part of the success-vs-function curve, where the
+2x-amplitude write drift that was FREE in every prior run (comp paid +7.6% chunk
+give-back on e4 at zero rollout cost — its function sat in the flat region) now
+converts 1:1. Same drift, new location. The frontier config's problem is no longer
+fit (0.0409) and no longer breadth (3072 selfcov 0.79-0.97) — it is that nothing
+protects at-threshold functions from later writers at 2x displacement.
+
+### Decision + the patch cell (scripted; Josh: launch on the free VM, base stays analysis)
+
+`seq5_layermax_compact_lr2x_topt3072_corefrac.sh` (this commit): the fold-in config
+with ONE delta — `protect_u_norm` peak -> **corefrac** (mode stays rank; the E51-Part-8
+identified single-delta cell, now on the layermax substrate where it matters most).
+Mechanism already measured in budget-v3: corefrac puts whole prior cores at u=1 ->
+score tfidf*(1-u)^4 = 0 -> ZERO later-task events into prior cores at every module
+(vs 0.1-1.4M here); the shoulder is graded (u 0.2-1 -> 2.4-600x rank discount) ->
+attacks e9's channel too. Writer cost priced from this run's JSONs: only **1-5% of
+each writer's update events** land on prior cores -> rank-mode relocation
+(candidacy-only, full LR) is near-free — avoids budget mode's proportional-speed
+writer tax (+13-17% block-mins) that kept budget-v3 off the frontier. Pre-registered
+(in the wrapper header): core events = 0 at all 8 modules; e4 V16 drift <= ~20%;
+e4 >= 34 (init ~50s); e9 >= 40; e6 >= ~50 with t1 block-min <= 0.020 (mug-share
+writer-tax tripwire); block-min mean <= 0.045; give-back >= -3; **beat 46.0 = frontier;
+>= 49.2 crosses multitask-LoRA**. Anti-recommendations recorded: do NOT revert to 1x
+LR (plain: retention by never winning) and do NOT drop top_t to 1536 (halves the core
+dose but re-opens the e6/e9 mask-rotation coverage loss; protection keeps both).
+Reserve levers if the shoulder still leaks: beta 8, protect_hard_u=0.9, budget mode.
+
+### Next steps
+
+1. [local claude] Launch the corefrac cell on the free VM (needs the layermax
+   A-checkpoint rsynced from base, spread-A precedent); lands ~1 day.
+2. Spread-A final (nebius3, 24 Jul AM): head-to-head vs the fold-in at matched levers
+   — note its give-back numbers are now as informative as its final (the spacing
+   hypothesis must also survive the amplitude channel).
+3. Absmax certificate (nebius4): score against the header bands + the Part-9-addendum
+   pre-registration when the audit lands.
+4. Endgame (5 days): the corefrac verdict picks the frontier config; full battery;
+   reserve the last ~day for the clean confirmatory run.
+
+Battery artifacts: outputs/analysis/e52/{working_tables.md, mse_matrix_foldin.jsonl,
+probe_conversion_{foldin,plain}.jsonl, probe_jitter_foldin.jsonl, core_drift.json,
+slots_e52.out/json}; instruments scripts/vla_analysis/{e52_slots,e52_drift}.py +
+run_e52_*.sh; probe_conversion.py PROBE_LAYERS parameterization (tower-qualified).
