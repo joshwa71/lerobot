@@ -4363,3 +4363,24 @@ note: the eventual chain at bs8xacc4 costs ~+25-40% vs bs16xacc2 (~20-24h sequen
 wrapper will try bs16xacc2 first with an auto-fallback ladder. Chain launch decision
 waits on THREE inputs landing within ~18h: this certificate, tonight's compact
 fold-in final, and tomorrow's spread-A (which decides contiguous vs spread layout).
+
+**Part 9 addendum — why layermax's per-layer cores are smaller (Josh's challenge; the
+routing-loss-scale hypothesis REJECTED).** The shared layers falsify any cross-layer
+competition story: e4's L15/16 footprints carried over near-bitwise between the two
+warm-ups (1549/1931 layermax vs 1565/1904 arm1p) despite two extra banks below —
+and mechanically no coupling channel exists (losses strictly per-module on
+per-module queues, no shared normalization; values pinned; frozen-route serves
+identical memory-free features regardless of other modules; grad clip never engages
+at warm-up norms 0.05). Each layer's routing equilibrium is an independent problem.
+The sharpening decomposes as: (1) DEPTH — the added banks sit lower where anchor
+geometry is more open (E49), and footprints are monotone in depth within layermax
+itself (e2: 197 -> 296 -> 380); (2) ARITHMETIC — totals grew sub-linearly (e2 996 ->
+1202 slots over 2x banks) so per-layer means fell without any bank being squeezed;
+(3) residual task-level variance at shared layers (e7/e9) = warm-up init randomness
+(different module sets consume the init RNG differently), not load-splitting.
+Cross-layer coupling enters only at the VALUE level (content jointly fitted through
+gates/LN/residual = division of labor), never the addressing level.
+**Pre-registered for the absmax certificate (tonight): L10-12 palettes sharper still
+(depth gradient continues down); L13-16 footprints ~= the compact certificate's (no
+shrink from banks added below). All seven uniformly smaller than compact's would
+falsify this and revive a coupling channel.**
