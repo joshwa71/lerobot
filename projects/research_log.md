@@ -4219,3 +4219,79 @@ the top-p slot (Part 6). Target ladder recalibrated (discussion): must = beat
 multitask-LoRA 49.2; good = 52-55 (~85-90% of the specialist oracle at none of its
 advantages); the missing table cells (e2/e7 specialists, naive sequential LoRA — the
 headline forgetting baseline) queue on whichever box frees first.
+
+### Part 8 — budget-v3 verdict: core overwrite ELIMINATED (0 events vs 260k-1.1M) and e9 rescued (+22 vs twin), but 43.6 < comp's 46.0 — the residual is amplitude's own cost, so the amplitude axis CLOSES at 2x; the gains ledger pivots the program to LAYERS (spread-A chain launched with levers; absolute-max certify-first queued)
+
+**Result** (`..._budgetprop_steps5k`, nebius3, 50-ep final): **43.6** = 24/48/40/76/30
+vs lr4x twin 40.4 (+3.2, clears it) vs comp 46.0 (−2.4, short). Trajectory
+25/40-35/25-60-55/40-45-30-65/24-48-40-76-30.
+
+**Mechanism verdict — the strongest protection result on record:**
+- **Total core exclusion in production.** Later tasks' update events into e4's
+  core-50: **0 — exactly zero at all six modules** (twin: 268k-1,107k). Into e9's
+  core-50 from t3/t4: **0** (twin: 361k-866k). Corefrac puts whole prior cores at
+  u=1 → score exactly 0 → never selected. The E51-Part-2 core-overwrite channel is
+  eliminated, not attenuated.
+- e9 — whose lr4x collapse (45→15) was timing-matched to exactly these channels —
+  lands 40 vs the twin's 18 (+22; second-best e9 ever after layermax's 44).
+- Conservation exact every logged line (sum 3072); 25k steps NaN-free; t0 tripwire
+  passed (block-min 0.0531 vs the 0.075 line — TF-proportional allocation does not
+  hurt a clean writer).
+
+**Attribution confound (owned).** The arm bundled TWO deltas vs its twin: protect_mode
+(rank→budget) AND u_norm (peak→corefrac). Corefrac ALONE in rank mode produces the
+same structural exclusion (u=1 → ranking score 0 → never in the mask); budget mode's
+unique contribution is only the proportional speed profile. The fit ledger points at
+that speed profile as a cost: block-min taxes vs twin ran +3/+17/+9/+8/+13% by task —
+the +17% on e6 is partly the genuine writer tax (e6 shares "mug" content with e4's
+now-untouchable core), but the across-the-board pattern is consistent with the mask
+tail running at 0.2-0.5x LR and under-converging (the concentration concern raised at
+design time; E42's coverage lesson). **The clean single-delta cell this identifies:
+rank+corefrac @2x+3072 (one env var from comp) — core exclusion without the
+proportional tail, at the amplitude that pays no brittleness. Deprioritized behind
+the layers pivot (below); rides any idle box window.**
+
+**The 4x-vs-2x residual decomposed — and the amplitude axis closes.** e4's deficit vs
+comp (24 vs 34) is NOT interference: zero events touched its core, and its block-min
+(0.0531) is BETTER than comp's (0.0547) — yet it rolls 10 lower. That is the E43
+amplitude signature (at 4x the correction direction goes generic, T_feat → 1.02;
+off-demo robustness drops). Protection solved 100% of the solvable channel; the
+remaining −2.4 vs comp = amplitude's intrinsic own-value brittleness (e4/e2) + the
+writer tax on genuine sharing (e6). Both costs are continuous in LR → a 3x arm
+interpolates them (~45-47 projection) on a substrate being superseded the same day.
+**Decision (with Josh): no 3x; 2x is the amplitude optimum. Axis closed:
+1x 40.0 / 2x 46.0 / 4x 40.4 / 4x+budget 43.6.**
+
+**Compass row completed:** attn-only 50-ep landed at **26.0** (predicted band 15-30)
+— the Part-5 kill row is now full: chunk 0.106 / plateaued / roll 26, vs VLM-full
+0.030/40 and our comp 0.075/34. Attention-side memory stays dead.
+
+**THE PIVOT (Josh's gains-ledger argument, adopted):** scope beats optimization,
+four times running — VLM build +6, layermax +4.8, levers-on-new-substrate +6, vs
+protection/budget/top-p ≈ 0-3 each. The program's remaining bets go to LAYERS:
+1. **[LAUNCHED, nebius3] Spread-A chain** (`seq5_layermax_A_spread_lr2x_topt3072.sh`,
+   commit 7d89dc69): attempt A's substrate (expert [2,4,6,8] + VLM [10,12,14,16] —
+   8 modules SPREAD over depth 2-16) through A-phase + 5-task sequential WITH the
+   composition levers, matching the running compact fold-in. **Count-matched,
+   bank-matched, rank-matched vs compact: spacing is the only substrate variable**
+   — the clean isolation of Josh's coverage hypothesis. Evidence for: A's VLM half
+   certified at parity (0.132-0.152) in better anchor geometry (E49 downward
+   improvement; E43 lower-layer transmission). Against: the certificate streak (5/5)
+   and A's weaker expert half (0.163-0.212). Lands 24 Jul AM.
+2. **[QUEUED, tonight] Absolute layer-max certify-first**: expert [4-9] + VLM
+   [10-16] = 13 modules, 5.4B values (Adam ~43GB → bs8xacc4 likely; warm-up cheap
+   via router_only_fast; AUDIT_BS=8). Warm-up + audit (~4h) on the first box free
+   (nebius4 after top-p, or base after the fold-in); full chain tomorrow ONLY on a
+   certificate pass, with the spread-vs-contiguous verdict shaping its layout
+   (A ≥ compact → spread the 13; A < compact → contiguous as specced). Known
+   marginal layer: expert L4 (famIoU ~0.195 in A's audit; trim to [5-9] if it drags).
+3. Fold-in interim (base): block-mins t0 0.0304 / t1 0.0156 / t2 0.0725 — through
+   the <0.045 pre-registration; lands tonight. Top-p (nebius4) lands this afternoon.
+
+**Board after this part:** base = fold-in (tonight); nebius3 = spread-A (24 Jul AM);
+nebius4 = top-p (today PM) → absolute-max warm-up+audit (tonight). Ladder cells
+(e2/e7 specialists + naive-sequential LoRA — the headline forgetting baseline) queue
+behind the layers wave. Storage: base cleaned 88%→75% (dead-branch checkpoints
+[top-p / vlmr4 / imgspan / attn-compass], analyzed-run intermediates + training
+states; layermax-plain per-task MODELS retained pending the chunk-instrument layer
+fix and own-block re-probe).
