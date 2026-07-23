@@ -111,7 +111,9 @@ else
     --policy.memory_layer.mem_k_dim=512 \
     --policy.memory_layer.value_fixed_lr=0.001 \
     --policy.memory_layer.memory_lr=0.001 \
-    --policy.memory_layer.lang_to_query=true \
+    --policy.memory_layer.lang_to_query=${LANG_TO_QUERY:-true} \
+    --policy.memory_layer.expert_anchor_pool="${EXPERT_ANCHOR:-}" \
+    --policy.memory_layer.expert_anchor_weight=${EXPERT_ANCHOR_W:-0.5} \
     --policy.memory_layer.fuse_method=film \
     --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
     --policy.memory_layer.value_type=lora \
