@@ -238,6 +238,28 @@ class MemoryLayerConfig:
     # broadcast warm-up affordable over the ~560-position image+language span.
     # NEVER set when values are trained (A-phase/sequential) — outputs would be wrong.
     router_only_fast: bool = False
+    # EXPERT-ANCHOR pooled routing (E52 — the E45 "state-hidden trick" applied to the
+    # expert tower). When "text", every EXPERT memory layer j mixes the pooled LM
+    # INSTRUCTION hidden captured at LM layer j (per-layer pairing, Josh's spec:
+    # expert_token_i_j receives text_pooled_j) into its ROUTING features:
+    #   routing_input_p = B*rms_nrm(W_a @ anchor_j) + (1-B)*rms_nrm(token_p),
+    # rescaled to the batch-mean token RMS (both components hard-normalized, so W_a's
+    # overall scale cancels and B is exactly the mix ratio; B = expert_anchor_weight).
+    # W_a is a per-module learned (expert_dim x expert_anchor_src_dim) map, tagged as a
+    # ROUTER param (pk_query_proj_param): trains only in router warm-ups, frozen
+    # downstream. Anchor layers sit below min(vlm_layers) by the placement guard, so
+    # the anchor is a memory-free (stationary) function of the frozen backbone; it is
+    # captured detached. Query + gate read the mixed features; the VALUE path always
+    # consumes the live per-position hidden. Rows without a usable instruction span
+    # fall back to pure per-token routing. "" (default) = off, byte-identical legacy.
+    # Rationale (E52 anchor ledger): expert features are crowded (inter-task cos
+    # 0.93-0.98) while the pooled LM instruction hidden is the most open task geometry
+    # measured (0.67-0.80, best LOW in the stack); mixing at B=0.5 moves the init
+    # key geometry to ~0.81 inter-task cos at a healthy conditionality proxy (0.87).
+    expert_anchor_pool: str = ""
+    expert_anchor_weight: float = 0.5
+    # Source width of the anchor (paligemma LM hidden). Default = gemma_2b.
+    expert_anchor_src_dim: int = 2048
     # INTERNAL (set by the attach path on the derived per-side config; not a CLI knob):
     # when > 0 on a module's cfg, that module applies memory to the last-N positions only.
     text_span: int = 0

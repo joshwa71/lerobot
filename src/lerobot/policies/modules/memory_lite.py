@@ -1644,6 +1644,31 @@ class MLPPlusMemory(nn.Module):
             raise ValueError(f"vlm_image_regions must divide 16, got {self.image_regions}")
         self._img_region_idx = None  # (s*s, (16//s)^2) flat patch ids within one camera
         self._warned_img_fallback = False
+        # E52 expert-anchor pooled routing (expert-tower wrappers only; the VLM derived
+        # cfg nulls the field and text_span > 0 disables it structurally). The model
+        # captures the pooled LM instruction hidden at this wrapper's paired LM layer
+        # (detached — routing is a frozen function of the backbone) and hands it in via
+        # set_expert_anchor; the mix applies to the ROUTING view only (query + gate).
+        self.expert_anchor = (
+            str(getattr(cfg, "expert_anchor_pool", "") or "") if self.text_span == 0 else ""
+        )
+        if self.expert_anchor not in ("", "text"):
+            raise ValueError(f"unknown expert_anchor_pool mode: {self.expert_anchor!r}")
+        self.expert_anchor_w = float(getattr(cfg, "expert_anchor_weight", 0.5))
+        self.anchor_proj = None
+        if self.expert_anchor:
+            if not (0.0 <= self.expert_anchor_w <= 1.0):
+                raise ValueError(
+                    f"expert_anchor_weight must be in [0, 1], got {self.expert_anchor_w}"
+                )
+            src = int(getattr(cfg, "expert_anchor_src_dim", 2048))
+            self.anchor_proj = nn.Linear(src, dim, bias=False)
+            for p in self.anchor_proj.parameters():
+                # Router group: trains in router warm-ups, frozen by freeze_memory_router.
+                p.pk_query_proj_param = True
+        self._ctx_anchor = None        # (B, src) detached pooled instr hidden
+        self._ctx_anchor_valid = None  # (B,) bool — rows with a usable instruction span
+        self._warned_anchor_stale = False
         # Frozen-base routing, inference path (suffix-only denoise forward): the
         # dual pass is driven by plain module state because the HF layer stack
         # between PaliGemmaWithExpertModel and this wrapper cannot thread a new
@@ -1669,6 +1694,48 @@ class MLPPlusMemory(nn.Module):
     def assert_frozen_stash_consumed(self):
         if self._frozen_stash:
             raise RuntimeError("frozen-routing stash not consumed by the live pass")
+
+    def set_expert_anchor(self, pooled: torch.Tensor | None, valid: torch.Tensor | None = None):
+        """E52: install the pooled LM instruction hidden for this wrapper's paired LM
+        layer. Overwrite semantics (duplicate prefix passes — VLM frozen pass A,
+        grad-checkpoint recompute — recompute the identical value at anchor layers,
+        which all sit below the VLM memory min). Persists across the suffix-only
+        denoise passes at inference; the next prefix pass refreshes it."""
+        self._ctx_anchor = pooled
+        self._ctx_anchor_valid = valid
+
+    def _mix_expert_anchor(self, base: torch.Tensor) -> torch.Tensor:
+        """Anchored composite routing features (E52):
+            B*rms_nrm(W_a @ anchor) + (1-B)*rms_nrm(token_p), rescaled to the
+        batch-mean token RMS (E45 normalization: both components hard-normalized, so
+        W_a's overall scale cancels and B is exactly the mix ratio). base: (B, T, D)
+        routing view (frozen router_x when dual-path is on, else the live hidden).
+        Rows without a usable instruction pool — and any stale/mismatched anchor —
+        fall back to pure per-token features."""
+        a = self._ctx_anchor
+        if a is None or self.anchor_proj is None or self.expert_anchor_w <= 0.0:
+            return base
+        if a.shape[0] != base.shape[0]:
+            if not self._warned_anchor_stale:
+                logging.warning(
+                    "expert-anchor: anchor batch %d != routing batch %d — per-token fallback",
+                    a.shape[0], base.shape[0],
+                )
+                self._warned_anchor_stale = True
+            return base
+        bw = self.expert_anchor_w
+        bf = base.float()
+        tok_rms = bf.pow(2).mean(dim=-1).sqrt()            # (B, T)
+        mean_rms = tok_rms.mean().clamp_min(1e-6)
+        ap = self.anchor_proj(a.to(dtype=self.anchor_proj.weight.dtype, device=base.device))
+        ap = ap.float()
+        ap = ap / ap.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-6)  # (B, D)
+        tn = bf / tok_rms.unsqueeze(-1).clamp_min(1e-6)
+        mixed = (bw * ap.unsqueeze(1) + (1.0 - bw) * tn) * mean_rms
+        if self._ctx_anchor_valid is not None:
+            ok = self._ctx_anchor_valid.to(device=base.device).view(-1, 1, 1)
+            mixed = torch.where(ok, mixed, bf)
+        return mixed.to(base.dtype)
 
     def _pooled_router_keys(self, base: torch.Tensor, vm2: torch.Tensor) -> torch.Tensor:
         """Router keys for pooled state-sub-span routing (E45). Router keys ONLY — the
@@ -2002,7 +2069,13 @@ class MLPPlusMemory(nn.Module):
             mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs)
             out = self.mlp(x)
             return torch.cat([out[:, :-n], out[:, -n:] + mem_out], dim=1)
-        mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)
+        if self.expert_anchor:
+            # E52: the routing view (query + gate) is the anchored composite; the value
+            # path below still consumes the live per-position hidden x.
+            r_in = self._mix_expert_anchor(router_x if router_x is not None else x)
+            mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=r_in)
+        else:
+            mem_out = self.mem(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)
         if self.memory_only:
             return mem_out
         return self.mlp(x) + mem_out

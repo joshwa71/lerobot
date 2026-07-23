@@ -711,6 +711,9 @@ class PaliGemmaWithExpertModel(
                 image_regions=int(getattr(cfg, "vlm_image_regions", 0) or 0),
                 image_pool_weights=list(getattr(cfg, "vlm_image_pool_weights", [1.0, 0.5]) or [1.0, 0.5]),
                 vlm_layers=[],
+                # E52: the expert-anchor mix is an expert-tower mechanism; the VLM
+                # modules keep their own pooled-key machinery.
+                expert_anchor_pool="",
             )
             vlm_targets = attach_memory_to_layer_list(
                 self.paligemma.model.language_model.layers,
@@ -727,6 +730,70 @@ class PaliGemmaWithExpertModel(
                 f"(bank {vlm_cfg.mem_n_keys ** 2}), r={vlm_cfg.lora_rank}, knn={vlm_cfg.mem_knn}, "
                 f"span=last {vlm_cfg.text_span} positions (the tokenized language field)."
             )
+        # ---- E52 expert-anchor pooled routing: per-layer pairing (expert layer j routes
+        # on B*nrm(W_a @ pooled instr hidden at LM layer j) + (1-B)*nrm(token)). Capture
+        # is a forward_pre_hook on the paired LM layer's mlp module — it fires with the
+        # post-attn-LN mlp input (the router-input quantity) on BOTH the joint training
+        # path (compute_layer_complete calls layer.mlp(out_emb); i=0 runs before i=1 in
+        # each layer iteration, so the anchor is fresh when the expert wrapper consumes
+        # it) and the inference prefix pass (HF forward). Anchor layers sit below
+        # min(vlm_layers) (placement guard), so duplicate prefix passes (VLM frozen
+        # pass A, grad-ckpt recompute) recompute identical values — overwrite-safe —
+        # and the anchor is memory-free/stationary by construction. Values detached:
+        # routing is a frozen function of the backbone; W_a carries the trainable
+        # directions.
+        if str(getattr(cfg, "expert_anchor_pool", "") or ""):
+            lm_layers = self.paligemma.model.language_model.layers
+            bad = [i for i in self._mem_layer_indices if i >= len(lm_layers)]
+            if bad:
+                raise ValueError(
+                    f"expert_anchor_pool: expert memory layers {bad} have no paired LM layer"
+                )
+            src = int(getattr(cfg, "expert_anchor_src_dim", 2048))
+            lm_dim = int(self.paligemma.config.text_config.hidden_size)
+            if src != lm_dim:
+                raise ValueError(
+                    f"expert_anchor_src_dim={src} != paligemma LM hidden size {lm_dim}"
+                )
+            self._anchor_masks = None
+            self._anchor_instr_len = None
+            for j in self._mem_layer_indices:
+                wrapper = self.gemma_expert.model.layers[j].mlp
+                lm_layers[j].mlp.register_forward_pre_hook(self._make_anchor_hook(wrapper))
+            logging.info(
+                f"Expert-anchor routing ENABLED: expert layers {self._mem_layer_indices} route on "
+                f"pooled LM instruction hiddens from the SAME LM layer indices "
+                f"(B={float(getattr(cfg, 'expert_anchor_weight', 0.5))})."
+            )
+
+    def _make_anchor_hook(self, wrapper):
+        """E52: capture hook for one (LM layer j -> expert layer j) anchor pairing."""
+
+        def hook(mod, args):
+            x = args[0]
+            masks = getattr(self, "_anchor_masks", None)
+            il = getattr(self, "_anchor_instr_len", None)
+            if masks is None or il is None or not torch.is_tensor(x) or x.dim() != 3:
+                return
+            n_lang = masks.shape[1]
+            # Full-prefix calls only: (B, images+language, D). The suffix stream never
+            # passes through LM mlps; other shapes (defensive) leave the anchor as-is.
+            if x.shape[0] != masks.shape[0] or x.shape[1] < n_lang:
+                return
+            with torch.no_grad():
+                lang = x[:, -n_lang:].float()
+                ilc = il.to(x.device)
+                vm = masks.to(device=x.device).bool()
+                pos = torch.arange(n_lang, device=x.device).unsqueeze(0)
+                # Instruction pool = positions [3, b): skips the constant "<bos> Task :"
+                # prefix, ends at the "," before the State marker (E45 convention).
+                imask = (pos >= 3) & (pos < ilc.unsqueeze(1)) & vm
+                m = imask.unsqueeze(-1).float()
+                pooled = (lang * m).sum(dim=1) / m.sum(dim=1).clamp_min(1.0)
+                valid = (ilc > 4) & (imask.sum(dim=1) > 0)
+            wrapper.set_expert_anchor(pooled.detach(), valid)
+
+        return hook
 
     def set_vlm_token_mask(self, masks: torch.Tensor | None, instr_len: torch.Tensor | None = None,
                            img_active: torch.Tensor | None = None):
@@ -748,6 +815,12 @@ class PaliGemmaWithExpertModel(
             mlp._ctx_valid_mask = masks
             mlp._ctx_instr_len = instr_len
             mlp._ctx_img_active = img_active
+        # E52 expert-anchor: the capture hooks (registered in attach_memory_to_expert)
+        # read the language-field mask + instruction boundary from here. Both forward
+        # entry points call this method before the prefix runs, so the ctx is fresh
+        # per batch on every path.
+        self._anchor_masks = masks
+        self._anchor_instr_len = instr_len
 
     def _frozen_routing_enabled(self) -> bool:
         cfg = getattr(self, "_mem_cfg", None)
