@@ -87,13 +87,15 @@ a_phase () {
     --wandb.enable=true \
     --wandb.project=vla-memory \
     --wandb.disable_artifact=true \
-    --policy.gradient_checkpointing=false
+    --policy.gradient_checkpointing=${3:-false}
 }
 if [ -d "$A_CKPT" ]; then
   echo "[A-phase] checkpoint exists - skipping."
 else
-  echo "[A-phase] launching at bs32 (fallback bs16 x accum2 on failure)"
-  a_phase 32 1 || { echo "[A-phase] bs32 failed - retrying bs16 x accum2"; rm -rf "$A_OUT"; a_phase 16 2; }
+  echo "[A-phase] launching at bs32 (fallback ladder: bs16xacc2 -> bs16xacc2+grad-ckpt)"
+  a_phase 32 1 \
+    || { echo "[A-phase] bs32 failed - retrying bs16 x accum2"; rm -rf "$A_OUT"; a_phase 16 2; } \
+    || { echo "[A-phase] bs16xacc2 failed - retrying bs16 x accum2 + gradient checkpointing (E52: at 5.37B values the card is full of FIXED cost — weights + Adam states + slot gather — so batch alone cannot save it)"; rm -rf "$A_OUT"; a_phase 16 2 true; }
 fi
 [ -d "$A_CKPT" ] || { echo "ERROR: A-phase finished but checkpoint missing"; exit 1; }
 
@@ -107,7 +109,7 @@ else
     --policy.path="$A_CKPT" \
     --policy.empty_cameras=1 \
     --policy.dtype=bfloat16 \
-    --policy.gradient_checkpointing=false \
+    --policy.gradient_checkpointing=${SEQ_GRAD_CKPT:-false} \
     --policy.normalization_mapping='{"VISUAL":"IDENTITY","STATE":"MEAN_STD","ACTION":"MEAN_STD"}' \
     --dataset.repo_id=libero_10 \
     --dataset.root="$SEQ_DATASET_ROOT" \

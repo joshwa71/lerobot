@@ -13,7 +13,12 @@ export GRAD_TAG=absmax_anchor05_nofilm_e4to9_v10to16
 export SEQ_TOP_T=3072
 export SEQ_VALUE_LR=0.002
 export SEQ_VALUE_LR_END=0.0002
-export SEQ_BS=8
-export SEQ_ACCUM=4
+# E52 VRAM lesson (both A-phase rungs OOMed): at 5.37B values the card is full of
+# FIXED cost (weights + ~43GB Adam states + the slot-gather term) — bs16 demanded
+# only ~5GB less than bs32. Gradient checkpointing is the lever that fits, on both
+# stages (frozen-route + memory machinery compose with ckpt: E38 T6 parity smoke).
+export SEQ_BS=16
+export SEQ_ACCUM=2
+export SEQ_GRAD_CKPT=true
 export SEQ_RUN=libero_10_seq5_jw_absmax_anchor05nofilm_beta4_topt3072_lr2x_steps5k
 source "$SCRIPT_DIR/joint_aphase_seq5_common.sh"
