@@ -4295,3 +4295,71 @@ behind the layers wave. Storage: base cleaned 88%→75% (dead-branch checkpoints
 [top-p / vlmr4 / imgspan / attn-compass], analyzed-run intermediates + training
 states; layermax-plain per-task MODELS retained pending the chunk-instrument layer
 fix and own-block re-probe).
+
+### Part 9 — mass top-p verdict: 37.6 — the rule ran as designed and the DOSE-RESPONSE kills the axis; slot-level mechanics extracted (continuous damage, two-channel threshold separation, the layers-vs-budget collision principle); absolute-max warm-up LAUNCHED on the freed box
+
+**Result** (`..._topp09mass_f3072c5120_lr2x_steps5k`, nebius4, 50-ep final): **37.6**
+= 22/42/12/88/24 vs comp (its single-delta twin, static 3072 @ 2x) 46.0 =
+34/60/26/84/26. Block-min mean **0.0639** — BETTER than comp's 0.0687 (family-best
+fit at 2x); the top-p fit/rollout dissociation again, milder than the count-rule's
+19.2 but the same shape.
+
+**Regime read** (in-run [top_p] k-lines, 50 samples): cap-pinned at 5120 on 64-90%
+of batches per module, floor-pinned **0/50**, occasional in-band dips (3.7-4.9k).
+The pre-registered fat-tail degeneracy fired — the arm is effectively the
+**static-~5120 band test**, i.e. exactly the upper-bound measurement Part 3 said we
+lacked. Write-budget dose-response at 2x on this substrate: **~90%-of-reads
+(count rule) 19.2 < ~5120 37.6 < 3072 = 46.0** — static 3072 is the interior
+optimum, now bounded from both sides. Coverage/write-budget axis CLOSED (joins
+amplitude @2x and rank).
+
+**Mechanistic derivations (slot-level, vs the bitwise-matched comp twin):**
+1. **Damage is CONTINUOUS, not cliffed.** At 1.67x budget, later-task events into
+   e9's core went x2.2 (L14 869k -> 1,919k) and shoulder x1.9 (6.4M -> 11.9M) —
+   ~linear in mask size — and the rollout damage came graded to match (e9 30->25->12,
+   no zeros/pinning; contrast the count-rule's cliff e4 25->0 at 5-18x core dose).
+   No "safe breadth" plateau exists above 3072.
+2. **The two kill channels separate by dose threshold.** Retention damage is
+   first-order in budget (fired at 1.67x: e9 -14, e6 -18, e4 -12). The tail-churn ->
+   fresh-conversion channel did NOT fire: unique-written rose only +25-50% (vs the
+   count rule's ~5x) and fresh conversion SURVIVED OR IMPROVED — e2 = 88, the best
+   e2 ever recorded; e7 held. The generalist substrate tolerates ~1.7x churn and
+   dies before ~5x; the retention channel has no tolerance band at all. "The budget
+   was load-bearing protection" (Part 2) now has a dose-response, and the
+   load-bearing half is specifically retention.
+3. **Plasticity exchange-rate ranking at the frontier**: breadth +67% bought -7%
+   loss + one writer cell (e2 +4) at -12..-18 x3 victims (net -8.4); amplitude
+   2x->4x bought -5% loss at net -5.6. Both levers net-negative at 46.0, breadth
+   the worse currency. **The frontier config is plasticity-SATURATED** — its binding
+   constraint is fit QUALITY (the threshold law on e4/e9), not fit budget in any
+   within-bank currency.
+4. **Per-batch adaptivity is structurally dead, not mistuned.** k never touched the
+   floor: per-batch score mass is heavy-tailed for EVERY task (32 frames x ~144
+   draws spread over 15-24k slots => most slots drawn 1-3x). The concentration the
+   colleague's rule keys on is real at the BLOCK level (k90 8-22k) and absent at the
+   PER-BATCH level where the mask acts — cross-batch accumulation, not within-batch
+   structure. No p-value fixes a missing signal.
+5. **The layers-vs-budget collision principle** (the deepest derivation): extra
+   budget buys deeper reach into SHARED, CONTESTED banks — the marginal mask slots
+   are precisely prior tasks' shoulders (the events table IS that statement); extra
+   layers buy NEW banks with new, certificate-separated routing surfaces. Same
+   capacity currency, opposite collision cross-sections. Retro-explains the whole
+   axis ledger: layers +4.8/+6 vs rank -10/+2, budget-breadth -8.4, count-top-p -27.
+   **Capacity converts iff it arrives with new, separated addressing** — E48's
+   conditionality currency, confirmed from the failure side.
+
+Confound note (pre-registered honesty): measured under weak core protection
+(rank+peak — the arm predates corefrac). Breadth x corefrac is unmeasured;
+budget-v3's exclusion would have blocked much of the core dose, but the corefrac
+writer-tax + derivation 3 say it would not clear 46.0. Stays unrun.
+
+**Launched behind it (nebius4, freed): the absolute layer-max warm-up** —
+`joint_rwarmup_absmax_e4to9_v10to16.sh` (d425d601): expert [4-9] + VLM [10-16] = 13
+modules, 5.37B values, n256/r2, broadcast losses, certify-first (warm-up -> audit at
+AUDIT_BS=8x400 -> STOP for manual review; bands in the header — expert famIoU <=
+~0.20 on >= 5/6, VLM <= ~0.25 all 7, no palette collapse; trim option expert [5-9]
+if only L4 fails). Config smoke passed (placement guard, bank arithmetic). Wall-clock
+note: the eventual chain at bs8xacc4 costs ~+25-40% vs bs16xacc2 (~20-24h sequential);
+wrapper will try bs16xacc2 first with an auto-fallback ladder. Chain launch decision
+waits on THREE inputs landing within ~18h: this certificate, tonight's compact
+fold-in final, and tomorrow's spread-A (which decides contiguous vs spread layout).
