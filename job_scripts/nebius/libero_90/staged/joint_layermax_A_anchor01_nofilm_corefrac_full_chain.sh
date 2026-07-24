@@ -1,4 +1,19 @@
 #!/bin/bash
+# == E53 addendum REFINEMENT (24 Jul): expert_anchor_weight 0.5 -> 0.1 =============
+# The 0.5 warm-up FAILED the gate: expert core50 330-457 (< 800 floor) at famIoU
+# 0.11-0.14 / bg 0.017-0.022 (cleanest ever) = separation-by-collapse (E21). The
+# per-task-CONSTANT pooled-LM-instruction anchor at weight 0.5 over-compacts the
+# expert router, whose native proj(x) is already the discriminative state-conditional
+# signal (E28: scene 20x > language). The SAME latent collapse sat in the absmax
+# anchor's famIoU-only "cleanest ever certified" cert (core50 425-648, never printed);
+# this gate is the first with a core50 floor on an anchored-expert router and caught
+# it. VLM tower passed (min-eff 381-914) — the anchor is right for the language field,
+# wrong for the expert tower. Refinement: 0.5 -> 0.1 (5x weaker). Two-sided gate risk:
+# 0.1 may now UNDER-separate (unanchored L2 famIoU 0.212; gate ceiling 0.18 + one
+# grace to 0.20) — the gate arbitrates. Run tag anchor05 -> anchor01 so the warm-up
+# re-trains FRESH: skip-guards key on ARM_TAG, so keeping anchor05 would silently
+# reuse the failed 0.5 router. The failed 0.5 warm-up/audit are retained on nebius4.
+# =================================================================================
 # E53 ARM 3 (nebius4): SPREAD substrate + expert text-anchor + corefrac — the
 # candidate-win chain (Josh). Inherits (A) the best fit in the project from the
 # spread layout (E53: best own-block chunks on all five tasks), (B) the anchored
@@ -47,7 +62,7 @@ ROOT_DIR=/home/josh/lerobot
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- stage 1+2: warm-up + audit + analyses (common body; STOPs after audit) ----
-export ARM_TAG=layermax_A_anchor05_nofilm_e2468_v10121416
+export ARM_TAG=layermax_A_anchor01_nofilm_e2468_v10121416
 export EXP_LAYERS='[2,4,6,8]'
 export VLM_LAYERS='[10,12,14,16]'
 export EXP_N=256 EXP_R=2 EXP_KNN=36
@@ -58,7 +73,7 @@ export ROUTER_FAST=true
 export AUDIT_BS=16 AUDIT_STEPS=200
 export LANG_TO_QUERY=false
 export EXPERT_ANCHOR=text
-export EXPERT_ANCHOR_W=0.5
+export EXPERT_ANCHOR_W=0.1   # E53-addendum: 0.5 over-compacted the expert router (gate fail); 5x weaker
 source "$SCRIPT_DIR/joint_rwarmup_common.sh"
 
 # ---- stage 3: automated gate on the audit summaries ----
@@ -112,5 +127,5 @@ export SEQ_VALUE_LR_END=0.0002
 export SEQ_BS=16
 export SEQ_ACCUM=2
 export SEQ_PROTECT_UNORM=corefrac
-export SEQ_RUN=libero_10_seq5_jw_layermax_A_anchor05nofilm_e2468_v10121416_beta4corefrac_topt3072_lr2x_steps5k
+export SEQ_RUN=libero_10_seq5_jw_layermax_A_anchor01nofilm_e2468_v10121416_beta4corefrac_topt3072_lr2x_steps5k
 source "$SCRIPT_DIR/joint_aphase_seq5_common.sh"
