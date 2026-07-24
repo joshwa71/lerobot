@@ -4651,3 +4651,17 @@ Artifacts: `outputs/analysis/e53/` (both MSE matrices, chunk/jitter grids, slots
 with IoU validation, core/shoulder/full drift, ckpt-diff, wandb/retention JSON);
 instruments + runners in `scripts/vla_analysis/`; the three arm wrappers + common-body
 ladder in `job_scripts/nebius/libero_90/staged/`.
+
+**Update (24 Jul, ~10:45) — arm-1 batching smoke: Josh's config WINS decisively;
+arm 1 LAUNCHED (tmux `arm1`, log `outputs/e53_arm1.log`).** Task-0-only smokes of the
+real sequential command on the 13-module absmax substrate, ~500/400 optimizer steps
+each, peak VRAM polled: **bs8×acc4 no-ckpt = 2.40 s/opt-step at 125.6GB (fits, ~18GB
+headroom, zero OOM) vs bs16×acc2+ckpt = 3.35 s/opt-step at the same peak — 28%
+faster.** The mechanism is cleaner than the generic +33%-recompute arithmetic: on a
+frozen backbone with values-only training the TRUE backward is cheaper than the
+forward (bwd 0.187 vs fwd 0.273 — grads reach only value tensors), so checkpointing's
+recompute nearly triples the backward (0.187→0.970). The E52 "fixed-cost-dominated,
+batch can't save it" reading was over-general — it held for the A-phase rungs tried
+(bs32/bs16) but bs8 clears the activation bar. Projected arm-1 wall-clock ~16.7h
+train + evals ≈ ~20h (vs ~27h on the killed config). Ladder retained in the wrapper
+(rung 1 confirmed live); smoke logs in the session scratchpad.
