@@ -102,14 +102,17 @@ fi
 # ---------- stage B: 5-task sequential (C-config; t0 block == the e4 probe) ----------
 # train_memory_only + freeze_memory_router + frozen-route ride in the A-ckpt config
 # (desired downstream); train_router_only + vlm_route_once are explicitly overridden.
-if [ -d "$SEQ_OUT/checkpoints/025000" ]; then
-  echo "[seq5] final checkpoint exists - skipping."
-else
+# E53: optional VRAM ladder — set SEQ_LADDER="bs:accum:ckpt,bs:accum:ckpt,..." to try
+# rungs in order. A rung that fails BEFORE the first per-task checkpoint (005000) is
+# treated as a config/VRAM failure: the run dir is wiped and the next rung tried. A
+# failure AFTER 005000 exists is NOT VRAM (peak memory is reached within task 0) and
+# aborts the chain loudly. SEQ_LADDER unset => single attempt, byte-identical to E47.
+seq_stage () {
   lerobot-sequential-train \
     --policy.path="$A_CKPT" \
     --policy.empty_cameras=1 \
     --policy.dtype=bfloat16 \
-    --policy.gradient_checkpointing=${SEQ_GRAD_CKPT:-false} \
+    --policy.gradient_checkpointing=${3:-false} \
     --policy.normalization_mapping='{"VISUAL":"IDENTITY","STATE":"MEAN_STD","ACTION":"MEAN_STD"}' \
     --dataset.repo_id=libero_10 \
     --dataset.root="$SEQ_DATASET_ROOT" \
@@ -118,8 +121,8 @@ else
     --env.task=libero_10 \
     --output_dir="$SEQ_OUT" \
     --steps=200000 \
-    --batch_size=$SEQ_BS \
-    --gradient_accumulation_steps=$SEQ_ACCUM \
+    --batch_size=$1 \
+    --gradient_accumulation_steps=$2 \
     --num_workers=8 \
     --eval.batch_size=1 \
     --eval.n_episodes=20 \
@@ -151,5 +154,24 @@ else
     --memory_value_lr=$SEQ_VALUE_LR \
     --memory_value_lr_end=$SEQ_VALUE_LR_END \
     --memory_value_scheduler_type=linear
+}
+if [ -d "$SEQ_OUT/checkpoints/025000" ]; then
+  echo "[seq5] final checkpoint exists - skipping."
+elif [ -z "$SEQ_LADDER" ]; then
+  seq_stage $SEQ_BS $SEQ_ACCUM ${SEQ_GRAD_CKPT:-false}
+else
+  ok=0
+  for rung in ${SEQ_LADDER//,/ }; do
+    IFS=: read -r rb ra rc <<< "$rung"
+    echo "[seq5] ladder rung: bs=$rb accum=$ra grad_ckpt=$rc"
+    if seq_stage "$rb" "$ra" "$rc"; then ok=1; break; fi
+    if [ -d "$SEQ_OUT/checkpoints/005000" ]; then
+      echo "[seq5] rung failed AFTER task-0 checkpoint - not a VRAM failure; aborting."
+      exit 1
+    fi
+    echo "[seq5] rung failed before 005000 (treating as VRAM) - wiping and trying next rung"
+    rm -rf "$SEQ_OUT"
+  done
+  [ "$ok" = 1 ] || { echo "ERROR: all SEQ_LADDER rungs failed"; exit 1; }
 fi
 echo "E47 graduation chain [$GRAD_TAG] COMPLETE at $(date)"

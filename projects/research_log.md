@@ -11,12 +11,12 @@
   - Started experimenting with **seeding sequential TF‑IDF/IDF from pretrain memory usage stats**.
 - Off the table: hard task masking / task-boundary slot allocation, EWC, replay.
 
-## Entry 1 — 11 Feb 26 (analysis + next experiments)
+## Entry 1 — 11
 ### Summary of the problem
 - Sequential training updates only memory values/LoRA params (router frozen). We observed **high slot overlap at read-time** and a **shared “hot core”** used by all tasks (router collapse / MoE-like load imbalance).
-- TF‑IDF masking mostly prevents *writing* into that shared core, but tasks still *read* heavily from it, and overlap remains large outside the strict all-task intersection.
+- TF‑IDF masking mostly prevents *writing* into that shared core, but tasks still *read* heavily from it, and overlap remains large.
 
-### Evidence from sequential logs (tasks 6–9; layers 14 & 15)
+### Evidence from sequential (tasks 6–9; layers 14 & 15)
 - Access overlap (intersection/min) across tasks (treating `(layer,slot)` as distinct): ~**0.62–0.72**.
 - Update overlap is lower with TF‑IDF: ~**0.16–0.31** (intersection/min).
 - Shared hot core exists:
@@ -42,32 +42,32 @@
 ## Entry 2 - 25 Feb 26 (Simplified Experiments)
 
 ### Summary of the problem
-Previously I was not systematically investigating the effects of each new feature on the performance. I have now run ablations across:
+Run alations across:
 - Contrastive loss type (centroid vs sample-wise)
 - Contrastive loss weight (0.5, 1, 2)
 - Dropout probability (0.05, 0.1, 0.2)
 
-Expirments run with Lora=4 and layers 12 and 14.
+Run with Lora=4 and layers 12 and 14.
 
 ### Observations
-- **Contrastive loss type:** No clear winner here. Centroid contrastive appears to exhibit less interference at later layers (e.g. layer 14) but slighly more in earlier layers. This is interesting - I thought we'd expect strictly more intersection from centroid.
-- **Contrastive loss weight:** We appear to see the largest intersection for 0.5 (as expected), then significantly reduced intersection for 1.0, then oddly increased intersection for 2.0. Non-monotonic increase is confusing.
+- **Contrastive loss type:** No winner. Centroid contrastive exhibits less interference at later layers (e.g. layer 14) but slighly more in earlier layers. Interesting - I thought we'd expect more intersection from centroid.
+- **Contrastive loss weight:** We see the largest intersection for 0.5, significantly reduced intersection for 1.0, then oddly increased intersection for 2.0. Non-monotonic increase is confusing.
 - **Dropout probability:** 0.05 experiment still running, but 0.2 performs better than 0.1 in terms of interference. Appears less degredation in previous task per, less intersection. This makes sense as some attempts to access slots important for previous tasks will be nullified by higher dropout.
 
 ### Thoughts
-- Claude tells me that for sample-wise contrastive loss we are including some terms which encourage uniformity of the queries inside a given task **as well** as distance across tasks. This could be problematic if we saturate the query space. Could explain the non-monotonic behaviour of the sample contrastive loss weight. To test we are trying a loss that removes the positive pairs from the denominator.
+- The sample-wise contrastive loss we are including some terms which encourage uniformity of the queries inside a given task **as well** as distance across tasks. This could be problematic if we saturate the query space. Could explain the non-monotonic behaviour of the sample contrastive loss weight. To test we are trying a loss that removes the positive pairs from the denominator.
 - I also want to test the change caused by the lora r. Testing 2 to see if it makes any difference.
 - I also want to test the effect of initialising the idf stats with the pretraining stats with different weights. Testing denom = 16 (e.g. 2x a single sequential task), 33 (1x seq task), 66 (0.5x seq task)
 
 ### Future
-- In future I should test the effect of batch size. Due to memory constraints I'm limited in the batch size I can use for lora=4 which could affect the training dynamics of the query projections if not all the tasks are in the batch. Perhaps worth adding gradient checkpointing or something so I can increase batch size.
+- I should test the effect of batch size. Due to VRAM constraints I'm limited in the batch size for lora=4 which could affect the training dynamics of the query projections if not all the tasks are in the batch. 
 - Test corruption again. Seemed promising.
 
 ---
 
-## Entry 3 - 4 Mar 26 (Small Test: Cross-Batch Contrastive Queue)
+## Entry 3 
 
-- Added a small pretraining test to increase effective contrastive pool without increasing micro-batch memory: cross-batch query FIFO (`contrastive_query_queue=2048`).
+- Pretraining test to increase effective contrastive pool without increasing micro-batch memory: cross-batch query FIFO (`contrastive_query_queue=2048`).
 - Goal: improve sample-wise contrastive negatives/positives under `batch_size=32` by reusing recent query embeddings from prior batches.
 - Using layers **[12,14]** in the new script:
   - `job_scripts/smolvla-memory/pretrain/2_layer/contrastive_accumulation/pretrain_12_14_film_lora_2_sample_contrastive_1.sh`
@@ -76,40 +76,40 @@ Expirments run with Lora=4 and layers 12 and 14.
 
 ---
 
-## Entry 4 - 4 Mar 26 (Dynamics Notes + Next Test: r=1 with More Slots)
+## Entry 4
 
 ### Updated dynamics interpretation
-- There is a consistent tradeoff between expressivity and stability in the value parameterization:
+- Consistent tradeoff between expressivity and stability in the value parameterization:
   - **Static value vectors** gave lower interference but lower ceiling performance.
   - **LoRA values** increased current-task performance but also increased forgetting.
-- Working hypothesis: LoRA slot overlap is more destructive than vector overlap because each slot is a **transform** of the hidden state, not just an additive template. When shared slots are updated by a later task, those updates can alter behavior broadly for prior tasks.
+- Working hypothesis: LoRA slot overlap is more destructive than vector overlap because each slot is a **transform** of the hidden state, not just an additive template.
 - This is compatible with the observed pattern where TF-IDF reduces direct write overlap but forgetting still appears once additional tasks are introduced (especially by task 4): the model still reads overlapping regions, and overlapping LoRA slots are high-impact.
 
 ### Why TF-IDF may still be insufficient
 - Current online masking is based on **frequency of slot access per batch** (TF over counts), which can still repeatedly prioritize globally frequent shared slots.
 - IDF helps, but if TF dominance is strong, medium-importance task-specific slots may still be under-updated.
-- In other words, masking reduces some overwrite, but not necessarily enough to prevent drift in shared high-impact LoRA slots.
+- Masking reduces some overwrite, but not enough to prevent drift in shared high-impact LoRA slots.
 
-### Suggested mitigation directions (non-EWC / non-replay / non-hard-mask)
+### Mitigation directions (non-EWC / non-replay / non-hard-mask)
 - Use **contribution-weighted TF** (weight by retrieval weights) instead of pure access counts so low-weight incidental touches do not dominate slot selection.
 - Use a **saturating TF transform** (e.g., sqrt/log scaling) before TF-IDF ranking to reduce repeated wins by the same hot slots.
 - Consider **per-head update budgeting** to reduce global head collapse where dominant heads consume most of the update budget.
 - Add **soft plasticity decay** per slot (continuous reduction in update magnitude for heavily updated slots, not hard exclusion).
 - Keep query/router adaptation offline (pretraining) and avoid online query updates if they destabilize old-task routing.
 
-### New experiment being launched
-- We are now testing **LoRA rank 1 with more memory slots** to probe whether many weaker experts are more stable than fewer stronger experts.
+### New experiments
+- Testing **LoRA rank 1 with more memory slots** to probe whether many weaker experts are more stable than fewer stronger experts.
 - To approximately double slot count relative to `mem_n_keys=384` (slots = `n_keys^2`), we set:
-  - `mem_n_keys=544` (`544^2` is ~2x `384^2`)
-- New scripts:
+  - `mem_n_keys=544`
+- Scripts:
   - `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
   - `job_scripts/smolvla-memory/sequential/2_layer/lora_r_exp/sequential_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
 
 ---
 
-## Entry 5 - 6 Mar 26 (Routing Compactness + Corruption Fix)
+## Entry 5
 
-- Recent discussion clarified two separate ideas:
+- Discussion clarified two separate ideas:
   - **Weighted TF-IDF** for sequential updates: rank slots by retrieval-weighted contribution rather than raw access counts.
   - **Routing regularization** during pretraining: act on actual PQ sub-key usage, not just query embeddings.
 - Key point: more diverse queries do **not** necessarily imply more diverse slot accesses. Different queries can still route into the same hot late-layer region, so query contrastive is only an indirect proxy for what we care about.
@@ -120,48 +120,47 @@ Expirments run with Lora=4 and layers 12 and 14.
 - Initial compactness-control scripts were created under:
   - `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
   - `job_scripts/smolvla-memory/sequential/2_layer/routing_locality_exp/`
-- After further discussion, the more important anti-forgetting term is **routing separation**, not compactness alone:
+- After further discussion, the more important anti-forgetting term is **routing separation**:
   - compactness says each task should route locally
   - separation says different tasks should route to different regions
-- So compactness is now being treated as a **secondary control ablation**, while the main next test is a routing-separation sweep.
-- Initial routing-separation scripts were created under:
+- So compactness is now being treated as a **secondary control ablation**, while the main next test is routing-separation.
+- Initial routing-separation scripts:
   - `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
   - `job_scripts/smolvla-memory/sequential/2_layer/routing_inter_task_separation_exp/`
-- Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**, which is a better match to the failure mode we want to test than corrupting the low-rank hidden activations.
-
+- Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**.
 ---
 
-## Entry 6 - 7 Mar 26 (Routing Loss Interpretation + New Sweep)
+## Entry 6
 
-- We discovered that the logged `routing_separation_mean` metric was actually the **mean pairwise cosine similarity** between task routing distributions, not a higher-is-better separation score.
+- Discovered that the logged `routing_separation_mean` metric was actually the **mean pairwise cosine similarity** between task routing distributions, not a higher-is-better separation score.
   - `~0.998` means tasks are routing almost identically.
   - `~0.02` means tasks are routing very differently.
 - In the first routing-separation sweep, `0.1` was too weak to change routing much, while `0.5` and `1.0` drove the similarity way down but also collapsed **intra-task routing entropy** to about `0.10` and `0.06`.
-- That means the separation term was working, but it was achieving separation by pushing each task toward an almost one-hot PQ subkey pattern. This is too sharp for the intended behavior.
+- That means the separation term was working, but it was achieving separation by pushing each task toward an almost one-hot PQ subkey pattern. Too sharp.
 - Main adjustment:
-  - replace the old one-sided “compactness” term with an explicit **intra-task locality** loss
+  - replace the old “compactness” term with a **intra-task locality** loss
   - define locality as a **support/entropy band**, so it penalizes routing that is both too diffuse and too concentrated
   - keep **inter-task separation** as a separate objective
-- CLI has been updated to reflect this distinction:
+- CLI has been updated:
   - `routing_intra_task_locality_weight`
   - `routing_inter_task_separation_weight`
   - `routing_intra_task_min_support`
   - `routing_intra_task_max_support`
-- New planned sweeps:
-  - **Intra-task locality sweep** with support band `8-32` and locality weights `0.1 / 0.25 / 0.5`
-  - **Inter-task separation sweep** with locality fixed on (`weight=0.25`, support band `8-32`) and separation weights `0.15 / 0.25 / 0.35`
-- Goal of the new sweep: find a regime where tasks separate in routing space **without** collapsing each task onto 1-2 subkeys per PQ half.
+- Planned sweeps:
+  - **Intra-task locality** with support band `8-32` and locality weights `0.1 / 0.25 / 0.5`
+  - **Inter-task separation** with locality fixed on (`weight=0.25`, support band `8-32`) and separation weights `0.15 / 0.25 / 0.35`
+- Goal: find a regime where tasks separate in routing space **without** collapsing each task onto 1-2 subkeys per PQ half.
 
 ---
 
-## Entry 7 - 9 Mar 26 (Routing Loss Misalignment Diagnosis + Joint-Slot Fix)
+## Entry 7
 
-### Findings from the Entry 6 sweep
+### Findings from Entry 6
 
-Ran 3 locality sweeps (`locality_weight` 0.1 / 0.25 / 0.5, support band `[8, 32]`) and 3 separation sweeps (`sep_weight` 0.15 / 0.25 / 0.35, locality 0.25, support `[8, 32]`). Results:
+3 locality sweeps (`locality_weight` 0.1 / 0.25 / 0.5, support band `[8, 32]`) and 3 separation sweeps (`sep_weight` 0.15 / 0.25 / 0.35, locality 0.25, support `[8, 32]`). Results:
 
 1. **Sequential training performance did not improve.** Best separation run (sep=0.15) tied with corruption baseline at ~16.5% success.
-2. **The routing loss was operating on the wrong distribution.** The `_compute_routing_losses` method computed soft distributions over all `n_keys=384` subkeys per PQ half, then measured entropy and pairwise similarity on those half-marginals. But retrieval only uses the **top-k** subkeys and forms **Cartesian-product joint slots**. The loss could be satisfied by moving tail mass in the half-distributions without changing the top subkeys or the final retrieved slots.
+2. **The routing loss was operating on the wrong distribution.** The `_compute_routing_losses` method computed soft distributions over all `n_keys=384` subkeys per PQ half, then measured entropy and pairwise similarity on those half-marginals. Retrieval only uses the **top-k** subkeys and forms **Cartesian-product joint slots**. Loss could be satisfied by moving tail mass in the half-distributions without changing the top subkeys or the final retrieved slots.
 3. **Evidence of misalignment:**
    - Half-level support was broad (routing_intra_task_support_mean ~216–384) even as the **actual final-slot effective number** in layer 14 was very concentrated (effnum ~30–82 for sep 0.15/0.25).
    - sep=0.25 drove half-similarity down, but layer-14 weighted access IoU between tasks stayed at ~0.316. It achieved "separation" by peeling one task off onto a different tiny hot core, while the other 3 tasks still shared.
@@ -171,13 +170,12 @@ Ran 3 locality sweeps (`locality_weight` 0.1 / 0.25 / 0.5, support band `[8, 32]
 
 ### Root cause
 
-The routing regulariser operated on the two PQ half-distributions separately (`s1_full`, `s2_full`, each `n_keys`-way). But:
+Routing regulariser operated on the two PQ half-distributions separately (`s1_full`, `s2_full`, each `n_keys`-way). But:
 - Retrieval takes top-k in each half, forms the k×k Cartesian product, then selects top-k final slots.
-- The loss on soft half-marginals is a **weak proxy**: it can be cheaply satisfied by reshuffling tail mass while the actual top subkeys (and final slots) stay shared.
+- The loss on soft half-marginals is a **weak proxy**: can be cheaply satisfied by reshuffling tail mass while the actual top subkeys stay shared.
 - The support band `[8, 32]` targeted half-subkey support, not final-slot support. With `n_keys=384`, these are completely different scales.
 
-### Solution implemented
-
+### Solution
 Rewrote `_compute_routing_losses` in `memory_lite.py` to operate on the **joint product-key candidate distribution**:
 1. Take top-M subkeys per PQ half (M = `routing_loss_topk` or `knn`, default matches retrieval)
 2. Form M×M Cartesian-product candidate scores and slot IDs
@@ -185,41 +183,40 @@ Rewrote `_compute_routing_losses` in `memory_lite.py` to operate on the **joint 
 4. Scatter per-task distributions into a compact slot histogram (slot IDs remapped via `searchsorted` for memory efficiency)
 5. Compute locality (entropy band) and separation (cosine similarity) on those **full-slot distributions**
 
-This directly regularises the distribution retrieval actually uses. Gradient flows through: loss → histogram → joint softmax → joint scores → top-k values → PQ half scores → query projection + keys.
+This directly regularises the distribution retrieval actually uses. Gradient flows: loss → histogram → joint softmax → joint scores → top-k values → PQ half scores → query projection + keys.
 
-Also fixed a NaN gradient bug: `torch.where(p > eps, p.log(), 0)` computes `log(0)` gradients for the unused branch. Replaced with `p.clamp(min=eps).log()`.
+Fixed a NaN gradient bug: `torch.where(p > eps, p.log(), 0)` computes `log(0)` gradients for the unused branch. Replaced with `p.clamp(min=eps).log()`.
 
 Added `routing_loss_topk` config param (default 0 = use `knn`). Support bounds now refer to **effective final slots** in the `n_keys²` space, not half-subkey support.
 
 ### Support band rationale
 
 Old band `[8, 32]` was in half-subkey space over 384 subkeys. New band is in final-slot space over 147,456 (`384²`) slots. With 35 pretrain tasks:
-- Want to allow **generalist slots** (shared priors across tasks), so don't need complete separation
-- Want to prevent **collapse** onto a tiny hot core (the pathology we observed)
-- Uniform partition: 147K / 35 ≈ 4,200 slots/task, so even max_support=2048 is well within budget
+- Want to allow **generalist slots** (shared priors across tasks), don't need complete separation
+- Want to prevent **collapse** onto a tiny hot core
+- Uniform partition: 147K / 35 ≈ 4,200 slots/task, so even max_support=2048 well within budget
 
 ### Next experiments
 
 **Locality sweep** (locality_weight=0.25, no separation loss):
-- `[64, 512]` — moderate band
-- `[64, 1024]` — recommended default
-- `[128, 2048]` — broad, allows generous generalist core
-
+- `[64, 512]`
+- `[64, 1024]`
+- `[128, 2048]`
 **Separation sweep** (locality_weight=0.25, support `[128, 2048]`):
 - `sep_weight` = 0.15 / 0.25 / 0.35
 
-Scripts under:
+Scripts:
 - `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
 - `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
-- Matching sequential scripts in `sequential/2_layer/` directories
+- Sequential scripts in `sequential/2_layer/` directories
 
 ---
 
-## Entry 8 - 12 Mar 26 (Joint-Slot Separation Results + Next Steps)
+## Entry 8
 
 ### Results from Entry 7 experiments
 
-Ran 6 pretraining runs (3 locality-only, 3 locality+separation) and 5 sequential runs (sep_0.25 sequential added later). All use layers [12,14], LoRA rank 2, support band [128, 2048], locality_weight=0.25.
+6 pretraining runs (3 locality-only, 3 locality+separation) and 5 sequential runs (sep_0.25 sequential added later). All use layers [12,14], LoRA rank 2, support band [128, 2048], locality_weight=0.25.
 
 #### Pretraining eval success (libero_spatial, 4 episodes):
 
@@ -247,7 +244,7 @@ sep=0.25 is the best pretrained model by a clear margin.
 
 ### Key findings
 
-**1. The joint-slot routing fix (Entry 7) works.** Unlike the half-distribution approach (Entry 6) which achieved spurious separation by reshuffling tail mass, the joint-slot loss produces genuine routing differences that translate to less forgetting. sep=0.25 achieves 34.5% vs 16.5% for the best locality-only run.
+**1. The joint-slot routing fix (Entry 7) works.** Unlike the half-distribution approach which achieved spurious separation by reshuffling tail mass, the joint-slot loss produces routing differences that translate to less forgetting. sep=0.25 achieves 34.5% vs 16.5% for the best locality-only run.
 
 **2. Separation loss fixes the L14 collapse.** Without separation, L14 concentrates into ~400 effective slots (effnum) vs L12's ~2500. With separation, both layers equalize at ~3000-4000. The L14/L12 effnum ratio goes from 0.16 to ~1.10. This was the key pathology from Entry 7 — now resolved.
 
@@ -453,7 +450,7 @@ This term works in conjunction with sep and loc — they are independent additiv
 
 Each pretrain has a matching sequential run (same sequential config as the 4-layer baseline: tfidf_top_t=512, online IDF, tasks [6,7,8,9]).
 
-### What to watch
+### Watch
 
 1. **Pretrain success** — stronger anti-collapse can hurt fit; need to confirm it doesn't degrade below the 4-layer baseline
 2. **`eval/avg_pc_success_seen`** after 4 sequential tasks — the primary metric
@@ -468,13 +465,13 @@ Each pretrain has a matching sequential run (same sequential config as the 4-lay
 
 ### What we are not doing
 
-- More weighted-TF variants (already showed weak leverage)
+- More weighted-TF variants
 - Online query/key training during sequential (risks changing routing for old tasks)
 - Stronger pairwise separation alone (doesn't address aggregate collapse)
 
 ---
 
-## Entry 13 - 31 Mar 26 (Global Balance Results + Interpretation)
+## Entry 13
 
 ### Results from Entry 12 experiments
 
@@ -4364,8 +4361,7 @@ wrapper will try bs16xacc2 first with an auto-fallback ladder. Chain launch deci
 waits on THREE inputs landing within ~18h: this certificate, tonight's compact
 fold-in final, and tomorrow's spread-A (which decides contiguous vs spread layout).
 
-**Part 9 addendum — why layermax's per-layer cores are smaller (Josh's challenge; the
-routing-loss-scale hypothesis REJECTED).** The shared layers falsify any cross-layer
+**Part 9 addendum — why layermax's per-layer cores are smaller** The shared layers falsify any cross-layer
 competition story: e4's L15/16 footprints carried over near-bitwise between the two
 warm-ups (1549/1931 layermax vs 1565/1904 arm1p) despite two extra banks below —
 and mechanically no coupling channel exists (losses strictly per-module on
@@ -4507,3 +4503,151 @@ Battery artifacts: outputs/analysis/e52/{working_tables.md, mse_matrix_foldin.js
 probe_conversion_{foldin,plain}.jsonl, probe_jitter_foldin.jsonl, core_drift.json,
 slots_e52.out/json}; instruments scripts/vla_analysis/{e52_slots,e52_drift}.py +
 run_e52_*.sh; probe_conversion.py PROBE_LAYERS parameterization (tower-qualified).
+
+---
+## Entry 53 - 24 Jul 26 (E53 battery: corefrac = NEW FRONTIER 51.6, first config past the multitask-LoRA must-line — total core exclusion at zero writer tax, flat MSE matrix + held chunk grid restored at 2x; spread-A = best per-task functions in project history (t0 beats the dense VLM-LoRA specialist) taxed at the full peak-norm drift rate; absmax audit backfill: the expert text-anchor is a decisive low-layer rescue → 3-arm corefrac wave scripted (absmax / spread / spread+anchor))
+
+### The two landed runs
+
+- **corefrac** `libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4corefrac_topt3072_lr2x_steps5k`
+  — the E52 patch cell: fold-in config (compact layermax, lr 2e-3→2e-4, top_t 3072)
+  + the single delta `protect_u_norm` peak→corefrac (mode stays rank).
+- **spread-A** `libero_10_seq5_jw_layermax_A_e2468_v10121416_beta4_topt3072_lr2x_steps5k`
+  — the E51 spacing isolation: expert [2,4,6,8] + VLM [10,12,14,16], same levers,
+  peak-norm β4 (predates corefrac).
+
+Full battery (items 1-8) run on both; instruments extended and persisted
+(`e53_slots.py` with the logged-IoU validation folded in, `e53_drift.py` with
+core/shoulder/full bands — full = the deleted `field_change.py` read —
+`e53_ckpt_diff.py` rebuilt from the lost E39 scratchpad, `e53_wandb_retention.py`,
+GPU runners). Integrity: computed pairwise read-IoU == logged `memory_iou` to 4
+decimals on both (0.0902/0.0902, 0.0897/0.0897); ckpt-diff proves values-only on
+every block transition (16 slot tensors move, router/gate/backbone/vision bitwise
+zero); corefrac's 005000 is BITWISE the fold-in's (identical MSE row + own-chunk
+0.0333 + shared e4 init draw 55) — protection provably inert with an empty store,
+per the budget-v3 precedent.
+
+### Corefrac — new frontier 51.6; the mechanism is total and free
+
+Retention (20-ep inits / 50-ep finals): e4 55→35→35→35→**28**, e6 50→55→65→**68**,
+e9 75→60→**46**, e2 70→**80**, e7 **36**. Final **51.6** (init 57.2, give-back −5.6)
+vs fold-in twin 43.6 (−10.6), comp 46.0, plain 44.8. **Crosses the multitask-LoRA
+must-line (49.2)** — first config to do so; e6/e9/e2 cells are per-task 50-ep bests.
+
+| instrument | corefrac | fold-in (peak twin) |
+|---|---|---|
+| events into prior cores | **0 — exactly, all 40 pair×module cells** | 0.1-1.4M/module |
+| victim core drift (all victims, all 8 modules) | **0%** | e4 V16 55% |
+| MSE diag drift (e4/e6/e9/e2/e7) | **+3.7/+3.8/+2.5/+1.4/0.0%** | +22.6/+13.0/+11.0/+3.7/0.0 |
+| chunk own→final | **+3.6/+2.0/+4.4/+2.8/0.0%** | e4 +17% (broke through) |
+| block-min mean / t1 (writer-tax tripwire) | 0.0415 / **0.0155** | 0.0409 / 0.0156 |
+| jitter t0 image@0.05 (absolute) | 0.1527 | 0.1529 |
+
+Zero writer tax (t1 identical; mean +1.5%; e9's own fit IMPROVED 0.0654 vs 0.0725 —
+the budget-v3 relocation benefit reproduced in rank mode). e4 ends at chunk 0.0345 —
+**still inside its conversion window at the final checkpoint, first time ever**;
+e9 holds at 0.0788 ≈ threshold. Pre-registration scorecard **7/9**: misses only
+e4 ≥ 34 (28, within 50-ep noise of the line) and give-back ≥ −3 (−5.6, halved).
+
+Where the residual −5.6 lives: (a) 20-ep init-draw arithmetic (e9's 75, e4's 55 —
+the retired instrument; function give-back ≤4.4% is the honest retention number);
+(b) **shoulder relocation** — evicted core pressure lands on shoulders: e4 V-shoulder
+drift 44-62% (bleeds now 10-14% at V16, all shoulder); (c) the off-trail conversion
+layer on cliff-adjacent tasks (e9 75→46 at +2.5-4.4% function movement). Decision:
+**corefrac is default-on in the recipe; peak-norm is retired** — there is no measured
+reason to run it again.
+
+### Spread-A — the spacing verdict: best fit ever, full drift tax
+
+Retention: e4 50→25→40→5→**24**, e6 60→60→45→**44**, e9 75→40→**46**, e2 75→**72**,
+e7 **20**. Final **41.2** (init 56.0, give-back −14.8) — below all three compact
+comparators at rollout, and yet:
+
+- **Own-block chunks are the best ever measured on ALL FIVE tasks**:
+  0.0272/0.0200/0.0683/0.0309/0.0315. t0 **beats the dense VLM-LoRA specialist**
+  (0.0272 vs 0.0298); e9 crosses its ~0.07 threshold at own-block for the first time;
+  block-min mean 0.0382 = project low.
+- **Jitter absolutes are the lowest in the family** (t0 image 0.1422 vs corefrac
+  0.1527 / fold-in 0.1529) — no crossing, no imgspan signature: the spread substrate
+  is smoother, not brittler. Writing at broader depths is genuinely valuable.
+- The give-back is REAL function forgetting at the known channel: MSE diag
+  +22.6/+15.9/+13.0/+4.3%, chunk give-backs +10-17%, e4 V16 core drift **56%/
+  shoulder 89%** (over the E52 44-55% cliff, collapse-shaped trajectory to match),
+  9.89M writer events into prior cores (max cell 548k). Damage depth-grades V10→V16.
+- **E2 is the leakiest module of the family** (bleed cells to 34%, the two largest
+  core-event cells) — production confirmation of the attempt-A audit's L2 famIoU
+  0.212 and the E36 low-layer separability warning. e9's expert footprint dilution
+  is ABSENT on this warm-up (E-cores ≈ peers) — part of its fit edge.
+- **The e7 anomaly (hold loosely)**: last task, zero exposure — drift explains
+  nothing — best-ever e7 function (0.0315, cleanest jitter) rolls 20 vs corefrac's
+  36 at worse function. ~2.3σ at 50 eps: borderline-real. If real, a spread-substrate
+  conversion deficit that no protection fixes.
+
+Spacing verdict at matched (peak) protection: spread wins fit everywhere, loses
+rollout (41.2 vs 43.6) via channels corefrac has since eliminated on compact — the
+matchup is stale, hence the wave below.
+
+### Absmax backfill (audit summaries computed today — they had never been run)
+
+The expert text-anchor A/B on the absolute layer-max layout (expert [4-9] + VLM
+[10-16], 13 modules, 5.37B values; anchor = per-layer pooled LM instruction hidden
+into the expert router at B=0.5, FiLM off):
+
+| expert famIoU | L4 | L5 | L6 | L7 | L8 | L9 | bg |
+|---|---|---|---|---|---|---|---|
+| plain | 0.242 | 0.195 | 0.201 | 0.219 | — | — | 0.10-0.13 |
+| **anchored** | **0.136** | **0.119** | **0.135** | **0.148** | 0.166 | 0.174 | **0.022-0.034** |
+
+The anchor rescues exactly the low layers that were the flagged risk, and produces
+the cleanest expert-side routing ever certified (bg ~4× below anything prior);
+VLM 0.132-0.150 untouched. Chain history: the automated gate tripped on L9 0.174 vs
+its 0.165 line (calibration miss — inside every historical certificate standard);
+graduation relaunched manually; the sequential (rank+peak, bs16×acc2+ckpt) was
+killed before stepping (slow config + results-in-turn). Warm-up postmortem: its 9h
+(vs the usual ~3h) was a sequential-stage VRAM config carried into the warm-up —
+router-only training on a frozen backbone needs neither grad-ckpt (router grads do
+not chain through the backbone) nor accum (E49 precedent: 32GiB @ bs32). Standing
+VRAM fact to carry (E52 A-phase): at 5.37B values the card is fixed-cost-dominated —
+bs16 demanded only ~5GB less than bs32 — which bears directly on the arm-1 batching
+question below.
+
+### Incidents (both fixed, both worth remembering)
+
+1. **HF Hub 429 rate limits currently masquerade as "tokenizer vocabulary corrupted"**
+   (newer transformers makes a hub `model_info` call inside tokenizer init; the 429
+   surfaces as OSError). All assets are locally cached → `HF_HUB_OFFLINE=1` is now in
+   the battery runners and the three new arm wrappers. Any VM chain launched during
+   an exhausted quota window can die at the same spot with the same misleading error.
+2. **Two chunk probes cannot share the GPU** (~70GB each at the gain-probe einsum;
+   E52 never overlapped them, the E53 parallel layout did) — serialize chunk stages.
+
+### The wave (3 free VMs; scripts shipped this commit; corefrac + offline-mode in all)
+
+| arm | box | script | delta / question |
+|---|---|---|---|
+| 1 | base | `seq5_absmax_anchor05nofilm_corefrac_bs8acc4.sh` | certified absmax substrate + corefrac, seq-only; Josh's batching call (bs8×acc4, no ckpt) as rung 1 of a `SEQ_LADDER` (→ +ckpt → bs16×acc2+ckpt; the E52 weak-batch-leverage fact says rung 1 may OOM — the ladder is the empirical answer). **Launch pending discussion.** |
+| 2 | nebius3 | `seq5_layermax_A_spread_lr2x_topt3072_corefrac.sh` | spread + corefrac, seq-only, single delta vs 41.2; reuses the on-box A-checkpoint. e7 = the decision cell corefrac cannot help. |
+| 3 | nebius4 | `joint_layermax_A_anchor05_nofilm_corefrac_full_chain.sh` | the candidate win: spread substrate + anchored-nofilm expert router (fresh warm-up, ~3-4h at corrected config) + corefrac. Gated (bands calibrated per the absmax lesson: ≤0.18/layer with one grace to 0.20; L2 = the honest unknown, never probed). vs arm 2 = the anchored router's conversion value at matched substrate+protection. |
+
+Common pre-registrations: core events = 0 at all modules; MSE matrices flat (≤~+5%);
+function give-backs ≤~5%/task; **beat 51.6 to take the frontier**. Infrastructure:
+`joint_aphase_seq5_common.sh` gained the optional `SEQ_LADDER` (unset = byte-identical;
+rungs failing before 005000 = VRAM → wipe and next rung; after = abort loudly).
+Portfolio decision (discussed): the 10-task extension (the catastrophe-elimination
+demonstration, arguably unblocked now that 51.6 > the must-line) takes the winner's
+slot AFTER the wave rather than displacing an arm.
+
+### Next steps
+
+1. Launch arm 2 (nebius3) + arm 3 (nebius4) via local claude; arm 1 here after the
+   batching discussion (the ladder makes either resolution safe).
+2. Battery on each landing (serialize the chunk stages); arm-3-vs-arm-2 is the
+   attribution read; e7 across arms 2/3 is the substrate-conversion read.
+3. Winner → 10-task extension and/or the clean confirmatory run (endgame ~4 days).
+4. Standing: corefrac default-on everywhere; peak-norm retired; 20-ep init cells
+   remain retired from decisions (the corefrac give-back story is the reminder why).
+
+Artifacts: `outputs/analysis/e53/` (both MSE matrices, chunk/jitter grids, slots
+with IoU validation, core/shoulder/full drift, ckpt-diff, wandb/retention JSON);
+instruments + runners in `scripts/vla_analysis/`; the three arm wrappers + common-body
+ladder in `job_scripts/nebius/libero_90/staged/`.
