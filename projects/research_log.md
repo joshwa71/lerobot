@@ -4686,3 +4686,41 @@ Runs have been moved to cold storage (off this VM, on the external backup drive)
 - libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta8
 - libero_90_pi05_8_10_12_14_film_lora_2244_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k
 - libero_10_sequential_pi05_8_10_12_14_film_lora_2244_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4_steps5k
+
+## E53 ARM-3 — expert-anchor separation sweep (empty window) + VM teardown cold-storage move (2026-07-25)
+
+### Separation sweep (anchored-expert router)
+ARM 3 = spread substrate ([2,4,6,8]+[10,12,14,16]) + per-task-constant pooled-LM-instruction
+expert anchor (expert_anchor_pool=text, FiLM off) + corefrac. Swept EXPERT_ANCHOR_W as a
+gate-directed bisection; each probe was a FRESH warm-up from base_nomem_50k (new run tag; prior
+warm-up deleted between probes). The anchor weight is a single routing-breadth knob read two ways:
+it sets both separation (expert famIoU, lower=better) and compaction (core50, higher=more capacity),
+so the two trade off along the same axis. Gate: expert famIoU <=0.18 (one grace layer <=0.20),
+bgIoU <=0.10, core50 >=800, min-eff >=300; VLM famIoU <=0.165.
+
+  w=0.10  expert famIoU 0.48-0.68  core50 3668-9881   -> FAIL under-separated
+  w=0.25  expert famIoU 0.34-0.39  core50 2250-2654   -> FAIL under-separated
+  w=0.35  expert famIoU 0.21-0.25  core50 1058-1174   -> FAIL (closest; bg + min-eff pass)
+  w=0.40  expert famIoU 0.167-0.201 core50 680-824    -> FAIL BOTH (L8 famIoU 0.201>0.20 AND L4/L6 core50<800)
+  w=0.50  expert famIoU 0.11-0.14  core50 330-457     -> FAIL over-compacted
+
+Conclusion: the famIoU-pass region (w >~0.40) and the core50-pass region (w <~0.40) cross WITHOUT
+overlapping -> the viable window is EMPTY; no expert-anchor weight passes the gate. At w=0.40 the two
+failure modes collide (needs MORE anchor to fix famIoU, LESS to fix core50 — contradictory). VLM
+anchor passed at every weight (famIoU 0.11-0.15) — the failure is expert-specific. Verdict: the
+anchored-expert router is not viable on this substrate. Standings unchanged: compact+corefrac 51.6
+= frontier; spread+corefrac 47.6 = spread result (corefrac lift: +8.0 compact, +6.4 spread). All 5
+warm-up audit certificates (+logs) retained on base.
+
+### VM teardown — checkpoints moved to cold storage
+Winding down the GPU VMs (nebius3/VM2, nebius4/VM3). Runs on the VMs but not on base were rescued to
+base, trimmed to the `last`-target checkpoint only (10k for warm-ups/A-phases, 25k for sequentials).
+The following 6 were then moved base -> cold storage (external SSD /media/josh/Backup/memory-models,
+full dirs incl training_state, 0-diff verified) and DELETED from base to free space. To use for
+analysis, rsync them back from cold storage.
+  - libero_90_pi05_jointA10k_arm3old_dedup_vlmknn36            (E47, ckpt 010000)
+  - libero_90_pi05_jointwarm10k_arm1_incumbent_n256r2_vlmknn16 (E46, ckpt 010000)
+  - libero_10_seq5_jw_arm1p_vlmknn16_beta4_topp09f3072_lr2x_steps5k (E50 top-p, ckpt 025000)
+  - libero_90_pi05_jointA10k_arm3p_vlmknn36                    (E47, ckpt 010000)
+  - libero_90_pi05_jointwarm10k_arm3_n256r2_vlmknn36           (E47, ckpt 010000)
+  - libero_10_sequential_pi05_8_10_12_14_frozenroute_rwarmupB_c0.05_sep5.0_noloc_rq512_top_t_3072_softprotect_fix_cf_beta4_lr4xsched_steps5k_tasks5 (E43, ckpt 025000)
