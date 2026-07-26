@@ -4724,3 +4724,156 @@ analysis, rsync them back from cold storage.
   - libero_90_pi05_jointA10k_arm3p_vlmknn36                    (E47, ckpt 010000)
   - libero_90_pi05_jointwarm10k_arm3_n256r2_vlmknn36           (E47, ckpt 010000)
   - libero_10_sequential_pi05_8_10_12_14_frozenroute_rwarmupB_c0.05_sep5.0_noloc_rq512_top_t_3072_softprotect_fix_cf_beta4_lr4xsched_steps5k_tasks5 (E43, ckpt 025000)
+
+---
+## Entry 54 - 26 Jul 26 (ARM-1 BACKFILL: absmax+anchor05+corefrac = NEW FRONTIER **53.6** with ZERO net give-back — on the router that FAILS the capacity gate at every expert layer; the capacity ledger falsifies the per-layer core50 floor (total −27% vs compact, re-allocated to the VLM tower + 3x cleaner shoulders); AAAI dropped → ICRA (~6 wks); spread re-opened at w=0.35 via GLOBAL loss levers — sep8-vs-c015 probe pair LAUNCHED)
+
+### Arm-1 backfill (the result E53's "standings unchanged" line predates)
+
+The E53 arm-1 sequential — `libero_10_seq5_jw_absmax_anchor05nofilm_beta4corefrac_topt3072_lr2x_steps5k`
+(absmax substrate: expert [4-9] + VLM [10-16] = 13 modules, n256/r2, 5.37B values; the
+anchored-nofilm expert router at w=0.5; corefrac + lr2x + top_t 3072; bs8×acc4; wandb
+`nmuu4afg`) — completed on 24-25 Jul but was never logged. Verified from disk this session
+(all 5 per-task checkpoints + evals + memory_by_task JSONs intact, 346G on base):
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|--|--|--|--|--|--|
+| 5k | 50 | | | | | 50.0 |
+| 10k | 50 | 55 | | | | 52.5 |
+| 15k | 55 | 60 | 55 | | | 56.7 |
+| 20k | 45 | 45 | 60 | 80 | | 57.5 |
+| **25k (50-ep)** | 40 | 52 | **76** | 72 | 28 | **53.6** |
+
+**NEW FRONTIER: 53.6** — past compact+corefrac (51.6), inside the 52-55 "good" band
+(multitask-LoRA must-line 49.2 cleared with margin). Init mean 53.6 (20-ep cells except
+e7) → final 53.6: **net give-back 0.0, the first zero in the family** (corefrac-compact
+−5.6). e9's 76 is ~30pp above its previous best (44/46) — and it *climbed* through later
+blocks (55→60→76). Per-cell: e4 −10, e6 −3, e9 +21, e2 −8. Best final AND best
+consistency in project history. Comparators (50-ep finals): compact+corefrac 51.6 /
+spread+corefrac 47.6 / comp 46.0 / layermax-plain 44.8.
+
+### The gate paradox (verified from the audit summaries)
+
+This run's router is exactly the configuration class the E53 sweep condemned. The
+anchored absmax certificate (`audit_heldout_jointwarm_absmax_anchor05_nofilm_e4to9_v10to16_10k`),
+recomputed this session:
+
+| expert layer | core50 mean (min-max/task) | famIoU | bgIoU | core50 ≥ 800 gate |
+|---|---|---|---|---|
+| L4 | 485 (147-1005) | 0.136 | 0.027 | FAIL |
+| L5 | 425 (149-771) | 0.119 | 0.022 | FAIL |
+| L6 | 453 (189-1156) | 0.135 | 0.022 | FAIL |
+| L7 | 479 (141-859) | 0.148 | 0.022 | FAIL |
+| L8 | 529 (181-1004) | 0.166 | 0.026 | FAIL |
+| L9 | 648 (213-1135) | 0.174 | 0.034 | FAIL |
+
+Capacity floor fails at ALL SIX expert layers (separation/bg = cleanest ever; VLM tower
+passes its gates: famIoU 0.132-0.150, min-eff 394-837). These core50s sit in the band
+condemned twice — E21/22's "capacity-dead" calls (511/696 on n384) and the E53 sweep's
+w=0.5 verdict (330-457, "over-compacted"). The run exists only through timing: arm 1
+launched the morning of 24 Jul on the famIoU/bg-only backfill read; the arm-3 gate
+failure exposing the latent collapse landed that afternoon, mid-flight, and the
+sequential was left to finish. **A gate-violating run is the frontier — the core50 ≥ 800
+per-layer floor is falsified as a hard requirement, and the E53 "empty viable window /
+anchored-expert not viable" verdict was a property of the GATE, not the router family.**
+
+### The capacity ledger (all-bank totals, computed from the audits this session)
+
+| substrate | banks | expert Σcore50 | VLM Σcore50 | ALL Σ | expert bg | result |
+|---|---|---|---|---|---|---|
+| arm 1' (6 mod) | 4+2 | 7,066 | 1,896 | 8,962 | 0.083 | 40.0 / 46.0 |
+| compact layermax | 4+4 | 6,985 | 2,808 | 9,792 | 0.080 | 51.6 |
+| **absmax anchor05** | 6+7 | **3,018** | **4,107** | **7,125** | **0.026** | **53.6** |
+| spread anchor040 | 4+4 | 3,023 | 2,464 | 5,486 | 0.036 | (never ran) |
+
+Josh's two observations, refined by the ledger: (1) low per-bank core50 correlates with
+the consistency win, but it is the co-product of the anchor's separation — the likelier
+active ingredients are **expert bg 0.026 vs 0.080** (3x cleaner shoulders — the only
+damage channel corefrac leaves open) and 13-bank distribution (any one bank's drift is a
+small share of any task's function). (2) "clawed back per-layer capacity via double the
+layers" is right in structure but NOT a clean swap: ALL-bank total is 27% BELOW compact
+(expert per-bank ÷3.5 × banks ×1.5 = expert total ÷2.3), and the growth is on the **VLM
+tower** (2,808→4,107, 4→7 banks) — capacity re-allocated to where the compass says fit
+lives. Causal test for (1), unscheduled: c-up on absmax at held separation (inflate cores;
+if give-back returns, small cores were load-bearing; if not, it was separation/bg).
+Terminology note for the record: the E53 sweep's `w` was `expert_anchor_weight`
+(verified from script + checkpoint configs); `routing_inter_task_separation_weight`
+stayed 5.0 throughout — the sep loss itself has not been swept since E26.
+
+### Decisions (Josh, 26 Jul)
+
+1. **AAAI abandoned → ICRA, ~6 weeks.** The endgame-countdown pressure is off; the plan
+   gains room for the missing baselines and seeds (below).
+2. **Spread is the testbed** — best measured memory→fit substrate (E53: best own-block
+   chunks on all five tasks; t0 beat the dense VLM-LoRA specialist), publishable size
+   (3.2B values vs absmax's 5.37B on the 6.6B base — absmax ≈ 1.8x total params, too
+   heavy as headline). Missing cell: a clean spread + anchored-expert + corefrac run.
+3. **Core50 target relaxed** per the absmax evidence: not 800; per-bank ~400-500
+   acceptable, with the guards moved to where the E21/22c risk actually lives —
+   per-bank ≥ ~400 as the constancy TRIPWIRE, q_intra ≤ ~0.93, per-batch effnum,
+   footprint dispersion ≤ 2x median. Under the relaxed gate, the E53 sweep's w=0.35
+   point (famIoU 0.21-0.25, core50 1058-1174) is already capacity-comfortable and misses
+   only famIoU by 0.03-0.07 — the window was empty only against the old floor.
+4. **Per-tower loss-weight overrides REJECTED (Josh)** — global-only changes preferred.
+   Safety argument: the audit is two-tower, so a global change that disturbs the
+   certified VLM equilibrium is caught at certificate time for free; enforced VLM gates
+   replace per-tower plumbing.
+5. **w=0.35, not 0.3** (calibration): w=0.3 interpolates to famIoU ~0.27-0.31 → the
+   losses would need −0.10..−0.13, beyond any measured loss-side famIoU move (max ~0.09,
+   the whole E26 sep curve); w=0.35 needs −0.03..−0.07, inside precedent.
+
+### LAUNCHED: E54 probe pair — spread @ w=0.35, global loss-lever isolation (tmux `probes_w035`)
+
+Both: fresh warm-ups from `base_nomem_50k` (fresh ARM_TAGs), spread substrate
+(expert [2,4,6,8]/n256/r2/knn36 + VLM [10,12,14,16]/n256/r2/knn16), expert text-anchor
+FiLM-off at **w=0.35**, E53 arm-3 recipe otherwise verbatim, broadcast losses,
+warm-up → audit → analyses → sub-span → STOP + gate-summary print:
+
+| probe | delta | expert mechanism | VLM risk (same audit watches it) |
+|---|---|---|---|
+| P1 `anchor035_sep8` | sep 5→**8** | translation — measured-safe (E26: famIoU fell while capacity ROSE along 0.5→5; >5 never swept) | palette COMPACTION (arm-3-old ~2-draw regime); guard: palette effnum ≥ ~500 |
+| P2 `anchor035_c015` | c 0.05→**0.15** | SupCon cross-task push trains proj(x) to amplify the state-side task signal off the anchor axis | palette SPRAWL (E45: c→breadth monotone); guard: famIoU ≤ 0.165, headroom thin (0.132-0.152) |
+
+Honest uncertainty on P2, pre-registered: the joint-era precedent is against it (P3/B —
+c-up compacted without separating); the counter-argument is that regime was
+MSE-dominated with no anchor. Genuinely a hypothesis test.
+
+**Gates (recalibrated, printed informationally at chain end):** expert famIoU ≤ 0.18
+(one grace ≤ 0.20), bg ≤ 0.10, mean core50 ≥ 400 (tripwire, not 800), min-task effnum
+≥ 300; VLM famIoU ≤ 0.165 all layers, palette effnum ≥ ~500 via the subspan JSON.
+**Decision rule:** one threads → its A-phase + 5-task sequential w/ corefrac; both →
+better joint margin; neither but one direction moves expert famIoU cleanly → dose
+refinement (sep 12 / c 0.25 / w 0.375); both damage the VLM before fixing the expert →
+per-LAYER anchor weight fallback (heavy at L2/L4 only — anchor knobs are inherently
+expert-scoped, so no per-tower loss plumbing needed; the deficit is layer-local, plain
+spread already passes at L6/L8).
+
+**Code (this commit):** `joint_rwarmup_common.sh` gained `SEP_W`/`CONTRASTIVE_W` env
+fallbacks (defaults 5.0/0.05 — byte-identical unset); new chain
+`staged/joint_layermax_A_w035_sep8_vs_c015_probes.sh` (per-probe subshell isolation so
+P1 failure can't kill P2; AUDIT_BS=16×200 per the 8-module OOM precedent;
+HF_HUB_OFFLINE=1). Status at write time: P1 stepping cleanly, 1.01 s/step, step ~560,
+config verified in-log (sep 8.0, anchor 0.35, both towers' layers correct); wandb
+`hv3bpga8`; both certificates ETA ~17:00 UTC, log `outputs/e54_probes_w035.log`.
+
+### ICRA plan (~6 weeks, agreed shape)
+
+- **Wk 1:** spread routing rejig (this probe pair + at most one refinement) → certified
+  winner → A-phase + 5-task w/ corefrac. Output: the missing spread cell + the
+  core50→consistency dose-response.
+- **Wk 2:** pick the paper config (spread ≥ ~51 → headline at 3.2B, absmax as the
+  capacity-scaling evidence; else compact 51.6 headlines) → **10-task extension** (the
+  catastrophe-elimination demonstration; 5-task CL is thin for reviewers on a 10-task
+  suite) → **freeze code + recipe; after this, measurement only** (the substrate axis
+  has produced a new best config every ~3 days — wk 1 is the last one).
+- **Wk 2-3, idle GPU windows:** reviewer-mandatory baselines repeatedly deferred:
+  **naive sequential LoRA** (THE headline forgetting baseline, never run), e2/e7
+  specialists (complete the oracle table), multitask-LoRA at 10 tasks if 10-task
+  headlines.
+- **Wk 3-4:** seeds — ≥3 on headline config + main baseline (everything to date is
+  single-seed at ±7pp/cell). The compute sink; argues for re-provisioning 1-2 VMs
+  (single-box this alone is ~2 wks).
+- **Wk 5-6:** consolidation + writing + one clean confirmatory run. The ablation table
+  mostly exists in this log (amplitude/write-budget/bank/knn/rank/palette-constancy
+  dose-responses, stationarity, protection modes) — writing work, not compute. Decide
+  the real-robot question EARLY (realworld_v2 exists; can't be bolted on in wk 5).

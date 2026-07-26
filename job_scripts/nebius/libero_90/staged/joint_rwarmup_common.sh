@@ -118,11 +118,11 @@ else
     --policy.memory_layer.embedding_model=all-mpnet-base-v2 \
     --policy.memory_layer.value_type=lora \
     --policy.memory_layer.contrastive_method=sample \
-    --policy.memory_layer.contrastive_loss_weight=0.05 \
+    --policy.memory_layer.contrastive_loss_weight=${CONTRASTIVE_W:-0.05} \
     --policy.memory_layer.contrastive_margin=0.0 \
     --policy.memory_layer.contrastive_query_queue=512 \
     --policy.memory_layer.routing_intra_task_locality_weight=0 \
-    --policy.memory_layer.routing_inter_task_separation_weight=5.0 \
+    --policy.memory_layer.routing_inter_task_separation_weight=${SEP_W:-5.0} \
     --policy.memory_layer.routing_query_queue=512
 fi
 [ -d "$CKPT" ] || { echo "ERROR: warmup finished but checkpoint missing"; exit 1; }
