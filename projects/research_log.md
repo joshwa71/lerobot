@@ -4985,3 +4985,24 @@ Expert-tower scoreboard (all six E54 probes; VLM passed and was ≈invariant in 
    since 06:10. **Graduating warm-up checkpoints:** B =
    `libero_90_pi05_jointwarm10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416`,
    P3 = `libero_90_pi05_jointwarm10k_layermax_sep8_e2468_v10121416`.
+
+### Update 4 (27 Jul) — GRADUATING B: chain LAUNCHED
+
+`staged/grad_layermax_A_anchor040_sep8_nofilm_corefrac.sh` (4a7fc641) — E53 arm-2 recipe
+verbatim (top_t 3072, lr 2e-3→2e-4, β4+corefrac, 5×5000, bs16×acc2, 50-ep final); the only
+delta vs spread+corefrac 47.6 is B's warm-up checkpoint, so it's a clean single-delta
+router cell. Full pre-registration in the script header. A-phase
+`..._jointA10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416` → sequential
+`..._seq5_jw_layermax_A_anchor040_sep8_nofilm_beta4corefrac_topt3072_lr2x_steps5k`;
+wandb `fubfz15r`, log `outputs/e55_gradB.log`. Beat 47.6 = the router delta pays;
+51.6 = spread takes the frontier; ≥52 ⇒ the 53.6 win was shoulder cleanliness, not banks.
+
+Health: 64 trainable tensors / 841 frozen (8 modules × 8), frozen-base routing + anchor
+B=0.4 confirmed in-log, E37 overrides took (the ckpt carries `train_router_only` and
+`router_only_fast` True). A-phase bs32 OOMed → ladder demoted to bs16×acc2 (expected at
+8 modules); 1.70 s/step, chain lands ~28 Jul AM.
+
+Run under `systemd-run --unit=gradB` (SIGTERM/TimeoutStopSec=45), not tmux — this box is
+the preemptible spot instance now. Relaunching the wrapper is idempotent at stage level,
+but there is no within-stage resume: a preemption costs ≤~4.8h (A) or one 5k block (seq).
+Worth plumbing `--resume` before the 10-task run. P3 next once the box frees.
