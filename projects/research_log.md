@@ -4877,3 +4877,111 @@ config verified in-log (sep 8.0, anchor 0.35, both towers' layers correct); wand
   mostly exists in this log (amplitude/write-budget/bank/knn/rank/palette-constancy
   dose-responses, stationarity, protection modes) — writing work, not compute. Decide
   the real-robot question EARLY (realworld_v2 exists; can't be bolted on in wk 5).
+
+### Update (26 Jul PM) — P1 verdict: sep8 FAILS (weak dose-response) but exposes the anchor famIoU U-CURVE: plain spread (w=0) beats every anchored point below w=0.5 → probe 3 (w=0 + sep8) QUEUED
+
+**P1 (w=0.35, sep 5→8): FAIL.** Expert famIoU 0.207/0.225/0.200/0.238 (L2/4/6/8; one
+grace at L6, three hard) vs the sep5 twin 0.238/0.241/0.207/0.250 — delta
+−0.031/−0.016/−0.007/−0.012 (mean −0.017) per +3 sep, of the needed −0.03..−0.07.
+Extrapolates to sep ~14-20 to thread, with core50 already drifting −10-15%
+(1058-1174 → 936-1065; still above even the old 800 floor; min-eff 519-612; bg
+0.040-0.054). **VLM tower untouched** (all layers within ~1-5% of the sep5 twin;
+famIoU 0.112-0.146 pass) — the global-coupling worry (palette compaction) is null at
+sep8: global sep changes are expert-selective in practice. Josh's global-only
+constraint cost nothing.
+
+**The U-curve (the session's real finding).** Summarized the plain-spread audit from
+its slot JSONs (never done): expert famIoU **0.163-0.212**, core50 **1842-2001**, bg
+0.094-0.119. Full famIoU-vs-anchor-w: **w=0 → 0.16-0.21** / 0.10 → 0.48-0.68 / 0.25 →
+0.34-0.39 / 0.35 → 0.21-0.25 / 0.40 → 0.167-0.201 / 0.50 → 0.11-0.14. The
+pooled-instruction anchor injects a near-SHARED query component for the lookalike
+basket family (instruction cos ~0.86) → pulls the family TOGETHER at low-mid w; only
+at w=0.5 do the amplified instruction differences win, at collapse-level compaction.
+Meanwhile bg improves monotonically in w (0.094-0.119 → 0.022 at 0.5): **the anchor
+separates what is already different and merges what is similar.** w=0.35 ≈ the worst
+operating point; the E54 probe pair was standing on it.
+
+**Probe 3 QUEUED (Josh: keep probing)** — `joint_layermax_w0_sep8_probe.sh`, tmux
+`probe3_w0sep8`, auto-starts when the P2 chain frees the GPU (~17:30), lands ~21:30.
+The cell the data points at: plain-spread certificate + ONE delta (sep 5→8), no
+anchor, FiLM on to match the comparator. Pre-registered (transfer P1's per-layer
+deltas onto plain): famIoU ~0.181/0.179/0.182/0.151 = PASS with one-grace headroom at
+core50 ~1600-1800; bg is the borderline axis (L2 0.119 −15% ≈ 0.10). Fail-routes (bg route corrected
+in discussion — the script header's "w≤0.1 anchor for bg" is DEAD per the U-curve;
+the bg-trimmer at w=0 is c-up ~0.1, SupCon pull → compaction → lower bg at affordable
+capacity cost): deltas don't transfer → sep 12; bg stuck → accept-with-note or
+w=0 + sep8 + c≈0.1; famIoU unmoved → pivot to the anchored-w0.5 + corefrac
+sequential (the absmax recipe on spread — warm-up already on disk, relaxed-gate
+justified; NOT launched).
+
+**P2 (c=0.15 @ w=0.35) re-scoped:** still lands ~17:30 as the contrastive mechanism
+test, but it stands on the handicapped w — any positive read gets re-tested at w=0.
+
+### Update 2 (26 Jul eve) — P2 FAIL (contrastive separates families in NO measured regime); P3 (w=0 + sep8) PASSES THE FULL GATE — first certified spread router, at 2-4x anchored capacity; cells B/C queued overnight
+
+- **P2 (w0.35, c0.15): FAIL, informatively.** Expert famIoU 0.249/0.244/0.211/0.252 vs
+  twin 0.238/0.241/0.207/0.250 — +0.002..+0.011, null/wrong direction — while core50
+  broadened +5-13% (1124-1314; the aux-only uniformity direction). With the joint-era
+  P3/B pattern this CLOSES the question: **c is a breadth knob in every measured
+  regime and a family-separator in none; sep is the only famIoU-mover.** VLM: ±0.003
+  famIoU, +5-8% core50, min-eff healthier — the c-axis global coupling is null at 3x.
+  Both global levers now measured VLM-safe; global-only fully vindicated.
+- **P3 (w=0, sep 5→8, FiLM on, single delta vs the plain-spread certificate): PASS —
+  all gates, both towers, no grace.** Expert famIoU **0.178/0.176/0.177/0.156**
+  (pre-registered 0.181/0.179/0.182/0.151 — delta-transfer hit within ~0.005/layer),
+  bg 0.083-0.097 (sep8 also trimmed the borderline L2 bg 0.119→0.094), core50
+  **1383-1717**, min-eff 1388-2024; VLM 0.132-0.154 PASS. sep8's capacity tax at w=0:
+  −11-28% core50 from the ~1900 base — affordable.
+- Net: **the anchor is bracketed as unnecessary on this substrate** — sep8 alone
+  separates the family below every anchored point's famIoU except w=0.5's, at 2-4x
+  the capacity. First spread router to certify.
+- Overnight (chain `probesBC`, queued behind P3): **cell B** w=0.40+sep8 (~23:30, the
+  absmax-band middle; pre-reg PASS at famIoU 0.155-0.19 / core50 580-740) and
+  **cell C** w=0.5+c=0.15 (~03:00, family-clean end; pre-reg core50 → 400-650 at
+  famIoU ≤~0.16 — also the small-cores-vs-separation causal probe), then **probe 4**
+  = P3-nofilm (~06:30; w=0 + sep8 + lang_to_query=false, no anchor — the
+  zero-language-machinery router, Josh's FiLM-removal cell; pre-reg famIoU within
+  ~0.01-0.02 of P3 ⇒ FiLM removable and P4 graduates over P3). Morning pick across
+  the five certificates; sequential launch = Josh's call.
+
+### Update 3 (27 Jul AM) — overnight verdicts: B PASSES in the absmax band (bg 0.025-0.037, FiLM-free); C fails the core floor by one layer (c-axis closed); P4 CATASTROPHIC SPRAWL — language conditioning is LOAD-BEARING at warm-up, "FiLM inert" was an inference-time property only
+
+Expert-tower scoreboard (all six E54 probes; VLM passed and was ≈invariant in every one):
+
+| cell | config | famIoU L2/4/6/8 | bg | core50 | verdict |
+|---|---|---|---|---|---|
+| P1 | w0.35 + sep8 | 0.207/0.225/0.200/0.238 | 0.040-0.054 | 936-1065 | FAIL |
+| P2 | w0.35 + c0.15 | 0.249/0.244/0.211/0.252 | 0.048-0.070 | 1124-1314 | FAIL |
+| **P3** | w0 + sep8, FiLM | **0.178/0.176/0.177/0.156** | 0.083-0.097 | **1383-1717** | **PASS** |
+| **B** | w0.40 + sep8, anchor/nofilm | **0.160/0.170/0.160/0.192** | **0.025-0.037** | 585-732 | **PASS (grace L8)** |
+| C | w0.5 + c0.15, anchor/nofilm | 0.121/0.126/0.135/0.143 | 0.018-0.025 | 354-482 | FAIL (L4 core50 354) |
+| P4 | w0 + sep8, NO language | 0.503-0.732 | 0.194-0.492 | 3789-10525 | FAIL (sprawl) |
+
+1. **B hit its pre-registration almost exactly** (predicted famIoU 0.155-0.19 / core50
+   580-740): the absmax capacity band with absmax-grade shoulders (bg ≈ the frontier's
+   0.026) at 8 banks — and FiLM-free with NO external embedder (the anchor pools LM
+   instruction hiddens; no mpnet, no film_mlp).
+2. **C: the c-up re-inflation under-delivered again** (+7-15%, same as at w=0.35 — the
+   E45 VLM-magnitude analogy does not transfer to the expert tower). Fails the ≥400
+   floor by one layer (L4 354). famIoU 0.121-0.143 / bg 0.018-0.025 = the cleanest
+   routing ever measured on spread, for reference. **The c axis is fully closed**: a
+   breadth knob with ~+10% leverage, a separator nowhere.
+3. **P4 is the decisive negative of the batch.** Pure proj(x) routing (no FiLM, no
+   anchor) sprawls catastrophically: famIoU 0.50-0.73, bg up to 0.49, footprints
+   3.8-10.5k, worst at L2 grading down with depth (the E36 crowding profile). E28's
+   "FiLM is inert" (γ≈0, β a 5% nub, stripping it moved routing ~0.001) was an
+   INFERENCE-time property of a trained router; at WARM-UP time the language channel
+   is what the aux losses use to organize task routing on crowded frozen features.
+   Corrected model: **the expert router needs SOME language conditioning — FiLM (weak,
+   learned) or the anchor (strong, fixed) both suffice; zero does not.** Every
+   previously certified router had one of the two; P4 was the first with neither.
+4. Net: **two certified spread routers bracketing the capacity axis** — P3 (core50
+   ~1700, bg ~0.09, FiLM+mpnet; the compact-51.6 profile on spread) and B (core50
+   ~650, bg ~0.03, anchored/FiLM-free; the absmax-53.6 profile at 8 banks/3.2B).
+   Exactly the core50↔consistency dose-response pair. Recommendation: graduate BOTH
+   through A-phase + 5-task corefrac sequentials this week, **B first** (pattern-matches
+   the frontier's winning profile, at publishable size, with the simpler language
+   story); P3 second as the capacity arm. Sequential launches = Josh's call. GPU idle
+   since 06:10. **Graduating warm-up checkpoints:** B =
+   `libero_90_pi05_jointwarm10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416`,
+   P3 = `libero_90_pi05_jointwarm10k_layermax_sep8_e2468_v10121416`.
