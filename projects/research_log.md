@@ -5026,3 +5026,126 @@ into each per-task checkpoint (0.03s), `--resume_sequential` restores it and *re
 absent, and the chain auto-resumes from the last completed boundary (smokes 22/22,
 `scripts/vla_analysis/smoke_sequential_resume.py`). A-phase was reused; sequential
 relaunched from task 0 at 03:33 UTC 28 Jul.
+
+---
+## Entry 55 - 28 Jul 26 (B graduation lands: spread+anchor040+sep8+corefrac = **53.2** — statistically the frontier at 3.2B/8 banks; the ≥52 branch FIRES (absmax's 53.6 was shoulder cleanliness, not bank count) → spread is headline-eligible. Battery: corefrac-flat matrices + project-best chunks on 4/5 tasks (e4 at full-specialist level); e7 core-volume hypothesis tested from the audits — simple form dead, an expert-DEPTH pattern found; e7's threshold is the open question → e7/e2 specialist cells LAUNCHED)
+
+### The run
+
+Relaunch (E54-U5) completed clean, 03:33→21:10 UTC. Determinism first: run 2 reproduced
+run 1 exactly through the replayed window — loss traces to 3 decimals every logged step,
+evals identical (e4 55.0; then 50/40) — so the crash cost wall-clock only, run 1's banked
+cells were real, and the A-phase-reuse + resume plumbing changed nothing about the method.
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|--|--|--|--|--|--|
+| 5k | 55 | | | | | 55.0 |
+| 10k | 50 | 40 | | | | 45.0 |
+| 15k | 25 | 60 | 65 | | | 50.0 |
+| 20k | 30 | 35 | 50 | 90 | | 51.25 |
+| **25k (50-ep)** | 44 | 60 | 56 | 86 | 20 | **53.2** |
+
+- **53.2 = inside 50-ep noise of absmax's 53.6, at 60% of its values (3.2B vs 5.37B) and
+  8 banks vs 13.** The pre-registered ≥52 branch fires: the frontier number was carried by
+  the anchored router's SHOULDER CLEANLINESS (bg 0.025-0.037), not the 13-bank spread.
+  Spread at 3.2B headlines; absmax demotes to capacity-scaling evidence (per the E54 plan).
+- Give-back **−0.8** (init-mean 54.0; 20-ep inits except e7) — the absmax zero-give-back
+  profile, vs compact+corefrac's −5.6.
+- e2 86 (+ its 90 intermediate) = best e2 cells ever; e9 56 second only to absmax's 76;
+  **e7 20 replicates spread-A's 20** — 2/2 on spread across two routers and two protection
+  modes: real, substrate-level. e6 60 ties its best.
+- Standings: absmax 53.6 / **B 53.2** / compact+corefrac 51.6 / spread+corefrac 47.6;
+  multitask-LoRA must-line 49.2 cleared by +4.0.
+- Method note, again: at boundary 4 the 20-ep cells (51.25) projected high-40s; the 50-ep
+  final moved e4 30→44, e6 35→60, e9 50→56. The E41 retired-instrument rule survives
+  another live demonstration.
+
+### Battery (MSE matrix + chunk; ~25 min GPU; runner `run_e55_gpu_gradB.sh`, artifacts `outputs/analysis/e55/`)
+
+MSE diag drift (just-trained → final), vs the two matched comparators:
+
+| | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| **B** | +3.7% | +3.5% | +3.4% | +2.1% | 0.0% |
+| compact+corefrac | +3.7% | +3.8% | +2.5% | +1.4% | 0.0% |
+| spread-A (peak) | +22.6% | +15.9% | +13.0% | +4.3% | 0.0% |
+
+Corefrac's flat profile transferred to spread cell-for-cell. And the diag ABSOLUTES land on
+spread-A's (±1-2% every task; 8-15% better than compact+corefrac) — **B kept spread's fit
+and added corefrac's retention; 53.2 is that combination**, both halves now measured.
+
+Chunk (own-block → final): give-backs **+0.0 / +3.5 / +2.0 / +4.2%** (t4 own=final) — the
+corefrac band. The absolutes are the bigger finding:
+
+| own chunk | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| **B** | **0.0198** | **0.0147** | **0.0466** | **0.0259** | 0.0321 |
+| spread-A (prev best-ever, all 5) | 0.0272 | 0.0200 | 0.0683 | 0.0309 | 0.0315 |
+| LoRA specialist anchors | 0.0204 | 0.020 | 0.0675 | — | — |
+
+**Project bests on 4/5 by 16-32% — e4 AT the full dense-specialist's level, e6/e9 below
+theirs.** The t0 cell is protection-free (empty store; 005000 bitwise-shared), so the 27%
+t0 gain over spread-A is a pure ROUTER effect: the anchored sep8 router fits better at ⅓
+the core50 — small-but-separated cores are a fit advantage at matched mask budget, not a
+tax (E54's capacity-ledger point, now shown on fit). e4's function moved **+0.006%** across
+the 20k post-block steps while its 20-ep cells wobbled 55→25→30→44 — the cleanest
+noise-vs-function demonstration on record. Instrument correction logged: cross-run
+"block-min" comparisons from the log's `loss:` field are invalid (it carries aux-loss
+telemetry, which differs by router); use wandb `mse_loss` or the paired matrix.
+
+### e7: core-volume hypothesis (Josh) tested from the audits — simple form dead; a depth pattern instead
+
+Per-task core50 from the B / P3 / compact audit summaries + the E53 jitter files:
+1. **Within B, core size does not rank rollout**: e2 has the tiniest cores everywhere
+   (115-290 VLM, 167-241 expert) and rolls 86; e9 the biggest expert cores (1020-1928) and
+   rolls 56; e7 middling → 20.
+2. **e7's VLM cores are small in ALL THREE audits** (t4/median 0.26-0.68) — not a spread
+   property — and compact's e7 VLM cores (238-358) are ≤ B's (258-645) while rolling 36
+   vs 20. Volume is not the discriminator.
+3. **Jitter: spread's e7 beats compact's at every perturbation level** (clean 0.032 vs
+   0.039; state@0.2 0.133 vs 0.146; image 0.176 vs 0.200) and still rolls 16 lower — the
+   gap lives outside the shell, on states no instrument visits.
+
+What does line up: **e7's final tracks the depth of the highest EXPERT bank** — L8 → 20, 20
+(both spread runs) / L9 → 28 (absmax) / L12 → 36 (compact) / L14-era healthy configs →
+26-38 (the two killed substrate bets, vlmr4 14 / imgspan 6, sit outside). Six-config
+monotone pattern at ±7pp cells: suggestive, not proof.
+
+### The discussion (Josh) — two frame corrections adopted
+
+1. **Sweet-spot framing**: breadth × write-volume-per-slot has an interior optimum (the E43
+   read-write product; B's e2/e9/e7 row above is its cleanest within-run demonstration).
+   Refinement kept from E49: the optimum MOVES with addressing quality (arm 3-old had the
+   best product ever and the worst fit) — conditionality is the third factor; B shifted the
+   optimum toward smaller cores by cleaning the router.
+2. **e7 threshold pushback (Josh, accepted)**: the "e7 is conversion-broken" claim rested
+   on compact-rolls-36-at-worse-chunk — an E50-invalid cross-substrate comparison. Two
+   spread points at the same chunk (0.0315/0.0321) both rolling 20 cannot discriminate
+   above-threshold from conversion-broken, and e6's specialist (0.020 → 44) calibrates that
+   basket-family thresholds can sit very low — e7's may be ~0.015-0.02, putting our 0.032
+   above its curve. Surviving fact: **e7's chunk is STUCK** (0.0315→0.0321) across a router
+   change that moved every other task 16-32% — whatever moves e7's fit isn't router or
+   protection; depth is the standing candidate under either reading.
+3. **P3 re-priced twice, opposite directions**: DOWN as a frontier bet (predicted double
+   regression: shoulders bg 0.083-0.097 ≈ compact's → −5.6-band give-back; router family →
+   spread-A-level fits; lands ~48-51), UP as science — under the sweet-spot frame it is the
+   big-core point on the breadth dose-response at matched protection, i.e. a paper figure.
+
+### LAUNCHED: e7 + e2 LoRA specialists (the two missing oracle cells; `loraft_e7_e2.sh`, e7 first)
+
+r32/5k recipe byte-identical to the t0-t2 anchors (58.0/0.0204, 44.0/0.020, 70.0/0.0675).
+e7 doubles as the threshold arbiter, pre-registered: specialist converts at **≲0.02** → the
+threshold reading wins (our 0.032 is above e7's curve; the wall is fit; the 9-module arm
+gets a concrete target ~0.02); specialist needs **≳0.04-0.05** → our 0.032 is already below
+a threshold our broader support should only relax — the threshold law breaks on e7 and the
+off-trail/conversion story revives. e2's cell completes the reviewer table either way.
+
+### Board
+
+1. Specialist cells land overnight → decide the next arm: **9-module hybrid** (expert
+   [8-11] + VLM [12-16], B's router recipe, corefrac; certify-first) — the push-60 bet
+   (layers axis 4/4, the e7 depth pattern, B's router) — vs **P3** (the dose-response
+   point). Discipline flag stands: E54 wk-1 allows "at most one refinement"; the 9-module
+   is the last substrate spin before the 10-task.
+2. Infra: gradB ran under systemd with the new resume plumbing armed but never exercised
+   (no preemption); it remains untested in production.
