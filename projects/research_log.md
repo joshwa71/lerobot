@@ -5006,3 +5006,23 @@ Run under `systemd-run --unit=gradB` (SIGTERM/TimeoutStopSec=45), not tmux — t
 the preemptible spot instance now. Relaunching the wrapper is idempotent at stage level,
 but there is no within-stage resume: a preemption costs ≤~4.8h (A) or one 5k block (seq).
 Worth plumbing `--resume` before the 10-task run. P3 next once the box frees.
+
+### Update 5 (28 Jul) — run 1 lost to a shm/logind bug at task 2/5; resume plumbing added; relaunched
+
+The first attempt died at 20:42 in task 2 (evals banked: e4 55, then e4 50 / e6 40 — e4's
+−5 across the first boundary vs fold-in's −15 and compact-corefrac's −20 is the only
+signal worth keeping). Cause was infrastructural, not the config: `logind` `RemoveIPC=yes`
++ `Linger=no` means every SSH logout sweeps the user's `/dev/shm`, and the watchers I had
+polling every 60-90s produced 546 login sessions in 6h — one sweep eventually landed in a
+DataLoader worker's create→unlink window (`could not unlink the shared memory file`).
+Fixed with `loginctl enable-linger josh` + SSH `ControlMaster` (0 sessions per poll now);
+written up in `phddev/CLAUDE.md` §9.5.1.
+
+Resume had to be built before relaunching, because the protection store and online-IDF
+accumulators live in module globals and were never checkpointed — restarting from a
+mid-run checkpoint would have run the remaining tasks with an EMPTY protection store,
+i.e. silently measuring a different method. Now `sequential_state.pt` is written atomically
+into each per-task checkpoint (0.03s), `--resume_sequential` restores it and *refuses* if
+absent, and the chain auto-resumes from the last completed boundary (smokes 22/22,
+`scripts/vla_analysis/smoke_sequential_resume.py`). A-phase was reused; sequential
+relaunched from task 0 at 03:33 UTC 28 Jul.
