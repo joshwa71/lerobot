@@ -27,6 +27,8 @@ import torch
 import torch.optim as optim
 import math
 import os
+import random
+import tempfile
 import time
 from accelerate import Accelerator
 from termcolor import colored
@@ -98,6 +100,16 @@ class SequentialOnlineConfig(TrainPipelineConfig):
 
     # Save a checkpoint after each task
     save_after_each_task: bool = True
+
+    # Resume a crashed/preempted sequential run from the last COMPLETED task boundary.
+    # A task boundary is a clean restart point (optimizer + scheduler + dataloader are all
+    # rebuilt per task), so the only state that must survive is what accumulates ACROSS
+    # tasks: the prior-usefulness protection store, the online-IDF accumulators and the
+    # eval histories. Those are written to `sequential_state.pt` inside each per-task
+    # checkpoint dir whenever save_after_each_task is on.
+    # Usage: point --policy.path at the checkpoint to resume from and set this True; the
+    # completed task positions are then skipped. Default False => legacy path unchanged.
+    resume_sequential: bool = False
 
     # Rebuild optimizer each task (False keeps momentum/state across tasks)
     reinit_optimizer_each_task: bool = False
@@ -1082,6 +1094,125 @@ def _seed_protect_usefulness(unwrapped_policy: PreTrainedPolicy, path: str) -> d
     if missing:
         raise ValueError(f"protect seed contains module keys not found on the policy: {missing}")
     return seeded
+
+
+# ---- Cross-task state persistence (crash / preemption resume at task boundaries) ----
+# Model weights are already checkpointed per task and the optimizer/scheduler/dataloader are
+# rebuilt at every boundary, so a boundary is a clean restart point. What does NOT live in the
+# model checkpoint is the state that accumulates ACROSS tasks:
+#   * _protect_usefulness_by_module  - the prior-usefulness (u) protection store
+#   * _online_idf_df_by_module / _online_idf_total_batches / idf_by_module - online TF-IDF
+#   * the CL eval histories (so charts and forgetting baselines stay continuous)
+# Resuming WITHOUT these would restart later tasks with an empty protection store and no IDF
+# history: the run would complete and produce a plausible number that silently measures a
+# different method. Hence _load_sequential_state refuses rather than approximating.
+SEQUENTIAL_STATE_FILENAME = "sequential_state.pt"
+
+
+def _save_sequential_state(
+    checkpoint_dir: Path | str,
+    *,
+    task_pos: int,
+    online_task_ids: list[int],
+    global_step: int,
+    idf_by_module: dict[str, torch.Tensor] | None,
+    seen_env_task_ids: list[int],
+    eval_bar_history: list[dict],
+    loss_eval_history: list[dict],
+    loss_baseline: dict[int, float],
+) -> float:
+    """Atomically persist cross-task state beside a per-task checkpoint; returns seconds taken.
+
+    Atomic per the preemption rules: temp file in the same dir -> fsync -> os.replace ->
+    fsync the directory, so a SIGKILL mid-write can never leave a file that loads but lies.
+    """
+    t0 = time.monotonic()
+    path = Path(checkpoint_dir) / SEQUENTIAL_STATE_FILENAME
+    state = {
+        "format": 1,
+        "task_pos": int(task_pos),
+        "online_task_ids": [int(t) for t in online_task_ids],
+        "global_step": int(global_step),
+        "protect_usefulness": {k: v.detach().cpu() for k, v in _protect_usefulness_by_module.items()},
+        "idf_df": {k: v.detach().cpu() for k, v in _online_idf_df_by_module.items()},
+        "idf_total_batches": dict(_online_idf_total_batches),
+        "idf_by_module": {k: v.detach().cpu() for k, v in (idf_by_module or {}).items()},
+        "seen_env_task_ids": list(seen_env_task_ids),
+        "eval_bar_history": list(eval_bar_history),
+        "loss_eval_history": list(loss_eval_history),
+        "loss_baseline": {int(k): float(v) for k, v in loss_baseline.items()},
+        "rng": {
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+            "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            torch.save(state, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        dirfd = os.open(str(path.parent), os.O_DIRECTORY)
+        try:
+            os.fsync(dirfd)
+        finally:
+            os.close(dirfd)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return time.monotonic() - t0
+
+
+def _load_sequential_state(
+    checkpoint_dir: Path | str,
+    idf_by_module: dict[str, torch.Tensor] | None,
+    expected_task_ids: list[int],
+) -> dict:
+    """Restore cross-task accumulators saved by _save_sequential_state. Raises if unusable."""
+    path = Path(checkpoint_dir) / SEQUENTIAL_STATE_FILENAME
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"--resume_sequential=true but {path} is missing. Resuming without it would run the "
+            "remaining tasks with an EMPTY prior-usefulness store and no online-IDF history, "
+            "silently invalidating the run (later tasks would not be protected against earlier "
+            "ones). Restart the sequential stage from the A-phase checkpoint instead."
+        )
+    state = torch.load(path, map_location="cpu", weights_only=False)
+
+    saved_ids = [int(t) for t in state.get("online_task_ids", [])]
+    if saved_ids != [int(t) for t in expected_task_ids]:
+        raise ValueError(
+            f"online_task_ids mismatch on resume: checkpoint has {saved_ids}, config has "
+            f"{[int(t) for t in expected_task_ids]}. Refusing to resume into a different task order."
+        )
+
+    _protect_usefulness_by_module.clear()
+    _protect_usefulness_by_module.update(state.get("protect_usefulness", {}))
+    _online_idf_df_by_module.clear()
+    _online_idf_df_by_module.update(state.get("idf_df", {}))
+    _online_idf_total_batches.clear()
+    _online_idf_total_batches.update(state.get("idf_total_batches", {}))
+    if idf_by_module is not None:
+        idf_by_module.clear()
+        idf_by_module.update(state.get("idf_by_module", {}))
+
+    rng = state.get("rng") or {}
+    try:
+        if "python" in rng:
+            random.setstate(rng["python"])
+        if "numpy" in rng:
+            np.random.set_state(rng["numpy"])
+        if "torch" in rng:
+            torch.set_rng_state(rng["torch"])
+        if rng.get("cuda") and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(rng["cuda"])
+    except Exception as e:  # best-effort: dataloader workers reseed anyway
+        logging.warning(f"sequential resume: RNG state not fully restored ({e}); continuing.")
+    return state
 
 
 def _seed_online_idf_from_pretrain(
@@ -2085,11 +2216,51 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 + f" (hard_u={cfg.protect_hard_u}, beta={cfg.protect_beta}, mode={cfg.protect_mode})"
             )
 
+    # Resume from the last completed task boundary (crash / preemption recovery).
+    # Must run AFTER any --protect_seed_path seeding so the restored store wins: the saved
+    # state already contains the seeded values folded in by the original run.
+    start_task_pos = 0
+    if cfg.resume_sequential:
+        pretrained_path = getattr(cfg.policy, "pretrained_path", None)
+        if not pretrained_path:
+            raise ValueError(
+                "--resume_sequential=true requires --policy.path pointing at the per-task "
+                "checkpoint to resume from (…/checkpoints/<step>/pretrained_model)."
+            )
+        resume_dir = Path(str(pretrained_path)).parent
+        state = _load_sequential_state(resume_dir, idf_by_module, cfg.online_task_ids)
+        start_task_pos = int(state["task_pos"]) + 1
+        global_step = int(state["global_step"])
+        seen_env_task_ids = list(state.get("seen_env_task_ids", []))
+        eval_bar_history = list(state.get("eval_bar_history", []))
+        loss_eval_history = list(state.get("loss_eval_history", []))
+        loss_baseline = {int(k): float(v) for k, v in (state.get("loss_baseline") or {}).items()}
+        if start_task_pos >= len(cfg.online_task_ids):
+            logging.info("resume_sequential: all tasks already complete; nothing to do.")
+            return
+        if is_main:
+            logging.info(
+                colored(
+                    f"RESUMING sequential run from {resume_dir}: {start_task_pos}/"
+                    f"{len(cfg.online_task_ids)} tasks complete, global_step={global_step}, "
+                    f"protection store modules={len(_protect_usefulness_by_module)}, "
+                    f"idf modules={len(_online_idf_df_by_module)}",
+                    "yellow",
+                    attrs=["bold"],
+                )
+            )
+
     # Iterate sequentially over dataset tasks
     for idx, dataset_task_id in enumerate(cfg.online_task_ids):
         # `idx` is rebound later in this block (memory diagnostics); keep the task
         # position under a stable name for the end-of-task eval.
         task_pos = idx
+        if idx < start_task_pos:
+            if is_main:
+                logging.info(
+                    colored(f"=== Skipping task {idx+1}/{len(cfg.online_task_ids)} (already complete, resumed)", "yellow")
+                )
+            continue
         if is_main:
             logging.info(colored(f"=== Online task {idx+1}/{len(cfg.online_task_ids)} | dataset_task_id={dataset_task_id}", "cyan", attrs=["bold"]))
 
@@ -2502,6 +2673,30 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             plt.close(fig)
                         except Exception as e:
                             logging.warning(f"Failed to log cumulative eval bar chart: {e}")
+
+        # Persist cross-task state alongside this task's checkpoint. Written at the END of the
+        # iteration (after eval) so the file means "task_pos is complete, eval included" — a
+        # resume from it therefore never re-runs or drops an eval round.
+        if cfg.save_checkpoint and cfg.save_after_each_task and is_main:
+            try:
+                _state_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, global_step)
+                _dt = _save_sequential_state(
+                    _state_dir,
+                    task_pos=task_pos,
+                    online_task_ids=cfg.online_task_ids,
+                    global_step=global_step,
+                    idf_by_module=idf_by_module,
+                    seen_env_task_ids=seen_env_task_ids,
+                    eval_bar_history=eval_bar_history,
+                    loss_eval_history=loss_eval_history,
+                    loss_baseline=loss_baseline,
+                )
+                logging.info(
+                    f"Saved cross-task state -> {_state_dir}/{SEQUENTIAL_STATE_FILENAME} in {_dt:.2f}s "
+                    f"(resume with --policy.path={_state_dir}/pretrained_model --resume_sequential=true)"
+                )
+            except Exception as e:
+                logging.warning(f"Failed to save cross-task sequential state: {e}")
 
     # Cleanup
     if eval_envs_all:
