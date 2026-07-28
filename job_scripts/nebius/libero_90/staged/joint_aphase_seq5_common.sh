@@ -109,7 +109,7 @@ fi
 # aborts the chain loudly. SEQ_LADDER unset => single attempt, byte-identical to E47.
 seq_stage () {
   lerobot-sequential-train \
-    --policy.path="$A_CKPT" \
+    --policy.path="$SEQ_POLICY_PATH" $SEQ_RESUME_FLAG \
     --policy.empty_cameras=1 \
     --policy.dtype=bfloat16 \
     --policy.gradient_checkpointing=${3:-false} \
@@ -155,6 +155,19 @@ seq_stage () {
     --memory_value_lr_end=$SEQ_VALUE_LR_END \
     --memory_value_scheduler_type=linear
 }
+# Auto-resume (preemption / crash recovery, per the "resume by default" rule): if a previous
+# attempt left a COMPLETED task boundary behind, continue from it rather than redoing the whole
+# sequential stage. sequential_state.pt carries the cross-task state the model checkpoint does
+# not (protection store, online-IDF accumulators, eval histories); without that file the trainer
+# refuses to resume rather than silently running later tasks unprotected.
+SEQ_POLICY_PATH="$A_CKPT"
+SEQ_RESUME_FLAG=""
+if [ -f "$SEQ_OUT/checkpoints/last/sequential_state.pt" ] && [ ! -d "$SEQ_OUT/checkpoints/025000" ]; then
+  SEQ_POLICY_PATH="$SEQ_OUT/checkpoints/last/pretrained_model"
+  SEQ_RESUME_FLAG="--resume_sequential=true"
+  echo "[seq5] RESUMING from $(readlink -f "$SEQ_OUT/checkpoints/last" 2>/dev/null)"
+fi
+
 if [ -d "$SEQ_OUT/checkpoints/025000" ]; then
   echo "[seq5] final checkpoint exists - skipping."
 elif [ -z "$SEQ_LADDER" ]; then
