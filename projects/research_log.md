@@ -5149,3 +5149,39 @@ off-trail/conversion story revives. e2's cell completes the reviewer table eithe
    is the last substrate spin before the 10-task.
 2. Infra: gradB ran under systemd with the new resume plumbing armed but never exercised
    (no preemption); it remains untested in production.
+
+### Entry 55 addendum (29 Jul, overnight) — e7 specialist lands: 60.0 @ chunk 0.0330 — the threshold-vs-conversion arbiter RESOLVES for conversion; LoRA-cell config finding; P3 chain + e2 queued
+
+**e7 specialist cell** (r32/5k, anchor recipe): **60.0 @ 50 eps, clean chunk 0.0330**.
+Oracle row: e4 58/0.0204 · e6 44/0.020 · e9 70/0.0675 · **e7 60/0.0330** · e2 tonight.
+
+**The arbiter verdict.** Neither E55 branch fired as written — the answer is sharper:
+the specialist converts at the SAME on-demo function we already have (0.0330 vs B's
+0.0321, ours marginally better), and its jitter shell is a wash (state@0.1/0.2 −12-16%
+smoother than spread-A's e7, image@0.05 slightly WORSE: 0.186 vs 0.177) — yet it rolls
+**60 vs our 20**. A 40-point rollout gap at matched function and matched-ish shell:
+- The "we haven't reached e7's curve" reading (E55 discussion #2) is **disconfirmed for
+  e7** — we are AT the specialist's operating point on every demo-state instrument.
+- e7's wall is the **conversion/off-trail layer** — the E42(d) suspect, now with its
+  cleanest evidence in the project: same task, same demos, 3x rollout gap, invisible to
+  chunk AND jitter. The "e7's chunk is stuck" fact stands but is no longer binding —
+  unsticking it would buy nothing without conversion.
+- Implication for the 9-module arm: its e7 case now rests on the depth pattern being a
+  CONVERSION lever (action-proximal expert banks), not a fit lever. The specialist's
+  adapters sit at every depth incl. action-proximal — consistent, not yet causal.
+
+**LoRA-cell config finding (Josh).** grad-ckpt was NOT waste at bs32: no-ckpt demands
+138.4 GiB (OOM, measured) vs 30 GiB with ckpt — the E31 "OOMs without ckpt" precedent
+holds for LoRA at bs32 after all (my extrapolation from the ckpt-on reading was wrong by
+~4x). Standard LoRA-cell config henceforth: **bs16 × accum2, no ckpt** (effective batch
+32 preserved; E42 audit covers the accumulation path) — faster than both.
+
+**Ops note (two incidents, one shape):** the t3 stub dir from the swapped-out unit and
+the killed probe's scratch dir both produced `FileExistsError` on relaunch — the
+partial-dir guard pattern (graduation wrappers) must ride EVERY relaunch path, not just
+chain wrappers. Both now guarded in the queue scripts.
+
+**Board:** P3 graduation chain RUNNING (A-phase on the bs16×acc2 ladder rung, same as
+B; seq evals from ~11:00 UTC, 50-ep final ~21:45) → queue2: e2 specialist (bs16×acc2)
++ its chunk probe, ~02:00 (30th). VM-preemption watchdog armed; the E54-U5 sequential
+resume plumbing is the recovery path if the spot instance is reclaimed.
