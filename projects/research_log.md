@@ -5185,3 +5185,95 @@ chain wrappers. Both now guarded in the queue scripts.
 B; seq evals from ~11:00 UTC, 50-ep final ~21:45) → queue2: e2 specialist (bs16×acc2)
 + its chunk probe, ~02:00 (30th). VM-preemption watchdog armed; the E54-U5 sequential
 resume plumbing is the recovery path if the spot instance is reclaimed.
+
+---
+## Entry 56 - 30 Jul 26 (P3 verdict 47.2: the anchor's SHOULDER cleanup is the whole +6, sep8 alone buys nothing — B confirmed as the config on both performance and simplicity; the core-breadth dose-response is now a 3-point curve; ORACLE TABLE COMPLETE (e2 84.0) and it re-frames the ceiling: our e2 86 BEATS its specialist)
+
+### P3 (the capacity-end router) — 47.2
+
+`libero_10_seq5_jw_layermax_sep8_beta4corefrac_topt3072_lr2x_steps5k`; chain clean
+(09:06 -> 03:06, its own A-phase; the one Traceback in-log is the expected bs32 A-phase
+rung OOM, ladder demoted to bs16xacc2 as B's did). Config verified from the log: P3's
+A-checkpoint, seed 1000, corefrac, top_t 3072, lr 2e-3 -> 2e-4 — single-delta vs B.
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|--|--|--|--|--|--|
+| 5k | 55 | | | | | 55.0 |
+| 10k | 35 | 60 | | | | 47.5 |
+| 15k | 45 | 25 | 55 | | | 41.7 |
+| 20k | 55 | 45 | 60 | 70 | | 57.5 |
+| **25k (50-ep)** | 46 | 46 | 58 | 74 | **12** | **47.2** |
+
+### The dose-response, now measured end to end (matched substrate / protection / levers)
+
+| router | expert bg | core50 | final |
+|---|---|---|---|
+| plain sep5 (E53 arm 2) | 0.094-0.119 | ~1900 | 47.6 |
+| **P3 = w0 + sep8** | 0.083-0.097 | 1383-1717 | **47.2** |
+| **B = w0.40 + sep8 (anchored, FiLM-free)** | **0.025-0.037** | 585-732 | **53.2** |
+
+**sep8 alone bought NOTHING** (47.2 ~= 47.6, inside noise) despite improving famIoU
+0.163-0.212 -> 0.156-0.178. The entire +5.6 is the ANCHOR'S SHOULDER CLEANUP — a cleaner
+attribution than the E55 pre-registration hoped for, and it matches E53's location of
+corefrac's residual give-back in the shoulder channel. Consequences:
+1. **The famIoU axis is spent on this substrate.** Two routers improved it at matched
+   protection and neither converted; bgIoU is the axis that pays. Future certificates
+   should gate on bg first, famIoU second (inverting the E44-54 emphasis).
+2. **Small cores are not the mechanism** (E54's ledger question, closed): P3 sits at ~2.4x
+   B's core50 and loses; but the E54 "small cores correlate with the win" reading is now
+   demoted to co-product — bg is the causal knob, core size rides along with the anchor.
+3. Give-back: P3 was AHEAD at boundary 4 (57.5 vs B's 51.25) and finished 6 behind
+   (-10.3 from its own peak vs B's -0.8). The 20-ep intermediates misled a third time in
+   this entry alone; the 50-ep instrument restored the pattern. Standing rule holds.
+4. **e7 = 12, its worst cell anywhere** (spread: 20 / 20 / 12 across three runs vs
+   compact 36, absmax 28). The spread e7 deficit is router-invariant, confirmed 3x.
+
+**Standings: absmax 53.6 / B 53.2 / compact+corefrac 51.6 / spread+sep5 47.6 / P3 47.2.**
+B is the config — best-in-class at 3.2B AND the simplest language story (no FiLM, no
+mpnet; the anchor is the only conditioning). The router axis is CLOSED.
+
+### Oracle table complete — and it re-frames the ceiling
+
+e2 specialist: **84.0 @ 50 eps, clean chunk 0.0308** (bs16xacc2 no-ckpt, 1.88 s/step —
+1.8x faster than the ckpt-on cells at identical effective batch; Josh's call, adopted as
+the standard LoRA-cell config).
+
+| env | B (sequential, 1 model) | specialist (5 models, task ID given) | B's chunk | spec chunk |
+|---|---|---|---|---|
+| e4 | 44 | 58 | **0.0198** | 0.0204 |
+| e6 | **60** | 44 | **0.0152** | 0.020 |
+| e9 | 56 | 70 | **0.0476** | 0.0675 |
+| e2 | **86** | 84 | **0.0270** | 0.0308 |
+| e7 | 20 | 60 | 0.0321 | 0.0330 |
+| mean | **53.2** | **63.2** | — | — |
+
+**B beats or matches its specialist on 2 of 5 tasks (e6 +16, e2 +2) and matches every
+specialist's FUNCTION on all five** — the oracle's remaining 10-point margin is carried
+almost entirely by e7 (+40) and e4/e9 (+14 each), i.e. by rollout CONVERSION, not fit.
+Restated for the paper: a single continually-trained model with a frozen backbone,
+zero task identity at inference, and zero forgetting reaches **84% of the per-task
+oracle's average**, and beats it outright on 2/5 tasks.
+
+### e7, sharpened (with the E55-addendum arbiter)
+
+Specialist 60 @ 0.0330 vs our 20 @ 0.0321 — matched function, matched-ish jitter shell,
+3x rollout. e7's wall is conversion and it is now the largest single pool on the board
+(+40 available, vs e4's +14 and e9's +14). The only lever with evidence pointed at it is
+the expert-DEPTH pattern (E55: L8 -> 20,20,12 / L9 -> 28 / L12 -> 36 / L14-era -> 26-38),
+which is why the 9-module hybrid (expert [8-11] + VLM [12-16], B's router, corefrac) is
+the standing next arm — explicitly a CONVERSION bet, not a fit bet.
+
+### Board
+
+1. **Decision pending (Josh):** 9-module hybrid (certify-first, ~4h + ~1 day) vs going
+   straight to the 10-task graduation on B. E54's wk-1 discipline flag says the 9-module
+   is the LAST substrate spin either way.
+2. Queued behind that: naive sequential LoRA (the headline forgetting baseline, never
+   run), >=3 seeds on the headline config, 10-task multitask-LoRA if 10-task headlines.
+3. Infra: the sequential resume plumbing remains untested in production (no preemption
+   in either run); queue2's stub-dir guard fired correctly on its first real test.
+
+Artifacts: `outputs/analysis/e55/{mse_matrix_gradB,probe_conversion_gradB,
+probe_jitter_specialist_e7,probe_jitter_specialist_e2}.jsonl`; P3 run + evals on base;
+scripts committed (grad_layermax_P3_sep8_corefrac.sh, loraft_e2_bs16acc2.sh,
+e55_overnight_queue.sh, e55_queue2.sh).
