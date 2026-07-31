@@ -153,8 +153,11 @@ seq_stage () {
     --protect_u_norm=$SEQ_PROTECT_UNORM \
     --memory_value_lr=$SEQ_VALUE_LR \
     --memory_value_lr_end=$SEQ_VALUE_LR_END \
-    --memory_value_scheduler_type=linear
+    --memory_value_scheduler_type=linear \
+    $SEQ_EXTRA_ARGS
 }
+# SEQ_EXTRA_ARGS (E57): optional space-separated extra CLI args appended verbatim to the
+# sequential stage (e.g. the value-input-noise flags). Unset => byte-identical.
 # Auto-resume (preemption / crash recovery, per the "resume by default" rule): if a previous
 # attempt left a COMPLETED task boundary behind, continue from it rather than redoing the whole
 # sequential stage. sequential_state.pt carries the cross-task state the model checkpoint does

@@ -710,6 +710,10 @@ class PaliGemmaWithExpertModel(
                 text_span=int(getattr(cfg, "vlm_text_span", 200)),
                 image_regions=int(getattr(cfg, "vlm_image_regions", 0) or 0),
                 image_pool_weights=list(getattr(cfg, "vlm_image_pool_weights", [1.0, 0.5]) or [1.0, 0.5]),
+                # E57: the VLM tower's per-layer value-input-noise sigmas ride the derived
+                # cfg's expert-position field (matched to `layers`=vlm_layers by order).
+                value_input_noise_sigma=list(getattr(cfg, "vlm_value_input_noise_sigma", []) or []),
+                vlm_value_input_noise_sigma=[],
                 vlm_layers=[],
                 # E52: the expert-anchor mix is an expert-tower mechanism; the VLM
                 # modules keep their own pooled-key machinery.

@@ -193,7 +193,7 @@ class HashingMemoryLite(nn.Module):
     EVAL_MEMORY = True
 
     def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
-                 lora_rank_override: int | None = None):
+                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None):
         super().__init__()
         assert cfg.mem_k_dim % 2 == 0
 
@@ -217,6 +217,15 @@ class HashingMemoryLite(nn.Module):
         # Value corruption parameters
         self.corruption_prob = getattr(cfg, "corruption_prob", 0.0)
         self.corruption_std = getattr(cfg, "corruption_std", 0.1)
+
+        # Value-INPUT noise (E57): training-only perturbation of the x consumed by the
+        # slot transforms. Per-layer sigma resolved at attach time (override); p and the
+        # per-row amplitude range are global. sigma<=0 or p<=0 => mechanism fully off.
+        self.value_noise_p = float(getattr(cfg, "value_input_noise_p", 0.0) or 0.0)
+        self.value_noise_sigma = float(value_noise_sigma_override) if value_noise_sigma_override is not None else 0.0
+        _amp = list(getattr(cfg, "value_input_noise_amp", [1.0, 1.0]) or [1.0, 1.0])
+        self.value_noise_amp_lo = float(_amp[0])
+        self.value_noise_amp_hi = float(_amp[1] if len(_amp) > 1 else _amp[0])
 
         # Router-only fast path (E49, warm-ups): substitute exact zeros for the
         # pre-projection value output, skipping the per-row slot gather. Bitwise-equal
@@ -928,6 +937,14 @@ class HashingMemoryLite(nn.Module):
         """
         B, N, C = x_pos.shape
         x32 = x_pos.float()
+        if self.training and self.value_noise_p > 0 and self.value_noise_sigma > 0:
+            # E57: noise the down-projection input on VALID positions only (pad rows
+            # would deflate the self-calibrating per-dim std); the swilu tail below
+            # keeps the clean x_flat.
+            flat = x32.reshape(B * N, C).clone()
+            valid = pos_mask.reshape(B * N).bool()
+            flat[valid] = self._value_input_noise(flat[valid])
+            x32 = flat.view(B, N, C)
         if self.value_type == "vector":
             vals = self.values.float()[idx_row]  # (B, K, V)
             row_out = (vals * w_row.float().unsqueeze(-1)).sum(dim=1)  # (B, V)
@@ -1013,6 +1030,30 @@ class HashingMemoryLite(nn.Module):
             )
         return out_fp32
 
+    def _value_input_noise(self, x32: torch.Tensor) -> torch.Tensor:
+        """E57 value-input noise: perturb the fp32 x consumed by the slot transforms.
+
+        Training-only, value-path-only (caller applies this to the down-projection input
+        exclusively — router/gate/swilu/MLP all keep the clean x). Per-dim scale is the
+        current batch's per-dim std over rows (self-calibrating, detached); sigma is the
+        per-layer calibrated ratio; a per-row amplitude draw covers the excursion band.
+        x32: (rows, input_dim) fp32. Returns a perturbed copy (or x32 unchanged if off).
+        """
+        if not self.training or self.value_noise_p <= 0 or self.value_noise_sigma <= 0:
+            return x32
+        with torch.no_grad():
+            std = x32.std(dim=0, keepdim=True) + 1e-6            # (1, D)
+            mask = torch.bernoulli(torch.full_like(x32, self.value_noise_p))
+            noise = torch.randn_like(x32) * std * self.value_noise_sigma
+            if self.value_noise_amp_lo != self.value_noise_amp_hi:
+                amp = torch.empty(x32.shape[0], 1, device=x32.device, dtype=x32.dtype).uniform_(
+                    self.value_noise_amp_lo, self.value_noise_amp_hi)
+                noise = noise * amp
+            elif self.value_noise_amp_lo != 1.0:
+                noise = noise * self.value_noise_amp_lo
+            delta = mask * noise
+        return x32 + delta
+
     def _forward_lora_values(
         self, x_flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor, device: torch.device
     ) -> torch.Tensor:
@@ -1036,7 +1077,9 @@ class HashingMemoryLite(nn.Module):
         k = self.heads * self.knn
 
         # x_flat: (bs, input_dim), indices: (bs, k)
-        x_fp32 = x_flat.float()
+        # E57: the down-projection consumes the (optionally noised) x; everything
+        # downstream that reads x_flat directly (swilu tail) stays clean.
+        x_fp32 = self._value_input_noise(x_flat.float())
 
         # Gather LoRA weights for selected slots
         # slot_down: (n_slots, input_dim, rank) -> (bs, k, input_dim, rank)
@@ -1610,10 +1653,11 @@ class HashingMemoryLite(nn.Module):
 
 class MLPPlusMemory(nn.Module):
     def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
-                 lora_rank_override: int | None = None):
+                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None):
         super().__init__()
         self.mlp = base_mlp
-        self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override)
+        self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override,
+                                     value_noise_sigma_override=value_noise_sigma_override)
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
         # Text-span attachment (E44, VLM-side memory): when > 0, memory applies ONLY to the
@@ -2161,6 +2205,22 @@ def attach_memory_to_layer_list(
         rank_by_layer = {li: int(r) for li, r in zip(target_layers, _layer_ranks)}
         print(f"Per-layer LoRA ranks for {label}: " + ", ".join(f"L{li}=r{rank_by_layer[li]}" for li in target_layers))
 
+    # Optional per-layer value-input-noise sigmas (E57), matched to target_layers by
+    # order like layer_ranks. Noise is enabled on a module ONLY via this explicit
+    # per-layer threading — unthreaded attach paths stay noise-free by construction.
+    _vnoise = list(getattr(cfg, "value_input_noise_sigma", []) or [])
+    vnoise_by_layer: dict[int, float] = {}
+    if _vnoise:
+        if len(_vnoise) != len(target_layers):
+            raise ValueError(
+                f"value_input_noise_sigma has length {len(_vnoise)} but there are {len(target_layers)} "
+                f"memory {label} layers {target_layers}; lengths must match (matched by order)."
+            )
+        vnoise_by_layer = {li: float(s) for li, s in zip(target_layers, _vnoise)}
+        if float(getattr(cfg, "value_input_noise_p", 0.0) or 0.0) > 0:
+            print(f"Value-input noise for {label}: p={cfg.value_input_noise_p}, amp={list(getattr(cfg, 'value_input_noise_amp', [1.0, 1.0]))}, "
+                  + ", ".join(f"L{li}=s{vnoise_by_layer[li]:g}" for li in target_layers))
+
     lang_dim = _get_lang_dim(cfg)
     if lang_dim > 0:
         print(f"Language-conditioned query projection enabled with lang_dim={lang_dim}")
@@ -2180,7 +2240,8 @@ def attach_memory_to_layer_list(
         base_dtype = next(layer.mlp.parameters()).dtype
         base_device = next(layer.mlp.parameters()).device
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim,
-                                  lora_rank_override=rank_by_layer.get(li))
+                                  lora_rank_override=rank_by_layer.get(li),
+                                  value_noise_sigma_override=vnoise_by_layer.get(li))
         # Align non-value memory params to base dtype/device; keep value params in float32.
         # When CPU offload is requested, leave value (slot) params on CPU — moving them
         # to GPU here would defeat the whole point and OOM on small cards.

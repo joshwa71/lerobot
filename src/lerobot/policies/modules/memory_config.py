@@ -163,6 +163,28 @@ class MemoryLayerConfig:
     # Standard deviation of additive Gaussian noise.
     corruption_std: float = 0.1
 
+    # ---- Value-INPUT noise (E57 off-trail lever) ----
+    # Perturbs the live hidden state consumed by the LoRA slot transforms during TRAINING
+    # only, widening the value content's competence neighborhood around the demo manifold
+    # (the E57 off-trail campaign: retrieval is healthy off-manifold, the value function
+    # is not). Strictly value-side: the router/gate (frozen-branch under
+    # use_frozen_base_input_features), the swilu modulation path, and the plain MLP all
+    # see the CLEAN x. Noise = Bernoulli(p) per (row, dim) x N(0,1) x sigma_layer x the
+    # current batch's per-dim input std (self-calibrating scale) x an optional per-row
+    # amplitude draw. Doses are per-layer, calibrated from the measured off-trail hidden
+    # displacement (probe_value_input_calib.py; obs-driven first-denoise-step captures).
+    # Per-dim Bernoulli probability; 0 (default) disables the mechanism entirely.
+    value_input_noise_p: float = 0.0
+    # Per-layer sigma (relative to per-dim input std), matched to `layers` by order for
+    # the expert tower. Empty -> 0 everywhere (off). Length must equal len(layers).
+    value_input_noise_sigma: List[float] = field(default_factory=list)
+    # Same, for the VLM tower — matched to `vlm_layers` by order (threaded into the
+    # derived VLM cfg's value_input_noise_sigma at attach time).
+    vlm_value_input_noise_sigma: List[float] = field(default_factory=list)
+    # Per-row amplitude multiplier drawn uniformly from [lo, hi] each row, covering the
+    # near-to-far excursion band (~[0.5, 1.5] per the E57 calibration). [1,1] = fixed.
+    value_input_noise_amp: List[float] = field(default_factory=lambda: [1.0, 1.0])
+
     # Value type: determines what each memory slot stores and how it's used.
     # - "vector": each slot is a value vector (original behavior, weighted sum of vectors)
     # - "lora": each slot is a tiny LoRA (low-rank transform), output is weighted sum of LoRA outputs
