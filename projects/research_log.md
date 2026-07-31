@@ -5277,3 +5277,87 @@ Artifacts: `outputs/analysis/e55/{mse_matrix_gradB,probe_conversion_gradB,
 probe_jitter_specialist_e7,probe_jitter_specialist_e2}.jsonl`; P3 run + evals on base;
 scripts committed (grad_layermax_P3_sep8_corefrac.sh, loraft_e2_bs16acc2.sh,
 e55_overnight_queue.sh, e55_queue2.sh).
+
+---
+## Entry 57 - 31 Jul 26 (OFF-TRAIL INSTRUMENT built + smoked + campaign LAUNCHED — the conversion-gap measurement (E42(d), deferred 4x) finally exists; anchor validates against the known chunk numbers; B-vs-e7-specialist is the first target pair)
+
+### Why (recap of the E56 discussion)
+
+The 10pp gap to the specialist oracle is 100% rollout conversion on 3 cells (e7 −40, e4 −14,
+e9 −14) at matched-or-better on-demo function; the e7 arbiter (spec 60 @ chunk 0.0330 vs B
+20 @ 0.0321, matched jitter shell) localizes the damage to states no demo-side instrument
+visits. This instrument measures the function AND the retrieval on rollout-visited states
+directly, using the specialist as the off-trail reference oracle (no demo labels exist there).
+
+### The instrument (3 scripts + runner, `scripts/vla_analysis/`, smoked end-to-end)
+
+1. **`probe_rollout_harvest.py`** (per checkpoint; CLI = EvalPipelineConfig, env knobs
+   HARVEST_OUT/EPISODES/TRACE): owned rollout loop cloned from lerobot-eval (same
+   processors, same per-episode seeding `cfg.seed + ep` as a serial eval), bs=1. At every
+   policy call (action-queue refill, detected via `_action_queue` emptiness; works through
+   the PEFT wrapper) it saves the RAW env obs (both cams uint8 + full nested robot_state,
+   flattened `px__*`/`rs__*` — NOT `agent_pos`, which doesn't exist; the 8D state is
+   assembled later by LiberoProcessorStep) + executed actions/outcome, and for memory
+   policies the RETRIEVAL TRACE: forward hooks on each HashingMemoryLite read the
+   eval-mode `last_indices`/`last_scores` (EVAL_MEMORY=True path — route-once multiplicity
+   already applied), per-head-softmaxed and mass-aggregated per call per module.
+   Smoke arithmetic check: expert-module call mass = exactly 2000 = 10 denoise steps x 50
+   action tokens x 4 heads (VLM modules fire 1x/call — cached prefix; only pass B fires
+   under frozen-route, so traces are clean by construction).
+2. **`probe_offtrail_score.py`** (per model; CLI = SequentialOnlineConfig probe convention):
+   re-runs the 10-step denoise on every harvested state + SCORE_DEMO_N demo-control states,
+   K=SCORE_SEEDS noise seeds; batching and seeds are deterministic functions of the sorted
+   state list -> chunks PAIRED across models. Harvest states are rebuilt into the raw env
+   obs dict and pushed through preprocess_observation -> LiberoProcessorStep -> policy
+   preprocessor — the byte-identical eval pipeline. SCORE_FEAT_LAYER dumps mean-pooled LM
+   hiddens from a layer below the first VLM memory bank (frozen + memory-free = stage-1
+   features) for the excursion-distance axis.
+3. **`probe_offtrail_report.py`** (CPU): joins paired chunks, traces, written-slot sets
+   (memory_by_task `total_updates>0`), and distances into the four reads:
+   READ 1 D(s)=cross-model chunk disagreement vs excursion distance (feature + proprio),
+   by population (demo / succ / fail per harvest); READ 2 self-written retrieval mass
+   (fallback-to-A-content detector); READ 3 consecutive-call retrieval churn (discontinuity
+   detector); READ 4 divergence points (first D > success-P90 per failed episode).
+4. **`run_offtrail_e7.sh`**: 5-stage chain (harvest B -> harvest spec -> score B (+feat L9)
+   -> score spec -> report), skip-guards, SMOKE=1 = 2-ep end-to-end pass.
+
+### Smoke verdict (2 eps / 2 seeds / 24 demo states, ~10.5 min)
+
+- **Anchor PASSES: B demo chunk-vs-gt 0.0318 (known 0.0321), spec 0.0345 (known 0.0330)**
+  — the instrument reproduces the established numbers through the env-side pipeline.
+- All populations/reads populate; D grows with call index and is much larger on failed
+  episodes (structure as expected; n=2 = no conclusions).
+- Known weakness: LM-9 all-token-pooled feature distance barely spreads (~3e-4 cos —
+  image-dominated pooling); the PROPRIO distance axis spreads well (quartiles 0/0.9/2.0)
+  and READ 1b already grades on it. Features are recomputable from the same harvests
+  (score-only rerun) if a better layer/pooling is wanted — harvests are the reusable asset.
+
+### Pre-registered decision rules (from the E56 discussion, unchanged)
+
+- Composition collapse (self-written mass craters off-trail, tracks failures) -> fix =
+  retrieval-holding (query stabilization / degrade-toward-written-content); 9-module is NOT it.
+- Discontinuity (churn cliffs at divergence, composition fine) -> drift-stable routing ->
+  the 9-module/deeper-expert-banks bet graduates with a measured premise.
+- Null (B tracks the spec's function everywhere incl. failures) -> value function exonerated
+  -> mode-selection/within-chunk compounding track (execute-25 A/B next).
+- B fine on spec-visited states but bad on its own -> compounding, not coverage.
+
+### LAUNCHED (31 Jul ~11:04 UTC, `systemd-run --unit=offtrail-e7` per §9.5)
+
+Full campaign: 50 eps/model (B seq-025000 vs loraft task4_e7), 4 seeds, 120 demo states,
+task e7 (env 7, dataset task_index 4). ETA ~2.5h (two serial bs=1 harvests dominate).
+Outputs: `outputs/analysis/e56_offtrail/offtrail_e7.{jsonl,txt}`, harvests + traces
+retained for re-scoring (incl. the eventual 9-module candidate on the same state bank).
+
+---
+### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
+
+Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
+final checkpoints — at minimum for the 5 LoRA specialists** (B too if the slot is there). Use
+parallel vec envs: `--eval.batch_size=0` auto-tunes to ~11 async envs on the 16-vCPU box (or set
+explicitly) + `--eval.use_async_envs=true`. Batch>1 rollout is already validated (Josh tested it;
+works fine) — every run to date evaluated serially only because the trainers construct eval envs
+at training start, so `--eval.batch_size=1` was chosen to preserve VRAM headroom for training;
+a standalone eval process holds weights only (~110GB free). Estimated ~4-5h/side batched
+(vs ~45-60h serial for both). Stats note for the writeup: LIBERO init states wrap modulo 50
+(`libero.py:333`), so 100 eps = 2 passes over the fixed init-state set with fresh policy noise.
