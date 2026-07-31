@@ -5006,3 +5006,358 @@ Run under `systemd-run --unit=gradB` (SIGTERM/TimeoutStopSec=45), not tmux — t
 the preemptible spot instance now. Relaunching the wrapper is idempotent at stage level,
 but there is no within-stage resume: a preemption costs ≤~4.8h (A) or one 5k block (seq).
 Worth plumbing `--resume` before the 10-task run. P3 next once the box frees.
+
+### Update 5 (28 Jul) — run 1 lost to a shm/logind bug at task 2/5; resume plumbing added; relaunched
+
+The first attempt died at 20:42 in task 2 (evals banked: e4 55, then e4 50 / e6 40 — e4's
+−5 across the first boundary vs fold-in's −15 and compact-corefrac's −20 is the only
+signal worth keeping). Cause was infrastructural, not the config: `logind` `RemoveIPC=yes`
++ `Linger=no` means every SSH logout sweeps the user's `/dev/shm`, and the watchers I had
+polling every 60-90s produced 546 login sessions in 6h — one sweep eventually landed in a
+DataLoader worker's create→unlink window (`could not unlink the shared memory file`).
+Fixed with `loginctl enable-linger josh` + SSH `ControlMaster` (0 sessions per poll now);
+written up in `phddev/CLAUDE.md` §9.5.1.
+
+Resume had to be built before relaunching, because the protection store and online-IDF
+accumulators live in module globals and were never checkpointed — restarting from a
+mid-run checkpoint would have run the remaining tasks with an EMPTY protection store,
+i.e. silently measuring a different method. Now `sequential_state.pt` is written atomically
+into each per-task checkpoint (0.03s), `--resume_sequential` restores it and *refuses* if
+absent, and the chain auto-resumes from the last completed boundary (smokes 22/22,
+`scripts/vla_analysis/smoke_sequential_resume.py`). A-phase was reused; sequential
+relaunched from task 0 at 03:33 UTC 28 Jul.
+
+---
+## Entry 55 - 28 Jul 26 (B graduation lands: spread+anchor040+sep8+corefrac = **53.2** — statistically the frontier at 3.2B/8 banks; the ≥52 branch FIRES (absmax's 53.6 was shoulder cleanliness, not bank count) → spread is headline-eligible. Battery: corefrac-flat matrices + project-best chunks on 4/5 tasks (e4 at full-specialist level); e7 core-volume hypothesis tested from the audits — simple form dead, an expert-DEPTH pattern found; e7's threshold is the open question → e7/e2 specialist cells LAUNCHED)
+
+### The run
+
+Relaunch (E54-U5) completed clean, 03:33→21:10 UTC. Determinism first: run 2 reproduced
+run 1 exactly through the replayed window — loss traces to 3 decimals every logged step,
+evals identical (e4 55.0; then 50/40) — so the crash cost wall-clock only, run 1's banked
+cells were real, and the A-phase-reuse + resume plumbing changed nothing about the method.
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|--|--|--|--|--|--|
+| 5k | 55 | | | | | 55.0 |
+| 10k | 50 | 40 | | | | 45.0 |
+| 15k | 25 | 60 | 65 | | | 50.0 |
+| 20k | 30 | 35 | 50 | 90 | | 51.25 |
+| **25k (50-ep)** | 44 | 60 | 56 | 86 | 20 | **53.2** |
+
+- **53.2 = inside 50-ep noise of absmax's 53.6, at 60% of its values (3.2B vs 5.37B) and
+  8 banks vs 13.** The pre-registered ≥52 branch fires: the frontier number was carried by
+  the anchored router's SHOULDER CLEANLINESS (bg 0.025-0.037), not the 13-bank spread.
+  Spread at 3.2B headlines; absmax demotes to capacity-scaling evidence (per the E54 plan).
+- Give-back **−0.8** (init-mean 54.0; 20-ep inits except e7) — the absmax zero-give-back
+  profile, vs compact+corefrac's −5.6.
+- e2 86 (+ its 90 intermediate) = best e2 cells ever; e9 56 second only to absmax's 76;
+  **e7 20 replicates spread-A's 20** — 2/2 on spread across two routers and two protection
+  modes: real, substrate-level. e6 60 ties its best.
+- Standings: absmax 53.6 / **B 53.2** / compact+corefrac 51.6 / spread+corefrac 47.6;
+  multitask-LoRA must-line 49.2 cleared by +4.0.
+- Method note, again: at boundary 4 the 20-ep cells (51.25) projected high-40s; the 50-ep
+  final moved e4 30→44, e6 35→60, e9 50→56. The E41 retired-instrument rule survives
+  another live demonstration.
+
+### Battery (MSE matrix + chunk; ~25 min GPU; runner `run_e55_gpu_gradB.sh`, artifacts `outputs/analysis/e55/`)
+
+MSE diag drift (just-trained → final), vs the two matched comparators:
+
+| | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| **B** | +3.7% | +3.5% | +3.4% | +2.1% | 0.0% |
+| compact+corefrac | +3.7% | +3.8% | +2.5% | +1.4% | 0.0% |
+| spread-A (peak) | +22.6% | +15.9% | +13.0% | +4.3% | 0.0% |
+
+Corefrac's flat profile transferred to spread cell-for-cell. And the diag ABSOLUTES land on
+spread-A's (±1-2% every task; 8-15% better than compact+corefrac) — **B kept spread's fit
+and added corefrac's retention; 53.2 is that combination**, both halves now measured.
+
+Chunk (own-block → final): give-backs **+0.0 / +3.5 / +2.0 / +4.2%** (t4 own=final) — the
+corefrac band. The absolutes are the bigger finding:
+
+| own chunk | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| **B** | **0.0198** | **0.0147** | **0.0466** | **0.0259** | 0.0321 |
+| spread-A (prev best-ever, all 5) | 0.0272 | 0.0200 | 0.0683 | 0.0309 | 0.0315 |
+| LoRA specialist anchors | 0.0204 | 0.020 | 0.0675 | — | — |
+
+**Project bests on 4/5 by 16-32% — e4 AT the full dense-specialist's level, e6/e9 below
+theirs.** The t0 cell is protection-free (empty store; 005000 bitwise-shared), so the 27%
+t0 gain over spread-A is a pure ROUTER effect: the anchored sep8 router fits better at ⅓
+the core50 — small-but-separated cores are a fit advantage at matched mask budget, not a
+tax (E54's capacity-ledger point, now shown on fit). e4's function moved **+0.006%** across
+the 20k post-block steps while its 20-ep cells wobbled 55→25→30→44 — the cleanest
+noise-vs-function demonstration on record. Instrument correction logged: cross-run
+"block-min" comparisons from the log's `loss:` field are invalid (it carries aux-loss
+telemetry, which differs by router); use wandb `mse_loss` or the paired matrix.
+
+### e7: core-volume hypothesis (Josh) tested from the audits — simple form dead; a depth pattern instead
+
+Per-task core50 from the B / P3 / compact audit summaries + the E53 jitter files:
+1. **Within B, core size does not rank rollout**: e2 has the tiniest cores everywhere
+   (115-290 VLM, 167-241 expert) and rolls 86; e9 the biggest expert cores (1020-1928) and
+   rolls 56; e7 middling → 20.
+2. **e7's VLM cores are small in ALL THREE audits** (t4/median 0.26-0.68) — not a spread
+   property — and compact's e7 VLM cores (238-358) are ≤ B's (258-645) while rolling 36
+   vs 20. Volume is not the discriminator.
+3. **Jitter: spread's e7 beats compact's at every perturbation level** (clean 0.032 vs
+   0.039; state@0.2 0.133 vs 0.146; image 0.176 vs 0.200) and still rolls 16 lower — the
+   gap lives outside the shell, on states no instrument visits.
+
+What does line up: **e7's final tracks the depth of the highest EXPERT bank** — L8 → 20, 20
+(both spread runs) / L9 → 28 (absmax) / L12 → 36 (compact) / L14-era healthy configs →
+26-38 (the two killed substrate bets, vlmr4 14 / imgspan 6, sit outside). Six-config
+monotone pattern at ±7pp cells: suggestive, not proof.
+
+### The discussion (Josh) — two frame corrections adopted
+
+1. **Sweet-spot framing**: breadth × write-volume-per-slot has an interior optimum (the E43
+   read-write product; B's e2/e9/e7 row above is its cleanest within-run demonstration).
+   Refinement kept from E49: the optimum MOVES with addressing quality (arm 3-old had the
+   best product ever and the worst fit) — conditionality is the third factor; B shifted the
+   optimum toward smaller cores by cleaning the router.
+2. **e7 threshold pushback (Josh, accepted)**: the "e7 is conversion-broken" claim rested
+   on compact-rolls-36-at-worse-chunk — an E50-invalid cross-substrate comparison. Two
+   spread points at the same chunk (0.0315/0.0321) both rolling 20 cannot discriminate
+   above-threshold from conversion-broken, and e6's specialist (0.020 → 44) calibrates that
+   basket-family thresholds can sit very low — e7's may be ~0.015-0.02, putting our 0.032
+   above its curve. Surviving fact: **e7's chunk is STUCK** (0.0315→0.0321) across a router
+   change that moved every other task 16-32% — whatever moves e7's fit isn't router or
+   protection; depth is the standing candidate under either reading.
+3. **P3 re-priced twice, opposite directions**: DOWN as a frontier bet (predicted double
+   regression: shoulders bg 0.083-0.097 ≈ compact's → −5.6-band give-back; router family →
+   spread-A-level fits; lands ~48-51), UP as science — under the sweet-spot frame it is the
+   big-core point on the breadth dose-response at matched protection, i.e. a paper figure.
+
+### LAUNCHED: e7 + e2 LoRA specialists (the two missing oracle cells; `loraft_e7_e2.sh`, e7 first)
+
+r32/5k recipe byte-identical to the t0-t2 anchors (58.0/0.0204, 44.0/0.020, 70.0/0.0675).
+e7 doubles as the threshold arbiter, pre-registered: specialist converts at **≲0.02** → the
+threshold reading wins (our 0.032 is above e7's curve; the wall is fit; the 9-module arm
+gets a concrete target ~0.02); specialist needs **≳0.04-0.05** → our 0.032 is already below
+a threshold our broader support should only relax — the threshold law breaks on e7 and the
+off-trail/conversion story revives. e2's cell completes the reviewer table either way.
+
+### Board
+
+1. Specialist cells land overnight → decide the next arm: **9-module hybrid** (expert
+   [8-11] + VLM [12-16], B's router recipe, corefrac; certify-first) — the push-60 bet
+   (layers axis 4/4, the e7 depth pattern, B's router) — vs **P3** (the dose-response
+   point). Discipline flag stands: E54 wk-1 allows "at most one refinement"; the 9-module
+   is the last substrate spin before the 10-task.
+2. Infra: gradB ran under systemd with the new resume plumbing armed but never exercised
+   (no preemption); it remains untested in production.
+
+### Entry 55 addendum (29 Jul, overnight) — e7 specialist lands: 60.0 @ chunk 0.0330 — the threshold-vs-conversion arbiter RESOLVES for conversion; LoRA-cell config finding; P3 chain + e2 queued
+
+**e7 specialist cell** (r32/5k, anchor recipe): **60.0 @ 50 eps, clean chunk 0.0330**.
+Oracle row: e4 58/0.0204 · e6 44/0.020 · e9 70/0.0675 · **e7 60/0.0330** · e2 tonight.
+
+**The arbiter verdict.** Neither E55 branch fired as written — the answer is sharper:
+the specialist converts at the SAME on-demo function we already have (0.0330 vs B's
+0.0321, ours marginally better), and its jitter shell is a wash (state@0.1/0.2 −12-16%
+smoother than spread-A's e7, image@0.05 slightly WORSE: 0.186 vs 0.177) — yet it rolls
+**60 vs our 20**. A 40-point rollout gap at matched function and matched-ish shell:
+- The "we haven't reached e7's curve" reading (E55 discussion #2) is **disconfirmed for
+  e7** — we are AT the specialist's operating point on every demo-state instrument.
+- e7's wall is the **conversion/off-trail layer** — the E42(d) suspect, now with its
+  cleanest evidence in the project: same task, same demos, 3x rollout gap, invisible to
+  chunk AND jitter. The "e7's chunk is stuck" fact stands but is no longer binding —
+  unsticking it would buy nothing without conversion.
+- Implication for the 9-module arm: its e7 case now rests on the depth pattern being a
+  CONVERSION lever (action-proximal expert banks), not a fit lever. The specialist's
+  adapters sit at every depth incl. action-proximal — consistent, not yet causal.
+
+**LoRA-cell config finding (Josh).** grad-ckpt was NOT waste at bs32: no-ckpt demands
+138.4 GiB (OOM, measured) vs 30 GiB with ckpt — the E31 "OOMs without ckpt" precedent
+holds for LoRA at bs32 after all (my extrapolation from the ckpt-on reading was wrong by
+~4x). Standard LoRA-cell config henceforth: **bs16 × accum2, no ckpt** (effective batch
+32 preserved; E42 audit covers the accumulation path) — faster than both.
+
+**Ops note (two incidents, one shape):** the t3 stub dir from the swapped-out unit and
+the killed probe's scratch dir both produced `FileExistsError` on relaunch — the
+partial-dir guard pattern (graduation wrappers) must ride EVERY relaunch path, not just
+chain wrappers. Both now guarded in the queue scripts.
+
+**Board:** P3 graduation chain RUNNING (A-phase on the bs16×acc2 ladder rung, same as
+B; seq evals from ~11:00 UTC, 50-ep final ~21:45) → queue2: e2 specialist (bs16×acc2)
++ its chunk probe, ~02:00 (30th). VM-preemption watchdog armed; the E54-U5 sequential
+resume plumbing is the recovery path if the spot instance is reclaimed.
+
+---
+## Entry 56 - 30 Jul 26 (P3 verdict 47.2: the anchor's SHOULDER cleanup is the whole +6, sep8 alone buys nothing — B confirmed as the config on both performance and simplicity; the core-breadth dose-response is now a 3-point curve; ORACLE TABLE COMPLETE (e2 84.0) and it re-frames the ceiling: our e2 86 BEATS its specialist)
+
+### P3 (the capacity-end router) — 47.2
+
+`libero_10_seq5_jw_layermax_sep8_beta4corefrac_topt3072_lr2x_steps5k`; chain clean
+(09:06 -> 03:06, its own A-phase; the one Traceback in-log is the expected bs32 A-phase
+rung OOM, ladder demoted to bs16xacc2 as B's did). Config verified from the log: P3's
+A-checkpoint, seed 1000, corefrac, top_t 3072, lr 2e-3 -> 2e-4 — single-delta vs B.
+
+| step | e4 | e6 | e9 | e2 | e7 | seen-avg |
+|---|--|--|--|--|--|--|
+| 5k | 55 | | | | | 55.0 |
+| 10k | 35 | 60 | | | | 47.5 |
+| 15k | 45 | 25 | 55 | | | 41.7 |
+| 20k | 55 | 45 | 60 | 70 | | 57.5 |
+| **25k (50-ep)** | 46 | 46 | 58 | 74 | **12** | **47.2** |
+
+### The dose-response, now measured end to end (matched substrate / protection / levers)
+
+| router | expert bg | core50 | final |
+|---|---|---|---|
+| plain sep5 (E53 arm 2) | 0.094-0.119 | ~1900 | 47.6 |
+| **P3 = w0 + sep8** | 0.083-0.097 | 1383-1717 | **47.2** |
+| **B = w0.40 + sep8 (anchored, FiLM-free)** | **0.025-0.037** | 585-732 | **53.2** |
+
+**sep8 alone bought NOTHING** (47.2 ~= 47.6, inside noise) despite improving famIoU
+0.163-0.212 -> 0.156-0.178. The entire +5.6 is the ANCHOR'S SHOULDER CLEANUP — a cleaner
+attribution than the E55 pre-registration hoped for, and it matches E53's location of
+corefrac's residual give-back in the shoulder channel. Consequences:
+1. **The famIoU axis is spent on this substrate.** Two routers improved it at matched
+   protection and neither converted; bgIoU is the axis that pays. Future certificates
+   should gate on bg first, famIoU second (inverting the E44-54 emphasis).
+2. **Small cores are not the mechanism** (E54's ledger question, closed): P3 sits at ~2.4x
+   B's core50 and loses; but the E54 "small cores correlate with the win" reading is now
+   demoted to co-product — bg is the causal knob, core size rides along with the anchor.
+3. Give-back: P3 was AHEAD at boundary 4 (57.5 vs B's 51.25) and finished 6 behind
+   (-10.3 from its own peak vs B's -0.8). The 20-ep intermediates misled a third time in
+   this entry alone; the 50-ep instrument restored the pattern. Standing rule holds.
+4. **e7 = 12, its worst cell anywhere** (spread: 20 / 20 / 12 across three runs vs
+   compact 36, absmax 28). The spread e7 deficit is router-invariant, confirmed 3x.
+
+**Standings: absmax 53.6 / B 53.2 / compact+corefrac 51.6 / spread+sep5 47.6 / P3 47.2.**
+B is the config — best-in-class at 3.2B AND the simplest language story (no FiLM, no
+mpnet; the anchor is the only conditioning). The router axis is CLOSED.
+
+### Oracle table complete — and it re-frames the ceiling
+
+e2 specialist: **84.0 @ 50 eps, clean chunk 0.0308** (bs16xacc2 no-ckpt, 1.88 s/step —
+1.8x faster than the ckpt-on cells at identical effective batch; Josh's call, adopted as
+the standard LoRA-cell config).
+
+| env | B (sequential, 1 model) | specialist (5 models, task ID given) | B's chunk | spec chunk |
+|---|---|---|---|---|
+| e4 | 44 | 58 | **0.0198** | 0.0204 |
+| e6 | **60** | 44 | **0.0152** | 0.020 |
+| e9 | 56 | 70 | **0.0476** | 0.0675 |
+| e2 | **86** | 84 | **0.0270** | 0.0308 |
+| e7 | 20 | 60 | 0.0321 | 0.0330 |
+| mean | **53.2** | **63.2** | — | — |
+
+**B beats or matches its specialist on 2 of 5 tasks (e6 +16, e2 +2) and matches every
+specialist's FUNCTION on all five** — the oracle's remaining 10-point margin is carried
+almost entirely by e7 (+40) and e4/e9 (+14 each), i.e. by rollout CONVERSION, not fit.
+Restated for the paper: a single continually-trained model with a frozen backbone,
+zero task identity at inference, and zero forgetting reaches **84% of the per-task
+oracle's average**, and beats it outright on 2/5 tasks.
+
+### e7, sharpened (with the E55-addendum arbiter)
+
+Specialist 60 @ 0.0330 vs our 20 @ 0.0321 — matched function, matched-ish jitter shell,
+3x rollout. e7's wall is conversion and it is now the largest single pool on the board
+(+40 available, vs e4's +14 and e9's +14). The only lever with evidence pointed at it is
+the expert-DEPTH pattern (E55: L8 -> 20,20,12 / L9 -> 28 / L12 -> 36 / L14-era -> 26-38),
+which is why the 9-module hybrid (expert [8-11] + VLM [12-16], B's router, corefrac) is
+the standing next arm — explicitly a CONVERSION bet, not a fit bet.
+
+### Board
+
+1. **Decision pending (Josh):** 9-module hybrid (certify-first, ~4h + ~1 day) vs going
+   straight to the 10-task graduation on B. E54's wk-1 discipline flag says the 9-module
+   is the LAST substrate spin either way.
+2. Queued behind that: naive sequential LoRA (the headline forgetting baseline, never
+   run), >=3 seeds on the headline config, 10-task multitask-LoRA if 10-task headlines.
+3. Infra: the sequential resume plumbing remains untested in production (no preemption
+   in either run); queue2's stub-dir guard fired correctly on its first real test.
+
+Artifacts: `outputs/analysis/e55/{mse_matrix_gradB,probe_conversion_gradB,
+probe_jitter_specialist_e7,probe_jitter_specialist_e2}.jsonl`; P3 run + evals on base;
+scripts committed (grad_layermax_P3_sep8_corefrac.sh, loraft_e2_bs16acc2.sh,
+e55_overnight_queue.sh, e55_queue2.sh).
+
+---
+## Entry 57 - 31 Jul 26 (OFF-TRAIL INSTRUMENT built + smoked + campaign LAUNCHED — the conversion-gap measurement (E42(d), deferred 4x) finally exists; anchor validates against the known chunk numbers; B-vs-e7-specialist is the first target pair)
+
+### Why (recap of the E56 discussion)
+
+The 10pp gap to the specialist oracle is 100% rollout conversion on 3 cells (e7 −40, e4 −14,
+e9 −14) at matched-or-better on-demo function; the e7 arbiter (spec 60 @ chunk 0.0330 vs B
+20 @ 0.0321, matched jitter shell) localizes the damage to states no demo-side instrument
+visits. This instrument measures the function AND the retrieval on rollout-visited states
+directly, using the specialist as the off-trail reference oracle (no demo labels exist there).
+
+### The instrument (3 scripts + runner, `scripts/vla_analysis/`, smoked end-to-end)
+
+1. **`probe_rollout_harvest.py`** (per checkpoint; CLI = EvalPipelineConfig, env knobs
+   HARVEST_OUT/EPISODES/TRACE): owned rollout loop cloned from lerobot-eval (same
+   processors, same per-episode seeding `cfg.seed + ep` as a serial eval), bs=1. At every
+   policy call (action-queue refill, detected via `_action_queue` emptiness; works through
+   the PEFT wrapper) it saves the RAW env obs (both cams uint8 + full nested robot_state,
+   flattened `px__*`/`rs__*` — NOT `agent_pos`, which doesn't exist; the 8D state is
+   assembled later by LiberoProcessorStep) + executed actions/outcome, and for memory
+   policies the RETRIEVAL TRACE: forward hooks on each HashingMemoryLite read the
+   eval-mode `last_indices`/`last_scores` (EVAL_MEMORY=True path — route-once multiplicity
+   already applied), per-head-softmaxed and mass-aggregated per call per module.
+   Smoke arithmetic check: expert-module call mass = exactly 2000 = 10 denoise steps x 50
+   action tokens x 4 heads (VLM modules fire 1x/call — cached prefix; only pass B fires
+   under frozen-route, so traces are clean by construction).
+2. **`probe_offtrail_score.py`** (per model; CLI = SequentialOnlineConfig probe convention):
+   re-runs the 10-step denoise on every harvested state + SCORE_DEMO_N demo-control states,
+   K=SCORE_SEEDS noise seeds; batching and seeds are deterministic functions of the sorted
+   state list -> chunks PAIRED across models. Harvest states are rebuilt into the raw env
+   obs dict and pushed through preprocess_observation -> LiberoProcessorStep -> policy
+   preprocessor — the byte-identical eval pipeline. SCORE_FEAT_LAYER dumps mean-pooled LM
+   hiddens from a layer below the first VLM memory bank (frozen + memory-free = stage-1
+   features) for the excursion-distance axis.
+3. **`probe_offtrail_report.py`** (CPU): joins paired chunks, traces, written-slot sets
+   (memory_by_task `total_updates>0`), and distances into the four reads:
+   READ 1 D(s)=cross-model chunk disagreement vs excursion distance (feature + proprio),
+   by population (demo / succ / fail per harvest); READ 2 self-written retrieval mass
+   (fallback-to-A-content detector); READ 3 consecutive-call retrieval churn (discontinuity
+   detector); READ 4 divergence points (first D > success-P90 per failed episode).
+4. **`run_offtrail_e7.sh`**: 5-stage chain (harvest B -> harvest spec -> score B (+feat L9)
+   -> score spec -> report), skip-guards, SMOKE=1 = 2-ep end-to-end pass.
+
+### Smoke verdict (2 eps / 2 seeds / 24 demo states, ~10.5 min)
+
+- **Anchor PASSES: B demo chunk-vs-gt 0.0318 (known 0.0321), spec 0.0345 (known 0.0330)**
+  — the instrument reproduces the established numbers through the env-side pipeline.
+- All populations/reads populate; D grows with call index and is much larger on failed
+  episodes (structure as expected; n=2 = no conclusions).
+- Known weakness: LM-9 all-token-pooled feature distance barely spreads (~3e-4 cos —
+  image-dominated pooling); the PROPRIO distance axis spreads well (quartiles 0/0.9/2.0)
+  and READ 1b already grades on it. Features are recomputable from the same harvests
+  (score-only rerun) if a better layer/pooling is wanted — harvests are the reusable asset.
+
+### Pre-registered decision rules (from the E56 discussion, unchanged)
+
+- Composition collapse (self-written mass craters off-trail, tracks failures) -> fix =
+  retrieval-holding (query stabilization / degrade-toward-written-content); 9-module is NOT it.
+- Discontinuity (churn cliffs at divergence, composition fine) -> drift-stable routing ->
+  the 9-module/deeper-expert-banks bet graduates with a measured premise.
+- Null (B tracks the spec's function everywhere incl. failures) -> value function exonerated
+  -> mode-selection/within-chunk compounding track (execute-25 A/B next).
+- B fine on spec-visited states but bad on its own -> compounding, not coverage.
+
+### LAUNCHED (31 Jul ~11:04 UTC, `systemd-run --unit=offtrail-e7` per §9.5)
+
+Full campaign: 50 eps/model (B seq-025000 vs loraft task4_e7), 4 seeds, 120 demo states,
+task e7 (env 7, dataset task_index 4). ETA ~2.5h (two serial bs=1 harvests dominate).
+Outputs: `outputs/analysis/e56_offtrail/offtrail_e7.{jsonl,txt}`, harvests + traces
+retained for re-scoring (incl. the eventual 9-module candidate on the same state bank).
+
+---
+### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
+
+Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
+final checkpoints — at minimum for the 5 LoRA specialists** (B too if the slot is there). Use
+parallel vec envs: `--eval.batch_size=0` auto-tunes to ~11 async envs on the 16-vCPU box (or set
+explicitly) + `--eval.use_async_envs=true`. Batch>1 rollout is already validated (Josh tested it;
+works fine) — every run to date evaluated serially only because the trainers construct eval envs
+at training start, so `--eval.batch_size=1` was chosen to preserve VRAM headroom for training;
+a standalone eval process holds weights only (~110GB free). Estimated ~4-5h/side batched
+(vs ~45-60h serial for both). Stats note for the writeup: LIBERO init states wrap modulo 50
+(`libero.py:333`), so 100 eps = 2 passes over the fixed init-state set with fresh policy noise.
