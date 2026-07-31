@@ -15,14 +15,13 @@
 #   - e4/e9 at ~>=60   => large machinery tax; rethink the value path before more knob arms.
 # Read through the probe battery (chunk metric on its checkpoints), not just success cells.
 #
-# 29 Jul 26: bs16 x accum2, no grad-ckpt (bs32 no-ckpt OOMs at 138.4GiB measured; bs32+ckpt = 3.32s/step). Effective batch 32 preserved.
 # Config notes: LoRA r=32 (PEFT default lora_alpha=8 => scale 0.25; LR compensates), targets =
 # attn(q,k,v,o)+MLP(gate,up,down) of BOTH gemma_expert and the paligemma language model +
 # action projections (53.2M adapters; vision tower untouched). lr 1e-4 cosine, warmup 200,
 # decay 5000 == steps (schedule honored, E20 gotcha). modules_to_save=[] (pure adapter).
 # Requires: pip install peft (0.19.1 smoked); the wrap_with_peft get_optim_params fix (E42).
 set -eo pipefail
-echo "E42 LoRA-FT per-task baseline started on $(hostname) at $(date)"
+echo "E55 LoRA-FT e7+e2 specialists (oracle completion) started on $(hostname) at $(date)"
 ROOT_DIR=/home/josh/lerobot
 BASE_CKPT="$ROOT_DIR/outputs/train/libero_90_pi05_base_nomem_50k/checkpoints/last/pretrained_model"
 OUT_ROOT="$ROOT_DIR/outputs/train/loraft_baseline"
@@ -43,7 +42,7 @@ declare -A ENV_ID=( [0]=4 [1]=6 [2]=9 [3]=2 [4]=7 )
 declare -A EP_LO=( [0]=0  [1]=38 [2]=74  [3]=108 [4]=149 )
 declare -A EP_HI=( [0]=37 [1]=73 [2]=107 [3]=148 [4]=191 )
 
-for T in 0 1 2 3 4; do
+for T in 4 3; do
   ENV=${ENV_ID[$T]}
   RUN_DIR="$OUT_ROOT/task${T}_e${ENV}"
   EPS="[$(seq -s, ${EP_LO[$T]} ${EP_HI[$T]})]"
@@ -54,8 +53,7 @@ for T in 0 1 2 3 4; do
     lerobot-train \
       --policy.path="$BASE_CKPT" \
       --policy.dtype=bfloat16 \
-      --policy.gradient_checkpointing=false \
-      --gradient_accumulation_steps=2 \
+      --policy.gradient_checkpointing=true \
       --policy.optimizer_lr=1e-4 \
       --policy.scheduler_warmup_steps=200 \
       --policy.scheduler_decay_steps=5000 \
@@ -71,7 +69,7 @@ for T in 0 1 2 3 4; do
       --rename_map="$RENAME" \
       --output_dir="$RUN_DIR" \
       --steps=5000 \
-      --batch_size=16 \
+      --batch_size=32 \
       --num_workers=8 \
       --log_freq=200 \
       --save_freq=5000 \
@@ -93,4 +91,4 @@ for T in 0 1 2 3 4; do
       --output_dir="$RUN_DIR/eval"
   fi
 done
-echo "E42 LoRA-FT per-task baseline completed at $(date)"
+echo "E55 LoRA-FT e7+e2 specialists completed at $(date)"
