@@ -5395,6 +5395,72 @@ the harvested videos (wrong-object vs missed-grasp) before picking either. Harve
 retained — any candidate fix re-scores against the same states without re-rolling.
 
 ---
+## Entry 58 - 31 Jul 26 (VALUE-INPUT NOISE: the competence-radius lever, calibrated from the harvest bank -> built (25/25 smokes) -> dose-pair arms LAUNCHED on the B config)
+
+### Design (Josh's proposal, refined in discussion)
+
+The E57 verdict (retrieval healthy off-manifold; the VALUE function wrong there) points
+at widening the values' competence neighborhood. Constraint: "train on exactly the same
+data" cannot relax. Josh's lever: corrupt the hidden state the VALUES see during
+sequential training — value-path input only, router untouched. Properties: (i) same
+data/targets/batches — a training-time regularizer inside the module; (ii) the dual-path
+architecture makes it surgical: routing + gate read the frozen branch, so the
+stationarity certificate, TF-IDF stats, protection, and footprints are all bit-identical
+— only the slot transforms see noise; (iii) it targets the measured failure (train the
+values to express the demo action from a NEIGHBORHOOD of x). NOT the old E9/E15
+corruption (that was value-OUTPUT noise at PRETRAIN, teaching downstream tolerance;
+this is value-INPUT noise at SEQUENTIAL time, teaching the content to generalize over x
+— different site, phase, and target; the old negatives don't transfer).
+
+### Calibration (probe_value_input_calib.py; outputs/analysis/e56_offtrail/value_input_calib.json)
+
+Dose measured, not guessed: hooks on each MLPPlusMemory capture the pass-B live x for
+120 demo states + 198 tertile-stratified harvest states, ONE fixed denoise seed
+everywhere (expert first-denoise-step capture = obs-driven displacement; the last-step
+capture is confounded by the denoised action tokens and is NOT the dose source).
+Per-dim displacement ratio (off-trail vs nearest-demo, / per-dim demo std), mid band:
+
+| module | ratio | top-10 SVD energy |
+|---|---|---|
+| exp L2/L4/L6/L8 | 0.04 / 0.15 / 0.37 / 0.53 | 0.69-0.82 (STRUCTURED) |
+| vlm L10/12/14/16 | 0.58 / 0.71 / 0.83 / 0.87 | 0.14-0.34 (~isotropic) |
+
+Findings: (1) dose must be PER-LAYER (expert displacement grows 13x up the stack);
+(2) per-dim-independent noise is a good match for the VLM tower, a rough one for the
+expert (70-80% of its displacement energy in ~10/1024 directions — v1 bets on generic
+flatness; subspace-projected noise is the measured fallback, recomputable from the same
+captures); (3) far/near band spread ~1.2-1.5x -> per-row amplitude draw U[0.5,1.5].
+
+### Build (commit 4e415798; smokes scripts/vla_analysis/smoke_value_noise.py 25/25)
+
+`value_input_noise_p` (per-dim Bernoulli) + per-layer `value_input_noise_sigma`
+(expert, matched to `layers`) + `vlm_value_input_noise_sigma` (rides the derived VLM
+cfg) + `value_input_noise_amp`. `HashingMemoryLite._value_input_noise`: mask x N(0,1)
+x current-batch per-dim std (self-calibrating) x sigma_layer x amp, applied to the
+down-projection input in `_forward_lora_values` AND `apply_shared_palette` (valid rows
+only); training-mode only; swilu tail + plain MLP keep clean x. Load-bearing smokes:
+flag-off/eval-mode BITWISE identity, retrieval indices invariant under noise, per-layer
+threading (sigma=0 layer bitwise clean), palette-path pad hygiene, monotone dose.
+Also: SEQ_EXTRA_ARGS passthrough added to joint_aphase_seq5_common.sh (unset =
+byte-identical).
+
+### LAUNCHED (31 Jul ~19:00 UTC, systemd unit `e57-vnoise`, ~28h queue)
+
+Two arms, B config verbatim (spread + anchor040/sep8/nofilm + corefrac + lr2x + 3072,
+reusing B's A-checkpoint), single delta = the noise flags; queue = arm -> harvest-bank
+rescore -> arm -> rescore (run_e57_vnoise_queue.sh):
+- **dose1x**: p=0.25, amp [0.5,1.5], expert sigma [0.1,0.3,0.75,1.05], vlm
+  [1.15,1.4,1.65,1.75] (measured ratios x2, variance-matched at p=0.25)
+- **dose05x**: sigmas x0.5
+
+Pre-registered: (a) harvest-bank pre-screen = READ-1 D-vs-distance against spec_e7 on
+the SAME e56 states — PASS = far-region (Q4) D shrinks vs B's 0.38/0.41, especially on
+spec-success states; anchor stays ~0.032-0.036; (b) block-min mse_loss <= ~1.10x B per
+task; (c) MSE matrix stays corefrac-flat; (d) only a pre-screen pass earns weight on
+the 50-ep final — e7 > 20 = the conversion bet pays. Comparators: B 53.2
+(44/60/56/86/20), specialist oracle 63.2.
+
+---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
 Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
