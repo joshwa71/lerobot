@@ -5349,6 +5349,51 @@ task e7 (env 7, dataset task_index 4). ETA ~2.5h (two serial bs=1 harvests domin
 Outputs: `outputs/analysis/e56_offtrail/offtrail_e7.{jsonl,txt}`, harvests + traces
 retained for re-scoring (incl. the eventual 9-module candidate on the same state bank).
 
+### RESULTS (landed 12:39 UTC, ~1.6h wall; anchor 0.0340/0.0364 vs known 0.0321/0.0330 ✓)
+
+Populations: B/fail 418 states, B/succ 67, spec/fail 220, spec/succ 198, demo 120.
+B harvested at 10/50 successes, spec ~28/50 — both at their known rates.
+
+**Both pre-registered lead hypotheses are REFUTED:**
+1. **Fallback-to-A-content: DEAD.** Self-written retrieval mass holds at 0.77-0.83
+   at EVERY distance, every population; near->far gradient ~3pp (expert 0.807->0.770,
+   VLM 0.821->0.798); succ-vs-fail gap <=2pp. Off-trail retrieval stays on the
+   sequentially-written footprint. Retrieval-holding fixes (freeze/query-stabilization)
+   are NOT the lever.
+2. **Routing discontinuity: NO SIGNAL.** No churn cliffs at divergence points (churn
+   0.79-0.88 there = baseline); the churn metric is scene-change-dominated (declines
+   through failed episodes as the robot stalls). Nothing routing-side to fix.
+
+**What the instrument DID find — a competence-RADIUS story on the value function:**
+- D (cross-model chunk disagreement) on demo states = 0.014-0.018; on B-fail states it
+  climbs 0.11 -> 0.41 with proprio distance (0.12 -> 0.38 on d_feat). B's successes stay
+  in the low-D tube (0.08-0.12 through Q3); **the specialist's successes TRAVERSE the far
+  region** (spec/succ Q4 D = 0.42-0.48 — states where its behavior is episode-validated
+  and B's function is maximally different). B wins only where the two functions agree;
+  the specialist also wins where they don't. The deficit is the VALUE CONTENT's
+  competence radius off-manifold — not where retrieval lands, but what the written
+  slots express out there.
+- **Jitter's blind spot quantified:** rollout excursions live at d_state ~0.5-2.5+
+  per-dim stds; the jitter shell probed 0.1-0.2. The proxy was ~10x too close in.
+- **READ 4: e7 is decided at call 2** (env steps ~100-150, the first-grasp commitment):
+  28/38 failed B episodes cross the divergence threshold there (D spikes to 0.52 mean at
+  c2, both models' fail populations) with composition only mildly depressed (0.72-0.76
+  vs 0.79-0.81). The failure is an early discrete commitment, not late accumulation.
+- Caveat, held honestly: D is symmetric and far states may be multimodal (grab-order
+  choice), so some Q4 disagreement is mode-mismatch rather than B-wrongness — but the
+  3x rollout gap independently certifies that B's far-region behavior mostly fails.
+
+**Implications for the board:** the 9-module spin's routing-stability premise gets NO
+support here (the depth pattern survives only as a value-placement hypothesis). The
+levers this measurement points at: (a) widen the TRAINING neighborhood of the values —
+observation-space augmentation during the sequential block with amplitude matched to
+the measured d_state 0.5-2.5σ band (the E42 demo-jitter idea, now with a measured
+dose), subject to the "train on the same data" constraint being relaxed for obs-noise;
+(b) inference-side re-conditioning (execute-25) — weakened though: a wrong call-2
+commitment is not fixed by replanning after it; (c) characterize call-2 failures from
+the harvested videos (wrong-object vs missed-grasp) before picking either. Harvest bank
+retained — any candidate fix re-scores against the same states without re-rolling.
+
 ---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
