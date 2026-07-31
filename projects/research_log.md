@@ -5461,6 +5461,25 @@ the 50-ep final — e7 > 20 = the conversion bet pays. Comparators: B 53.2
 (44/60/56/86/20), specialist oracle 63.2.
 
 ---
+### Entry 58 addendum (31 Jul 26, eve) — weekend eval-seeds campaign QUEUED behind the vnoise arms (discharges the E56-addendum TODO); session left autonomous until Sunday
+
+`scripts/vla_analysis/run_e58_evalseeds.sh`, launched NOW as systemd unit `e58-evalseeds`
+— it polls locally until the `e57-vnoise` unit finishes (no SSH churn), then runs:
+**3 eval seeds (1000/2000/3000) x 100 eps/task x { B 025000 on envs [4,6,9,2,7] + the
+5 LoRA specialists on their own envs } = 3,000 episodes**, `lerobot-eval` batched at
+`--eval.batch_size=10` (exact divisor of 100 -> no discarded episodes; init states
+covered exactly 2x each at stride 10; <=10 async workers + main inside the 16-vCPU
+budget). Per-(model, seed, env) invocations = 30 independent skip-guarded processes;
+seed-MAJOR order so a partial read has complete replicates. seed 1000 subsumes the
+historical 50-ep finals' seed range. Summary (partial-tolerant) auto-writes
+`outputs/analysis/e58_evalseeds/summary.json` + a printed per-cell / replicate-mean
+table. ETA: vnoise queue lands ~Sat 23:00 UTC -> evals ~9-11h -> Sunday morning.
+**If the spot VM is preempted mid-campaign: relaunch the same unit** (`sudo systemd-run
+--unit=e58-evalseeds --property=User=josh --property=KillSignal=SIGTERM
+--property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot /bin/bash
+/home/josh/lerobot/scripts/vla_analysis/run_e58_evalseeds.sh`) — completed cells skip.
+
+---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
 Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
