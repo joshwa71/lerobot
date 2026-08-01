@@ -5499,6 +5499,17 @@ replicates last (seed-major ordering keeps partial reads clean). If the VM sits
 stopped >1h the public IP may rotate — ~/.ssh/config HostName must be updated before
 the watcher can reconnect (needs console/CLI to discover the new IP).
 
+**DIAGNOSIS REVISED (~02:40 UTC): LOCAL NETWORK FAILURE, not preemption.** The
+git push to origin failed with the same "no route to host" — github.com:22 is
+unreachable too, alongside 100% ICMP loss to 8.8.8.8, while some HTTPS still
+answers. SSH/ICMP routing is dead locally; the VM is plausibly RUNNING and dose1x
+training uninterrupted (the systemd design needs no session connectivity — this is
+why). The state-at-loss paragraph above applies only in the preemption branch; in
+the (likelier) local branch there is NO loss at all. The recovery watcher's logic is
+correct for both branches (checks unit states first, relaunches only dead units).
+Corrective push sent. This entry commits locally; push deferred until the network
+heals.
+
 ---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
