@@ -5480,6 +5480,26 @@ table. ETA: vnoise queue lands ~Sat 23:00 UTC -> evals ~9-11h -> Sunday morning.
 /home/josh/lerobot/scripts/vla_analysis/run_e58_evalseeds.sh`) — completed cells skip.
 
 ---
+### Entry 58 addendum 2 (1 Aug 26, ~02:30 UTC) — SPOT PREEMPTION mid-dose1x; state + recovery
+
+VM went unreachable ~02:10 UTC ("no route to host", local internet verified up; 7-min
+continuous probe confirms). First real preemption of the spot era. State at loss:
+- dose1x was mid task-2 (e9 block, step ~12-13k of 25k): tasks 0-1 checkpoints
+  (005000/010000) + sequential_state.pt banked; the in-flight e9 block (~2.5k steps,
+  ~35 min) is the only loss — the E54-U5 resume plumbing restarts from the task-2
+  boundary WITH the protection store intact (its first production exercise).
+- e58-evalseeds had not started (still gated); loses nothing.
+Recovery: a session-side watcher polls SSH every 2 min and, on reachability,
+relaunches whichever units are dead (queue auto-resumes; eval campaign re-gates) —
+the only manual step is STARTING the instance (no nebius CLI/credentials on the local
+box — flagged 31 Jul, now the binding gap; install it). Josh push-notified (terminal
+only; mobile inactive). Timeline: restart by ~Sat noon UTC still lands everything
+Sunday morning (~20h remaining end-to-end); later restarts eat into the eval
+replicates last (seed-major ordering keeps partial reads clean). If the VM sits
+stopped >1h the public IP may rotate — ~/.ssh/config HostName must be updated before
+the watcher can reconnect (needs console/CLI to discover the new IP).
+
+---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
 Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
