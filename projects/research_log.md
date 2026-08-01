@@ -5510,6 +5510,15 @@ correct for both branches (checks unit states first, relaunches only dead units)
 Corrective push sent. This entry commits locally; push deferred until the network
 heals.
 
+**RESOLVED (02:51 UTC):** network healed after ~40 min; VM uptime 4d18h — **never
+went down, never preempted**. Both units active throughout; dose1x trained through
+the outage uninterrupted (step 14K, task-3/e2 block, loss/grads nominal). The
+recovery watcher's assessment pass correctly relaunched nothing. Zero loss; timeline
+unchanged. Lessons banked: (1) "VM unreachable" must be cross-checked against an
+independent host before concluding preemption (github:22 was the discriminator);
+(2) the nebius CLI gap on the local box remains open — install it for the day the
+preemption is real.
+
 ---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
