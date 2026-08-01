@@ -5512,7 +5512,8 @@ heals.
 
 **RESOLVED (02:51 UTC):** network healed after ~40 min; VM uptime 4d18h — **never
 went down, never preempted**. Both units active throughout; dose1x trained through
-the outage uninterrupted (step 14K, task-3/e2 block, loss/grads nominal). The
+the outage uninterrupted (step 14K = task-2/e9 block — an earlier draft of this note
+misread it as task 3; blocks span 5k each, so 14K is t2. loss/grads nominal). The
 recovery watcher's assessment pass correctly relaunched nothing. Zero loss; timeline
 unchanged. Lessons banked: (1) "VM unreachable" must be cross-checked against an
 independent host before concluding preemption (github:22 was the discriminator);
