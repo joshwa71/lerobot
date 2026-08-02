@@ -5521,6 +5521,66 @@ independent host before concluding preemption (github:22 was the discriminator);
 preemption is real.
 
 ---
+### Entry 58 addendum 3 (2 Aug 26) — DOSE-PAIR RESULTS: value-input noise is SAFE at both
+doses (fit + retention untouched), produces a real far-region function shift toward the
+specialist with an INVERTED-U in dose (0.5x > 1x on every read), converts to e7 +6
+(replicated in both arms) and a nominal family-best 54.4 at 0.5x. Binding limitation is
+now GEOMETRY (isotropic vs the structured excursion subspace) and/or dose (< 0.5x
+unexplored), not safety.
+
+Queue completed Sun 06:37 UTC (each arm ~17.5h; both rescores in). Also: the weekend
+eval-seeds campaign was CANCELLED by Josh before starting (0/30 cells; unit stopped Sun
+~06:50; script + relaunch line remain ready) — the E56-addendum TODO stays open.
+
+**50-ep finals** (B = 53.2 = 44/60/56/86/20):
+- dose1x  52.4 = 42/52/58/84/**26**
+- dose05x **54.4** = 44/66/58/78/**26**  <- nominal family best
+- **e7 = 26 in BOTH arms** (two independent +6 draws on the conversion cell; pooled
+  52/200 eps vs B's 20% — directionally consistent, ~1σ pooled).
+
+**Rescore (D-vs-specialist on the SHARED e56 state bank, far quartile Q4;
+feat / proprio axes):**
+
+| population | B | dose1x | dose05x |
+|---|---|---|---|
+| spec-succ | 0.416/0.482 | 0.356/0.400 (−14/−17%) | 0.342/0.380 (−18/−21%) |
+| B-fail | 0.383/0.408 | 0.377/0.404 (~0) | **0.330/0.353 (−14%)** |
+| spec-fail | 0.413 | 0.402 | 0.357 (−14%) |
+| demo anchor | 0.0340 | 0.0341 | 0.0346 |
+
+Half dose beats full dose on every far population and uniquely moves the B-failure
+states; near-manifold quartiles unchanged. (Dose semantics: p=0.25 per-(token,dim)
+Bernoulli in both arms; only sigma halved -> dose05x injects ~25% of the measured
+excursion VARIANCE. p never varied; per-slot application + structured direction never
+tested.)
+
+**Fit cost: zero.** Per-block log-loss minima identical between arms to 3 decimals
+(t0-t4: .046/.037/.084/.053/.071 both); anchors 0.0341/0.0346 vs B 0.0340.
+
+**MSE give-back (paired-noise matrices, just-trained -> final; gate <= +5%):**
+
+| | e4 | e6 | e9 | e2 | e7 |
+|---|---|---|---|---|---|
+| B (corefrac) | +3.7 | +3.5 | +3.4 | +2.1 | 0.0 |
+| dose1x | +3.3 | +3.0 | +3.5 | +2.0 | 0.0 |
+| dose05x | +3.8 | +3.1 | +3.1 | +1.9 | 0.0 |
+
+Retention signature reproduced cell-for-cell — the noise does not interact with
+stationarity/protection at either dose (as the architecture argued it couldn't).
+
+**Pre-registration scorecard: (a) far-D shrink esp. spec-succ PASS (both; 05x
+stronger); (b) fit <= 1.10x PASS (~1.00x); (c) matrix corefrac-flat PASS; (d) e7 > 20
+PASS (26, replicated); net mean +1.2 at 0.5x (inside noise).**
+
+**Options on the table:** (A) structured noise — project into the measured top-10
+excursion subspace per layer (~75% of real displacement energy; isotropic puts ~1%
+there — the prime suspect for the modest magnitudes); needs the calibration probe to
+persist the SVD bases + a projected-noise variant of _value_input_noise, then one arm.
+(B) dose sweep below 0.5x (trivial env change, one arm). (C) bank dose05x as a free
+recipe ingredient (+e7 robustness at zero cost) and return to the wk-2 ICRA items
+(10-task, naive-seq-LoRA baseline, seeds).
+
+---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
 Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
