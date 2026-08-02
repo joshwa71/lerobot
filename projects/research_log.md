@@ -5581,6 +5581,43 @@ recipe ingredient (+e7 robustness at zero cost) and return to the wk-2 ICRA item
 (10-task, naive-seq-LoRA baseline, seeds).
 
 ---
+### Entry 58 addendum 4 (2 Aug 26) — NAIVE SEQUENTIAL LoRA baseline: param-matching
+resolved as a capacity-INSENSITIVITY sweep; r=256 arm LAUNCHED (the headline forgetting
+baseline's first-ever run)
+
+Supervisor requires the "is it just parameters" control at matched TOTAL (not active)
+params; our total isn't frozen. Resolution (discussed with Josh): a single matched point
+is weak (r~2000 ≈ full-rank = no longer LoRA) and count-sensitive; a 3-point capacity
+sweep — r=32 (53M) / **r=256 (426M, THIS ARM)** / big point (full-FT 6.6B or r~2000,
+accounting decision pending with supervisor) — shows naive forgetting is capacity-
+insensitive, which kills the confound at ANY final count. Supporting internal evidence
+already banked: rank axes closed negative (expert +2, VLM −10), bank shrinks dead,
+E46 cut params 11% while fit +35%, absmax ledger −27% capacity at +2pp, multitask-LoRA
+at 53M within 4-5pp of our 3.2B. Accounting currency to settle in the paper: trainable-
+during-sequential (ours 3.2B; frozen router/keys excluded).
+
+**Build (commit 4734ecdc):** lerobot-sequential-train reused for protocol identity —
+PEFT wrap added after make_policy (mirrors lerobot-train); optimizer PEFT branch (all
+requires_grad at memory_value_lr, one group = one scheduler lambda under default
+flags, asserted); BOTH `_freeze_to_selected_memory_params` callsites gated on
+`cfg.peft is None` (the boundary "re-freeze to be safe" would zero the adapters every
+task — Josh's "it goes directly into the memory layers" instinct, confirmed at the
+freeze layer; caught by the smoke's 425.2M-wrapped -> 0-trainable contradiction).
+`lora_alpha` exposed in PeftConfig (PEFT default a=8 would have given r256 an 8x
+weaker effective gain than the r32 specialists — a/r held at 0.25: r256@a64).
+Smoke: 2 tasks x 20 steps end-to-end PASS (425,213,952 trainable / 4.57B).
+Ops incident, owned: a stash-pull-drop on the VM silently discarded the working-tree
+patches when the pull aborted on an untracked file (tail -1 hid the abort) — recovered
+from origin; rule: never `stash drop` before verifying the pull's HEAD moved.
+
+**Arm** (`naive_seq_lora_r256.sh`, unit e58-naivelora, ~15-17h): base = stage-1
+libero_90 finetune, specialist TARGETS verbatim, lr 2.5e-5 -> 2.5e-6 per-block linear,
+bs16xacc2 no-ckpt, same 5-task order/budget/eval protocol as B (results.jsonl +
+retention matrices directly comparable). NO protection/tfidf/memory. Pre-registered
+expectation: specialist-grade early diagonals then the classic catastrophic collapse —
+the headline figure next to our flat matrices. MSE matrix to run on landing.
+
+---
 ### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
 
 Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
