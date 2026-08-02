@@ -1,6 +1,52 @@
 # Research Log - VLA Memory
 
 ---
+## Standing Reference (added 2 Aug 26, lossless-trim pass 1)
+
+Consolidates definitions, constraints, and anchor numbers that entries below restate inline. Entries were written before this section existed; where an entry re-defines one of these terms, the definition here is the canonical one.
+
+### Metrics & instruments
+- **held-out audit / certificate**: stream the libero_10 demos through a FROZEN checkpoint, dump per-task slot-usage JSONs, compute the routing-geometry metrics below (~35 min/checkpoint). Certificates predicted full-pipeline behavior throughout E44-49.
+- **famIoU**: held-out read-mass overlap (weighted IoU) among the three near-identical basket tasks — libero_10 task_index 4/5/7 = envs 7/0/1 (soup+cheese / soup+sauce / cheese+butter). **bgIoU**: same over non-family pairs.
+- **core50 / effnum**: per-task footprint size — slots carrying 50% of read mass / exp(read-mass entropy). The capacity side of every routing gate.
+- **palette**: the slot set retrieved by a pooled (shared) router key (VLM state/image-region routing); the always-read block.
+- **chunk error**: executed-chunk metric — run the real 10-step denoise on demo observations, score the executed 50-action chunk against the demo chunk (adopted E41). Rollout-predictive WITHIN a substrate; ranks backwards ACROSS substrates (E50 rule: substrate changes are judged on 50-ep finals + jitter, never chunk alone).
+- **MSE forgetting matrix**: paired-noise loss of every per-task checkpoint on every seen task; flat diagonal drift (≤~+5%) = no function-level forgetting (instrument `mse_matrix2.py`).
+- **jitter probe**: perturb demo observations (state/image noise), re-denoise, score the chunk — the off-demo brittleness shell. Probes ~10x nearer than real rollout excursions (E57).
+- **RTO (read-through-overwrite)**: fraction of a task's read mass on slots later tasks updated. **self-coverage**: fraction on its own-adapted slots.
+- **q_intra / q_inter**: cosine among same-task / cross-task routing queries; q_intra ≳0.95 = state-independent addressing collapse (E21).
+- **top_t**: the TF-IDF write mask — top-t slots per module per optimizer step receive gradient. **protection**: mask score × (1−u)^β with u = prior-task usefulness; **corefrac** u-normalization puts whole prior cores at u=1 (score 0 → structural exclusion from the mask).
+- **read-write product**: per-slot learning signal × read participation × state-conditionality of addressing — the capacity currency (E43/E48).
+- **D**: cross-model executed-chunk disagreement on rollout-harvested states, read against excursion distance (off-trail instrument, E57).
+- **Eval noise**: 20-ep intermediate cells ±11pp — RETIRED from decisions (E41); 50-ep finals ±7pp.
+
+### Fixed design constraints
+- Router/keys FROZEN during sequential adaptation, permanently (E19 — key training silently re-points prior tasks' retrieval).
+- No per-task parameters; no task identity at inference.
+- EWC, replay, and hard task-boundary slot allocation: off the table.
+- "Train on exactly the same data": no observation-space augmentation. (Hidden-state noise on the value-path INPUT is allowed — E58.)
+- Pretrain-task forgetting is out of scope; only the sequential tasks are protected from each other (E19).
+
+### Environment mapping
+- libero_10 dataset task_index → env: {0:4, 1:6, 2:9, 3:2, 4:7, 5:0, 6:8, 7:1, 8:3, 9:5}; train order = task_index ascending. The 5-task "front-5" suite = task_index 0-4 = envs 4,6,9,2,7.
+
+### Recurring configs
+- **C-config** (sequential recipe, E30): β4 protection, top_t 1536, 5000 steps/task, value-lr 1e-3→1e-4 per-block linear, 20-ep intermediate evals. Later deltas named inline: lr2x (2e-3→2e-4), top_t 3072, corefrac.
+- **arm 1'** (E48): expert memory n256/r2/knn36 @ [8,10,12,14] + VLM text-field memory n256/r2/knn16 @ LM [15,16]; broadcast-loss anchored router.
+- **comp / composition** (E50): arm 1' substrate + lr2x + top_t 3072.
+- **compact layermax** (E51): expert [9,10,11,12] + VLM [13,14,15,16], 8 modules, n256/r2.
+- **spread / attempt-A** (E51/E53): expert [2,4,6,8] + VLM [10,12,14,16], 8 modules, n256/r2.
+- **absmax** (E53): expert [4-9] + VLM [10-16], 13 modules, n256/r2, anchored-nofilm expert router (w=0.5).
+- **B** (E54): spread substrate + expert text-anchor w=0.40 + sep8, FiLM-free router — the headline config.
+
+### Standing anchors & baselines (single-seed; 50-ep finals unless noted)
+- Audit anchors (expert L14, n384 era): control@40k famIoU 0.349 / core50 2643 / bg 0.127 · collapsed negonly-c005@40k 0.133 / 511 / 0.042 · P9 sep5 0.264 / 2679 / 0.087.
+- LoRA per-task specialists (r32, 5k steps, frozen stage-1 base; rollout / clean chunk): e4 58/0.0204 · e6 44/0.020 · e9 70/0.0675 · e7 60/0.0330 · e2 84/0.0308 — oracle mean 63.2.
+- Multitask-LoRA (one adapter, 5 tasks) 49.2 = the must-beat line. Base pi05 joint finetune (no memory, all data) 72.6 on libero_10 / 74.8 on the front-5.
+- Stage-1 base zero-shot on libero_10: mean 10.6 (collapse-prone tasks 0-2) — the no-adaptation floor.
+- Front-5 standings (as of E56): absmax 53.6 · B 53.2 · compact+corefrac 51.6 · spread+corefrac 47.6 · P3 47.2 · comp 46.0 · layermax-plain 44.8.
+
+---
 ## Entry 0 (context / progress so far)
 - Goal: reduce catastrophic forgetting in sequential training using PKM-style memory layers on SmolVLA (continual multi-task adaptation).
 - Found: **standard PKM with static value vectors** could achieve ~zero interference, but performance plateaued (~30% success/task) → likely insufficient expressivity.
@@ -1344,7 +1390,7 @@ Read IoU 0.169 → 0.107, held-in 65 → 81.1, no hot core. **The pretrain-diver
 
 ### Plan: two 10k single-lever probes (running now)
 
-Both are **truncated full runs** (same warmup 4000 / decay 40000 schedule, `--steps=10000`, `save_freq=10000`, eval never fires) so a passing probe continues to 40k with `--resume=true` at zero wasted compute. ~11h each on the H200, run sequentially in tmux session `probes`; logs in `outputs/probe_logs/`.
+Both are **truncated full runs** (same warmup 4000 / decay 40000 schedule, `--steps=10000`, `save_freq=10000`, eval never fires) so a passing probe continues to 40k with `--resume=true` at zero wasted compute. ~11h each on the H200, run sequentially; logs in `outputs/probe_logs/`.
 
 Scripts: `job_scripts/nebius/libero_90/probes/`
 - `probe_10k_pretrain_loc_1.0.sh` → run `libero_90_pi05_8_10_12_14_probe10k_loc_1.0`
@@ -1431,11 +1477,11 @@ Sanity: control audit family IoUs (0.39/0.36/0.30) match the sequential-run meas
 3. **Sequential run** on the audited 40k checkpoint with `top_t` re-derived from the new footprints: held-out core50 dropped ~7.5× (2.6K → ~350), so `top_t=1536` is ~an order of magnitude oversized for this regime — start at **256–512** (decide from the 40k audit). Minimal-change config (everything stays pretraining-side; the only sequential knob is the existing TF-IDF top_t).
 4. Probe L checkpoint: keep for reference, no further investment.
 
-**Update (launched 11 Jun, tmux `pipeline`):** all three stages packaged in `job_scripts/nebius/libero_90/probes/pipeline_probeC_full.sh` (idempotent stages, auto-fallback if the resume `--steps` override is ignored). Decisions baked in:
+**Update (launched 11 Jun):** all three stages packaged in `job_scripts/nebius/libero_90/probes/pipeline_probeC_full.sh` (idempotent stages, auto-fallback if the resume `--steps` override is ignored). Decisions baked in:
 - `top_t=512` pre-committed rather than audit-gated: protection now comes from separated/compact footprints, not the write mask; per-batch accessed slots shrink ~7× with this prior, so 512 is *relatively* more generous than 1536 was in the old regime, and libero_goal showed 512 safe at far worse IoU (0.17) than this prior's held-out 0.05 bg / 0.19 family. The 40k audit (stage 2) is informational.
 - **Contrastive weight held at 0.05** for this cycle: 7× compaction at +1.2% MSE is already near the useful ceiling, weight responses have been non-monotonic throughout the project, and the open risk is fit-side (which more pressure worsens). Weight 0.1 becomes a 10k probe only if the 40k re-audit shows separation eroding.
 - Sequential config otherwise identical to the failed top_t=1536 run (3000 steps/task, lr 1e-3→1e-4, 50 eval eps, same env mapping) for clean attribution: pretrain recipe + top_t are the only deltas.
-- Sequential run name: `libero_10_sequential_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k_top_t_512`. ETA ≈ 3.3 days (33h resume + 35min audit + ~45h sequential).
+- Sequential run name: `libero_10_sequential_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k_top_t_512`.
 - What to look at first when it lands: retention matrix vs Entry 19's (esp. t5 after t7's block, the step-24000 cliff), diagonal inits on the dual-cycle tasks (plasticity should be roughly unchanged — this cycle attacked interference, not the ceiling), `memory_iou/all_modules_mean`, read-through-any-later for t0–t5, and 40k-audit family IoU vs the 10k audit's 0.190.
 - **Pre-registered next lever if retention is good but absolute perf lands ~50%:** the bottleneck is then the plasticity ceiling, and the first response is optimization budget, not architecture — more steps/task (3000 → 5000; Entry 19 showed MSE still falling at every block end) and higher memory-value LRs (floor 1e-4 → ~2e-4 first; peak 1e-3 → ~2e-3 second, watching within-block stability — t8's MSE rose late in its own block at the current peak). These are sequential-only, cheap, and now safer to push because the compact/separated footprints mean extra write pressure leaks far less into other tasks' cores than it would have pre-probe-C.
 
@@ -1443,7 +1489,7 @@ Sanity: control audit family IoUs (0.39/0.36/0.30) match the sequential-run meas
 - **The "truncated full run / resume for free" probe design was wrong.** lerobot auto-scales the LR schedule when `steps < scheduler_decay_steps` (`schedulers.py:111`; probe logs confirm: "Scaling warmup: 4000 → 1000, decay: 40000 → 10000"). Both probes therefore ran a **compressed full cosine**, fully decayed by 10k.
 - Consequences for Entry 20 conclusions: **none material.** Probe L vs probe C shared the identical compressed schedule, so that contrast is clean; the held-out audit gaps (7× compaction, −46% family IoU, with probe L as a same-schedule control moving the opposite direction) dwarf any schedule artifact. Bonus: the SupCon effects survived a complete LR decay — they are end-of-training properties, not high-LR transients. One nuance: probe-vs-control *in-run* comparisons at 10k carried an LR-position confound (probes at LR floor, control at ~0.85×peak), which slightly flattered probe MSE.
 - The resume (launched this morning) rebuilt the scheduler **unscaled** (steps=40000 ≥ decay), so its LR jumped from floor to ~0.85×peak at step 10001 — an SGDR-style sawtooth, not comparable to control. Killed at ~step 10.4k (no checkpoints written; probe C's 10k checkpoint pristine; the resume's brief wandb re-attachment to run `hdbpetb9` is cosmetic).
-- **Replacement: fresh 40k pretrain of the recipe** with a clean schedule (steps=40000 == decay → warmup 4000 / decay 40000 honored, exactly matching control): run `libero_90_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k`, script `probes/pretrain_c_0.05_negonly_q512_40k.sh`, checkpoints at 10k/20k/30k/40k, evals at 20k/40k. Pipeline v2 (`pipeline_probeC_full.sh`) now: fresh pretrain → 40k audit (`audit_heldout_c005_40k`) → sequential top_t=512 (unchanged). Cost vs resume: +~11h; chain ETA ≈ 44h + 35min + 45h ≈ 3.7 days.
+- **Replacement: fresh 40k pretrain of the recipe** with a clean schedule (steps=40000 == decay → warmup 4000 / decay 40000 honored, exactly matching control): run `libero_90_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k`, script `probes/pretrain_c_0.05_negonly_q512_40k.sh`, checkpoints at 10k/20k/30k/40k, evals at 20k/40k. Pipeline v2 (`pipeline_probeC_full.sh`) now: fresh pretrain → 40k audit (`audit_heldout_c005_40k`) → sequential top_t=512 (unchanged). Cost vs resume: +~11h.
 - Extra validation the fresh run gives for free: whether SupCon's compaction/separation holds under the uncompressed schedule — check `routing_intra_task_support_*` and query sims at 10k/20k against the probe's values, and the 10k-checkpoint audit can be compared like-for-like against `audit_heldout_probeC_10k` if needed.
 
 ---
@@ -1590,7 +1636,7 @@ Can we get held-out family separation INTO the capacity-preserving regime? The t
 
 (Note: locality is NOT the compaction driver — control carries locality 0.25 and is broad, core50 2,643. Compaction came specifically from the strong negonly contrastive. So locality-off is not the lever; leave it unless a separation sweep shows it amplifying compaction.)
 
-### Next experiment (LAUNCHED 15 Jun, tmux `probes3` — Josh: "do both") — 2-probe isolation, mirrors E21
+### Next experiment (LAUNCHED 15 Jun — Josh: "do both") — 2-probe isolation, mirrors E21
 
 - **Probe 3:** standard SupCon **0.1** (negatives_only=false, queue 512), all else = control. Isolates the contrastive-weight axis on the capacity-safe variant.
 - **Probe 4:** standard SupCon **0.05** + `routing_inter_task_separation` **0.5** (negatives_only=false, queue 512), all else = control. Isolates direct slot-space separation.
@@ -1599,7 +1645,7 @@ Can we get held-out family separation INTO the capacity-preserving regime? The t
 - Reserve if both fail: separation 0.5 + locality 0 (test compaction amplification), or other pretraining-side separation formulations (e.g. similarity-weighted separation). Pretraining-side only.
 
 ### Status
-Probes 1/2 completed (neither earned a 40k). Checkpoints + audits (`audit_heldout_{negonly_c0.025,standard_c0.05}_10k`) retained. Probes 3/4 LAUNCHED 15 Jun in tmux `probes3` (scripts `probe_10k_standard_c0.1.sh`, `probe_10k_standard_c0.05_sep0.5.sh`, runner `run_probes3_seq.sh`); audits `audit_heldout_{standard_c0.1,standard_c0.05_sep0.5}_10k`. ~23.5h. No 40k launched yet.
+Probes 1/2 completed (neither earned a 40k). Checkpoints + audits (`audit_heldout_{negonly_c0.025,standard_c0.05}_10k`) retained. Probes 3/4 LAUNCHED 15 Jun (scripts `probe_10k_standard_c0.1.sh`, `probe_10k_standard_c0.05_sep0.5.sh`, runner `run_probes3_seq.sh`); audits `audit_heldout_{standard_c0.1,standard_c0.05_sep0.5}_10k`. No 40k launched yet.
 
 ### Note: discussion after launching probes 3/4 (mechanism + capacity diagnostics)
 
@@ -1664,7 +1710,7 @@ Wiring: per-token queries staged in `forward` (guarded by `_is_checkpoint_recomp
 
 Smoke-tested in isolation (tiny module): queue populates to cap; **a single-task batch still gets a separation loss via references** (the coverage fix); gradients reach query_proj + keys; checkpoint-recompute guard holds; queue-off numerically identical to the old path; vectorized einsum identical to the per-pair loop. Files: `memory_config.py`, `memory_lite.py`.
 
-### Rerun (LAUNCHED 16 Jun, tmux `probes5`)
+### Rerun (LAUNCHED 16 Jun)
 
 Same configs as probes 3/4, only delta = `routing_query_queue=512`, so this isolates the queue's effect against the no-queue probes3 audits:
 - **probe 3':** standard SupCon 0.1 + rq512 → `..._probe10k_standard_c0.1_rq512`
@@ -1744,7 +1790,7 @@ Findings:
 
 One decisive, cheap probe: **sep=2.0** (8× P3, 4× P4), **contrastive=0.05 FIXED** (isolate separation, preserve capacity — Josh's call to avoid confounds), **rq512** (clean gradient), same compressed 10k schedule. Capacity-gated audit.
 
-- Run: `libero_90_pi05_8_10_12_14_probe10k_standard_c0.05_sep2.0_rq512`; scripts `probes/{probe_10k_standard_c0.05_sep2.0_rq512.sh, run_probe6_seq.sh}`; tmux `probe6`; wandb `r1sklapt`; ETA ~11h pretrain + ~35min audit.
+- Run: `libero_90_pi05_8_10_12_14_probe10k_standard_c0.05_sep2.0_rq512`; scripts `probes/{probe_10k_standard_c0.05_sep2.0_rq512.sh, run_probe6_seq.sh}`; wandb `r1sklapt`.
 - **Decisive gate (jointly):** held-out L14 **famIoU ≤ ~0.28 AND core50 ≥ ~1500**.
   - famIoU↓ **with** core50 held → real translation; separation was scale-limited → sweep upward, then 40k.
   - famIoU↓ **only** with core50 < ~1500 → shrink-to-disjoint shortcut (the locality min-support floor [128,2048] is too weak to block it — the capacity gate is the guard, not the loss). Reserve fix: raise min_support.
@@ -1800,9 +1846,9 @@ So footprints moved apart *into distinct broad regions* — the mechanism Entry 
 3. **Partial, not a clean gate clear.** famIoU 0.311 is below control but above the ~0.28 GOOD line; query_intra 0.912 is a hair over the 0.90 proxy but core50 (the real measure) is healthy. Clear headroom remains → hence the sep-curve sweep below.
 4. **Interference only.** The dual-cycle plasticity ceiling (~40% diagonal, Entry 19) is untouched; the eventual sequential gain will show up as **retention** (no t5→t7 step-24000 cliff), not a higher peak.
 
-### The 4-probe batch (LAUNCHED 17 Jun, tmux `probes7`)
+### The 4-probe batch (LAUNCHED 17 Jun)
 
-All single-knob deltas from the P6 anchor; the question is whether **separation alone is the lever.** Runner `run_probes7_10_seq.sh` (interleaved pretrain→audit per probe); ~2 days total.
+All single-knob deltas from the P6 anchor; the question is whether **separation alone is the lever.** Runner `run_probes7_10_seq.sh` (interleaved pretrain→audit per probe).
 
 | probe | run tag | delta vs P6 | goal |
 |---|---|---|---|
@@ -1862,10 +1908,10 @@ Net: Josh's "sep is the lever" bet is largely vindicated — separation does the
 
 ### Decision + what's RUNNING
 
-Graduate **P9 (c0.05 + sep5.0 + locality-off + rq512)** to a full run. **LAUNCHED 19 Jun, tmux `sep5_full`** (log `outputs/sep5_full.log`):
+Graduate **P9 (c0.05 + sep5.0 + locality-off + rq512)** to a full run. **LAUNCHED 19 Jun:**
 - Script: `job_scripts/nebius/libero_90/combined/pi05_libero_10_4_layer_film_lora2_knn36_40k_c0.05_sep5_noloc_rq512_topt1536.sh` (two-stage, skip-if-exists guard).
 - = the c0.01 combined 40k script with EXACTLY: contrastive 0.01→0.05, contrastive_query_queue 128→**512**, sep 0.25→**5.0**, locality 0.25→**0** (support bands dropped), **+ routing_query_queue=512** (the c0.01 reference predated it — the critical add). New run names. Pretrain arch/schedule + entire sequential stage (tfidf_top_t **1536**, 3000 steps/task ×10, value_lr 1e-3→1e-4, 50 eval eps) unchanged.
-- Runs: pretrain `libero_90_pi05_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` → sequential `libero_10_sequential_..._top_t_1536`. ETA ~44h pretrain + ~45h sequential ≈ **3.7 days**.
+- Runs: pretrain `libero_90_pi05_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` → sequential `libero_10_sequential_..._top_t_1536`.
 - top_t=1536 kept deliberately: sep5 is broad-but-separated (core50 ~2679 ≈ control), so ~1536 is the right write budget per Entry 22(d), and safer than the Entry-19 cliff (lower overlap, famIoU 0.264 vs 0.349). Watch `task9-reads-task8-updates` early; re-derive from per-batch L14 effnum if overwrite climbs.
 
 ### What to check when it lands
@@ -1988,9 +2034,9 @@ Net-positive at every β>0, peaks ~β=8 (env7 read-through roughly halved). Cost
 - **CLI** `--protect_prior_slots` (bool, default `False`) + `--protect_beta` (float, default 4); threaded through `_update_policy_with_tfidf`. When off → `None` passed → old branch. Smoke-tested (`scripts/smoke.py`): peak-norm + max-agg + reset, gate reselection (vetoed slot drops, next-best pulled in), and **β=0 / store=None reproduce the legacy top-t exactly**.
 - NB: implementation β acts on the top-t **ranking** (reselection), so its scale differs from the offline soft-suppression model — treat β=4 as "moderate."
 
-### Launched (23 Jun, tmux `protect_b4`, wandb `11u7mdmj`)
+### Launched (23 Jun, wandb `11u7mdmj`)
 
-`job_scripts/nebius/libero_90/sequential/pi05_libero_10_seq_sep5_prior_protect_beta4_topt1536.sh`: reuses the sep5 40k prior (no new pretrain), `--protect_prior_slots=true --protect_beta=4`, **eval 20 eps** (vs 50, faster). Otherwise byte-identical to the sep5 sequential. ETA **~17–18h** (eval-bound). Confirmed live: config dump shows `protect_prior_slots=True, protect_beta=4.0`; per-task boundary logs "Updated prior-usefulness protection store after task N".
+`job_scripts/nebius/libero_90/sequential/pi05_libero_10_seq_sep5_prior_protect_beta4_topt1536.sh`: reuses the sep5 40k prior (no new pretrain), `--protect_prior_slots=true --protect_beta=4`, **eval 20 eps** (vs 50, faster). Otherwise byte-identical to the sep5 sequential.
 - **Watch:** env7 (t4) — baseline 18→0; predicted partial rescue (RTO ~81→~53). env0/env1 (t5/t7) fit cost = the bill. `memory_iou` should drop below 0.052. Diagonal/init ~unchanged (interference lever, not the ceiling).
 - **Decision rule:** env7 materially >0 at acceptable env0/env1 cost → β sweep {2,8}; env7 unmoved → β=8; env0/env1 crater → β=2. If even β=8 can't hold env7 and keep its writers, env7 is confirmed irreducible under write-masking → only rank/co-host (realworld Entry 3) or scene-vs-language query reweighting (Entry 24 #2) remain.
 
@@ -2076,7 +2122,7 @@ The checkpoint-only probe is decisive that language is near-inert, but the last 
 
 ## Entry 29 - 24 Jun 26 (LAUNCHED: autonomous protection+plasticity batch on the sep5 prior — 4 sequential runs, ~3 days)
 
-Josh away a few days; lined up 4 **sequential-only** runs (all reuse the EXISTING sep5 40k prior — no new pretrain), single-knob deltas from the standing baseline **β=4 protection (Entry 28, 40.5% @20ep)**. Chained in tmux `plast_batch`; runner `job_scripts/nebius/libero_90/sequential/run_protect_plasticity_batch.sh`; runner log `outputs/protect_plasticity_batch.log`; per-run logs `outputs/batch_logs/<run>.log`; wandb project `vla-memory`. All 20-eval-eps for apples-to-apples with the β4 baseline. Robust runner (one failure doesn't abort; skip-if-final-ckpt-exists).
+Josh away a few days; lined up 4 **sequential-only** runs (all reuse the EXISTING sep5 40k prior — no new pretrain), single-knob deltas from the standing baseline **β=4 protection (Entry 28, 40.5% @20ep)**. Runner `job_scripts/nebius/libero_90/sequential/run_protect_plasticity_batch.sh`. All 20-eval-eps for apples-to-apples with the β4 baseline. Robust runner (one failure doesn't abort; skip-if-final-ckpt-exists).
 
 Order C → B → D → A (front-load the binding-constraint/plasticity tests; β8 last):
 
@@ -2202,7 +2248,7 @@ That 28 pp is mostly forgetting + plasticity, and rank is the one untried per-sl
 
 Decisive read at the held-out audit: does **P2's L12 inherit-and-worsen** the family IoU / core50 — the high-trust/high-forgetting role is *positional* (last memory layer), so dropping L14 likely migrates it to L12, now at rank 4 = more destructive overwrites (Entry 4) — or does P1's proximal boost sit better with routing intact? Plus the 1-task plasticity probe for fit. Caveat: rank is a **fit** lever, not a forgetting one under the frozen router (realworld Entry 3) → expect diagonal gains; the average is plasticity-bound anyway.
 
-Status: launched (tmux `layerrank_probes`, P1→P2, ~10 h each). P1 confirmed stepping — attach applied `L8=r2/L10=r2/L12=r2/L14=r4`, 119 GB (fits). **VRAM ladder:** P1 3.0 B = 119 GB, P2 3.6 B ≈ 129 GB (fits), all-r4 4.8 B ≈ 148 GB (OOM) — why 4-on-4 is off the table. Code: `memory_config.py` (`layer_ranks`), `memory_lite.py` (threaded `lora_rank_override` through attach → `MLPPlusMemory` → `HashingMemoryLite`). Script: `probes/run_layerrank_probes.sh`.
+Status: launched (P1→P2). Attach applied `L8=r2/L10=r2/L12=r2/L14=r4`, 119 GB (fits). **VRAM ladder:** P1 3.0 B = 119 GB, P2 3.6 B ≈ 129 GB (fits), all-r4 4.8 B ≈ 148 GB (OOM) — why 4-on-4 is off the table. Code: `memory_config.py` (`layer_ranks`), `memory_lite.py` (threaded `lora_rank_override` through attach → `MLPPlusMemory` → `HashingMemoryLite`). Script: `probes/run_layerrank_probes.sh`.
 
 ---
 
@@ -2244,7 +2290,7 @@ Consequences:
 
 Known risk either way: rank is a **fit** lever, not a retention lever (frozen router fills all ranks of a shared slot; realworld Entry 3) — the diagonal should move; env7-class genuine contention won't, and r4 overwrites hit 2× harder → β4 protection stays mandatory in the sequential stage.
 
-Script: `probes/run_layerrank_probes2.sh` (run A → audit A → run B → audit B, ~23.5 h total). Audits: `audit_heldout_ranks2244_c005_10k`, `audit_heldout_ranks2244_c01_10k`. Analysis: `scratchpad/audit_ranks.py` pattern (extend RUNS).
+Script: `probes/run_layerrank_probes2.sh` (run A → audit A → run B → audit B). Audits: `audit_heldout_ranks2244_c005_10k`, `audit_heldout_ranks2244_c01_10k`. Analysis: `scratchpad/audit_ranks.py` pattern (extend RUNS).
 
 ### Cleanup
 Deleted P2 `ranks_444` checkpoints (~64 G, rejected branch — wandb + audit JSONs retained) and `training_state` from P1 + P9 probe dirs (never resumed). **Kept**: P1 `ranks_2224` and P9 10k `pretrained_model`s — P1 is the fallback graduation candidate; both are the comparators for the pending 1-task plasticity probe (rank→fit conversion check, still to run).
@@ -2321,7 +2367,7 @@ Josh's 2-prong framing: (1) some tasks don't convert capacity into fit; (2) some
 ### Code + launch
 
 - New flag `--policy.train_memory_only` (pi05): `configuration_pi05.py` field; `PI05Policy._apply_train_memory_only()` (freezes everything without `.mlp.mem.` in the name — 60 memory tensors trainable / 2.45B params, 813 frozen / 4.14B) called from `__init__` (strict only when no pretrained_path — attach happens later on the load path), `post_load_setup`, AND after the try/except in `from_pretrained` (the hook is exception-swallowed there); `get_optim_params` now filters `others` by requires_grad. Smoke-tested fresh-init + load-path (pi05_base = structurally a stage-1 ckpt): only mem params trainable, groups clean (52 router tensors @ base LR + 8 value tensors @ memory_lr), backward reaches memory, flag-off byte-identical, strict-raise when memory absent.
-- Scripts `job_scripts/nebius/libero_90/staged/`: `stage1_base50k_stage2_probe10k.sh` (stage 1 = E31-baseline recipe on libero_90, 50k, eval **libero_10 @ 50 eps at 50k = the zero-shot floor table**; stage 2 probe 10k compressed, frozen-base, sep5 recipe verbatim; audit `audit_heldout_frozenbase_10k`) — **LAUNCHED 8 Jul, tmux `staged`, log `outputs/staged1.log`**, ETA ~2 days stage 1 + ~8h probe + 35min audit. `stage2_full40k_stage3_sequential.sh` (40k clean schedule → `audit_heldout_frozenbase_40k` → C's sequential verbatim, run `libero_10_sequential_..._frozenbase_..._protect_beta4_steps5k`) — READY, launch after the probe audit clears.
+- Scripts `job_scripts/nebius/libero_90/staged/`: `stage1_base50k_stage2_probe10k.sh` (stage 1 = E31-baseline recipe on libero_90, 50k, eval **libero_10 @ 50 eps at 50k = the zero-shot floor table**; stage 2 probe 10k compressed, frozen-base, sep5 recipe verbatim; audit `audit_heldout_frozenbase_10k`) — **LAUNCHED 8 Jul** (log `outputs/staged1.log`). `stage2_full40k_stage3_sequential.sh` (40k clean schedule → `audit_heldout_frozenbase_40k` → C's sequential verbatim, run `libero_10_sequential_..._frozenbase_..._protect_beta4_steps5k`) — READY, launch after the probe audit clears.
 - Grad-ckpt: stage 1 TRUE (measured requirement — plain pi05 bs32 OOMs without it, 29 Jun test); stages 2/3 FALSE (frozen backbone; r2 values-only no-ckpt bs32 = measured sequential precedent).
 
 ### Bookkeeping
@@ -2366,7 +2412,7 @@ Three of four damage-model terms moved favorably — gate 0.63-0.68 (attenuation
 
 **Code (shipped + smoke-tested):** `--policy.memory_layer.query_proj_layers` (default 1 = original single linear, byte-identical) + `query_proj_hidden_dim` (0→input_dim). `memory_lite.py`: `_build_query_proj` (Linear→SiLU→…→Linear), threaded via cfg into `QueryMLPLite`; param tagging now iterates all proj params (`pk_query_proj_param` — sequential-trainer `train_query_proj` plumbing unchanged); **`reset_parameters` fixed** (xavier looped over Linears — the old line assumed a bare `.proj.weight` and would crash on Sequential). Smokes: depth-1 state-dict keys unchanged (legacy checkpoints load); depth-2 forward/backward through the head; policy-level with train_memory_only = 68 trainable tensors (60 + 4×4 qproj), optimizer groups clean. ~2M params/layer at depth 2.
 
-**Probe LAUNCHED (10 Jul, tmux `qproj2`, log `outputs/qproj2_probe.log`):** `stage2_probe10k_qproj2.sh` — single-knob delta from the failed frozen-base probe (`query_proj_layers=2`), run `libero_90_pi05_8_10_12_14_frozenbase_probe10k_qproj2_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_qproj2_10k`. ~8h + 35min.
+**Probe LAUNCHED (10 Jul):** `stage2_probe10k_qproj2.sh` — single-knob delta from the failed frozen-base probe (`query_proj_layers=2`), run `libero_90_pi05_8_10_12_14_frozenbase_probe10k_qproj2_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_qproj2_10k`.
 
 **Read + decision rule:** primary = famIoU materially down from 0.390 toward ≤~0.28 with core50 ≥1500 (it starts at 6456 — huge room) and q_intra ≤0.93 (some RISE from 0.71 is expected and fine — the head can now tighten clusters); secondary = does the inverted ladder flatten, in-run sep < 0.18. If it clears/materially improves → stage-2-full graduates WITH `query_proj_layers=2` (**NB script 2 `stage2_full40k_stage3_sequential.sh` must gain the flag before launch**). If ≈ depth-1 → the frozen-feature separability ceiling is confirmed → run script 2 on depth-1 anyway as the end-to-end baseline (the changed damage model deserves one full measurement); depth-3/wider-hidden only if something suggests headroom.
 
@@ -2480,7 +2526,7 @@ Hooks on each expert layer's `.mlp` input (= the router input), mean-pooled per 
 
 Freeze everything except keys + query_proj/FiLM (28 tensors); values pinned at init (slot_up zero). Smoke verified the two load-bearing mechanics: **zero values ⇒ MSE gradient on the router is exactly ~0** (warm-up purity) and **contrastive+sep gradients DO reach keys/proj** (the learning signal); `get_optim_params` drops the empty values group; `train_memory_only` regression intact (60/2-group).
 
-### LAUNCHED: router warm-up v1 (12 Jul, tmux `rwarmup`, ~2.9h + 35min audit)
+### LAUNCHED: router warm-up v1 (12 Jul)
 
 `staged/stage2_router_warmup10k.sh` → run `libero_90_pi05_8_10_12_14_frozenbase_rwarmup10k_lr1e-4_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_rwarmup_10k`. Config: router LR 2.5e-5→**1e-4**, c=0.05 kept (Josh: comparability; recalibrate later if needed), sep5/noloc/rq512, [8,10,12,14], 10k compressed schedule. **Decision tree**: famIoU ≤~0.28 ∧ core50 ≥~1500 ∧ q_intra ≤~0.93 → anchoring hypothesis confirmed, geometry-before-content becomes the method → discuss A-then-sequential. Collapse signature (core50 crater / q_intra >0.95) → unopposed contrastive won → c down, ~3h loop. Still ~0.39 → the sep-through-top-M formulation itself can't find the probe's directions → fallback: **seed the query proj from the linear-probe directions** (we have the probe weights).
 
@@ -2514,10 +2560,10 @@ Mechanism chain now closed end-to-end: features separable-but-crowded (E36 probe
 
 **Chose: router FROZEN (option 1).** (i) MSE's router-gradient points back at the joint attractor (famIoU ~0.26, trust ladder) — small LR only slows the walk back, and it erodes a certified asset; (ii) routing drifts anyway via upstream-value→x perturbation (E30 Finding 2) — minimize the controllable part and measure the rest with a re-audit; (iii) values-on-frozen-router demonstrably fits (every sequential block ever); (iv) crisp protocol: aux-only geometry → frozen router → MSE-only content, consistent with the sequential's frozen-router constraint. **Reserve trigger for option 2** (router unfrozen at ~2.5e-6 ≡ train_memory_only + tiny optimizer_lr, zero new code): A-phase MSE plateauing meaningfully above the joint pretrains' libero_90 level (~0.13-0.16) = separation-vs-usefulness mismatch.
 
-### Code + chain (LAUNCHED 12 Jul, tmux `stageA`, log `outputs/stageA.log`)
+### Code + chain (LAUNCHED 12 Jul)
 
 - New modifier flag `--policy.freeze_memory_router` (composes with train_memory_only): trainable = memory module MINUS keys/query_proj = **32 tensors** (values 8 @ memory_lr + gate/value_proj/swilu 24 @ base LR). Smoked: freeze pattern, optimizer groups, both prior modes regression-clean.
-- `staged/stageA_values10k_seq.sh`: **A phase** (10k values-only on libero_90 from the warmed router ckpt, aux losses kept ON as pure telemetry — grads dead-end on the frozen router but the in-run routing-sim log becomes the live drift monitor; held-in eval @10k = seen-task plasticity check) → **re-audit** `audit_heldout_frozenbase_rwarmupA_10k` (deployed geometry after value training; informational) → **sequential** (C's config verbatim: β4 + 5000 steps/task + top_t 1536, 20 eps, per-task ckpts) → run `libero_10_sequential_pi05_8_10_12_14_frozenbase_rwarmupA_..._protect_beta4_steps5k`. ETA ≈ A 3.2h + eval ~1h + audit 0.6h + sequential ~40h.
+- `staged/stageA_values10k_seq.sh`: **A phase** (10k values-only on libero_90 from the warmed router ckpt, aux losses kept ON as pure telemetry — grads dead-end on the frozen router but the in-run routing-sim log becomes the live drift monitor; held-in eval @10k = seen-task plasticity check) → **re-audit** `audit_heldout_frozenbase_rwarmupA_10k` (deployed geometry after value training; informational) → **sequential** (C's config verbatim: β4 + 5000 steps/task + top_t 1536, 20 eps, per-task ckpts) → run `libero_10_sequential_pi05_8_10_12_14_frozenbase_rwarmupA_..._protect_beta4_steps5k`.
 - Pre-registered sequential reads: inits vs fb-depth1's mean-30 disaster and r2244's 48 (the dilution chain predicts routing quality converts to FIT here); self-adapted read mass (fb 43-53% → want 70%+); retention matrix vs floor table; RTO overlay (damage-per-exposure).
 
 ### Artifacts
@@ -2580,7 +2626,7 @@ Memory ROUTING (query projection + gate) reads the backbone features as they wou
 - `HashingMemoryLite.forward(..., router_x=None)`: query + gate read router_x; value path unchanged. Incompatible with `memory_only` (guarded).
 - **Smokes (all pass, float32 tiny model, real code path):** T1 flag-on @ zero values == flag-off BITWISE (live pass untouched); T2 frozen-stream fidelity 0.00e+00 (any mask/rotary/residual bug would fail); T3 router_x stationary under value bumps while live x moves; T4 inference dual-pass bitwise clean + cache uncorrupted + stationary; T5 grads flow (values + query_proj) with the no_grad stream present; T6 gradient-checkpointing parity 0.00e+00; T7 single-memory-layer edge case. Policy-level probe on the real warmed checkpoint: flag parses, "Frozen-base routing ENABLED" fires, 32/841 freeze pattern, **1.11 s/step** (old A: ~1.18 — overhead within noise; the fork costs ~40% of one expert-suffix pass, expert ≈ 300M of 6.6B).
 
-### LAUNCHED: stageB chain (13 Jul, tmux `stageB`, log `outputs/stageB.log`)
+### LAUNCHED: stageB chain (13 Jul)
 
 `staged/stageB_frozenroute_A10k_audit_seq5.sh`: **A rerun** (10k values-only, router frozen, frozen-route ON — gates must train against the frozen-branch input they'll read at deployment; old-A content was measured compatible but 4h buys exact train/deploy consistency) → **audit** `audit_heldout_frozenroute_rwarmupB_10k` (expect ≈ the warm-up certificate 0.145/2955 — the frozen branch serves exactly the warm-up features) → **sequential, FIRST 5 TASKS** `[0-4]` (deadline scope; contains all three collapse cases e2/e6/e7 + the e7←e0 genuine channel), C's config verbatim + the flag. Runs: `libero_90_..._frozenroute_rwarmupB_values10k_...` → `libero_10_sequential_..._frozenroute_rwarmupB_..._steps5k_tasks5`.
 
@@ -2608,8 +2654,6 @@ Josh's observation, confirmed on existing data: routing drift (values mutating t
 - **The deep consequence: the rank-2 calibration curve's ABSOLUTE level is contaminated.** "85% retention at 40-60% RTO" was measured with drift on. No drift-free sequential run has ever been observed; **stageB is the first stationary-addressing run in project history.** Pre-registered read upgraded accordingly: retention ON the historical curve at matched exposure ⇒ drift was staged-only; retention ABOVE the curve ⇒ the gap is the historical drift tax, quantified behaviorally — and it applies to the whole family, joint runs included.
 - **Follow-ons if confirmed:** (1) the flag for the JOINT track — with a variant: a joint router was trained on live features *including pretrain memory content*, so its frozen routing input should be features computed with **values snapshotted at sequential start** (same dual-path code, frozen branch carries the snapshot; ~10GB extra at r2), not memory-free. "r2244 + snapshot-frozen routing" is the candidate frontier run. (2) The direct retrospective number: the r2244 post-sequential audit (pre→post self-IoU for the joint regime, ~1.1h GPU) once stageB frees the card.
 - Relative conclusions of the project (write-budget, separation-as-translation, incidental/genuine protection split, capacity/interference axis) stand — all A/B'd within-regime with drift on both arms. The absolute retention levels, and specifically the lr2x reading, carry the unquantified tax.
-
-Launch status at write time: A-phase stepping cleanly (step 200, 1.12s/step, loss 0.111, frozen routing confirmed in-log); tripwire ~21:15, chain ETA ~06:30-08:00 Jul 14.
 
 ---
 ## Entry 39 - 14 Jul 26 (stageB verdict: FORGETTING SOLVED — first flat retention matrix in project history (MSE forgetting +0.0-1.7%, routing self-IoU exactly 1.0000); the low score is NOT retention, it is the staged substrate's rollout-fit conversion (inits 35 vs r2244's 48), decomposed per-task: e9 = warm-up footprint dilution (measured), e4 = backbone-integration gap (footprint-controlled), e7 = staged WINS. The "apparent forgetting" (e6 60→25) is 20-ep eval noise on a +0.5%-drifted function)
@@ -2713,20 +2757,19 @@ Expected magnitudes (honest): arms 2-4 are worth ~+3-7pp average and ~0 on e4 (i
 
 ### Status
 
-- **Arm 1 LAUNCHED** 14 Jul 14:18 (tmux `stageC`, log `outputs/stageC.log`): flags confirmed in-config (`lora_slot_bias: True, mem_gated: False`), **28 param tensors trainable** (= 32 - 8 gating + 4 slot_bias, as predicted), frozen-base routing enabled, step 200 loss 0.111 @ 1.13 s/step (stageB A: 0.111 @ 1.12 — biases start at zero and values are still small, so early parity is expected). ETA: A ~3.1h + held-in eval ~1h, sequential ~12h, chain lands ~07:30 Jul 15.
-- Arms 2-4: scripts ready + syntax-checked; launch on the cloned VMs (`bash job_scripts/nebius/libero_90/staged/<script>` in tmux). If this box's stageC is mid-A when the image is taken, the clone's arm-1 script re-runs A from scratch (guards key on completed checkpoints only).
+- **Arm 1 LAUNCHED** 14 Jul: flags confirmed in-config (`lora_slot_bias: True, mem_gated: False`), **28 param tensors trainable** (= 32 - 8 gating + 4 slot_bias, as predicted), frozen-base routing enabled.
+- Arms 2-4: scripts ready + syntax-checked; launch on the cloned VMs (guards key on completed checkpoints only).
 - Cross-arm eval note: arms are mutually comparable (same seeds/eval protocol); all differ from stageB itself only by their single delta (stageB @25k baseline row: 20/35/5/70/30 = 32.0 @ 20 eps).
 
 ### Update (14 Jul, VM 2) — arm scripts recreated in git; ARM 3 (steps7k) LAUNCHED
 
 - **Gotcha found on the cloned VMs: the four arm scripts never propagated.** `job_scripts/` is gitignored (`.gitignore:27`; the 224 tracked scripts were force-added historically), and the E40 scripts were written without `git add -f` — so commit `a8ac9ff` carried the code + log but not the scripts, and the clones came up without them. All four recreated verbatim from the stageB template + the E40 spec table and force-added: `stageB_seq5_{lr2x,steps7k,topt3072}.sh` + `stageC_affine_nogate_A10k_seq5.sh` (the stageC one is a for-the-record reconstruction — arm 1 is already live on the source box and its run names may differ; check its `outputs/stageC.log` before reuse). All sequential stages carry `--eval.n_episodes=20` + `--eval_final_episodes=50` (50 eps only for the eval after the LAST task's training; flag verified at `lerobot_sequential_train.py:399-404`). **Rule reaffirmed: new files under `job_scripts/` require `git add -f`.**
-- **Arm 3 LAUNCHED** on VM 2, 14 Jul 17:43 (tmux `steps7k`, log `outputs/steps7k.log`, wandb `x269apkt`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_steps7k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `online_steps_per_task=7000`, frozen-base routing, train_memory_only+freeze_memory_router, β4 protection, top_t 1536, value_lr 1e-3→1e-4, tasks [0-4], 20-ep evals + 50-ep final. Stepping cleanly: step 200 loss 0.399, grdn 0.010, 1.10 s/step. Final checkpoint = 035000 (5×7k); ETA ~19-20h (7k-step blocks + 20-ep evals).
+- **Arm 3 LAUNCHED** on VM 2 (wandb `x269apkt`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_steps7k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `online_steps_per_task=7000`, frozen-base routing, train_memory_only+freeze_memory_router, β4 protection, top_t 1536, value_lr 1e-3→1e-4, tasks [0-4], 20-ep evals + 50-ep final. Final checkpoint = 035000 (5×7k).
 - VM-2 disk cleanup (clone-local; all `pretrained_model` weights kept): deleted never-resumed `training_state` from the 5 stageB per-task checkpoints (5×19G — run complete, `reinit_optimizer_each_task` makes them dead weight; the weights stay for the MSE-matrix/drift instruments), the stage2-full 40k prior's intermediate `020000` ckpt + `040000/training_state` (final 40k weights kept per E35), and the r2244 pretrain's intermediate `020000` (graduated 40k prior weights kept). Untouched: stage-1 base (in full), warmed-router backtrack ckpt, stageB A ckpt (in full), all finals/`last`, audits, memory_by_task JSONs, evals, `realworld_v2`.
 
-### Update (14 Jul, VM 3) — ARM 2 (lr2x) LAUNCHED; stepping cleanly like the others
+### Update (14 Jul, VM 3) — ARM 2 (lr2x) LAUNCHED
 
-- **Arm 2 LAUNCHED** on VM 3 (`computeinstance-e00xwgqsddb43xnsz3`), 14 Jul 17:58 (tmux `lr2x`, log `outputs/lr2x.log`, wandb `i6zojqts`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_lr2x_steps5k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `memory_value_lr=2e-3 → 2e-4` linear (the single delta vs stageB), frozen-base routing ENABLED, train_memory_only+freeze_memory_router (32/841 tensors), β4 protection, top_t 1536, tasks [0-4] × 5000 steps, 20-ep evals + 50-ep final.
-- **Stepping cleanly, in-family with arm 3:** step 200 loss 0.343, grdn 0.010, `lr:2.0e-03` in-log (the 2× peak confirmed live), 1.08 s/step (arm 3: 0.399 / 0.010 / 1.10). Final checkpoint = 025000 (5×5k); ETA ~14-16h.
+- **Arm 2 LAUNCHED** on VM 3 (wandb `i6zojqts`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_lr2x_steps5k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `memory_value_lr=2e-3 → 2e-4` linear (the single delta vs stageB), frozen-base routing ENABLED, train_memory_only+freeze_memory_router (32/841 tensors), β4 protection, top_t 1536, tasks [0-4] × 5000 steps, 20-ep evals + 50-ep final; `lr:2.0e-03` confirmed in-log. Final checkpoint = 025000 (5×5k).
 - VM-3 disk cleanup (clone-local, ~200G freed, disk 56%→48%; all `pretrained_model` weights kept): same recipe as VM 2 — deleted never-resumed `training_state` from the 5 stageB per-task checkpoints (5×19G) and the stageB A checkpoint (19G; arms consume its `pretrained_model` only), the stage2-full 40k prior's intermediate `020000` + `040000/training_state` (~56G; final 40k weights kept per E35), and the r2244 pretrain's intermediate `020000` (23G; graduated 40k prior weights kept). Untouched: stage-1 base (in full, per Josh), warmed-router backtrack ckpt, all finals/`last` symlink targets (verified before deletion), audits, memory_by_task JSONs, evals, `realworld_v2` (267G, per Josh).
 
 ---
@@ -2807,7 +2850,7 @@ bs128 native: OOM (~146GB demand vs 139.8 usable). bs64 native: OOM (~140GB). bs
 | VM2 | lr2x+softprotect (grad_scale/corefrac/beta4) | protection mechanism + 2e-3 | inits >=~45; e6-across-e9-block drop <=10pp (vs -10..-35 in 4/4); e9 init may pay a few pp; final >=42 = new frontier |
 | VM1 | bs64accum2 | effective batch 64 | e9 L14 written-slot count (expect down from 35.8k) + ev/slot p50 up; e9 init + chunk error; e4/e6 bleed shrinkage |
 
-All three land ~16 Jul; read via retention matrices + slot JSONs + the probe battery (chunk metric first), NOT 20-ep init cells.
+Read via retention matrices + slot JSONs + the probe battery (chunk metric first), NOT 20-ep init cells.
 
 ### Next steps (after the 3 arms)
 1. **LoRA-FT per-task baseline** (e4/e9/e2, ~8-17h) — now the decisive Layer-3 experiment; read through the probe battery, not just success.
@@ -2880,7 +2923,7 @@ Loss (wandb block-min/block-end mean): stageB .1274/.1410, lr2x .1132/.1239, bs6
 
 Deleted (analyses discharged; probes/matrices/autopsies persisted to outputs/analysis/e42): per-task intermediate checkpoints + ALL training_state for the six 5-task arms (finals + last + JSONs + evals + wandb kept); r2244-pretrain and frozenbase-40k intermediates (final weights kept); affine-A training_state; smoke dirs. **Freed ~1.1T -> disk 51%** (1.2T free). Untouched: stage-1 base, warmed router, stageB A, realworld_v2, all audits.
 
-### Next (3 VMs; 12 days to 70% avg) — **UPDATE 16 Jul eve: ALL THREE ARMS RUNNING** (VM1+VM2 launched by Josh on the other boxes; VM3 = this box, chained behind the generalist-overlap audit via staged/vm3_audit_then_loraft.sh, tmux `vm3chain`, log outputs/vm3_chain.log)
+### Next (3 VMs; 12 days to 70% avg) — **UPDATE 16 Jul eve: ALL THREE ARMS RUNNING** (VM1+VM2 launched by Josh; VM3 chained behind the generalist-overlap audit via staged/vm3_audit_then_loraft.sh)
 
 | VM | script | config | pre-registered reads |
 |---|---|---|---|
@@ -2905,10 +2948,10 @@ Long discussion with Josh on THE standing question (why sequential loss == multi
 2. **Grounding-gradient proposal (Josh) resolved after full derivation.** Any precomputed/cached gradient fails three ways: gradients at frozen params feed nothing (backprop chains through activation signals; weight grads are leaves); a dataset-averaged (signal x activation) product cannot be re-decomposed into state-conditional signal at new inputs; and at the anchor's own minimum the averaged gradient is ~0 by first-order optimality (gradient = slope, not height — the A-phase values are CONVERGED on libero-90, so the "generalist direction" is zero where we'd harvest it). The valid family members: live rehearsal (= averaging losses; targets retention, which is solved) and the curvature version (= EWC = our protection machinery aimed at the A-phase — same non-problem). The surviving state-conditioned carrier of "generalist opinion at new states" is the base FUNCTION: distillation anchor L = L_task + lambda*||f_adapted(x) - f_base(x)||^2 on new-task states (cache the function, not the gradient). Caveat: the anchor is task-incompetent (stage-1 floors ~0-2), so lambda trades fit for smoothness.
 3. **Remedy shortlist for the off-trail story (all values-only, in-constraint), gated behind the off-trail instrument** (score executed-chunk error on observations harvested from our own rollout episodes; on-trail vs off-trail degradation per arm, staged vs r2244): demo-jitter augmentation (same targets, perturbed observations — local flatness, no labels needed), lambda-anchor (above), and:
 4. **"Freeze the generalist slots" (Josh, from the original memory-layers paper: accumulate pretraining access stats, let CL touch only low-usage slots).** In our stack this is the E42 protection machinery with the store seeded from A-phase (libero-90) usage + protect_hard_u as the freeze (mass-threshold, not slot-count — corefrac handles it). As RETENTION machinery it targets non-problems (pretrain forgetting out-of-scope by E19 constraint; sequential forgetting solved). As FIT machinery the precedents are negative (E9 pretrain-IDF seeding tanked; E19 veto starvation; E42 softprotect's writers IMPROVED by writing into hot slots; coverage won by widening). The interesting reading: a STRUCTURAL distillation anchor — frozen generalist slots pin the shared ~23-44% of every retrieval mixture at the general function, so off-trail routing drift falls back toward the general policy instead of overwritten task-specific content. Zero hyperparameters beyond the mass threshold. If adopted, the claim is "reserved generalist substrate improves off-distribution fallback," NOT the paper's protect-pretraining story.
-5. **RUNNING NOW (this box, tmux vm3chain): the gating measurement** — the A-phase never dumped memory_usage.json, but under frozen-base routing reads are VALUE-INDEPENDENT, so an inert-LR sweep of libero-90 through the A-checkpoint reproduces the A-phase read profile exactly (audit_libero90_usage_rwarmupB_A, 90 tasks x 40 batches, ~1.5h) -> scripts/vla_analysis/generalist_overlap.py computes each sequential task's read/update-event mass on the top-{50,20,10,5}%-mass A-phase sets (outputs/analysis/e42/generalist_overlap.json). High write overlap => E19 starvation regime, freeze is costly; low => freeze ~free (and its residual case is the structural-anchor story). LoRA-FT baseline chains automatically after. AWAITING RESULTS.
+5. **RUNNING NOW: the gating measurement** — the A-phase never dumped memory_usage.json, but under frozen-base routing reads are VALUE-INDEPENDENT, so an inert-LR sweep of libero-90 through the A-checkpoint reproduces the A-phase read profile exactly (audit_libero90_usage_rwarmupB_A, 90 tasks x 40 batches, ~1.5h) -> scripts/vla_analysis/generalist_overlap.py computes each sequential task's read/update-event mass on the top-{50,20,10,5}%-mass A-phase sets (outputs/analysis/e42/generalist_overlap.json). High write overlap => E19 starvation regime, freeze is costly; low => freeze ~free (and its residual case is the structural-anchor story). LoRA-FT baseline chains automatically after.
 6. Also noted: VLM-side memory layers (Josh) are viable with a stationarity-safe placement — prefix layers ABOVE the highest expert-memory layer (>14) never enter the prefix caches that expert routing at 8-14 consumes (per-layer KV pairing) — parked as a compute-gated direction pending VM3's read on whether upstream trainable capacity is where the wins are; and inference-side re-planning (execute 25 of 50) noted as legitimate-if-applied-to-all-models, gated behind the per-position error profile.
 
-**Addendum results (17 Jul, 00:30) — generalist-slot overlap MEASURED: the freeze is zero-sum-shaped; demoted.** Gotcha first: this libero_90 build has 73 task_index entries (0-72), not 90 — the audit crashed at "task 73" after sweeping everything that exists (data complete; scripts fixed to 0-72), but the crash idled the box ~7h before the LoRA baseline started (relaunched 00:05, tmux loraft; lands mid-afternoon). Results (outputs/analysis/e42/generalist_overlap.json): A-phase aggregate effnum 58-64k/layer; top-50%-mass core = 22-25k slots (15-17% of table), top-20% ~5.5k, top-10% ~2k. THE PATTERN: sequential tasks' read-overlap ~= write-overlap at EVERY mass threshold (top-50%: reads 26-42% vs writes 23-52%, e4@L14 51.8%(!); top-10%: both 3-8%) — the new tasks write where they read, proportionally at every depth of the A-core. No threshold exists with high read-dependence + low write-demand, i.e. no cheap-protection pocket even under the warmed router: a freeze deep enough to preserve meaningful generalist substrate blocks an equal share of write demand (E19 starvation shape, re-measured), and a free freeze (top-5-10%) protects a near-inert 3-8% of the mixture. VERDICT (revised after discussion, see below): the DEEP freeze (top-50%) is dead — E19 starvation shape re-measured; the SHALLOW freeze (top-10-20% mass, 2-6k slots) is a live bake-off candidate on equal standing with demo-jitter and the lambda-anchor. Side note: e4 (weakest rollout task) is the heaviest A-core writer (up to 52%), e9 the most private (23-27%) — consistent with e4's function living on contested generalist substrate.
+**Addendum results (17 Jul, 00:30) — generalist-slot overlap MEASURED: the freeze is zero-sum-shaped; demoted.** Gotcha first: this libero_90 build has 73 task_index entries (0-72), not 90 — the audit crashed at "task 73" after sweeping everything that exists (data complete; scripts fixed to 0-72), but the crash idled the box ~7h before the LoRA baseline started (relaunched). Results (outputs/analysis/e42/generalist_overlap.json): A-phase aggregate effnum 58-64k/layer; top-50%-mass core = 22-25k slots (15-17% of table), top-20% ~5.5k, top-10% ~2k. THE PATTERN: sequential tasks' read-overlap ~= write-overlap at EVERY mass threshold (top-50%: reads 26-42% vs writes 23-52%, e4@L14 51.8%(!); top-10%: both 3-8%) — the new tasks write where they read, proportionally at every depth of the A-core. No threshold exists with high read-dependence + low write-demand, i.e. no cheap-protection pocket even under the warmed router: a freeze deep enough to preserve meaningful generalist substrate blocks an equal share of write demand (E19 starvation shape, re-measured), and a free freeze (top-5-10%) protects a near-inert 3-8% of the mixture. VERDICT (revised after discussion, see below): the DEEP freeze (top-50%) is dead — E19 starvation shape re-measured; the SHALLOW freeze (top-10-20% mass, 2-6k slots) is a live bake-off candidate on equal standing with demo-jitter and the lambda-anchor. Side note: e4 (weakest rollout task) is the heaviest A-core writer (up to 52%), e9 the most private (23-27%) — consistent with e4's function living on contested generalist substrate.
 
 **Verdict revision (17 Jul, discussion with Josh — the first "demoted" call was overzealous).** The zero-sum reading equated overlap mass with cost and benefit, but neither conversion is linear, and they bend in opposite directions:
 1. **Cost is sub-linear in write-event overlap.** The hard veto removes frozen slots from top-t CANDIDACY (the S13 fix), so the 1536 budget redistributes to the next-ranked slots automatically — nothing is wasted and the adapted footprint keeps its size, just relocated. Reads are untouched (frozen slots keep serving their preserved A-content into every mixture — the point of the freeze). The residual cost is only that corrections at the 3-8% of read mass on frozen slots must be expressed through the other ~92-97% of each state's 144-slot mixture — mostly compensable (the beta-calibration's static-overstates-real result; LN renormalization). Estimated real fit cost of a top-10-20% freeze: ~1-3%, not the naive 3-16%.
@@ -2960,14 +3003,13 @@ Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; 
 - **t1/e6 = 44.0** — BELOW staged e6 (54-56). The dense-adapter advantage is task-shaped: biggest exactly on the dual-cycle integration task.
 - **Jitter first-read (MINI): LoRA e4 clean chunk 0.018 vs best staged e4 ~0.153 — 9x better on-demo function.** Its perturbed errors (state@0.1 0.048, image@0.05 0.146) stay below our CLEAN error. If it holds at full size, the e4 gap is substantially FIT (the achievable function level is far beyond ours), not pure conversion — a real reframe of the Layer-2/3 split: chunk~0.15 may simply be insufficient for >50% on e4, and our "conversion gap" partly = "everyone at our fit level converts like this".
 - Params accounting for the machinery-tax discussion: our per-slot 4.1k params (r2 on the 1024-dim expert hidden). Per optimizer step the 3072x4-layer mask = ~50M eligible params (parity with LoRA's 53M); per task realized ~130-190k slots = 0.6-0.8B touched (>10x LoRA); per token per forward <=144 slots x 4 layers = **2.4M active vs LoRA's 53M in every token** (~22x density gap). We are not budget-starved; we differ in per-forward density, placement breadth (4 expert-MLP sites vs 36 blocks incl. attention), and perception adaptation (LoRA moves the prefix; ours frozen by construction).
-- e9 cell lands mid-afternoon (watcher armed); e2/e7 tonight; full table ~02:00.
 
 ### Discussion outcomes (Josh, 17 Jul) — the plan
 
 1. **Off-trail instrument, jitter version BUILT** (`scripts/vla_analysis/probe_jitter.py`, smoked both model classes): perturb raw demo obs (state sigma x per-dim std; image pixel noise; RNG seeded per task/batch/scale so all models see identical inputs), score the 10-step-denoised chunk vs the demo chunk; the READ is across-model degradation slopes at matched clean error (shared target bias cancels). Full version (score on rollout-visited states; target-free drift ||f_after − f_own_block|| on- vs off-trail) needs an obs-dump in the eval loop — deferred pending jitter results. Grid running: staged finals (VM1/VM2/softp/top3k/stageB) x {e4,e9} + LoRA t0; r2244 skipped (10-task exposure = protocol mismatch).
-2. **Softprotect retest LAUNCHED (VM A)**: `stageB_seq5_lr4xsched_topt3072_softprotect_fixed.sh` — single delta vs VM2 = momentum-FIXED grad_scale blend + corefrac. Pre-registered: e9 own ~0.28 held, own->final <=+4% (vs +14.5%), e9/e4 finals up; FAIL = writer block-min MSE +10%. Framing: mechanism validation + de-taxing the LR axis (bank 4x fit for whenever conversion improves), not a points bet.
-3. **Generalist freeze LAUNCHED (VM B)**: `stageB_seq5_lr4xsched_topt3072_freeze5k.sh` — top-5000 A-phase read-mass slots/layer (18-19% of A-phase mass; committed artifact `scripts/vla_analysis/data/a_phase_top5k_slots.json`) seeded u=1.0 + protect_hard_u=0.9 structural veto; single conceptual delta vs VM2. **Correction from discussion (Josh): my "freeze buys no fit so it can't push the frontier" was the fit=perf error this project exists to kill.** The mechanism: hottest A-slots = the generalist transforms in every mixture; sequential writes erode them; on-demo MSE never registers (own-task adaptation compensates on-trail); off-trail the eroded generalists are the fallback => rollout cost invisible in loss. Freeze removes the erosion; expected signature = flat MSE, better rollouts, shallower jitter slope. Pre-registered reads in the script header.
-4. **LoRA compass QUEUED** (`baselines/loraft_compass_e4.sh`, auto-launch watcher armed for LoRA-table completion ~02:00): two e4-only arms — expert-only (attn+MLP+proj) vs VLM-only (attn+MLP+proj) vs the full-LoRA 58 anchor. A~58/B-low => n256/r4 staged build, VLM memory dead; A-low/B~58 => VLM-side memory is the build (placement chosen by running the E36 feature probe on PREFIX layers, not by guess — and low placement is allowed if the dual-path trick extends to the prefix KV, one extra prefix forward/batch); both mid => expert first; both high => cheapest wins. C (expert-MLP-only, attention ablation) dropped: we are not building attention-path memory regardless (parked; per-token routing makes it feasible in principle — each token routes itself, no seq-level router — but k/v corrections make interference cross-token), so its content only prices a caveat the 1-day n256/r4 arm tests directly.
+2. **Softprotect retest LAUNCHED**: `stageB_seq5_lr4xsched_topt3072_softprotect_fixed.sh` — single delta vs VM2 = momentum-FIXED grad_scale blend + corefrac. Pre-registered: e9 own ~0.28 held, own->final <=+4% (vs +14.5%), e9/e4 finals up; FAIL = writer block-min MSE +10%. Framing: mechanism validation + de-taxing the LR axis (bank 4x fit for whenever conversion improves), not a points bet.
+3. **Generalist freeze LAUNCHED**: `stageB_seq5_lr4xsched_topt3072_freeze5k.sh` — top-5000 A-phase read-mass slots/layer (18-19% of A-phase mass; committed artifact `scripts/vla_analysis/data/a_phase_top5k_slots.json`) seeded u=1.0 + protect_hard_u=0.9 structural veto; single conceptual delta vs VM2. **Correction from discussion (Josh): my "freeze buys no fit so it can't push the frontier" was the fit=perf error this project exists to kill.** The mechanism: hottest A-slots = the generalist transforms in every mixture; sequential writes erode them; on-demo MSE never registers (own-task adaptation compensates on-trail); off-trail the eroded generalists are the fallback => rollout cost invisible in loss. Freeze removes the erosion; expected signature = flat MSE, better rollouts, shallower jitter slope. Pre-registered reads in the script header.
+4. **LoRA compass QUEUED** (`baselines/loraft_compass_e4.sh`): two e4-only arms — expert-only (attn+MLP+proj) vs VLM-only (attn+MLP+proj) vs the full-LoRA 58 anchor. A~58/B-low => n256/r4 staged build, VLM memory dead; A-low/B~58 => VLM-side memory is the build (placement chosen by running the E36 feature probe on PREFIX layers, not by guess — and low placement is allowed if the dual-path trick extends to the prefix KV, one extra prefix forward/batch); both mid => expert first; both high => cheapest wins. C (expert-MLP-only, attention ablation) dropped: we are not building attention-path memory regardless (parked; per-token routing makes it feasible in principle — each token routes itself, no seq-level router — but k/v corrections make interference cross-token), so its content only prices a caveat the 1-day n256/r4 arm tests directly.
 5. **n256/r4 dose fixed**: n_keys 384->256 (65.5k slots, ~0.9x current param budget) x r=4, NOT n/4 (36.9k would dip below the A-phase's 58-64k effective slot usage => forced collisions at pretrain fill). Staged rebuild = warm-up ~3h + A ~3h + seq ~14h ~ 1 day/arm. Note: values-only stage-2/3 could likely afford r4-on-all-4-layers at the CURRENT bank too (the config joint training OOM'd on).
 6. **Rejected**: seed-averaged inference (Josh: a hack, from other papers, lifts baselines too). Attention memory parked. r2244 as jitter anchor skipped.
 
@@ -2975,16 +3017,6 @@ Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; 
 - `--protect_seed_path` (trainer): seeds the prior-usefulness store u=1.0 from {module_key: [slots]} JSON before the task loop; with hard_u => structural candidacy veto for the whole run; validation requires protection on + file exists; '' = legacy byte-identical. Smoke S14a-e (suite 55/55; affine 20/20).
 - `scripts/vla_analysis/data/a_phase_top5k_slots.json` (committed so clone VMs need no audit rsync).
 - `scripts/vla_analysis/probe_jitter.py` + the E43 analysis artifacts: `outputs/analysis/e43/{slots_summary.json,slots.out,probe_conversion.jsonl,probe_jitter.jsonl}`, scratchpad e43 scripts mirrored in the session dir.
-
-### ETA board (from 17 Jul ~12:00 UTC)
-| when | what |
-|---|---|
-| ~15:40 | LoRA t2/e9 — the Layer-3 decision cell (watcher armed) |
-| ~16:00 | jitter grid (staged x {e4,e9} + LoRA t0) |
-| ~02:00 | full LoRA table -> compass auto-queue fires |
-| ~03:30 | VM A (softprotect-fixed) + VM B (freeze5k) land -> chunk/jitter probes on landing |
-| ~07:15 | compass A (expert-only) |
-| ~12:30 (18th) | compass B (VLM-only) -> capacity-build decision (n256/r4 vs VLM memory) |
 
 ### Entry 43 addendum (17 Jul, discussion) — two working heuristics from the LoRA cells, and the regime filter on old counter-evidence
 
@@ -3028,7 +3060,7 @@ Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; 
 Gates (vlm_audit_analysis.py, re-anchored for the 65,536 bank): PASS = held-out famIoU <= ~0.25 AND per-task core50 >= ~650 AND effnum >= ~500; COLLAPSE tripwire effnum <= ~150 (per-task-bias signature, kill regardless of IoU); stretch famIoU <= 0.15. Winner -> joint A-phase (both value banks; expert re-warmed at n256 in parallel on this box, gate: famIoU <= ~0.20 / core50 >= ~1300 vs the n384 certificate 0.145/2955) -> e4 1-task plasticity probe (chunk toward <=0.08 = build validated; ~0.12 = restricted attachment failed -> full-attachment fallback arm) -> 5-task sequential.
 
 Scripts to run (job_scripts/nebius/libero_90/staged/):
-- vlm_rwarmup_sweep_armA_c0.05_sep5.0.sh   <- Running on base VM (expert_rwarmup10k_n256.sh chained behind it)
+- vlm_rwarmup_sweep_armA_c0.05_sep5.0.sh (expert_rwarmup10k_n256.sh chained behind it)
 - vlm_rwarmup_sweep_armB_c0.0125_sep2.0.sh
 - vlm_rwarmup_sweep_armC_c0_sep5.0.sh
 
@@ -3036,7 +3068,7 @@ Scripts to run (job_scripts/nebius/libero_90/staged/):
 
 Arm A's audit failed both gates (famIoU 0.466/0.469, core50 95-418) with a signature that unmasked a v1 design bug: the last-200 span includes ~140 PAD positions (valid language tokens ~52-57), and pad hiddens — near-identical across all samples and tasks — query the memory too. Direct verification on the arm-A checkpoint: the pad region's ~40k slot-draws collapse onto ~230 unique slots (the shared core) while the text region routes richly (8-9k unique slots/task-batch) — the router is healthy on real tokens; the statistics, TF counts, contrastive means, and routing histograms were drowning in 70% pad mass. Contaminated B/C audits confirm ARM-INVARIANCE (famIoU 0.454-0.507 for all three recipes — the sweep measured the pad floor, not the routing configs).
 
-FIX (commit with this entry): `token_mask` threaded through HashingMemoryLite.forward — the language attention mask reaches the VLM wrappers via `set_vlm_token_mask` at both pi05 embed_prefix call sites. Valid tokens are a contiguous PREFIX of the field, so the loss/queue machinery runs on a rectangular [:, :Tv] slice (no internal loss-fn surgery); last_indices/last_weights + per-task diagnostics filter by the full mask (audit/TF-IDF/protection see valid tokens only); memory output zeroed at pads (bitwise plain-mlp there); stale-mask shape guard -> unmasked behavior. Ring-buffer sizing pinned via size_T (varying Tv would have churned the routing queue). Smokes: module suite 20/20 (S9a-d pad exclusion) + policy-level (last_indices token dim 431 = sum of valid tokens across the batch, aux losses + keys grads live). Sweep run/audit names bumped to _padfix; contaminated checkpoints retained for the before/after comparison. Arm A relaunched on this box (concurrent with the expert n256 re-warm); B/C need a pull + relaunch on the VMs.
+FIX (commit with this entry): `token_mask` threaded through HashingMemoryLite.forward — the language attention mask reaches the VLM wrappers via `set_vlm_token_mask` at both pi05 embed_prefix call sites. Valid tokens are a contiguous PREFIX of the field, so the loss/queue machinery runs on a rectangular [:, :Tv] slice (no internal loss-fn surgery); last_indices/last_weights + per-task diagnostics filter by the full mask (audit/TF-IDF/protection see valid tokens only); memory output zeroed at pads (bitwise plain-mlp there); stale-mask shape guard -> unmasked behavior. Ring-buffer sizing pinned via size_T (varying Tv would have churned the routing queue). Smokes: module suite 20/20 (S9a-d pad exclusion) + policy-level (last_indices token dim 431 = sum of valid tokens across the batch, aux losses + keys grads live). Sweep run/audit names bumped to _padfix; contaminated checkpoints retained for the before/after comparison.
 ## Entry 45 - 18 Jul 26 (VLM routing sweep: ALL THREE ARMS FAIL famIoU (0.42-0.53) — failure is CONTENT-STRUCTURAL, not dose: the state-as-text sub-span routes on shared digit vocabulary (sub-span probe: state region famIoU 0.36-0.40 vs instruction 0.21-0.22, which PASSES gates on the failed checkpoints). Aux-only regime: contrastive = the SPREADING force (breadth monotone in c; B-vs-D single delta). Querystats probe: state positions carry task signal at 0.11-0.13x their digit noise; pooled-state key near-degenerate (family cos 0.98-0.99); instruction anchor alone already carries within-task conditionality (intra-cos 0.864-0.890). => POOLED-ROUTER build shipped (route state region on one per-sample anchored key; value path per-position) + 3-arm overnight chain to the e4 decision instrument)
 
 ### Sweep verdict (padfix arms; gates famIoU<=0.25 ∧ core50>=650 ∧ effnum>=500; collapse effnum<=150)
@@ -3074,7 +3106,7 @@ Options for the router input: (1) pool everything (rejected — sacrifices the m
 - Smokes: module S11a-i (broadcast-region routing identical / instr per-token / per-position value outputs / marker-less fallback / missing-instr_len == legacy bitwise / mode+weight variants / pre-span + ragged-tail invariants / grads) — suite ALL PASS; policy-level on the real stage-1 ckpt: instr_len=17 usable 8/8, **broadcast-region routing shared: True at L15+L16**, two-forward queue test keys grads 14.0/16.6.
 - Merge tooling: `extract_router_bank.py` (expert tower's 60 memory tensors from the n256 re-warm, 1.11B params, bit-exact — values are the router-only warm-up's slot_down-random/slot_up-zero) -> outputs/analysis/e44/expert_bank_n256_rwarmup10k.safetensors (4.4G) + expert_bank_n256_config.json; `merge_banks.py` (pure safetensors union + config merge, no model build; placement guard makes the certificates provably survive: expert routing reads prefix KV <=L14 which VLM mem at 15/16 cannot touch; VLM routing input memory-free below).
 
-### Tonight (3 boxes, all chained to the decision instrument; scripts staged/vlm_pool_*)
+### The 3-arm chain (scripts staged/vlm_pool_*)
 
 `vlm_pool_chain_common.sh`: warm-up 10k (router-only, c0.05/sep5.0) -> audit -> vlm_audit_analysis + subspan -> PERMISSIVE gate (kill only min-effnum<=100 or famIoU>=0.45 both layers — strict E44 gates don't transfer to palette-dominated famIoU; morning reads decide) -> merge -> A-phase 10k (values both towers, routers frozen, frozen-base expert routing, bs32 w/ bs16xaccum2 fallback) -> e4 1-task probe (C-config: beta4/top_t1536/5k steps/lr 1e-3->1e-4, 20-ep eval). Chunk probes centrally in the morning; winner -> 5-task attribution run (C-config, vs stageB 32.0/35.0 its near-twin). Arms: **A anchor10 (1,0)** [base box] / **B anchor1005 (1,0.5)** / **C statepool** [bracket end + querystats-calibration cell]. Deferred: 10-task extension (post-validation), sep refinement wave (tomorrow daytime if cells marginal), loss-mask dedup.
 
@@ -3084,7 +3116,7 @@ Options for the router input: (1) pool everything (rejected — sacrifices the m
 
 **Merge tooling tested end-to-end** (old armA ckpt + the shipped bank): 895 tensors (22 VLM mem + 60 expert mem), config graft correct (expert [8,10,12,14]/n256/knn36 + VLM fields); the merged artifact loads in exact A-phase mode — **48/847 trainable** (= values + gate/value_proj/swilu x 6 memory layers, both towers), forward/backward clean at 1.0s/step. Tolerance fix for pre-pool configs (66d46b84). Mode flags (train_router_only=True etc.) ride in checkpoint configs and are explicitly overridden at every downstream stage's CLI (E37 rule, applied).
 
-**Launch board (21:15-21:30 BST):** arm A anchor10 (1,0) = base box, tmux `poolA`, log outputs/e45_armA.log; arm B anchor1005 (1,0.5) = VM2 `poolB`; arm C statepool = VM3 `poolC`. Bank files shipped to both VMs; local-Claude instructions issued (launch, health signs, no-relaunch rule, morning rsync list, final sync ~07:30 UTC). Chains land ~07:00-08:15 BST. Morning protocol: chunk probes on the three e4 checkpoints (pass toward <=0.08; staged-best 0.153, LoRA target 0.020) + audits + subspan region reads -> winner -> 5-task attribution run (C-config) at breakfast. A hard-gate stop overnight ("GATE: HARD FAIL") is a result, not a bug.
+**Launched** (arms A/B/C across the three boxes). Morning protocol: chunk probes on the three e4 checkpoints (pass toward <=0.08; staged-best 0.153, LoRA target 0.020) + audits + subspan region reads -> winner -> 5-task attribution run (C-config). A hard-gate stop overnight ("GATE: HARD FAIL") is a result, not a bug.
 
 ---
 ## Entry 46 - 19 Jul 26 (Pooled-router sweep verdict: BOTH anchored variants hit the expert-certificate routing level (famIoU 0.145-0.151) and produce the largest e4 fit gain in the project (chunk 0.153 -> 0.099, -35%); winner = anchor+state (arm B). Discussion corrections: capacity ledger = read-write product (params fell 11% while the palette became an always-read/always-trained block); L16 routing was NON-stationary (Josh's catch) -> frozen-route extended to the VLM tower (bitwise-exact smoke); route-once shipped (retrieval computed once per shared key; knn36 VRAM 136 -> 127GB); bank-scaling law measured (footprints track bank size, famIoU invariant). -> E46: three like-for-like joint router re-warms (incumbent / vlm-knn36 / uniform n128-r4) LAUNCHED, stop-after-audit)
@@ -3093,10 +3125,8 @@ Options for the router input: (1) pool everything (rejected — sacrifices the m
 
 Each chain: VLM router warm-up (10k, aux losses only) -> held-out audit -> merge with the
 certified expert n256 bank -> joint A-phase (values both towers, 10k on libero_90) -> single-task
-e4 adaptation probe (5k steps, C-config) + executed-chunk error. famIoU = read-mass overlap
-between the three near-identical basket tasks (pass <= 0.25); chunk error = deviation of the
-executed 50-step action sequence from the demonstration (the rollout-predictive fit metric;
-previous staged best 0.153, single-task LoRA specialist 0.020).
+e4 adaptation probe (5k steps, C-config) + executed-chunk error (famIoU pass <= 0.25; chunk
+anchors: previous staged best 0.153, single-task LoRA specialist 0.020).
 
 | arm (state-region key) | famIoU L15/L16 | e4 chunk | e4 roll (20 ep) | e4 block loss |
 |---|---|---|---|---|
@@ -3183,16 +3213,14 @@ was considered and rejected for cross-session comparability).
 |---|---|---|---|---|
 | 1 incumbent | VM2 | n256/r2/knn36 | n256/r2/knn16 | the baseline, re-certified under the new protocol |
 | 3 knn axis | VM3 | n256/r2/knn36 | n256/r2/**knn36** | does palette capacity 64->144 pay? |
-| 2 uniform | **base box (RUNNING, tmux jointA2)** | **n128/r4/knn36** | **n128/r4/knn36** | iso-rank-unit concentration: 4x fewer, stronger slots |
+| 2 uniform | base box | **n128/r4/knn36** | **n128/r4/knn36** | iso-rank-unit concentration: 4x fewer, stronger slots |
 
-All: sep 5.0, c 0.05, anchored (1.0, 0.5), 10k compressed, router lr 1e-4. Audits land
-~18:30-19:00 BST (the re-assess point). Pre-registered arm-2 read: expert core50 ~400-800 at
+All: sep 5.0, c 0.05, anchored (1.0, 0.5), 10k compressed, router lr 1e-4. Pre-registered arm-2 read: expert core50 ~400-800 at
 famIoU ~0.145 = scaling law holds; famIoU up at scaled cores = the per-query-draw floor binds.
 
 ### Next steps
 
-1. **RUNNING: arm 2 uniform warm-up on the base box** (launched 09:49 UTC); arms 1/3 to launch on
-   the VMs (local-Claude instructions issued).
+1. Arm 2 uniform warm-up running on the base box; arms 1/3 on the VMs.
 2. Afternoon re-assess on the three audit certificates -> A-phases on survivors (VRAM-gated for
    arm 2's r4) -> filled e4 probes + chunk -> select -> graduate ONE config to the 5-task
    sequential (C-config, vs stageB 32.0/35.0).
@@ -3207,9 +3235,7 @@ famIoU ~0.145 = scaling law holds; famIoU up at scaled cores = the per-query-dra
 
 Recap of the design: each arm retrains BOTH towers' routers from the stage-1 backbone
 (values pinned at zero, aux losses only, frozen-route inputs, per-tower routing-loss
-topk aligned to knn), then runs the held-out audit and stops. famIoU = read-mass overlap
-between the three near-identical basket tasks; core50 = slots carrying half a task's
-read mass; effnum = effective slot count (exp of read-mass entropy). Anchors: the old
+topk aligned to knn), then runs the held-out audit and stops. Anchors: the old
 expert n256 certificate (E44 protocol) and the E45 pooled-router winner "poolB"
 (anchored (1.0, 0.5) state key, VLM tower).
 
@@ -3302,17 +3328,16 @@ run broadcast, where labels are correct again).
 
 ### Next steps
 
-1. **LAUNCHING: arms 1'/3' re-warms on VM2/VM3** (local-Claude instructions issued;
-   same chain shape: warm-up -> audit -> analyses -> sub-span -> STOP, ~4.5-5h).
-   Pre-registered reads: arm 1' ~ poolB's certificate (VLM famIoU ~0.149/0.147, palette
+1. **Arms 1'/3' re-warms launched on VM2/VM3** (same chain shape: warm-up -> audit ->
+   analyses -> sub-span -> STOP). Pre-registered reads: arm 1' ~ poolB's certificate (VLM famIoU ~0.149/0.147, palette
    ~0.08 / effnum 600-800) — it is poolB's exact replica plus the protocol
    improvements; arm 3' answers the knn36 palette-capacity question at matched loss
    semantics (the E46 comparison was confounded by the dedup pinning palette size to
    ~2 draws in both variants). Expert side expected unchanged (~0.145-0.17) for both.
    A broadcast joint warm-up at knn36 has never run — VRAM estimated ~125-135GB; the
    BS/ACC fallback covers an OOM.
-2. **RUNNING on VM1 (this box): arm 2' = uniform n192/r4/knn36 both towers,
-   broadcast losses** (decided with Josh; script
+2. **Arm 2' = uniform n192/r4/knn36 both towers, broadcast losses**
+   (decided with Josh; script
    joint_rwarmup_arm2p_uniform_n192r4_bcast.sh, run
    libero_90_pi05_jointwarm10k_arm2p_n192r4_knn36_bcast, BS16/ACC2 for the
    broadcast+r4 VRAM term). Why: n192 is the unmeasured scaling-law midpoint (4x
@@ -3321,7 +3346,7 @@ run broadcast, where labels are correct again).
    131,072; the original n128/r4 arm was only HALF the budget — a mislabeling in the
    E46 design). Pre-registered: famIoU ~0.145-0.16 at core50 ~1,100-1,300 = law
    holds; ~0.18+ = branch closed.
-3. **Tonight (~21:30-22:15 BST): review ALL THREE audits together** (arm 1' knn16,
+3. **Review ALL THREE audits together** (arm 1' knn16,
    arm 3' knn36, arm 2' n192 — every n and knn variant in one place) and graduate
    the winners. Realistic outcome sketched in discussion: discard knn16; graduate
    some subset of {arm 3-old (n256/knn36, compact "one state token" palette — its
@@ -3342,9 +3367,7 @@ run broadcast, where labels are correct again).
 
 Recap: the E46/47 arms retrain both towers' routers from the stage-1 backbone with
 values pinned (aux losses only), frozen-route inputs, per-tower topk=knn — differing
-only in bank size / knn / loss semantics. famIoU = read-mass overlap among the three
-near-identical basket tasks; palette = the slot set selected by the shared state-region
-key; core50/effnum = footprint size measures. Anchors: the n256 expert certificate and
+only in bank size / knn / loss semantics. Anchors: the n256 expert certificate and
 the E45 winner poolB (VLM tower, old broadcast protocol).
 
 EXPERT (famIoU L8/L10/L12/L14; mean core50):
@@ -3429,21 +3452,19 @@ graduated (pre-registered kill: famIoU >= ~0.18 at 3 of 4 expert layers).
 
 | box | chain | axis position |
 |---|---|---|
-| base box (RUNNING, tmux grad_a1p) | arm 1' | state-conditional end, best certificates |
-| VM3 (instructions issued) | arm 3' | middle; the knn/per-forward-capacity contender |
-| VM2 (instructions issued) | arm 3-old | constant end; compact-palette fit hypothesis |
+| base box | arm 1' | state-conditional end, best certificates |
+| VM3 | arm 3' | middle; the knn/per-forward-capacity contender |
+| VM2 | arm 3-old | constant end; compact-palette fit hypothesis |
 
-**Gate 2 (pre-registered, checked at breakfast ~07:30 BST):** each sequential's t0
-block IS the e4 probe (same C-config 5k steps) — chunk error on checkpoints/005000 vs
-anchors 0.153 (old staged best) / 0.0994 (poolB) / 0.020 (LoRA specialist); kill any
-run >= ~0.12 before its remaining blocks waste the morning. VM claudes rsync t0
-checkpoints to the base box when they appear (~02:30-04:00); chunk probes run
-centrally with the standard instrument.
+**Gate 2 (pre-registered):** each sequential's t0 block IS the e4 probe (same C-config
+5k steps) — chunk error on checkpoints/005000 vs anchors 0.153 (old staged best) /
+0.0994 (poolB) / 0.020 (LoRA specialist); kill any run >= ~0.12 before its remaining
+blocks run. Chunk probes run centrally with the standard instrument.
 
 ### Next steps
 
-1. Breakfast: Gate-2 chunk read on all three t0 checkpoints (+ kill/continue calls).
-2. Midday: 5-task finals + probe battery -> select the 10-task carrier. If arm 3'
+1. Gate-2 chunk read on all three t0 checkpoints (+ kill/continue calls).
+2. 5-task finals + probe battery -> select the 10-task carrier. If arm 3'
    wins fit materially, the knn choice becomes capacity-vs-family-exposure and the
    10-task decides; if fit ~equal, arm 1' wins outright on certificates.
 3. Deferred (unchanged): sub-span probe route-once-aware row mapping (only needed for
@@ -3464,11 +3485,7 @@ slot-draws per footprint), arm 3' knn36 broadcast (~5-7 draws), arm 3-old knn36
 dedup-loss keys (near-constant ~2-draw palette). Expert tower config-identical
 (n256/r2/knn36); each chain = A-phase (10k values-only, both towers) -> 5-task
 sequential (C-config: beta4, top_t 1536, 5k steps/task, value lr 1e-3->1e-4, 50-ep
-finals). Terms: palette = the slot set retrieved by the pooled state-region key (the
-always-read block); chunk error = executed 50-step action-sequence deviation after a
-real 10-step denoise (rollout-predictive fit metric; anchors 0.153 old staged best /
-0.0994 poolB / 0.020 LoRA specialist); RTO = fraction of a task's read mass on slots
-later tasks updated.
+finals). Chunk anchors: 0.153 old staged best / 0.0994 poolB / 0.020 LoRA specialist.
 
 | arm | final (50ep) | e4/e6/e9/e2/e7 | block-min loss | e4 own chunk |
 |---|---|---|---|---|
@@ -3559,9 +3576,7 @@ Probe battery (all pre-registered instruments run):
   matched every 5k arm; "5k->7k retired"), 2x LR moves the knee EARLIER, and all
   three new arms show the converged signature (block-end ~11% above block-min =
   oscillation band). Revisit trigger: t0 block still descending at 4.5-5k.
-- **Two VM arms scripted + shipped (commit 6edb54e7), launch via Josh's local claude**
-  (VM aliases: nebius3 = the arm-3-old box, gets the r4 arm; nebius4 = the arm-3' box,
-  gets the composition arm; A-checkpoint staged there):
+- **Two VM arms scripted + shipped (commit 6edb54e7), launch via Josh's local claude:**
   1. seq5_arm1p_lr2x_topt3072.sh — composition, sequential-only from arm 1's existing
      A checkpoint (lr 2e-3->2e-4, top_t 3072).
   2. grad_arm1p_vlmr4.sh — VLM rank 4 via graft_vlm_rank.py: the warm-up trains
@@ -3602,9 +3617,9 @@ Probe battery (all pre-registered instruments run):
 
 ### Next steps
 
-1. [LAUNCHING via local claude] nebius4: composition arm; nebius3: VLM-r4 arm. Gate-2
-   chunk probes on their t0 checkpoints run centrally here as they land (~0.12 kill).
-2. [RUNNING here] **1A**: querystats-image probe (layers incl. candidates below 15 to
+1. Composition arm + VLM-r4 arm launched on the VMs; Gate-2 chunk probes on their t0
+   checkpoints run centrally (~0.12 kill).
+2. **1A**: querystats-image probe (layers incl. candidates below 15 to
    inform step 2) -> freeze region count / (a,b) / normalization -> code (vlm span
    extension, k region keys, row mapping) + smokes -> joint warm-up (broadcast) ->
    audit with image-region gates -> review with Josh.
@@ -3649,10 +3664,10 @@ broadcast T=571, keys grads live through the image keys, no fallback. The sub-sp
 probe's route-once-aware row mapping (deferred since E47) shipped — auto-detects
 image-compact / state-compact / literal layouts by row count.
 
-**RUNNING** (tmux `imgspan`, log `outputs/e49_imgspan_warmup.log`): warm-up
+**LAUNCHED**: warm-up
 `libero_90_pi05_jointwarm10k_imgspan_g2_n256_vlmknn16_bcast` — 0.87 s/step at bs32,
 32 GiB (the value-skip makes the image-broadcast warm-up FASTER than the text-only
-ones), ETA ~2.5h → audit → analyses → region-split sub-span → STOP for review.
+ones) → audit → analyses → region-split sub-span → STOP for review.
 Review gates (wrapper header): image-region famIoU <= ~0.25 at per-region effnum >=
 ~300 (no ~2-draw collapse), state/instr regions within ~20% of arm 1' (0.074/0.084
 palette, ~0.20 instr), expert certificate reproduced. The audit famIoU topline is
@@ -3693,13 +3708,12 @@ state palette L16 0.127 (arm 1' 0.084, +51% relative — the one watch-item, at 
 level which still made 37.2); topline 0.105/0.141 < arm 1's 0.136/0.156; expert
 certificate reproduced (5th consecutive). 2.5/3 gates -> certified.
 
-1B RUNNING (tmux grad_imgspan, log outputs/e49_grad_imgspan.log): grad_imgspan_g2.sh —
-C-config verbatim from the imgspan warm-up, the SINGLE-DELTA cell vs arm 1'
-(composition levers deliberately not stacked; they're being measured on the VMs in
-parallel). Health verified: router_only_fast=False + vlm_route_once=True overrides
-took, 48/895 trainable, bs32, 108GiB. A ~3.5h -> seq ~11h; t0 chunk vs 0.112 and the
-50-ep final vs 40.0 land tomorrow, alongside the composition final (its Gate-2:
-e4 chunk 0.0753) and the r4 arm.
+1B LAUNCHED: grad_imgspan_g2.sh — C-config verbatim from the imgspan warm-up, the
+SINGLE-DELTA cell vs arm 1' (composition levers deliberately not stacked; they're
+being measured on the VMs in parallel). Health verified: router_only_fast=False +
+vlm_route_once=True overrides took, 48/895 trainable. Comparators: t0 chunk vs 0.112,
+50-ep final vs 40.0, alongside the composition final (its Gate-2: e4 chunk 0.0753)
+and the r4 arm.
 
 ---
 ## Entry 50 - 21 Jul 26 (Morning-review verdicts: COMPOSITION = new frontier 46.0 (amplitude converts on the VLM substrate; e4 14->34 as its Gate-2 chunk predicted); BOTH substrate bets FAIL with BETTER on-demo function (vlmr4 30.4, imgspan 28.8) — the conversion gap re-surfaces at substrate scale; jitter probe + Josh's amplification model relocate the imgspan failure to the VALUE PATH at image positions (image stack parked); r4 axis closed on both towers. -> E50 wave: layer-max gated chain (RUNNING here), top-p write budget + lr4x arms (VMs))
@@ -3712,7 +3726,7 @@ block-min 0.0940). Composition = same substrate + value-LR 2e-3->2e-4 + top_t 30
 (sequential-only, reused A-checkpoint). VLM-r4 = vlm_lora_rank 4 via checkpoint graft
 (fresh r4 VLM values; router certificate transfers bitwise), plain C-config. Image-span
 1B = the E49 image-region-routing warm-up graduated through the identical chain, plain
-C-config. Chunk error = executed 50-step action deviation after a real 10-step denoise.
+C-config.
 
 | arm | e4 | e6 | e9 | e2 | e7 | FINAL | block-min | final-grid chunk mean |
 |---|--|--|--|--|--|--|--|--|
@@ -3803,7 +3817,7 @@ per-dim std, image pixel sigma 0.05) on the four final checkpoints:
 
 ### Next steps (the E50 wave; all three = single deltas, 50-ep finals)
 
-1. **[RUNNING, base box, tmux layermax] Layer-max gated chain**: expert [2,4,6,8] +
+1. **Layer-max gated chain** [RUNNING]: expert [2,4,6,8] +
    VLM text-field [10,12,14,16], n256/r2 everywhere (3.2B values; seq bs16xacc2).
    Rationale: parameter-max the tower the compass says carries fit, at depths where the
    anchor geometry is best (E49 probe: separation improves monotonically downward);
@@ -3813,10 +3827,10 @@ per-dim std, image pixel sigma 0.05) on the four final checkpoints:
    frozenbase): fail -> auto-fallback compact split expert [9,10,11,12] + VLM
    [13,14,15,16] -> re-gate -> fail = STOP (drawing board). Known risk the gate
    watches: expert routing at L2/L4 (feat-probe separability L4 89.5% vs 98 plateau).
-2. **[VM] top-p write budget** (seq5_arm1p_lr2x_topp09.sh): k = min(n_read, max(3072,
+2. **Top-p write budget** (seq5_arm1p_lr2x_topp09.sh): k = min(n_read, max(3072,
    ceil(0.9*n_read)), 16384) per module per batch — "write ~everything you read";
    single delta vs composition. Smoked S16a-e; [top_p] mask-size logging in-run.
-3. **[VM] lr-max** (seq5_arm1p_lr4xsched_topt3072.sh): 4e-3 -> 2e-4 on the composition
+3. **lr-max** (seq5_arm1p_lr4xsched_topt3072.sh): 4e-3 -> 2e-4 on the composition
    substrate; the amplitude-headroom cell (E43: function did not saturate at 4x;
    give-back is the accepted risk).
 4. Storage: ~560G freed (closed-branch E40-44 sequential dirs deleted entirely — wandb
@@ -3895,8 +3909,8 @@ conservation exact (sum(scale)=3072.000 over the mask); water-fill lands
 hottest-unprotected-first with protected slots never boosted; the blend moves rows at
 exactly 2x/1x/0x with momentum scaled to match.
 
-**The arm** (`seq5_arm1p_lr4xsched_topt3072_budgetprotect.sh`, nebius3 = the VM freed
-by lr4x; sequential-only from the arm 1' A-checkpoint already staged there): single
+**The arm** (`seq5_arm1p_lr4xsched_topt3072_budgetprotect.sh`; sequential-only from
+the arm 1' A-checkpoint): single
 delta vs lr4x 40.4 = protect_mode rank->budget + u_norm peak->corefrac, write
 breadth/mask unchanged by construction. Pre-registered:
 t0-t2 block-mins ~= 0.0651 (early writers untaxed by construction); e9 final back
@@ -3970,15 +3984,15 @@ vs ~0.07), which no write budget fixes.
 below); whether static SCALES beats static full-LR is exactly the budget arm's
 question (lands tomorrow).
 
-**Agreed board (Josh: "agree on all points"; nebius4 paused, holding):**
-1. [automatic, this afternoon] compact layer-max final + full battery incl. jitter
+**Agreed board (Josh: "agree on all points"; the top-p box paused, holding):**
+1. compact layer-max final + full battery incl. jitter
    (substrate rule) + the attempt-A re-audit (settles max-vs-compact placement).
-2. [tomorrow morning] budget-4x final (nebius3) — needs >46.0 to displace the frontier;
+2. budget-4x final — needs >46.0 to displace the frontier;
    mechanism validated at the autopsy either way.
-3. [nebius4, HELD] branch on the compact-LM final: >= ~40 at plain C-config ->
+3. [HELD] branch on the compact-LM final: >= ~40 at plain C-config ->
    compact-LM + composition levers (lr2x + top_t 3072; the arm-1' one-two, 40.0->46.0,
    on a substrate with 2x the VLM layers — the highest-EV cell on the board);
-   < ~40 -> layer axis dead, nebius4 takes budget@2x instead (clean comp's residual
+   < ~40 -> layer axis dead, that box takes budget@2x instead (clean comp's residual
    +7.6% e4 own->final give-back).
 4. Endgame (6 days): converge substrate (arm 1' vs compact-LM, informed by the
    attempt-A verdict) x optimization package (2x+3072 +/- budget) into ONE frontier
@@ -4064,13 +4078,13 @@ s=0 bitwise frozen; and S19g re-runs the v2 unclamped line -> exp_avg = nan,
 the bug preserved as a regression test). Full suite ALL PASS. Wrapper header rewritten
 to v3 + tripwires; run name bumped `budgetcf` -> `budgetprop` (fresh dir + wandb row).
 
-**Relaunch** (nebius3, instructions issued): same wrapper, same substrate
+**Relaunch**: same wrapper, same substrate
 (arm 1' A-checkpoint), same schedule (4e-3 -> 2e-4, top_t 3072, beta4/corefrac,
 5 tasks x 5k, 50-ep final). Judged against lr4x 40.4 (nearest twin — masks bitwise
 shared) and composition 46.0 (the frontier). Pre-registered: t0 tripwire above; NaN
 watch at the first boundary (~5.2k — the v2 signature); e9 final back toward >=26;
 e7 block-min <= ~0.085 (last-writer starvation tripwire — conservation should hold
-~0.075); "[budget] ... sum 3072" lines = conservation in production. ETA ~15h + final.
+~0.075); "[budget] ... sum 3072" lines = conservation in production.
 
 ### Part 5 — attention-family compass (e4): KILL branch fires — dense VLM-attention-only LoRA (chunk 0.106, plateaued) loses to our own sparse MLP-site frontier (0.081); the "architectural shift" does not carry the dense-adapter gap
 
@@ -4196,8 +4210,7 @@ build's forced expert [5-10] is half inside the flagged band; the evidence-clean
 extension is **expert [8-11] + VLM [12-16] = 9 modules** (every layer inside
 measured-good territory). Decision deferred behind the fold-in + budget verdicts.
 
-**FOLD-IN LAUNCHED** (auto-queue fired 22:03 UTC after the battery freed the GPU;
-tmux `foldin`, log `outputs/e51_foldin.log`, run
+**FOLD-IN LAUNCHED** (run
 `libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt3072_lr2x_steps5k`):
 layermax substrate + the composition levers (lr 2e-3 -> 2e-4, top_t 3072),
 sequential-only from the existing A-checkpoint; config verified in-log (3072 /
@@ -4205,13 +4218,9 @@ sequential-only from the existing A-checkpoint; config verified in-log (3072 /
 to take the frontier; **>= 49.2 crosses the multitask-LoRA line (the recalibrated
 "must" target)**; e4 >= 34 and e9 >= ~40 must survive amplitude (the lr4x
 displacement lesson); give-back tripwire <= ~-3; block-min mean pushing below
-~0.045. Lands 23 Jul evening.
+~0.045.
 
-**Board state at close of 22 Jul:** budget-v3 (nebius3) t0 healthy under proportional
-allocation (0.073 @ 4k, under the 0.075 tripwire; conservation sum=3072 exact every
-line) — boundary + final land 23 Jul AM. Mass top-p (nebius4) relaunched on the
-frontier config; regime verdict (adaptive vs cap-pinned) in its t1 [top_p] k-lines
-23 Jul AM. Attention-side memory killed by compass (Part 5); MLP-only arm traded for
+**Board state at close of 22 Jul:** Attention-side memory killed by compass (Part 5); MLP-only arm traded for
 the top-p slot (Part 6). Target ladder recalibrated (discussion): must = beat
 multitask-LoRA 49.2; good = 52-55 (~85-90% of the specialist oracle at none of its
 advantages); the missing table cells (e2/e7 specialists, naive sequential LoRA — the
@@ -4266,7 +4275,7 @@ interpolates them (~45-47 projection) on a substrate being superseded the same d
 **THE PIVOT (Josh's gains-ledger argument, adopted):** scope beats optimization,
 four times running — VLM build +6, layermax +4.8, levers-on-new-substrate +6, vs
 protection/budget/top-p ≈ 0-3 each. The program's remaining bets go to LAYERS:
-1. **[LAUNCHED, nebius3] Spread-A chain** (`seq5_layermax_A_spread_lr2x_topt3072.sh`,
+1. **[LAUNCHED] Spread-A chain** (`seq5_layermax_A_spread_lr2x_topt3072.sh`,
    commit 7d89dc69): attempt A's substrate (expert [2,4,6,8] + VLM [10,12,14,16] —
    8 modules SPREAD over depth 2-16) through A-phase + 5-task sequential WITH the
    composition levers, matching the running compact fold-in. **Count-matched,
@@ -4274,19 +4283,17 @@ protection/budget/top-p ≈ 0-3 each. The program's remaining bets go to LAYERS:
    — the clean isolation of Josh's coverage hypothesis. Evidence for: A's VLM half
    certified at parity (0.132-0.152) in better anchor geometry (E49 downward
    improvement; E43 lower-layer transmission). Against: the certificate streak (5/5)
-   and A's weaker expert half (0.163-0.212). Lands 24 Jul AM.
-2. **[QUEUED, tonight] Absolute layer-max certify-first**: expert [4-9] + VLM
+   and A's weaker expert half (0.163-0.212).
+2. **[QUEUED] Absolute layer-max certify-first**: expert [4-9] + VLM
    [10-16] = 13 modules, 5.4B values (Adam ~43GB → bs8xacc4 likely; warm-up cheap
-   via router_only_fast; AUDIT_BS=8). Warm-up + audit (~4h) on the first box free
-   (nebius4 after top-p, or base after the fold-in); full chain tomorrow ONLY on a
+   via router_only_fast; AUDIT_BS=8). Warm-up + audit (~4h) first; full chain ONLY on a
    certificate pass, with the spread-vs-contiguous verdict shaping its layout
    (A ≥ compact → spread the 13; A < compact → contiguous as specced). Known
    marginal layer: expert L4 (famIoU ~0.195 in A's audit; trim to [5-9] if it drags).
-3. Fold-in interim (base): block-mins t0 0.0304 / t1 0.0156 / t2 0.0725 — through
-   the <0.045 pre-registration; lands tonight. Top-p (nebius4) lands this afternoon.
+3. Fold-in interim: block-mins t0 0.0304 / t1 0.0156 / t2 0.0725 — through
+   the <0.045 pre-registration.
 
-**Board after this part:** base = fold-in (tonight); nebius3 = spread-A (24 Jul AM);
-nebius4 = top-p (today PM) → absolute-max warm-up+audit (tonight). Ladder cells
+**Board after this part:** Ladder cells
 (e2/e7 specialists + naive-sequential LoRA — the headline forgetting baseline) queue
 behind the layers wave. Storage: base cleaned 88%→75% (dead-branch checkpoints
 [top-p / vlmr4 / imgspan / attn-compass], analyzed-run intermediates + training
@@ -4350,16 +4357,15 @@ Confound note (pre-registered honesty): measured under weak core protection
 budget-v3's exclusion would have blocked much of the core dose, but the corefrac
 writer-tax + derivation 3 say it would not clear 46.0. Stays unrun.
 
-**Launched behind it (nebius4, freed): the absolute layer-max warm-up** —
+**Launched behind it: the absolute layer-max warm-up** —
 `joint_rwarmup_absmax_e4to9_v10to16.sh` (d425d601): expert [4-9] + VLM [10-16] = 13
 modules, 5.37B values, n256/r2, broadcast losses, certify-first (warm-up -> audit at
 AUDIT_BS=8x400 -> STOP for manual review; bands in the header — expert famIoU <=
 ~0.20 on >= 5/6, VLM <= ~0.25 all 7, no palette collapse; trim option expert [5-9]
-if only L4 fails). Config smoke passed (placement guard, bank arithmetic). Wall-clock
-note: the eventual chain at bs8xacc4 costs ~+25-40% vs bs16xacc2 (~20-24h sequential);
-wrapper will try bs16xacc2 first with an auto-fallback ladder. Chain launch decision
-waits on THREE inputs landing within ~18h: this certificate, tonight's compact
-fold-in final, and tomorrow's spread-A (which decides contiguous vs spread layout).
+if only L4 fails). Config smoke passed (placement guard, bank arithmetic). Wrapper
+tries bs16xacc2 first with an auto-fallback ladder. Chain launch decision
+waits on THREE inputs: this certificate, the compact
+fold-in final, and spread-A (which decides contiguous vs spread layout).
 
 **Part 9 addendum — why layermax's per-layer cores are smaller** The shared layers falsify any cross-layer
 competition story: e4's L15/16 footprints carried over near-bitwise between the two
@@ -4376,7 +4382,7 @@ itself (e2: 197 -> 296 -> 380); (2) ARITHMETIC — totals grew sub-linearly (e2 
 (different module sets consume the init RNG differently), not load-splitting.
 Cross-layer coupling enters only at the VALUE level (content jointly fitted through
 gates/LN/residual = division of labor), never the addressing level.
-**Pre-registered for the absmax certificate (tonight): L10-12 palettes sharper still
+**Pre-registered for the absmax certificate: L10-12 palettes sharper still
 (depth gradient continues down); L13-16 footprints ~= the compact certificate's (no
 shrink from banks added below). All seven uniformly smaller than compact's would
 falsify this and revive a coupling channel.**
@@ -4489,9 +4495,9 @@ Reserve levers if the shoulder still leaks: beta 8, protect_hard_u=0.9, budget m
 
 ### Next steps
 
-1. [local claude] Launch the corefrac cell on the free VM (needs the layermax
-   A-checkpoint rsynced from base, spread-A precedent); lands ~1 day.
-2. Spread-A final (nebius3, 24 Jul AM): head-to-head vs the fold-in at matched levers
+1. Launch the corefrac cell on the free VM (needs the layermax
+   A-checkpoint rsynced from base, spread-A precedent).
+2. Spread-A final: head-to-head vs the fold-in at matched levers
    — note its give-back numbers are now as informative as its final (the spacing
    hypothesis must also survive the amplitude channel).
 3. Absmax certificate (nebius4): score against the header bands + the Part-9-addendum
@@ -4621,7 +4627,7 @@ question below.
 2. **Two chunk probes cannot share the GPU** (~70GB each at the gain-probe einsum;
    E52 never overlapped them, the E53 parallel layout did) — serialize chunk stages.
 
-### The wave (3 free VMs; scripts shipped this commit; corefrac + offline-mode in all)
+### The wave (scripts shipped this commit; corefrac + offline-mode in all)
 
 | arm | box | script | delta / question |
 |---|---|---|---|
@@ -4639,7 +4645,7 @@ slot AFTER the wave rather than displacing an arm.
 
 ### Next steps
 
-1. Launch arm 2 (nebius3) + arm 3 (nebius4) via local claude; arm 1 here after the
+1. Launch arms 2 + 3 on the VMs; arm 1 here after the
    batching discussion (the ladder makes either resolution safe).
 2. Battery on each landing (serialize the chunk stages); arm-3-vs-arm-2 is the
    attribution read; e7 across arms 2/3 is the substrate-conversion read.
@@ -4652,8 +4658,8 @@ with IoU validation, core/shoulder/full drift, ckpt-diff, wandb/retention JSON);
 instruments + runners in `scripts/vla_analysis/`; the three arm wrappers + common-body
 ladder in `job_scripts/nebius/libero_90/staged/`.
 
-**Update (24 Jul, ~10:45) — arm-1 batching smoke: Josh's config WINS decisively;
-arm 1 LAUNCHED (tmux `arm1`, log `outputs/e53_arm1.log`).** Task-0-only smokes of the
+**Update (24 Jul) — arm-1 batching smoke: Josh's config WINS decisively;
+arm 1 LAUNCHED.** Task-0-only smokes of the
 real sequential command on the 13-module absmax substrate, ~500/400 optimizer steps
 each, peak VRAM polled: **bs8×acc4 no-ckpt = 2.40 s/opt-step at 125.6GB (fits, ~18GB
 headroom, zero OOM) vs bs16×acc2+ckpt = 3.35 s/opt-step at the same peak — 28%
@@ -4662,9 +4668,8 @@ frozen backbone with values-only training the TRUE backward is cheaper than the
 forward (bwd 0.187 vs fwd 0.273 — grads reach only value tensors), so checkpointing's
 recompute nearly triples the backward (0.187→0.970). The E52 "fixed-cost-dominated,
 batch can't save it" reading was over-general — it held for the A-phase rungs tried
-(bs32/bs16) but bs8 clears the activation bar. Projected arm-1 wall-clock ~16.7h
-train + evals ≈ ~20h (vs ~27h on the killed config). Ladder retained in the wrapper
-(rung 1 confirmed live); smoke logs in the session scratchpad.
+(bs32/bs16) but bs8 clears the activation bar. Ladder retained in the wrapper
+(rung 1 confirmed live).
 
 **Update (24 Jul, PM) — arm-3 GATE FAILED (anchored-expert over-compaction); expert_anchor_weight 0.5 -> 0.1 refinement + re-launch.** The spread + anchored-nofilm-expert + corefrac warm-up (`..._layermax_A_anchor05_nofilm_...`) HARD-FAILED the gate on **expert core50 330-457 (< 800 floor)** — while expert famIoU **0.113-0.140** and bg **0.017-0.022** were the *cleanest expert routing ever certified*. VLM tower passed clean (min-eff 381-914). Classic E21: separation and capacity are two readings of routing breadth, and this moved them apart the wrong way.
 
@@ -4822,7 +4827,7 @@ stayed 5.0 throughout — the sep loss itself has not been swept since E26.
    losses would need −0.10..−0.13, beyond any measured loss-side famIoU move (max ~0.09,
    the whole E26 sep curve); w=0.35 needs −0.03..−0.07, inside precedent.
 
-### LAUNCHED: E54 probe pair — spread @ w=0.35, global loss-lever isolation (tmux `probes_w035`)
+### LAUNCHED: E54 probe pair — spread @ w=0.35, global loss-lever isolation
 
 Both: fresh warm-ups from `base_nomem_50k` (fresh ARM_TAGs), spread substrate
 (expert [2,4,6,8]/n256/r2/knn36 + VLM [10,12,14,16]/n256/r2/knn16), expert text-anchor
@@ -4852,9 +4857,8 @@ spread already passes at L6/L8).
 fallbacks (defaults 5.0/0.05 — byte-identical unset); new chain
 `staged/joint_layermax_A_w035_sep8_vs_c015_probes.sh` (per-probe subshell isolation so
 P1 failure can't kill P2; AUDIT_BS=16×200 per the 8-module OOM precedent;
-HF_HUB_OFFLINE=1). Status at write time: P1 stepping cleanly, 1.01 s/step, step ~560,
-config verified in-log (sep 8.0, anchor 0.35, both towers' layers correct); wandb
-`hv3bpga8`; both certificates ETA ~17:00 UTC, log `outputs/e54_probes_w035.log`.
+HF_HUB_OFFLINE=1). Config verified in-log (sep 8.0, anchor 0.35, both towers' layers
+correct); wandb `hv3bpga8`.
 
 ### ICRA plan (~6 weeks, agreed shape)
 
@@ -4901,8 +4905,8 @@ Meanwhile bg improves monotonically in w (0.094-0.119 → 0.022 at 0.5): **the a
 separates what is already different and merges what is similar.** w=0.35 ≈ the worst
 operating point; the E54 probe pair was standing on it.
 
-**Probe 3 QUEUED (Josh: keep probing)** — `joint_layermax_w0_sep8_probe.sh`, tmux
-`probe3_w0sep8`, auto-starts when the P2 chain frees the GPU (~17:30), lands ~21:30.
+**Probe 3 QUEUED (Josh: keep probing)** — `joint_layermax_w0_sep8_probe.sh`,
+auto-starts when the P2 chain frees the GPU.
 The cell the data points at: plain-spread certificate + ONE delta (sep 5→8), no
 anchor, FiLM on to match the comparator. Pre-registered (transfer P1's per-layer
 deltas onto plain): famIoU ~0.181/0.179/0.182/0.151 = PASS with one-grace headroom at
@@ -4914,7 +4918,7 @@ w=0 + sep8 + c≈0.1; famIoU unmoved → pivot to the anchored-w0.5 + corefrac
 sequential (the absmax recipe on spread — warm-up already on disk, relaxed-gate
 justified; NOT launched).
 
-**P2 (c=0.15 @ w=0.35) re-scoped:** still lands ~17:30 as the contrastive mechanism
+**P2 (c=0.15 @ w=0.35) re-scoped:** still lands as the contrastive mechanism
 test, but it stands on the handicapped w — any positive read gets re-tested at w=0.
 
 ### Update 2 (26 Jul eve) — P2 FAIL (contrastive separates families in NO measured regime); P3 (w=0 + sep8) PASSES THE FULL GATE — first certified spread router, at 2-4x anchored capacity; cells B/C queued overnight
@@ -4935,11 +4939,11 @@ test, but it stands on the handicapped w — any positive read gets re-tested at
 - Net: **the anchor is bracketed as unnecessary on this substrate** — sep8 alone
   separates the family below every anchored point's famIoU except w=0.5's, at 2-4x
   the capacity. First spread router to certify.
-- Overnight (chain `probesBC`, queued behind P3): **cell B** w=0.40+sep8 (~23:30, the
+- Overnight (chain `probesBC`, queued behind P3): **cell B** w=0.40+sep8 (the
   absmax-band middle; pre-reg PASS at famIoU 0.155-0.19 / core50 580-740) and
-  **cell C** w=0.5+c=0.15 (~03:00, family-clean end; pre-reg core50 → 400-650 at
+  **cell C** w=0.5+c=0.15 (family-clean end; pre-reg core50 → 400-650 at
   famIoU ≤~0.16 — also the small-cores-vs-separation causal probe), then **probe 4**
-  = P3-nofilm (~06:30; w=0 + sep8 + lang_to_query=false, no anchor — the
+  = P3-nofilm (w=0 + sep8 + lang_to_query=false, no anchor — the
   zero-language-machinery router, Josh's FiLM-removal cell; pre-reg famIoU within
   ~0.01-0.02 of P3 ⇒ FiLM removable and P4 graduates over P3). Morning pick across
   the five certificates; sequential launch = Josh's call.
@@ -4981,8 +4985,8 @@ Expert-tower scoreboard (all six E54 probes; VLM passed and was ≈invariant in 
    Exactly the core50↔consistency dose-response pair. Recommendation: graduate BOTH
    through A-phase + 5-task corefrac sequentials this week, **B first** (pattern-matches
    the frontier's winning profile, at publishable size, with the simpler language
-   story); P3 second as the capacity arm. Sequential launches = Josh's call. GPU idle
-   since 06:10. **Graduating warm-up checkpoints:** B =
+   story); P3 second as the capacity arm. Sequential launches = Josh's call.
+   **Graduating warm-up checkpoints:** B =
    `libero_90_pi05_jointwarm10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416`,
    P3 = `libero_90_pi05_jointwarm10k_layermax_sep8_e2468_v10121416`.
 
@@ -4994,18 +4998,18 @@ delta vs spread+corefrac 47.6 is B's warm-up checkpoint, so it's a clean single-
 router cell. Full pre-registration in the script header. A-phase
 `..._jointA10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416` → sequential
 `..._seq5_jw_layermax_A_anchor040_sep8_nofilm_beta4corefrac_topt3072_lr2x_steps5k`;
-wandb `fubfz15r`, log `outputs/e55_gradB.log`. Beat 47.6 = the router delta pays;
+wandb `fubfz15r`. Beat 47.6 = the router delta pays;
 51.6 = spread takes the frontier; ≥52 ⇒ the 53.6 win was shoulder cleanliness, not banks.
 
 Health: 64 trainable tensors / 841 frozen (8 modules × 8), frozen-base routing + anchor
 B=0.4 confirmed in-log, E37 overrides took (the ckpt carries `train_router_only` and
 `router_only_fast` True). A-phase bs32 OOMed → ladder demoted to bs16×acc2 (expected at
-8 modules); 1.70 s/step, chain lands ~28 Jul AM.
+8 modules).
 
 Run under `systemd-run --unit=gradB` (SIGTERM/TimeoutStopSec=45), not tmux — this box is
 the preemptible spot instance now. Relaunching the wrapper is idempotent at stage level,
 but there is no within-stage resume: a preemption costs ≤~4.8h (A) or one 5k block (seq).
-Worth plumbing `--resume` before the 10-task run. P3 next once the box frees.
+Worth plumbing `--resume` before the 10-task run.
 
 ### Update 5 (28 Jul) — run 1 lost to a shm/logind bug at task 2/5; resume plumbing added; relaunched
 
@@ -5182,8 +5186,7 @@ partial-dir guard pattern (graduation wrappers) must ride EVERY relaunch path, n
 chain wrappers. Both now guarded in the queue scripts.
 
 **Board:** P3 graduation chain RUNNING (A-phase on the bs16×acc2 ladder rung, same as
-B; seq evals from ~11:00 UTC, 50-ep final ~21:45) → queue2: e2 specialist (bs16×acc2)
-+ its chunk probe, ~02:00 (30th). VM-preemption watchdog armed; the E54-U5 sequential
+B) → queue2: e2 specialist (bs16×acc2) + its chunk probe. The E54-U5 sequential
 resume plumbing is the recovery path if the spot instance is reclaimed.
 
 ---
@@ -5342,14 +5345,14 @@ directly, using the specialist as the off-trail reference oracle (no demo labels
   -> mode-selection/within-chunk compounding track (execute-25 A/B next).
 - B fine on spec-visited states but bad on its own -> compounding, not coverage.
 
-### LAUNCHED (31 Jul ~11:04 UTC, `systemd-run --unit=offtrail-e7` per §9.5)
+### LAUNCHED (31 Jul, `systemd-run --unit=offtrail-e7` per §9.5)
 
 Full campaign: 50 eps/model (B seq-025000 vs loraft task4_e7), 4 seeds, 120 demo states,
-task e7 (env 7, dataset task_index 4). ETA ~2.5h (two serial bs=1 harvests dominate).
+task e7 (env 7, dataset task_index 4); the two serial bs=1 harvests dominate the runtime.
 Outputs: `outputs/analysis/e56_offtrail/offtrail_e7.{jsonl,txt}`, harvests + traces
 retained for re-scoring (incl. the eventual 9-module candidate on the same state bank).
 
-### RESULTS (landed 12:39 UTC, ~1.6h wall; anchor 0.0340/0.0364 vs known 0.0321/0.0330 ✓)
+### RESULTS (anchor 0.0340/0.0364 vs known 0.0321/0.0330 ✓)
 
 Populations: B/fail 418 states, B/succ 67, spec/fail 220, spec/succ 198, demo 120.
 B harvested at 10/50 successes, spec ~28/50 — both at their known rates.
@@ -5444,7 +5447,7 @@ threading (sigma=0 layer bitwise clean), palette-path pad hygiene, monotone dose
 Also: SEQ_EXTRA_ARGS passthrough added to joint_aphase_seq5_common.sh (unset =
 byte-identical).
 
-### LAUNCHED (31 Jul ~19:00 UTC, systemd unit `e57-vnoise`, ~28h queue)
+### LAUNCHED (31 Jul, systemd unit `e57-vnoise`)
 
 Two arms, B config verbatim (spread + anchor040/sep8/nofilm + corefrac + lr2x + 3072,
 reusing B's A-checkpoint), single delta = the noise flags; queue = arm -> harvest-bank
@@ -5473,7 +5476,7 @@ budget). Per-(model, seed, env) invocations = 30 independent skip-guarded proces
 seed-MAJOR order so a partial read has complete replicates. seed 1000 subsumes the
 historical 50-ep finals' seed range. Summary (partial-tolerant) auto-writes
 `outputs/analysis/e58_evalseeds/summary.json` + a printed per-cell / replicate-mean
-table. ETA: vnoise queue lands ~Sat 23:00 UTC -> evals ~9-11h -> Sunday morning.
+table.
 **If the spot VM is preempted mid-campaign: relaunch the same unit** (`sudo systemd-run
 --unit=e58-evalseeds --property=User=josh --property=KillSignal=SIGTERM
 --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot /bin/bash
@@ -5493,11 +5496,9 @@ Recovery: a session-side watcher polls SSH every 2 min and, on reachability,
 relaunches whichever units are dead (queue auto-resumes; eval campaign re-gates) —
 the only manual step is STARTING the instance (no nebius CLI/credentials on the local
 box — flagged 31 Jul, now the binding gap; install it). Josh push-notified (terminal
-only; mobile inactive). Timeline: restart by ~Sat noon UTC still lands everything
-Sunday morning (~20h remaining end-to-end); later restarts eat into the eval
-replicates last (seed-major ordering keeps partial reads clean). If the VM sits
-stopped >1h the public IP may rotate — ~/.ssh/config HostName must be updated before
-the watcher can reconnect (needs console/CLI to discover the new IP).
+only; mobile inactive). Later restarts eat into the eval replicates last (seed-major
+ordering keeps partial reads clean); if the VM sits stopped >1h the public IP may
+rotate — update ~/.ssh/config HostName before the watcher can reconnect.
 
 **DIAGNOSIS REVISED (~02:40 UTC): LOCAL NETWORK FAILURE, not preemption.** The
 git push to origin failed with the same "no route to host" — github.com:22 is
