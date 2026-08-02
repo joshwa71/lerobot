@@ -121,6 +121,11 @@ class PeftConfig:
     # The PEFT (adapter) method to apply to the policy. Needs to be a valid PEFT type.
     method_type: str = "LORA"
 
+    # LoRA scaling numerator (PEFT's lora_alpha). None = PEFT library default (8).
+    # Set this when sweeping r so the effective adapter gain alpha/r stays constant
+    # (E58 naive-sequential capacity sweep: r=32@alpha=8 -> r=256 needs alpha=64).
+    lora_alpha: int | None = None
+
     # Adapter initialization method. Look at the specific PEFT adapter documentation for defaults.
     init_type: str | None = None
 

@@ -1962,6 +1962,17 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
         logging.info("Creating policy")
     policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta, rename_map=cfg.rename_map)
 
+    # E58 naive-adapter baseline: wrap with PEFT (mirrors lerobot_train.py). The wrap
+    # freezes the base and leaves only adapter params trainable; the optimizer builder
+    # below has a matching branch (adapters carry no pk_* tags).
+    if cfg.peft is not None:
+        import dataclasses as _dc
+
+        policy = policy.wrap_with_peft(peft_cli_overrides=_dc.asdict(cfg.peft))
+        if is_main:
+            n_train = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+            logging.info(f"PEFT wrap: {n_train / 1e6:.1f}M trainable adapter params")
+
     # Attach pre/post processors with dataset stats and device overrides
     processor_kwargs = {}
     postprocessor_kwargs = {}
@@ -1999,16 +2010,21 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     if hasattr(policy, "precompute_task_embeddings"):
         policy.precompute_task_embeddings(dataset.meta)
 
-    # Freeze everything except selected memory components
-    num_trainable = _freeze_to_selected_memory_params(
-        policy,
-        train_memory_value=cfg.train_memory_value,
-        train_memory_keys=cfg.train_memory_keys,
-        train_query_proj=cfg.train_query_proj,
-    )
+    # Freeze everything except selected memory components. Under PEFT (E58 naive-adapter
+    # baseline) the wrap already set the authoritative requires_grad state (adapters on,
+    # base off) — the tag-based freeze would zero it, so it must not run.
+    if cfg.peft is None:
+        num_trainable = _freeze_to_selected_memory_params(
+            policy,
+            train_memory_value=cfg.train_memory_value,
+            train_memory_keys=cfg.train_memory_keys,
+            train_query_proj=cfg.train_query_proj,
+        )
+    else:
+        num_trainable = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total = sum(p.numel() for p in policy.parameters())
     if is_main:
-        logging.info(f"Trainable params (memory values only) = {num_trainable} / {num_total}")
+        logging.info(f"Trainable params ({'peft adapters' if cfg.peft is not None else 'memory values only'}) = {num_trainable} / {num_total}")
 
     # Enable per-batch memory usage logging to allow TF computation
     try:
@@ -2095,6 +2111,20 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
     # Build optimizer with distinct param groups for values/keys/query_proj
     def _build_memory_optimizer(model: PreTrainedPolicy, cfg_local: SequentialOnlineConfig) -> Optimizer:
+        if getattr(cfg_local, "peft", None) is not None:
+            # E58 naive-adapter baseline: PEFT adapters carry no pk_* tags; train ALL
+            # requires_grad params (adapters only — wrap_with_peft froze the base) at
+            # memory_value_lr. The per-task scheduler pairs one lambda with this single
+            # group ONLY under the default flags — enforce that.
+            if cfg_local.train_memory_keys or cfg_local.train_query_proj:
+                raise ValueError("peft baseline requires train_memory_keys=false and train_query_proj=false")
+            trainable = [p for p in model.parameters() if p.requires_grad]
+            if not trainable:
+                raise ValueError("peft is set but no trainable parameters found after wrap")
+            return optim.AdamW(
+                [{"params": trainable, "lr": cfg_local.memory_value_lr, "weight_decay": 0.0}],
+                betas=(0.9, 0.999), eps=1e-8,
+            )
         vals: list[torch.nn.Parameter] = []
         keys: list[torch.nn.Parameter] = []
         qproj: list[torch.nn.Parameter] = []
@@ -2283,13 +2313,15 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
 
         # Optionally rebuild optimizer state per task; always reset scheduler for fresh LR decay
         if cfg.reinit_optimizer_each_task:
-            # Re-freeze to be safe in case something toggled
-            _freeze_to_selected_memory_params(
-                policy,
-                train_memory_value=cfg.train_memory_value,
-                train_memory_keys=cfg.train_memory_keys,
-                train_query_proj=cfg.train_query_proj,
-            )
+            # Re-freeze to be safe in case something toggled (skip under PEFT — the
+            # wrap's requires_grad state is authoritative; see setup-time note).
+            if cfg.peft is None:
+                _freeze_to_selected_memory_params(
+                    policy,
+                    train_memory_value=cfg.train_memory_value,
+                    train_memory_keys=cfg.train_memory_keys,
+                    train_query_proj=cfg.train_query_proj,
+                )
             # Reset optimizer state in-place to avoid large CUDA re-allocations/fragmentation.
             try:
                 optimizer.zero_grad(set_to_none=True)
