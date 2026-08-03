@@ -680,6 +680,18 @@ class PaliGemmaWithExpertModel(
                 f"Frozen-base routing ENABLED: memory layers {self._mem_layer_indices} route on the "
                 "memory-free backbone features (dual-path)."
             )
+        if getattr(cfg, "frozen_prepass", False):
+            if not getattr(cfg, "use_frozen_base_input_features", False):
+                raise ValueError(
+                    "memory_layer.frozen_prepass requires use_frozen_base_input_features=true — it is "
+                    "an implementation of the same routing-stationarity property (routing reads the "
+                    "memory-free features), obtained via a full pre-pass instead of placement."
+                )
+            logging.info(
+                "Frozen PRE-PASS ENABLED (E59): all routing inputs (expert router_x, VLM router_x, "
+                "expert anchors, inference prefix KV for the expert's pass A) come from one "
+                "memory-bypassed forward per batch; the VLM placement guard is lifted."
+            )
         # ---- VLM-side text-span memory (E44): additional modules on the paligemma LM ----
         # Placed ABOVE the highest expert memory layer so the prefix KV the expert's frozen
         # routing branch consumes (layers <= max(expert layers)) is untouched; the lowest VLM
@@ -691,9 +703,17 @@ class PaliGemmaWithExpertModel(
         if vlm_layers:
             exp_max = max(self._mem_layer_indices) if self._mem_layer_indices else -1
             if min(vlm_layers) <= exp_max:
-                raise ValueError(
-                    f"vlm_layers {vlm_layers} must all sit ABOVE the highest expert memory layer "
-                    f"({exp_max}) to preserve expert routing stationarity (prefix KV <= {exp_max})."
+                if not getattr(cfg, "frozen_prepass", False):
+                    raise ValueError(
+                        f"vlm_layers {vlm_layers} must all sit ABOVE the highest expert memory layer "
+                        f"({exp_max}) to preserve expert routing stationarity (prefix KV <= {exp_max}). "
+                        "Set memory_layer.frozen_prepass=true to lift this constraint (routing inputs "
+                        "then come from a full memory-free pre-pass; ~+1 forward/step)."
+                    )
+                logging.info(
+                    f"INTERLEAVED memory placement (frozen_prepass): expert layers "
+                    f"{self._mem_layer_indices} / VLM layers {vlm_layers} — expert routing, anchors, "
+                    "and the inference pass-A prefix KV are served by the memory-free pre-pass."
                 )
             vlm_cfg = dataclasses.replace(
                 cfg,
@@ -774,6 +794,13 @@ class PaliGemmaWithExpertModel(
         """E52: capture hook for one (LM layer j -> expert layer j) anchor pairing."""
 
         def hook(mod, args):
+            # E59 frozen_prepass: anchors are captured during the memory-free pre-pass and
+            # LOCKED for the live pass — under interleaved placement the live prefix at the
+            # anchor layer carries memory content, so a live-pass overwrite would break the
+            # anchor's stationarity. Without the pre-pass the lock is never set and the
+            # historical overwrite-safe behavior is unchanged.
+            if getattr(self, "_anchor_lock", False):
+                return
             x = args[0]
             masks = getattr(self, "_anchor_masks", None)
             il = getattr(self, "_anchor_instr_len", None)
@@ -846,6 +873,21 @@ class PaliGemmaWithExpertModel(
             and len(vlm_idx) >= 2
         )
 
+    def _frozen_prepass_enabled(self) -> bool:
+        # E59: the full memory-free pre-pass replaces BOTH lazy forks and serves every
+        # routing input (expert router_x, VLM router_x, expert anchors, and — at
+        # inference — the memory-free prefix KV the expert's pass A attends).
+        cfg = getattr(self, "_mem_cfg", None)
+        has_mem = bool(getattr(self, "_mem_layer_indices", None)) or bool(
+            getattr(self, "_vlm_mem_layer_indices", None)
+        )
+        return bool(
+            cfg is not None
+            and getattr(cfg, "frozen_prepass", False)
+            and getattr(cfg, "use_frozen_base_input_features", False)
+            and has_mem
+        )
+
     def forward(
         self,
         attention_mask: torch.Tensor | None = None,
@@ -865,8 +907,21 @@ class PaliGemmaWithExpertModel(
             # bypassed so each VLM wrapper stashes its memory-free mlp input; the live pass
             # (B) pops the stash as router_x. Mirrors the suffix-side dual pass below. No
             # KV hygiene needed here: pass A runs cache-less and its output is discarded.
-            vlm_frozen = self._vlm_frozen_routing_enabled()
+            #
+            # E59 frozen_prepass extends pass A: it runs for ALL VLM wrappers (not just
+            # >=2), keeps its KV cache (`_frozen_prefix_kv` — the memory-free prefix KV
+            # the expert's suffix pass A must attend under interleaved placement), and
+            # captures the expert anchors from the memory-free stream, locking them
+            # against overwrite by the live prefix pass.
+            prepass = self._frozen_prepass_enabled()
+            if not prepass and getattr(self, "_anchor_lock", False):
+                self._anchor_lock = False  # safety: never leave anchors locked without a pre-pass
+            vlm_frozen = self._vlm_frozen_routing_enabled() or (
+                prepass and bool(getattr(self, "_vlm_mem_layer_indices", None))
+            )
             if vlm_frozen:
+                if prepass:
+                    self._anchor_lock = False
                 vlm_wrappers = [
                     self.paligemma.model.language_model.layers[i].mlp
                     for i in self._vlm_mem_layer_indices
@@ -875,18 +930,23 @@ class PaliGemmaWithExpertModel(
                     m.begin_frozen_capture()
                 try:
                     with torch.no_grad():
-                        self.paligemma.model.language_model.forward(
+                        pass_a_out = self.paligemma.model.language_model.forward(
                             inputs_embeds=inputs_embeds[0],
                             attention_mask=attention_mask,
                             position_ids=position_ids,
                             past_key_values=None,
-                            use_cache=False,
+                            use_cache=bool(prepass),
                             adarms_cond=adarms_cond[0] if adarms_cond is not None else None,
                         )
+                    if prepass:
+                        self._frozen_prefix_kv = pass_a_out.past_key_values
+                        self._frozen_prefix_kv_bs = int(inputs_embeds[0].shape[0])
+                        self._anchor_lock = True
                 except Exception:
                     for m in vlm_wrappers:
                         m._frozen_capture = False
                         m._frozen_stash = []
+                    self._anchor_lock = False
                     raise
                 for m in vlm_wrappers:
                     m.end_frozen_capture()
@@ -923,7 +983,24 @@ class PaliGemmaWithExpertModel(
                     m.begin_frozen_capture()
                 try:
                     with torch.no_grad():
-                        pkv_a = copy.deepcopy(past_key_values) if past_key_values is not None else None
+                        # E59 frozen_prepass: under interleaved placement the LIVE prefix KV
+                        # carries VLM memory content, so pass A must attend the memory-free
+                        # prefix KV captured by the prefix pass A. Without the pre-pass (or
+                        # with no VLM banks) the live KV is memory-free at expert layers by
+                        # placement and remains the correct source.
+                        pkv_src = past_key_values
+                        if self._frozen_prepass_enabled():
+                            fkv = getattr(self, "_frozen_prefix_kv", None)
+                            if fkv is not None:
+                                exp_bs = int(inputs_embeds[1].shape[0])
+                                got_bs = int(getattr(self, "_frozen_prefix_kv_bs", -1))
+                                if got_bs != exp_bs:
+                                    raise RuntimeError(
+                                        f"frozen_prepass: stale memory-free prefix KV (batch {got_bs} "
+                                        f"vs suffix batch {exp_bs}) — prefix pass must precede denoise."
+                                    )
+                                pkv_src = fkv
+                        pkv_a = copy.deepcopy(pkv_src) if pkv_src is not None else None
                         self.gemma_expert.model.forward(
                             inputs_embeds=inputs_embeds[1],
                             attention_mask=attention_mask,
@@ -968,6 +1045,62 @@ class PaliGemmaWithExpertModel(
                 and self.training
             ) or (hasattr(self, "gradient_checkpointing") and self.gradient_checkpointing and self.training)
 
+            # E59 frozen_prepass (training/joint path): ONE memory-bypassed forward of the
+            # whole network computes every routing input for this batch — each wrapper
+            # stashes its memory-free mlp input (drained below into explicit router_x
+            # args, which re-thread safely through gradient-checkpoint recompute), and
+            # the E52 anchor hooks fire on the memory-free prefix stream and are then
+            # LOCKED so the live pass cannot overwrite them. Replaces both lazy forks;
+            # required for interleaved expert/VLM placement, where the live prefix at
+            # expert layers carries VLM memory content.
+            prepass = self._frozen_prepass_enabled()
+            if not prepass and getattr(self, "_anchor_lock", False):
+                self._anchor_lock = False  # safety: never leave anchors locked without a pre-pass
+            prepass_rx: dict[int, torch.Tensor] = {}
+            prepass_vrx: dict[int, torch.Tensor] = {}
+            if prepass:
+                self._anchor_lock = False
+                exp_wr = [
+                    (i, self.gemma_expert.model.layers[i].mlp)
+                    for i in (getattr(self, "_mem_layer_indices", None) or [])
+                ]
+                vlm_wr = [
+                    (i, self.paligemma.model.language_model.layers[i].mlp)
+                    for i in (getattr(self, "_vlm_mem_layer_indices", None) or [])
+                ]
+                for _, m in exp_wr + vlm_wr:
+                    m.begin_frozen_capture()
+                try:
+                    with torch.no_grad():
+                        pe = inputs_embeds
+                        for li in range(num_layers):
+                            pe = compute_layer_complete(
+                                li,
+                                pe,
+                                attention_mask,
+                                position_ids,
+                                adarms_cond,
+                                paligemma=self.paligemma,
+                                gemma_expert=self.gemma_expert,
+                                task_emb=task_emb,
+                                task_ids=task_ids,
+                                router_x=None,
+                                vlm_router_x=None,
+                            )
+                except Exception:
+                    for _, m in exp_wr + vlm_wr:
+                        m._frozen_capture = False
+                        m._frozen_stash = []
+                    self._anchor_lock = False
+                    raise
+                for i, m in exp_wr:
+                    m.end_frozen_capture()
+                    prepass_rx[i] = m.drain_frozen_stash()
+                for i, m in vlm_wr:
+                    m.end_frozen_capture()
+                    prepass_vrx[i] = m.drain_frozen_stash()
+                self._anchor_lock = True
+
             # Frozen-base routing (training/joint path): maintain a memory-free
             # suffix stream from the first memory layer to the last, whose per-layer
             # mlp inputs are the routing features for the live pass. Layers below the
@@ -975,8 +1108,9 @@ class PaliGemmaWithExpertModel(
             # them), so the fork starts lazily at the first memory layer, and the
             # frozen stream is dropped once the last memory layer's routing features
             # are collected. Runs under no_grad: routing features are a frozen
-            # function of the backbone by design.
-            frozen_routing = self._frozen_routing_enabled()
+            # function of the backbone by design. (Superseded by the pre-pass when
+            # frozen_prepass is on.)
+            frozen_routing = self._frozen_routing_enabled() and not prepass
             mem_idx = self._mem_layer_indices if frozen_routing else []
             fork_lo = mem_idx[0] if frozen_routing else -1
             fork_hi = mem_idx[-1] if frozen_routing else -1
@@ -985,7 +1119,7 @@ class PaliGemmaWithExpertModel(
             # tower. The first VLM memory layer's live mlp-input is memory-free by
             # placement (router_x stays None there); every later VLM memory layer routes
             # on the frozen prefix stream advanced with memory bypassed.
-            vlm_frozen = self._vlm_frozen_routing_enabled()
+            vlm_frozen = self._vlm_frozen_routing_enabled() and not prepass
             vlm_idx = self._vlm_mem_layer_indices if vlm_frozen else []
             vlm_fork_lo = vlm_idx[0] if vlm_frozen else -1
             vlm_fork_hi = vlm_idx[-1] if vlm_frozen else -1
@@ -993,8 +1127,8 @@ class PaliGemmaWithExpertModel(
 
             # Process all layers with gradient checkpointing if enabled
             for layer_idx in range(num_layers):
-                router_x = None
-                vlm_router_x = None
+                router_x = prepass_rx.get(layer_idx) if prepass else None
+                vlm_router_x = prepass_vrx.get(layer_idx) if prepass else None
                 if vlm_frozen and vlm_fork_lo <= layer_idx <= vlm_fork_hi:
                     with torch.no_grad():
                         if layer_idx == vlm_fork_lo:

@@ -1739,6 +1739,17 @@ class MLPPlusMemory(nn.Module):
         if self._frozen_stash:
             raise RuntimeError("frozen-routing stash not consumed by the live pass")
 
+    def drain_frozen_stash(self) -> torch.Tensor:
+        """E59 frozen_prepass: extract the single captured routing feature so the joint
+        training path can thread it as an explicit router_x argument (checkpoint-safe —
+        the arg re-threads through gradient-checkpoint recompute, whereas a stash pop
+        would be consumed on the first forward and missing on recompute)."""
+        if len(self._frozen_stash) != 1:
+            raise RuntimeError(
+                f"frozen_prepass drain expected exactly 1 stashed tensor, got {len(self._frozen_stash)}"
+            )
+        return self._frozen_stash.pop(0)
+
     def set_expert_anchor(self, pooled: torch.Tensor | None, valid: torch.Tensor | None = None):
         """E52: install the pooled LM instruction hidden for this wrapper's paired LM
         layer. Overwrite semantics (duplicate prefix passes — VLM frozen pass A,

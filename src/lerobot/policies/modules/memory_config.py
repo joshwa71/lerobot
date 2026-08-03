@@ -85,6 +85,20 @@ class MemoryLayerConfig:
     # input is memory-free by placement).
     use_frozen_base_input_features: bool = False
 
+    # E59: FULL memory-free pre-pass — lifts the VLM placement guard, enabling
+    # interleaved expert/VLM memory placement (e.g. expert [4,6,8,10,12] with VLM
+    # banks at or below expert layers). Requires use_frozen_base_input_features.
+    # Implementation: instead of the lazy per-tower forks, one no-grad forward of
+    # the WHOLE network with every memory module bypassed computes ALL routing
+    # inputs per batch — expert router_x, VLM router_x, the E52 expert anchors
+    # (captured during the pre-pass and locked against live-pass overwrite), and
+    # at inference the memory-free prefix KV the expert's pass A attends. The
+    # stationarity property is identical ("routing reads f_frozen(obs)"), obtained
+    # by computation instead of by placement constraint. Cost: ~one extra forward
+    # per training step (no backward), ~one extra prefix pass per inference chunk.
+    # Default False = byte-identical to the lazy-fork implementation.
+    frozen_prepass: bool = False
+
     # Dropout probability applied to retrieved memory slots during training.
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
     dropout_prob: float = 0.0
