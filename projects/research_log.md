@@ -5692,3 +5692,63 @@ on disk is the cross-run record). MSE forgetting matrix still to run on landing
 (pre-registered: specialist-grade diagonals then catastrophic collapse) — note
 `mse_matrix2.py` is a memory-value slot-swap instrument; the LoRA arm needs an
 adapter-swap variant.
+
+---
+### Entry 58 addendum 6 (3 Aug 26) — NAIVE SEQUENTIAL LoRA r256 LANDS: mean **17.6** (0/0/0/54/34) vs B's 53.2 on the identical protocol — total catastrophic collapse (every task -> literal 0% after ONE subsequent block; MSE diagonals +740-1567% vs our <=+3.8%), at specialist-grade fresh fits. The headline forgetting baseline exists. (Also: preemption #2, recovered autonomously via the new CLI.)
+
+**Run completion.** The resumed arm trained its final e7 block clean (checkpoint 025000
+saved 08:54 UTC) — then preemption #2 hit at 10:22, ~1.5h into the trainer's serial
+final eval (wandb `s1gavhai`; hypervisor showed RUNNING during the shutdown transition
+before flipping STOPPED — query the API twice before diagnosing). Recovery was the
+first fully autonomous one: CLI start (first attempt), same IP, no manual steps.
+Training lost nothing; the final eval was re-run standalone-batched (bs=10, 50 eps,
+seed 1000 — the E56-addendum machinery, first production use: ~10-20 min/env vs the
+serial eval's hours; `--policy.use_peft=true` must be passed explicitly). Instrument
+note: `lerobot-eval`'s eval_info.json carries success at `overall.pc_success` (not
+"aggregated" — runner fixed).
+
+**Rollout retention (20-ep boundaries; final row 50-ep standalone):**
+
+| after block | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| e4 | **35** | | | | |
+| e6 | 0 | **60** | | | |
+| e9 | 0 | 0 | **60** | | |
+| e2 | 0 | 0 | 0 | **90** | |
+| **FINAL (50ep)** | **0** | **0** | **0** | **54** | **34** |
+
+Mean **17.6** vs B 53.2 / dose05x 54.4 / multitask-LoRA 49.2 / specialist oracle 63.2 /
+stage-1 zero-shot floor **10.6**. Every task collapses to literal 0% within ONE
+subsequent block. The two nonzero cells are pure recency: e7 is the final task and e2
+had exactly one block of exposure (90 -> 54, halved). Sharpest single sentence: after
+sequentially training all five tasks, naive adaptation retains 7 points more than a
+model that never adapted at all.
+
+**MSE forgetting matrix** (paired-noise, `mse_matrix_peft.py` — the adapter-swap
+sibling of mse_matrix2 with a per-swap L1(lora_B) verification guard; all five swaps
+verified rel=0.00%):
+
+| ckpt \ task | e4 | e6 | e9 | e2 | e7 |
+|---|--|--|--|--|--|
+| 005000 | **0.054** | 0.93 | 2.44 | 1.19 | 1.32 |
+| 010000 | 0.517 | **0.049** | 2.95 | 1.43 | 1.57 |
+| 015000 | 0.907 | 0.498 | **0.098** | 1.89 | 1.33 |
+| 020000 | 0.950 | 0.711 | 1.113 | **0.060** | 1.38 |
+| 025000 | 0.909 | 0.765 | 1.457 | 0.506 | **0.074** |
+
+Just-trained -> final: **e4 +1567% / e6 +1452% / e9 +1383% / e2 +740%** (B corefrac:
++3.7/+3.5/+3.4/+2.1/0.0). The diagonals are specialist-grade (0.049-0.098 — our
+range), so the baseline FITS each task as well as anything we build, then loses it by
+2-3 orders of magnitude more; forgotten tasks land roughly halfway back to their
+untrained loss. The "is it just parameters" reading: 426M trainable adapters forget
+catastrophically where our 3.2B values hold flat — parameter count is not the
+mechanism (r=32 arm still queued for the capacity-insensitivity sweep; big-point
+accounting decision pending with supervisor).
+
+One conversion nuance banked: naive-fresh e7 rolls 34 (50 eps) vs our 20-26 — the
+dense adapter converts e7 better fresh (consistent with its specialist's 60),
+reinforcing that our e7 residual is conversion-side, not fit.
+
+Artifacts: `outputs/analysis/e58/{mse_matrix_naive_r256.jsonl, naive_final_eval/*}`;
+the trainer's `results.jsonl` intentionally keeps only the 4 boundary rows (its final
+row died with preemption #2; the standalone summary.json is the final-row record).

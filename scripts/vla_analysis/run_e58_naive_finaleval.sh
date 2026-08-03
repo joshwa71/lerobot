@@ -53,8 +53,7 @@ for env in [4, 6, 9, 2, 7]:
     if os.path.exists(p):
         with open(p) as f:
             info = json.load(f)
-        agg = info.get("aggregated", {})
-        rows[f"e{env}"] = agg.get("pc_success")
+        rows[f"e{env}"] = info.get("overall", {}).get("pc_success")
 print("NAIVE r256 FINAL (50 eps, seed 1000):", json.dumps(rows))
 vals = [v for v in rows.values() if v is not None]
 if len(vals) == 5:
