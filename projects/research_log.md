@@ -5823,3 +5823,51 @@ per the frontier plan (e7 compass → one interleaved/hybrid layout, pre-registe
 before its warm-up). Warm-ups/audits/A-phase inherit the flag through the existing
 scripts once a layout sets it; certificates remain comparable (warm-ups train on
 memory-free features either way).
+
+---
+### Entry 59 addendum (3 Aug 26, eve) — FIRST INTERLEAVED CHAIN LAUNCHED: expert [6,8,10,12] + VLM [7,9,11,13] @ n256/r2, B's router recipe + corefrac + 2x + 3072 — the param-matched pure-PLACEMENT cell vs B 53.2
+
+**Config decision (with Josh).** Candidates considered: 6+6 at [4..14] on both sides
+(4.8B — absmax-adjacent weight, placement+capacity confounded), 5+5 with VLM
+[3,5,7,9,11] (VLM 3/5 sit BELOW the E49 probe's measured range — layers 7-16 — and
+very-low LM layers risk the palette-constancy pathology: the anchored palette's
+within-task state-conditionality comes from attention-mixed context that hasn't
+accumulated by L3), and the chosen **param-matched 4+4**: bank budget IDENTICAL to B
+(4 expert + 4 VLM, n256/r2, 3.2B), so the sequential cell vs B 53.2 is a pure
+placement delta at matched recipe. Per-side reasoning:
+- Expert [6,8,10,12]: top bank 12 = the e7-depth bet (L8→20/20/12, L9→28, L12→36);
+  bottom 6 exits the marginal L2/L4 routing band B's anchor had to rescue (E36
+  plateau ≥L8; attempt-A L2 famIoU 0.212; E53 "L2 leakiest module") — B only sat
+  at [2,4,6,8] because the old guard forced VLM to 10+.
+- VLM [7,9,11,13]: the E49 geometry payload — instruction-anchor separation best
+  LOW (L7 0.722 → L16 0.898); every prior VLM bank sat at L10+ because of the
+  guard. All four banks in probe-measured territory; 13 bridges to compact's
+  known-good [13-16]. Even/odd offset ⇒ expert anchors pair with LM layers
+  carrying no VLM wrapper.
+- Noise OFF (dose05x sigmas were calibrated for B's layers; recalibrated noise is
+  a follow-up arm; comparator is the no-noise B 53.2).
+
+**Chain** (`joint_interleaved_e681012_v791113_prepass_full_chain.sh`, commit
+e2246f22; unit `e59-interleave`, launched 17:26 UTC): warm-up 10k (router-only
+fast, broadcast losses, anchored w0.40 + sep8 + c0.05, FiLM off, PREPASS=true —
+new env passthrough in joint_rwarmup_common; downstream stages inherit
+frozen_prepass from the checkpoint config) → audit (bs8×400) → AUTOMATED GATE
+(E54-relaxed: expert famIoU ≤0.18 one-grace-≤0.20, bg ≤0.10, mean core50 ≥400,
+min-eff ≥300; VLM famIoU ≤0.165 all layers + min-eff ≥150 palette tripwire — the
+never-run low-VLM-layer bet is arbitrated at the certificate for ~4h) → A-phase
+10k (bs ladder 16x2 → 8x4 → 16x2+ckpt) → 5-task sequential (corefrac + lr
+2e-3→2e-4 + top_t 3072, 50-ep final, per-task ckpts, resume plumbing armed).
+
+**Pre-registered:** beat 53.2 ⇒ placement pays (≥55 = new frontier band); e7 ≥ 30
+(depth), e9 ≥ ~56 (hold), e4 ≥ 40 AND e2 ≥ 80 (spread's cells must survive —
+either cratering = the trade is architectural); give-back ≥ −3; prior-core events
+= 0 at all 8 modules; MSE matrix ≤ ~+5%/task; block-min mean ≤ ~0.045 band; and
+`updt_s` recorded = the first production measure of the pre-pass training-step
+cost (smoke: 1.31-1.39x fwd-only at fp32/bs2 — the training step should be
+lighter since bwd is unchanged).
+
+**Launch health:** all three E59 banners in-log (frozen-base routing / Frozen
+PRE-PASS ENABLED / INTERLEAVED placement expert [6,8,10,12] / VLM [7,9,11,13]);
+VLM memory attached at [7,9,11,13] (bank 65536, r2, knn16); expert anchors paired
+at B=0.4; GPU 100% @ 33.4GB (the E49 warm-up footprint + pre-pass structures).
+Gate verdict expected ~22:30-23:00 UTC; sequential lands ~tomorrow evening.
