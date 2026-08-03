@@ -727,6 +727,10 @@ class PaliGemmaWithExpertModel(
                 layer_ranks=[],
                 lang_to_query=False,
                 use_frozen_base_input_features=False,
+                # E59: the pre-pass is orchestrated at the policy level; the derived
+                # per-tower cfg must not re-trigger the config-level validation
+                # (frozen_prepass requires use_frozen_base_input_features, cleared above).
+                frozen_prepass=False,
                 text_span=int(getattr(cfg, "vlm_text_span", 200)),
                 image_regions=int(getattr(cfg, "vlm_image_regions", 0) or 0),
                 image_pool_weights=list(getattr(cfg, "vlm_image_pool_weights", [1.0, 0.5]) or [1.0, 0.5]),

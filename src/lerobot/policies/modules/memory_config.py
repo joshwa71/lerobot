@@ -325,3 +325,23 @@ class MemoryLayerConfig:
     # to GPU per call. Numerically identical to the on-GPU path. Intended for inference on
     # memory-constrained GPUs — not for training.
     offload_slots_to_cpu: bool = False
+
+    def __post_init__(self):
+        # E59: the placement rule must fail at CONFIG time — the model-load path
+        # (from_pretrained -> post_load_setup) swallows attach-time exceptions, which
+        # would otherwise silently produce a policy with no VLM memory attached
+        # (observed: smoke_frozen_prepass mode C). The attach-time guard remains as
+        # defense in depth for programmatic construction.
+        exp = list(self.layers or [])
+        vlm = list(self.vlm_layers or [])
+        if exp and vlm and min(vlm) <= max(exp) and not self.frozen_prepass:
+            raise ValueError(
+                f"memory_layer.vlm_layers {vlm} must all sit ABOVE the highest expert memory "
+                f"layer ({max(exp)}) to preserve expert routing stationarity. Set "
+                "memory_layer.frozen_prepass=true to lift this constraint (routing inputs then "
+                "come from a full memory-free pre-pass; ~+1 forward/step)."
+            )
+        if self.frozen_prepass and not self.use_frozen_base_input_features:
+            raise ValueError(
+                "memory_layer.frozen_prepass requires use_frozen_base_input_features=true."
+            )
