@@ -5752,3 +5752,74 @@ reinforcing that our e7 residual is conversion-side, not fit.
 Artifacts: `outputs/analysis/e58/{mse_matrix_naive_r256.jsonl, naive_final_eval/*}`;
 the trainer's `results.jsonl` intentionally keeps only the 4 boundary rows (its final
 row died with preemption #2; the standalone summary.json is the final-row record).
+
+---
+## Entry 59 - 3 Aug 26 (BUILD: `frozen_prepass` — the placement guard becomes a compute knob. One full memory-free pre-pass per batch serves every routing input, lifting the "VLM banks above expert banks" constraint → interleaved layouts (e.g. expert==VLM [4,6,8,10,12]) are now legal. Smoked 3-mode: EXACT fork equivalence on legal layouts (0.00e+00, bit-identical loss), full stationarity on interleaved, config-parse guard. Cost ~1.3-1.4x forward (fwd-only, fp32/bs2 — production step-time TBD on the first arm). Two real hazards found en route.)
+
+### Motivation (Josh's proposal, adopted)
+
+The placement guard (vlm_layers strictly above max(expert layers)) exists to protect
+three expert-side consumers of the prefix: the expert routing branch's per-layer
+prefix KV, the E52 anchor hooks (pooled LM instruction hiddens), and the inference
+pass-A prefix KV. Key structural fact: the PREFIX tower never attends the suffix
+(prefix-LM mask), so VLM routing was never threatened by expert banks at any
+placement — the guard is entirely about the expert side. All three consumers can be
+served instead by computing them from a full memory-bypassed forward per batch:
+same stationarity property ("routing reads f_frozen(obs)"), bought with compute
+instead of constraint. What it unlocks: VLM banks in the good low-stack anchor
+geometry (E49: separation degrades monotonically upward, L7 0.722 → L16 0.898 —
+every VLM bank ever run sat at L10+ because of the guard); expert-high + VLM-broad
+simultaneously; more banks with every layer inside measured-good bands.
+
+### Implementation (commits b014a39e..; flag default False = byte-identical)
+
+- `memory_layer.frozen_prepass` (requires use_frozen_base_input_features).
+  Training/joint path: one no-grad forward of the whole network with every wrapper
+  in capture/bypass mode; stashes drained into explicit per-layer router_x args
+  (checkpoint-safe — args re-thread through ckpt recompute, a stash pop would not);
+  both lazy forks disabled under the flag. E52 anchors are captured by their hooks
+  during the pre-pass and LOCKED against live-pass overwrite (under interleaving
+  the live prefix at anchor layers carries memory). Inference: prefix pass A runs
+  for ALL VLM wrappers with use_cache=True — its KV is kept as the memory-free
+  prefix KV the expert's suffix pass A deep-copies (the live KV is memory-carrying
+  under interleaving); staleness guarded by batch-size check. Placement validation
+  moved to MemoryLayerConfig.__post_init__ (parse-time).
+- Smokes `scripts/vla_analysis/{smoke_frozen_prepass.py,run_smoke_frozen_prepass.sh}`,
+  policy-level on the stage-1 base, fresh attach, fp32, 3 modes — ALL PASS:
+  - A (guard-legal spread, in-process flip): pre-pass reproduces the fork
+    implementation EXACTLY — routed-view max|d| = 0.00e+00 at every VLM site,
+    ≤2.6e-06 at expert sites, loss bit-identical, anchors bit-identical. Fwd-time
+    ratio prepass/fork ≈ 1.31-1.39x (fp32, bs2, n64 banks; fwd-only — the training
+    step ratio will be lower since bwd is unchanged, measure on the first arm).
+  - B (interleaved expert==VLM [4,6,8,10,12]): every site routed with router_x;
+    ALL router_x + anchors BITWISE stationary under value bumps on either tower
+    while loss moves and grads reach both towers' values through the no-grad
+    pre-pass; grad-ckpt parity exact; inference deterministic, memory-free prefix
+    KV captured, VLM router_x stationary across the chunk, expert router_x
+    stationary at the first denoise step (later steps' x_t is live-generated —
+    input divergence, not routing drift), stash hygiene clean.
+  - C: interleaved WITHOUT the flag fails loudly at config parse with the lift
+    hint.
+
+### Hazards found (both worth remembering)
+
+1. **Attach-time exceptions are SWALLOWED on the model-load path** (from_pretrained
+   → post_load_setup; the E33 note, now with a measured consequence): the old
+   attach-time placement guard fired and vanished, yielding a policy with expert
+   memory but NO VLM banks — silently a different architecture. Mode C caught it;
+   fix = config-level validation (draccus parse raises before any load). Any
+   future attach-path validation must live at config level too.
+2. Smoke-side footguns for the record: bumping `slot_up` params silently touches
+   nothing if `value_type=lora` isn't set (default is vector — empty-bump asserts
+   added); `set -o pipefail` inverts expected-failure pipelines (mode C); pad rows
+   legitimately differ between joint and prefix-only implementations (uniform
+   attention over different column sets — the E45 F2 precedent) — always compare
+   routed views.
+
+### Status
+
+Built + smoked only — no run uses it yet. The first user is the next substrate spin
+per the frontier plan (e7 compass → one interleaved/hybrid layout, pre-registered
+before its warm-up). Warm-ups/audits/A-phase inherit the flag through the existing
+scripts once a layout sets it; certificates remain comparable (warm-ups train on
+memory-free features either way).
