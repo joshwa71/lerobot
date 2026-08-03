@@ -187,7 +187,11 @@ class TrainPipelineConfig(HubMixin):
             else:
                 self.job_name = f"{self.env.type}_{active_cfg.type}"
 
-        if not self.resume and isinstance(self.output_dir, Path) and self.output_dir.is_dir():
+        # `resume_sequential` (lerobot-sequential-train preemption recovery) legitimately
+        # relaunches into the existing run dir; the base class doesn't know the field,
+        # so read it defensively (absent on plain lerobot-train configs -> False).
+        resuming = self.resume or getattr(self, "resume_sequential", False)
+        if not resuming and isinstance(self.output_dir, Path) and self.output_dir.is_dir():
             raise FileExistsError(
                 f"Output directory {self.output_dir} already exists and resume is {self.resume}. "
                 f"Please change your output directory so that {self.output_dir} is not overwritten."
