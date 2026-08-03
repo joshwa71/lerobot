@@ -71,12 +71,14 @@ python scripts/vla_analysis/smoke_frozen_prepass.py $COMMON \
 
 echo "=== MODE C: interleaved WITHOUT prepass must raise the guard ==="
 rm -rf /tmp/smoke_prepass_$$_out
-if python scripts/vla_analysis/smoke_frozen_prepass.py $COMMON \
+python scripts/vla_analysis/smoke_frozen_prepass.py $COMMON \
   --policy.memory_layer.layers=[4,6,8,10,12] \
   --policy.memory_layer.vlm_layers=[4,6,8,10,12] \
-  --policy.memory_layer.frozen_prepass=false 2>&1 | tee /tmp/smoke_prepass_C.log | grep -q "frozen_prepass=true to lift"; then
-  echo "[PASS] C guard raises with the lift hint"
+  --policy.memory_layer.frozen_prepass=false > /tmp/smoke_prepass_C.log 2>&1
+RC=$?
+if [ $RC -ne 0 ] && grep -q "frozen_prepass=true to lift" /tmp/smoke_prepass_C.log; then
+  echo "[PASS] C guard raises at config parse with the lift hint (rc=$RC)"
 else
-  echo "[FAIL] C guard did not raise as expected"; exit 1
+  echo "[FAIL] C guard did not raise as expected (rc=$RC)"; exit 1
 fi
 echo "ALL THREE MODES PASS"
