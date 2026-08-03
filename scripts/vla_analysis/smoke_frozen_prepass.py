@@ -106,6 +106,9 @@ def main(cfg: SequentialOnlineConfig):
                     "rx": None if rx_eff is None else rx_eff.detach().float().cpu(),
                     "anchor": None if getattr(self, "_ctx_anchor", None) is None
                     else self._ctx_anchor.detach().float().cpu(),
+                    "vm": None if getattr(self, "_ctx_valid_mask", None) is None
+                    else self._ctx_valid_mask.detach().cpu(),
+                    "span": int(getattr(self, "text_span", 0) or 0),
                 }
             return orig(x, lang_emb=lang_emb, task_ids=task_ids, router_x=router_x)
 
@@ -138,6 +141,19 @@ def main(cfg: SequentialOnlineConfig):
         r = rec[name]["rx"]
         return rec[name]["x"] if r is None else r
 
+    def routed_view(rec, name):
+        """The positions memory actually routes on. VLM sites: the valid tokens of the
+        last-text_span language field only — PAD rows are inert by construction and
+        legitimately differ between a joint pass (uniform attention over prefix+suffix
+        columns) and a prefix-only fork (uniform over prefix); the E45 F2 precedent.
+        Expert sites: every position routes."""
+        t = rx_of(rec, name)
+        vm, span = rec[name]["vm"], rec[name]["span"]
+        if name.startswith("vlm_") and vm is not None and span > 0:
+            f = t[:, -span:][:, : vm.shape[1]]
+            return f[vm.bool()]
+        return t
+
     all_sites = [f"exp_{i}" for i in exp_idx] + [f"vlm_{i}" for i in vlm_idx]
 
     if mode == "A/legal":
@@ -149,7 +165,7 @@ def main(cfg: SequentialOnlineConfig):
         mem_cfg.frozen_prepass = True
         r_pre, l_pre = fwd()
         for s in all_sites:
-            a, c = rx_of(r_fork, s), rx_of(r_pre, s)
+            a, c = routed_view(r_fork, s), routed_view(r_pre, s)
             d = float((a - c).abs().max())
             check(f"L2 routing features equivalent @ {s}", d < 2e-3, f"max|d|={d:.2e}")
         anc_f = r_fork[f"exp_{exp_idx[-1]}"]["anchor"]
@@ -187,7 +203,7 @@ def main(cfg: SequentialOnlineConfig):
             for p in ups_v:
                 p.add_(torch.randn_like(p) * 0.05)
         r1, l1 = fwd()
-        ok_rx = all(torch.equal(rx_of(r1, s), rx_of(r0, s)) for s in all_sites)
+        ok_rx = all(torch.equal(routed_view(r1, s), routed_view(r0, s)) for s in all_sites)
         check("I2a ALL router_x bitwise stationary under low-VLM value bump", ok_rx)
         anc0 = r0[f"exp_{exp_idx[-1]}"]["anchor"]
         anc1 = r1[f"exp_{exp_idx[-1]}"]["anchor"]
@@ -202,7 +218,7 @@ def main(cfg: SequentialOnlineConfig):
                 p.add_(torch.randn_like(p) * 0.05)
         r2, l2 = fwd()
         check("I2d router_x stationary under expert value bump",
-              all(torch.equal(rx_of(r2, s), rx_of(r1, s)) for s in all_sites))
+              all(torch.equal(routed_view(r2, s), routed_view(r1, s)) for s in all_sites))
         check("I2e loss moved again", abs(l2 - l1) > 1e-7)
         # I3: grads ---------------------------------------------------------
         for p in [q for w in list(exp_wr.values()) + list(vlm_wr.values())
@@ -232,7 +248,7 @@ def main(cfg: SequentialOnlineConfig):
         torch.manual_seed(123)
         records.clear()
         act1 = policy.predict_action_chunk(b)
-        rx_inf = {s: rx_of({s: records[s]}, s) for s in all_sites if s in records}
+        rx_inf = {s: routed_view({s: dict(records[s])}, s) for s in all_sites if s in records}
         check("I5a inference: expert+VLM sites all routed with router_x",
               all(records[s]["rx"] is not None for s in all_sites if s in records)
               and len(rx_inf) == len(all_sites))
@@ -248,7 +264,7 @@ def main(cfg: SequentialOnlineConfig):
         torch.manual_seed(123)
         records.clear()
         act2 = policy.predict_action_chunk(b)
-        ok_inf = all(torch.equal(rx_of({s: records[s]}, s), rx_inf[s]) for s in rx_inf)
+        ok_inf = all(torch.equal(routed_view({s: dict(records[s])}, s), rx_inf[s]) for s in rx_inf)
         check("I5d inference router_x bitwise stationary under value bump", ok_inf)
         check("I5e actions moved (values live)", not torch.equal(act1, act2))
         clean = all(not w._frozen_stash for w in list(exp_wr.values()) + list(vlm_wr.values()))
