@@ -5630,3 +5630,65 @@ at training start, so `--eval.batch_size=1` was chosen to preserve VRAM headroom
 a standalone eval process holds weights only (~110GB free). Estimated ~4-5h/side batched
 (vs ~45-60h serial for both). Stats note for the writeup: LIBERO init states wrap modulo 50
 (`libero.py:333`), so 100 eps = 2 passes over the fixed init-state set with fresh policy noise.
+
+---
+### Entry 58 addendum 5 (3 Aug 26) — FIRST REAL SPOT PREEMPTION (naive-LoRA arm, 22:12 UTC 2 Aug, step 21,400 — 1.4K into the final e7 block): ~25 min of training lost; nebius CLI gap closed; PEFT preemption-resume built + production-validated; arm resumed
+
+**The preemption.** The r256 naive-sequential-LoRA arm (E58 addendum 4, wandb `bncprsuz`)
+died mid-flight: last wandb heartbeat 22:12:13 UTC 2 Aug at step 21,400 (loss 0.142 —
+1.4K steps into task 4/e7, the final block). Diagnosis followed the 1 Aug playbook and
+this time the discriminator pointed the other way: SSH to the VM timed out while the
+local network was verified healthy against three independent hosts (ICMP 8.8.8.8,
+github:22, HTTPS) — the machine itself went away. VM journal after restart confirms
+`Reached target shutdown.target` at 22:12:22. First genuine preemption of the spot era
+(the 1 Aug event was local-network); the VM sat stopped ~8h overnight, Josh restarted it
+from the web console ~05:50 UTC. The public IP did NOT rotate despite >1h stopped.
+
+**Damage inventory: ~25 minutes.** Tasks 0-3 fully banked on the boot disk (checkpoints
+005000-020000 + boundary evals + `sequential_state.pt`, last written 21:15). Lost: the
+in-flight 1.4K steps of e7. This baseline has no cross-task accumulators (no
+protection/IDF; `reinit_optimizer_each_task=true`) — the adapter weights in the
+checkpoint ARE the complete cross-task state, so a boundary resume is method-exact
+(only divergence: dataloader RNG within the e7 block, not a controlled variable).
+
+**Infra gap closed: nebius CLI on the local box** (flagged 31 Jul, binding today).
+Installed `~/.nebius/bin/nebius` (NOT on PATH in non-login shells), profile
+`joshwa71-home-pc` (Josh ran the interactive auth — the TUI cannot be driven from a
+non-TTY shell). §9.2's jq paths verified against a live response: `.status.state`
+correct; the public IP comes back CIDR-form (`89.169.125.3/32`) — strip before
+comparing. phddev/CLAUDE.md updated with both.
+
+**PEFT preemption-resume built (commit `aff3cd5b`) — the E54-U5 plumbing did not
+compose with the E58 PEFT branch.** Two gaps: the trainer unconditionally fresh-wrapped
+adapters under `--peft` (silently discarding tasks 0-3's training on a resume), and the
+factory's `use_peft` load path loads adapters FROZEN (`inference_mode=true` in the
+adapter save). Fix: under `--resume_sequential` + `--policy.use_peft=true` +
+`--policy.path` at the per-task checkpoint, the factory rebuilds base + trained
+adapters and the trainer re-enables them instead of wrapping, with two hard guards —
+refuse if no adapter params found, and refuse if `L1(lora_B)=0` (freshly-initialized
+LoRA has lora_B exactly zero; a trained mid-run adapter never does — the decisive
+loaded-vs-fresh discriminator). Double-wrap combo (`use_peft` without
+`resume_sequential`) also made a hard error. Wrapper:
+`job_scripts/nebius/baselines/naive_seq_lora_r256_resume.sh` (SMOKE=1 = 25-step task-4
+resume into a throwaway dir).
+
+**Smoke + production gotcha.** Smoke passed end-to-end (425.2M re-enabled,
+L1(lora_B)=4.837e5 nonzero; `RESUMING … 4/5 tasks complete, global_step=20000`; 25
+steps; saved) and the adapter-continuity check is decisive: smoke-saved
+L1(lora_B)=4.8415e5 vs the real 020000's 4.8375e5 — the trained adapter, moved by 25
+small steps, not a fresh one. The real relaunch then died at draccus parse time:
+`TrainPipelineConfig.validate` refuses an existing output_dir unless `resume` (the
+lerobot-train flag, which carries config-reload semantics we don't want) — the smoke
+had dodged it via its throwaway dir, and no prior resume ever ran against an existing
+dir (the plumbing was built E54-U5 but never production-exercised). Fix (commit
+`8d8d10cb`): `validate()` treats `resume_sequential` (read via getattr — absent on
+plain lerobot-train configs) like `resume` for the dir check only.
+
+**Resumed 06:07 UTC 3 Aug** (unit `e58-naivelora-resume`): production log shows
+`PEFT resume: 425.2M adapter params re-enabled; L1(lora_B)=4.837e+05` + skip of tasks
+0-3 + task 4 training. Remaining: e7's 5K block (~1.4h) + the final 5-task × 50-ep
+eval. Same wandb job name (new run row; `bncprsuz` keeps steps ≤21.4K; `results.jsonl`
+on disk is the cross-run record). MSE forgetting matrix still to run on landing
+(pre-registered: specialist-grade diagonals then catastrophic collapse) — note
+`mse_matrix2.py` is a memory-value slot-swap instrument; the LoRA arm needs an
+adapter-swap variant.
