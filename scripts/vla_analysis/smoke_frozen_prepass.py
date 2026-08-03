@@ -95,6 +95,7 @@ def main(cfg: SequentialOnlineConfig):
     assert n_bumped > 0, "no slot value params found — is value_type=lora set?"
 
     records = {}
+    records_seq = {}  # per-name list of every live call's rx (inference: one per denoise step)
 
     def instrument(w, name):
         orig = w.forward
@@ -104,6 +105,8 @@ def main(cfg: SequentialOnlineConfig):
             if rx_eff is None and not self._frozen_capture and self._frozen_stash:
                 rx_eff = self._frozen_stash[0]  # peek; orig pops it
             if not self._frozen_capture:  # live pass only (skip pre-pass bypass calls)
+                records_seq.setdefault(name, []).append(
+                    None if rx_eff is None else rx_eff.detach().float().cpu())
                 records[name] = {
                     "x": x.detach().float().cpu(),
                     "rx": None if rx_eff is None else rx_eff.detach().float().cpu(),
@@ -250,26 +253,37 @@ def main(cfg: SequentialOnlineConfig):
         # I5: inference -----------------------------------------------------
         policy.eval()
         torch.manual_seed(123)
-        records.clear()
+        records.clear(); records_seq.clear()
         act1 = policy.predict_action_chunk(b)
         rx_inf = {s: routed_view({s: dict(records[s])}, s) for s in all_sites if s in records}
+        first_exp = {s: records_seq[s][0] for s in records_seq if s.startswith("exp_")}
         check("I5a inference: expert+VLM sites all routed with router_x",
               all(records[s]["rx"] is not None for s in all_sites if s in records)
               and len(rx_inf) == len(all_sites))
         check("I5b memory-free prefix KV captured",
               getattr(pwe, "_frozen_prefix_kv", None) is not None)
         torch.manual_seed(123)
-        records.clear()
+        records.clear(); records_seq.clear()
         act1b = policy.predict_action_chunk(b)
         check("I5c inference deterministic (bitwise)", torch.equal(act1, act1b))
         with torch.no_grad():
             for p, s in zip(ups_v, saved_v):
                 p.copy_(s + torch.randn_like(s) * 0.08)
         torch.manual_seed(123)
-        records.clear()
+        records.clear(); records_seq.clear()
         act2 = policy.predict_action_chunk(b)
-        ok_inf = all(torch.equal(routed_view({s: dict(records[s])}, s), rx_inf[s]) for s in rx_inf)
-        check("I5d inference router_x bitwise stationary under value bump", ok_inf)
+        # VLM sites: obs-driven (prefix pass A) -> stationary across the whole chunk.
+        # Expert sites: router features are f_frozen(obs, x_t, t) and x_t is GENERATED
+        # by the live model, so later denoise steps' inputs legitimately diverge after
+        # a value bump — stationarity holds at the FIRST denoise step (same seed ->
+        # same noise -> same x_t), which is what we assert.
+        bad_v = [s for s in rx_inf if s.startswith("vlm_")
+                 and not torch.equal(routed_view({s: dict(records[s])}, s), rx_inf[s])]
+        check("I5d VLM inference router_x bitwise stationary under value bump",
+              not bad_v, f"bad={bad_v}")
+        bad_e = [s for s in first_exp
+                 if not torch.equal(records_seq[s][0], first_exp[s])]
+        check("I5d2 expert router_x stationary at first denoise step", not bad_e, f"bad={bad_e}")
         check("I5e actions moved (values live)", not torch.equal(act1, act2))
         clean = all(not w._frozen_stash for w in list(exp_wr.values()) + list(vlm_wr.values()))
         check("I5f stash discipline clean", clean)
