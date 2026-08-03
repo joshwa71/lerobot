@@ -1966,12 +1966,53 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     # freezes the base and leaves only adapter params trainable; the optimizer builder
     # below has a matching branch (adapters carry no pk_* tags).
     if cfg.peft is not None:
-        import dataclasses as _dc
+        if cfg.resume_sequential:
+            # Preemption resume: the factory's use_peft path has already rebuilt
+            # base + TRAINED adapters from the per-task checkpoint (the adapter save
+            # carries inference_mode=true, so everything loads frozen). Fresh-wrapping
+            # here would silently discard the prior tasks' training — instead
+            # re-enable the loaded adapters.
+            if not getattr(cfg.policy, "use_peft", False):
+                raise ValueError(
+                    "--resume_sequential with --peft requires --policy.use_peft=true and "
+                    "--policy.path at the per-task checkpoint (…/pretrained_model), so the "
+                    "trained adapters are loaded instead of fresh-wrapped."
+                )
+            n_adapter = 0
+            lora_b_l1 = 0.0
+            for name, p in policy.named_parameters():
+                if ".lora_" in name:
+                    p.requires_grad_(True)
+                    n_adapter += p.numel()
+                    if ".lora_B." in name:
+                        lora_b_l1 += p.detach().float().abs().sum().item()
+            if n_adapter == 0:
+                raise ValueError("PEFT resume: no LoRA adapter parameters found in the loaded policy.")
+            if lora_b_l1 == 0.0:
+                # Freshly-initialized LoRA has lora_B exactly zero; a resumed mid-run
+                # adapter never does. This means the trained weights were NOT loaded.
+                raise ValueError(
+                    "PEFT resume: adapters look freshly initialized (L1(lora_B)=0) — the "
+                    "checkpoint's trained adapter weights were not loaded. Refusing to run."
+                )
+            if is_main:
+                logging.info(
+                    f"PEFT resume: {n_adapter / 1e6:.1f}M adapter params re-enabled from "
+                    f"checkpoint; L1(lora_B)={lora_b_l1:.3e} (nonzero => trained weights loaded)"
+                )
+        else:
+            if getattr(cfg.policy, "use_peft", False):
+                raise ValueError(
+                    "--policy.use_peft=true loads adapters via the factory; combining it with "
+                    "a fresh --peft wrap would double-wrap. Use --resume_sequential=true to "
+                    "continue a preempted PEFT run, or drop use_peft for a fresh one."
+                )
+            import dataclasses as _dc
 
-        policy = policy.wrap_with_peft(peft_cli_overrides=_dc.asdict(cfg.peft))
-        if is_main:
-            n_train = sum(p.numel() for p in policy.parameters() if p.requires_grad)
-            logging.info(f"PEFT wrap: {n_train / 1e6:.1f}M trainable adapter params")
+            policy = policy.wrap_with_peft(peft_cli_overrides=_dc.asdict(cfg.peft))
+            if is_main:
+                n_train = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+                logging.info(f"PEFT wrap: {n_train / 1e6:.1f}M trainable adapter params")
 
     # Attach pre/post processors with dataset stats and device overrides
     processor_kwargs = {}
