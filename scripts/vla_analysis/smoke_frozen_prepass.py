@@ -85,11 +85,14 @@ def main(cfg: SequentialOnlineConfig):
     # Make memory ACTIVE (fresh attach zero-inits slot_up -> memory output 0): small
     # random values on every bank, identical across all forwards until bumped.
     torch.manual_seed(7)
+    n_bumped = 0
     with torch.no_grad():
         for w in list(exp_wr.values()) + list(vlm_wr.values()):
             for n, p in w.mem.named_parameters():
                 if n.endswith("slot_up") or n.endswith("slot_down"):
                     p.add_(torch.randn_like(p) * 0.02)
+                    n_bumped += 1
+    assert n_bumped > 0, "no slot value params found — is value_type=lora set?"
 
     records = {}
 
@@ -198,6 +201,7 @@ def main(cfg: SequentialOnlineConfig):
         # I2: bump lowest VLM bank -----------------------------------------
         w_low = vlm_wr[vlm_idx[0]]
         ups_v = [p for n, p in w_low.mem.named_parameters() if n.endswith("slot_up")]
+        assert ups_v, "no slot_up on the low VLM bank — value_type must be lora"
         saved_v = [p.detach().clone() for p in ups_v]
         with torch.no_grad():
             for p in ups_v:

@@ -27,6 +27,7 @@ COMMON="--policy.path=$BASE \
   --policy.memory_layers=true \
   --policy.memory_layer.enabled=true \
   --policy.memory_layer.memory_only=false \
+  --policy.memory_layer.value_type=lora \
   --policy.memory_layer.mem_n_keys=64 \
   --policy.memory_layer.lora_rank=2 \
   --policy.memory_layer.mem_knn=8 \
