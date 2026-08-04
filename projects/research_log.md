@@ -5871,3 +5871,41 @@ PRE-PASS ENABLED / INTERLEAVED placement expert [6,8,10,12] / VLM [7,9,11,13]);
 VLM memory attached at [7,9,11,13] (bank 65536, r2, knn16); expert anchors paired
 at B=0.4; GPU 100% @ 33.4GB (the E49 warm-up footprint + pre-pass structures).
 Gate verdict expected ~22:30-23:00 UTC; sequential lands ~tomorrow evening.
+
+---
+### Entry 59 addendum 2 (3-4 Aug 26) — GATE VERDICT: HARD FAIL on expert-deep famIoU; OVERRIDDEN (Josh) on the E56 bg-first rationale — graduation launched. Certificate findings: the VLM low-layer bet PAID (L7 famIoU 0.101, best VLM cert in project history; the E49 depth gradient reproduces in a trained router), and the expert famIoU rise with depth is the ANCHOR-SOURCE gradient, lawful across three certs.
+
+**Certificate** (audit_heldout_jointwarm_interleave_e681012_v791113_anchor040_sep8_prepass_10k):
+expert L6 famIoU 0.157 / bg 0.025 / core50 600 · L8 0.180 (grace) / 0.029 / 728 ·
+L10 **0.230** / 0.048 / 1045 · L12 **0.213** / 0.045 / 995 — L10/L12 breach the 0.20
+hard ceiling → GATE: HARD FAIL, chain stopped as designed. VLM: L7 **0.101** / L9
+0.147 / L11 0.135 / L13 0.161, min-eff 247-489 — all pass, and 0.101 is the best
+VLM famIoU ever certified (prior band 0.13-0.16 at L10+). Capacity healthy at all
+8 modules (expert min-eff 523-850; no collapse tripwire anywhere).
+
+**Findings.** (1) The E49 geometry gradient (instruction-anchor separation best low,
+degrading upward) REPRODUCES in the trained VLM router, monotone L7→L13 — the
+probe→certificate transfer validates the low-placement bet at certificate level.
+(2) The expert famIoU depth-rise is the same gradient arriving through the
+anchor-source pairing (expert layer j pools LM layer j): B [2,4,6,8] rose to 0.192
+@L8, absmax [4-9] to 0.174 @L9, here 0.230/0.213 @L10/L12 — the anchored recipe
+behaves lawfully at depths it was never certified at; L6/L8 reproduce B's levels
+almost exactly. Deep expert banks inherit weak anchors. (3) The gate kept the
+E44-54 famIoU-primary emphasis that E56 explicitly inverted ("gate on bg first,
+famIoU second") — bg here is 0.025-0.048 across all eight modules, B's winning
+band, ~half of compact+corefrac's 0.080 (which made 51.6).
+
+**Override (Josh: "Proceed").** Rationale: bg-first per E56; capacity clean;
+corefrac zeroes core overwrites regardless of famIoU; absmax precedent (failed ITS
+gate at every expert layer → became the 53.6 frontier; E54: gate property, not
+router property). Sharpened e7 read pre-registered: e7 low here (deep famIoU
+elevated, bg clean, cores protected) ⇒ the famIoU story revives with clean
+attribution; e7 converts ⇒ famIoU is confirmed dead as a gate axis and bg-first
+becomes the standing certificate rule. Deferred alternative if needed later:
+decouple anchor-source from bank layer (deep banks pooling from the L7-region
+geometry) — small code change, better informed after the sequential verdict.
+
+**Launched** (grad_interleave_e681012_v791113_prepass.sh, unit `e59-interleave`
+reused): A-phase 10k (bs32 first rung) → sequential
+`libero_10_seq5_jw_interleave_e681012_v791113_prepass_beta4corefrac_topt3072_lr2x_steps5k`.
+Landing ~4-5 Aug; comparator B 53.2 (pure placement at matched 3.2B).
