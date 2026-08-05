@@ -373,6 +373,10 @@ class HashingMemoryLite(nn.Module):
         # inference where the full slot tensor wouldn't fit). The forward inspects
         # the slot tensor's `.device` at runtime so the on-GPU path is untouched
         # when offload is disabled.
+        # E61: set when this module's storage is aliased to another module's (see
+        # share_storage_from). None = this module owns its storage (legacy default).
+        self._storage_shared_from = None
+
         self._slots_offloaded = bool(getattr(cfg, "offload_slots_to_cpu", False))
         if self._slots_offloaded:
             # Best-effort pin; falls back to plain CPU memory if pinning fails
@@ -397,6 +401,43 @@ class HashingMemoryLite(nn.Module):
             p = self._parameters.get(name)
             if p is not None:
                 yield p
+
+    def storage_param_names(self) -> tuple[str, ...]:
+        """E61: the parameter names that constitute this module's shared-able storage —
+        the product keys plus the slot tables. Everything else (query projection, gate,
+        projections, queues, statistics) is per-site by design."""
+        return ("keys",) + self._slot_param_names()
+
+    def share_storage_from(self, leader: "HashingMemoryLite") -> None:
+        """E61 shared-pair tables: replace this module's storage (product keys + slot
+        tables) with references to ``leader``'s Parameters.
+
+        The aliased attributes become plain instance attributes (NOT registered
+        parameters), so ``named_parameters()`` / ``state_dict()`` emit a single copy —
+        checkpoints stay deduped, optimizers see one Parameter, and the forward's
+        dtype-sync loop moves the storage exactly once (via the leader). All consumers
+        (forward, TF-IDF masking, autopsy, split_memory_params) read these tensors via
+        attribute access, so both members work unchanged. Gradient contributions from
+        every member site accumulate into the one shared tensor — the E61 mechanism.
+        """
+        if leader is self:
+            raise ValueError("share_storage_from: a module cannot share storage with itself")
+        if getattr(leader, "_storage_shared_from", None) is not None:
+            raise ValueError("share_storage_from: leader is itself a follower — chained sharing unsupported")
+        if self._slots_offloaded or leader._slots_offloaded:
+            raise NotImplementedError("offload_slots_to_cpu is unsupported with share_groups")
+        for attr in ("n_keys", "heads", "k_dim", "v_dim", "input_dim", "value_type", "lora_rank", "size"):
+            if getattr(self, attr) != getattr(leader, attr):
+                raise ValueError(
+                    f"share_storage_from: mismatched {attr}: {getattr(self, attr)} vs {getattr(leader, attr)}"
+                )
+        if bool(getattr(self, "lora_slot_bias", False)) != bool(getattr(leader, "lora_slot_bias", False)):
+            raise ValueError("share_storage_from: lora_slot_bias mismatch between group members")
+        for name in self.storage_param_names():
+            if name in self._parameters:
+                del self._parameters[name]
+            object.__setattr__(self, name, getattr(leader, name))
+        self._storage_shared_from = leader
 
     def _apply(self, fn, recurse=True):
         """Override to keep slot params on CPU when offload is enabled.
@@ -2265,6 +2306,27 @@ def attach_memory_to_layer_list(
                     p.data = p.data.to(device=base_device, dtype=torch.float32)
             else:
                 p.data = p.data.to(device=base_device, dtype=base_dtype)
+
+    # ---- E61: shared-pair storage — alias each group's followers to its first layer.
+    # Runs AFTER the wrap loop so member ordering never matters. Followers' just-built
+    # tables are dropped here (transient allocation only); from this point the group
+    # owns ONE keys tensor and ONE slot-table set, registered on the leader.
+    share_groups = [list(g) for g in (getattr(cfg, "share_groups", []) or [])]
+    if share_groups:
+        bad = [li for g in share_groups for li in g if int(li) not in target_set]
+        if bad:
+            raise ValueError(
+                f"share_groups reference non-target {label} layers {bad} (targets {target_layers})"
+            )
+        for g in share_groups:
+            lead_li = int(g[0])
+            leader_mem = layers[lead_li].mlp.mem
+            for li in g[1:]:
+                layers[int(li)].mlp.mem.share_storage_from(leader_mem)
+        print(
+            f"SHARED memory storage for {label}: groups {share_groups} — keys + slot tables "
+            "aliased to each group's first layer; per-site query/gate/proj/stats retained."
+        )
 
     return target_layers
 

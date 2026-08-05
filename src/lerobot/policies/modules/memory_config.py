@@ -326,6 +326,25 @@ class MemoryLayerConfig:
     # memory-constrained GPUs — not for training.
     offload_slots_to_cpu: bool = False
 
+    # ---- E61: shared-pair memory tables (one storage serving multiple attach sites) ----
+    # Each group lists EXPERT layers (all must be in `layers`) whose modules SHARE one
+    # storage — the product keys and the slot tables — aliased to the group's first
+    # (lowest) layer at attach time. Per-site query projection, gate, output projection,
+    # queues, and statistics stay separate: the shared object is the dictionary (keys)
+    # and the content (values); the per-site heads decide how to address and consume it.
+    # Sharing keys+values together is deliberate — with per-site keys, slot i would be
+    # two unrelated addresses aliasing one memory (hash collision by construction);
+    # with shared keys, slot i means the same routing region for every member.
+    # Motivation (E59 autopsy): capacity is not binding (worst core50 ~2.4K of 65K
+    # slots) — SITES are the valuable axis; sharing decouples site count from parameter
+    # count. Mechanism bet (E61 pre-registration): during sequential adaptation each
+    # shared slot's content trains under every member's consumption context — a
+    # real-distribution analogue of the E58 value-input-noise neighborhood widening.
+    # Empty (default) = no sharing = byte-identical legacy behavior.
+    share_groups: List[List[int]] = field(default_factory=list)
+    # Same, for the VLM tower (members must be in `vlm_layers`).
+    vlm_share_groups: List[List[int]] = field(default_factory=list)
+
     def __post_init__(self):
         # E59: the placement rule must fail at CONFIG time — the model-load path
         # (from_pretrained -> post_load_setup) swallows attach-time exceptions, which
@@ -345,3 +364,35 @@ class MemoryLayerConfig:
             raise ValueError(
                 "memory_layer.frozen_prepass requires use_frozen_base_input_features=true."
             )
+        # E61 share-group validation — at CONFIG time for the same reason as the
+        # placement rule above (the load path swallows attach-time exceptions).
+        def _check_share_groups(groups, members, tower):
+            seen: set[int] = set()
+            for g in groups or []:
+                gl = [int(x) for x in g]
+                if len(gl) < 2:
+                    raise ValueError(f"{tower} share group {gl}: needs >= 2 layers to share")
+                if gl != sorted(gl) or len(set(gl)) != len(gl):
+                    raise ValueError(f"{tower} share group {gl}: must be strictly increasing")
+                bad = [x for x in gl if x not in members]
+                if bad:
+                    raise ValueError(
+                        f"{tower} share group {gl}: layers {bad} are not attached {tower} "
+                        f"memory layers {members}"
+                    )
+                dup = [x for x in gl if x in seen]
+                if dup:
+                    raise ValueError(f"{tower} share groups overlap on layers {dup}")
+                seen.update(gl)
+
+        _check_share_groups(self.share_groups, exp, "expert")
+        _check_share_groups(self.vlm_share_groups, vlm, "vlm")
+        if self.share_groups and (self.layer_ranks or []):
+            rank_by = {li: int(r) for li, r in zip(exp, list(self.layer_ranks))}
+            for g in self.share_groups:
+                rs = {rank_by[int(x)] for x in g if int(x) in rank_by}
+                if len(rs) > 1:
+                    raise ValueError(
+                        f"expert share group {list(g)}: layer_ranks differ {sorted(rs)} — a shared "
+                        "slot table needs one rank across its members"
+                    )

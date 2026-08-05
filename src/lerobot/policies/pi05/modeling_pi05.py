@@ -742,6 +742,11 @@ class PaliGemmaWithExpertModel(
                 # E52: the expert-anchor mix is an expert-tower mechanism; the VLM
                 # modules keep their own pooled-key machinery.
                 expert_anchor_pool="",
+                # E61: the VLM tower's share groups ride the derived cfg's expert-position
+                # field (attach_memory_to_layer_list reads cfg.share_groups against the
+                # tower it is wrapping); clear the vlm field to keep validation happy.
+                share_groups=list(getattr(cfg, "vlm_share_groups", []) or []),
+                vlm_share_groups=[],
             )
             vlm_targets = attach_memory_to_layer_list(
                 self.paligemma.model.language_model.layers,

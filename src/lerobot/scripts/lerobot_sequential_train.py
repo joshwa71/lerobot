@@ -1513,12 +1513,12 @@ def _compute_tfidf_top_indices_for_batch(
                     except Exception:
                         pass
                     for vp in value_params:
-                        allowed_by_param[vp] = top_indices.detach()
+                        _merge_allowed_rows(allowed_by_param, vp, top_indices.detach())
                     if protect_scale_out is not None:
                         scale = torch.ones(num_slots, dtype=torch.float32)
                         scale[top_indices.cpu()] = scale_mask.cpu()
                         for vp in value_params:
-                            protect_scale_out[vp] = scale
+                            _merge_protect_scale(protect_scale_out, vp, scale)
                     _n = getattr(_compute_tfidf_top_indices_for_batch, "_bg_log_n", 0)
                     _compute_tfidf_top_indices_for_batch._bg_log_n = _n + 1
                     # 2999 is coprime with the module count so the periodic print rotates
@@ -1567,7 +1567,7 @@ def _compute_tfidf_top_indices_for_batch(
                 # For vector mode: [values], for lora mode: [slot_down, slot_up]
                 # (+ [slot_bias] for affine slots — same dim-0 slot indexing)
                 for vp in value_params:
-                    allowed_by_param[vp] = top_indices.detach()
+                    _merge_allowed_rows(allowed_by_param, vp, top_indices.detach())
 
                 # "grad_scale" protection: emit the per-slot update scale (1-u)^beta for the
                 # value params. Applied around optimizer.step() via _snapshot_protected_rows /
@@ -1582,7 +1582,7 @@ def _compute_tfidf_top_indices_for_batch(
                     if u is not None and u.numel() == num_slots:
                         scale = (1.0 - u.to(torch.float32)).clamp(min=0.0).pow(protect_beta)
                         for vp in value_params:
-                            protect_scale_out[vp] = scale
+                            _merge_protect_scale(protect_scale_out, vp, scale)
 
                 # If keys are trainable, mask their gradients to rows corresponding to the
                 # selected value slots. Each value slot index encodes a pair of sub-keys
@@ -1617,7 +1617,7 @@ def _compute_tfidf_top_indices_for_batch(
                                 key_rows_list.append(key2)
                             if key_rows_list:
                                 key_rows = torch.unique(torch.cat(key_rows_list))
-                                allowed_by_param[keys_param] = key_rows.detach()
+                                _merge_allowed_rows(allowed_by_param, keys_param, key_rows.detach())
                     except Exception:
                         # If key masking fails for any reason, fall back to unmasked keys.
                         pass
@@ -1625,6 +1625,70 @@ def _compute_tfidf_top_indices_for_batch(
             # Be robust: skip module on any failure
             raise
     return allowed_by_param
+
+
+def _merge_allowed_rows(
+    allowed_by_param: dict[torch.nn.Parameter, torch.Tensor],
+    p: torch.nn.Parameter,
+    rows: torch.Tensor,
+) -> None:
+    """E61 shared tables: two sites' write masks land on the SAME Parameter object.
+    Merge as the UNION of allowed rows — each site keeps its own top-t budget. (Plain
+    dict assignment would silently keep only the last site's mask.) For unshared
+    modules every Parameter is seen exactly once, so this is byte-identical legacy."""
+    prev = allowed_by_param.get(p)
+    if prev is None:
+        allowed_by_param[p] = rows
+        return
+    allowed_by_param[p] = torch.unique(torch.cat([prev.to(device=rows.device), rows]))
+
+
+def _merge_protect_scale(
+    scale_out: dict[torch.nn.Parameter, torch.Tensor],
+    p: torch.nn.Parameter,
+    scale: torch.Tensor,
+) -> None:
+    """E61 shared tables: per-slot protection/LR scales from multiple sites compose on
+    one Parameter. Neutral entries (exactly 1.0) defer to the other site; where both
+    sites scale a slot, the stronger attenuation (elementwise min) wins — budget-mode
+    speed-ups (>1) survive only when a single site selects the slot. Unshared modules
+    hit this once per Parameter: byte-identical legacy."""
+    prev = scale_out.get(p)
+    if prev is None:
+        scale_out[p] = scale
+        return
+    prev = prev.to(device=scale.device, dtype=scale.dtype)
+    scale_out[p] = torch.where(
+        prev == 1.0, scale, torch.where(scale == 1.0, prev, torch.minimum(prev, scale))
+    )
+
+
+def _sync_shared_protection_stores(unwrapped_policy: PreTrainedPolicy) -> None:
+    """E61 shared tables: prior-task protection measured through ANY member site must
+    bind writes admitted through every other member — the slot content is one object,
+    so damage through site B's writes harms site A's reads regardless of whose mask
+    admitted them. After each boundary fold, set every member's usefulness vector to
+    the elementwise max over its share group. No-op without sharing."""
+    groups: dict[int, list[str]] = {}
+    for _, _mem, value_params, json_key in _iter_memory_modules(unwrapped_policy):
+        if value_params:
+            groups.setdefault(id(value_params[0]), []).append(json_key)
+    for keys in groups.values():
+        if len(keys) < 2:
+            continue
+        vecs = [_protect_usefulness_by_module.get(k) for k in keys]
+        vecs = [v for v in vecs if v is not None]
+        if not vecs:
+            continue
+        merged = vecs[0].clone()
+        for v in vecs[1:]:
+            merged = torch.maximum(merged, v.to(device=merged.device))
+        for k in keys:
+            _protect_usefulness_by_module[k] = merged.clone()
+        logging.info(
+            f"[E61] synced shared-table protection store across {len(keys)} sites "
+            f"({keys[0].split('layers.')[-1]}<-group): u = elementwise max."
+        )
 
 
 def _apply_gradient_mask_to_memory_values(allowed_by_param: dict[torch.nn.Parameter, torch.Tensor]):
@@ -2552,6 +2616,10 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 _finalize_protect_usefulness(
                     accelerator.unwrap_model(policy, keep_fp32_wrapper=True),
                     u_norm=cfg.protect_u_norm,
+                )
+                # E61: shared tables — one member's protection must bind every member.
+                _sync_shared_protection_stores(
+                    accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
                 )
                 if is_main:
                     logging.info(

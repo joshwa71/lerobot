@@ -6123,3 +6123,73 @@ lesion ~0 = the control passing.
 expert [4,6,8,10,12,14,16] / VLM [5,7,9,11,13]); GPU 80% @ 39.8GB (vs 33.4GB at 8
 modules). Gate verdict expected ~12:00-13:00 UTC; sequential lands ~6 Aug. Monitor
 armed (gate lines + errors + boundaries + 90-min step heartbeat).
+
+---
+## Entry 61 - 5 Aug 26 (SHARED-PAIR MEMORY TABLES: designed, built, smoked 3/3 — the budget-restoring half of go-big-then-trim. One K/V storage per adjacent pair, per-site heads; the E59-frontier shared cell is QUEUED behind E60 at HALF the adaptation state (1.6B) with same 8 sites)
+
+**Idea (Josh):** the paper that inspired the project (and Meta's Memory Layers at
+Scale) shares one memory pool across several base-model layers. Pair our attach
+sites — (6,8)+(10,12) expert, (7,9)+(11,13) VLM — one table per pair. Halves value
+params; potentially keeps the expressiveness.
+
+**Why the ledger says yes:** E59's autopsy showed capacity is NOT binding (worst
+core50 2.4K of 65K; effnum <= 12.5K) while placement/sites is the proven axis
+(+4.4 at matched budget). Sharing decouples SITE count from PARAMETER count — and
+composes with E60: the lesion map picks which sites matter; sharing keeps many
+sites under the 3.2B paper budget instead of amputating to fit.
+
+**Design decisions:**
+- Share KEYS + VALUES together, per-site query-proj/gate/out-proj/queues/stats.
+  Values-only sharing rejected: with per-site keys, slot i is two unrelated
+  addresses aliasing one memory (hash collision by construction); with shared
+  keys, slot i means the same routing region for every member. Adjacent pairing
+  keeps the members' (prepass-frozen) routing inputs maximally correlated.
+- MECHANISM BET (pre-registered): during sequential adaptation each shared slot's
+  content gets gradients from BOTH consumption contexts — a real-distribution
+  analogue of E58's value-input noise (train content on a NEIGHBORHOOD of x), at
+  NEGATIVE parameter cost. Symmetric risk, also pre-registered: if content is
+  depth-specialized (the other reading of e7's E10/E12 mass), e7 craters with
+  shallow cells held — itself informative (separates content-specialization from
+  placement); follow-up would be asymmetric capacity (solo deep, shared shallow).
+
+**Build (memory_config/memory_lite/modeling_pi05/lerobot_sequential_train):**
+- `share_groups` / `vlm_share_groups` config + CONFIG-TIME validation (the E59
+  swallowed-attach-exception lesson): >= 2 members, strictly increasing, members
+  of the tower's layer list, disjoint, uniform layer_ranks within a group.
+- `HashingMemoryLite.share_storage_from(leader)`: followers' keys+slot tables
+  deleted from `_parameters` and re-set as plain attribute references to the
+  leader's Parameters — named_parameters()/state_dict() emit ONE copy (checkpoints
+  deduped, optimizers see one Param, dtype-sync moves storage once), while every
+  consumer (forward, TF-IDF, autopsy, split_memory_params) reads via attribute
+  unchanged. Aliasing runs in attach AFTER the wrap loop (ordering-proof);
+  from_pretrained re-aliases via the same funnel, so shared checkpoints round-trip.
+- TWO TRAINER HAZARDS found by design review, fixed pre-incident: (1) the write
+  mask registry is keyed by Parameter object — plain dict assignment meant the
+  LAST site's top-t silently overwrote every other member's. Now `_merge_allowed_
+  rows` = UNION (each site keeps its own top_t=3072 budget); scales compose via
+  neutral-defer + elementwise-min. (2) Protection stores are per-site, but the
+  content is one object — site B's writes could damage slots protected for site
+  A's prior-task reads. Now `_sync_shared_protection_stores` (elementwise max
+  across group members) runs at every boundary fold. Both are byte-identical
+  no-ops for unshared configs.
+
+**Smokes (run_smoke_shared_pairs.sh on the VM, 3/3 PASS; one harness lesson:
+train-mode `last_indices` needs log_usage=true, as production sets):**
+GUARDS 6/6 config raises; LEGACY 8 modules own storage, fwd+bwd, grads at all 8
+(certifies E60's future stages import the new code safely — E60 verified 99%
+GPU/active after); SHARED (interleaved [4,6,8,10]+[5,7,9,11], prepass ON, both
+towers paired): storage identity 4 groups x 3 tensors; state_dict dedupe 8 value
+params/4 tables with per-site heads retained; **all 8 sites route, 4 owned slot
+tensors carry grad — both members accumulate into the shared table (the
+mechanism, verified)**; mask union-merge 8 sites -> 8 table-param entries;
+protection sync max-merges; strict round-trip loads clean with BITWISE forward
+parity.
+
+**Queued cell** (joint_sharepairs_e681012_v791113_prepass_full_chain.sh — launch
+after E60 lands; bg-first gate per site): E59 layout, 4 tables, 1.6B values.
+Pre-registration in the header: >= ~55 ⇒ "sites, not slots" causal + half-state
+efficiency claim (>= 57.6 ⇒ regularizer net-positive); rescore spec/succ Q4
+<= 0.344; e7 >= ~30 w/ e2 >= 80 (depth-specialization arbiter); site-bleed
+<= ~15%, prior-core <= ~2K, updt_s ~0.93. If it holds 57.6 at 1.6B: the cleanest
+statement of the thesis — the memory's power is WHERE IT READS, not how much it
+stores.

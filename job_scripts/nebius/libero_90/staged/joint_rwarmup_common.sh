@@ -106,6 +106,8 @@ else
     --policy.memory_layer.router_only_fast=${ROUTER_FAST:-false} \
     --policy.memory_layer.use_frozen_base_input_features=true \
     --policy.memory_layer.frozen_prepass=${PREPASS:-false} \
+    --policy.memory_layer.share_groups="${SHARE_GROUPS:-[]}" \
+    --policy.memory_layer.vlm_share_groups="${VLM_SHARE_GROUPS:-[]}" \
     --policy.memory_layer.log_usage=true \
     --policy.memory_layer.aggregate_usage=true \
     --policy.memory_layer.mem_heads=4 \
