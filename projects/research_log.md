@@ -5909,3 +5909,144 @@ geometry) — small code change, better informed after the sequential verdict.
 reused): A-phase 10k (bs32 first rung) → sequential
 `libero_10_seq5_jw_interleave_e681012_v791113_prepass_beta4corefrac_topt3072_lr2x_steps5k`.
 Landing ~4-5 Aug; comparator B 53.2 (pure placement at matched 3.2B).
+
+---
+### Entry 59 addendum 3 (5 Aug 26, 03:36 UTC) — LANDING: **57.6 — NEW FRONTIER** (+4.4 over B at matched 3.2B budget; pure placement delta). e7 CONVERTS (38); per the pre-registered read, famIoU is confirmed dead as a gate axis — **bg-first is now the standing certificate rule.**
+
+**50-ep final** (libero_10_seq5_jw_interleave_e681012_v791113_prepass_beta4corefrac_topt3072_lr2x_steps5k, step 25000):
+**57.6** = e4 42 / e6 68 / e9 56 / e2 84 / e7 **38**. Comparator B 53.2 = 44/60/56/86/20.
+
+**Pre-registration scorecard:**
+- beat 53.2 → **PASS** (57.6, +4.4); ≥55 new-frontier band → **PASS**. Frontier: B 53.2 → dose05x 54.4 → **interleave 57.6**. Oracle 63.2 now −5.6.
+- e7 ≥ 30 → **PASS** (38; B 20, compact-top12 36 = prior best seq cell). The expert-depth
+  bet (bank at L12) pays: +18 over B in the cell the whole strategy targets. Fit
+  trajectory through the e7 block was also the healthiest yet (loss 0.110→0.068).
+- e9 ≥ ~56 → **PASS** (56.0, exactly B's hold). The 20-ep boundary wobble (85 fresh
+  → 65 post-e2) resolved to the same 50-ep final as B — instrument noise, not decay.
+- e4 ≥ 40 AND e2 ≥ 80 → **PASS** (42, 84; B 44/86 — spread's cells survive the
+  expert-bottom 2→6 move and the low-VLM placement within noise; NOT architectural).
+- prior-core events = 0 → zero protection-event lines in the unit log; slot autopsy
+  from memory_by_task JSONs pending with the probe battery (addendum 4).
+- give-back ≥ −3, MSE matrix ≤ ~+5%, block-min band → pending probes (below).
+- updt_s RECORDED: **0.933–0.936 s/update flat across all 5 blocks** at bs16×acc2
+  (fwd 0.601 / bwd 0.241 / pre_s 0.007). The pre-pass production training cost is
+  ~equal to B's rung wall — the smoke's 1.31–1.39× fwd-only bound diluted by
+  unchanged bwd/opt exactly as predicted. **The placement guard is now a free knob
+  at training time.**
+- Boundary trail (20-ep instrument, retired ±11pp): 45 → 52.5 → 63.3 → 65.0
+  seen-means; e9 fresh 85 and e6 fresh 70 were the best 20-ep cells ever recorded.
+
+**Interpretations.** (1) PLACEMENT PAYS: single-delta vs B, +4.4 overall with e7
++18 — the far-region/value-content competence radius (E57) is addressable by
+putting expert banks deep, which frozen_prepass (E59) makes legal. (2) The gate
+override was correct and the sharpened e7 read resolves AGAINST famIoU: L10/L12
+certified 0.230/0.213 famIoU (hard-fail territory) and delivered the best e7 and
+the frontier — famIoU is dead as a gate axis; **gate on bg (≤0.10, winning band
+0.02–0.05) + capacity floors from here on.** (3) e6 68 is the best e6 sequential
+cell in the project (B 60); with e7 38 the per-task-best pool across configs
+rises further — simultaneity within one config is improving, not just the pool.
+(4) VLM-low placement (L7-L13) did not crater the anchor cells (e2 84) — palette
+pathology did not materialize; E49 geometry transfers end-to-end.
+
+**Probes armed per Josh:** unit `e59-probes` (gated on the seq unit exiting + the
+step-25000 row) fired at ~03:39 UTC — MSE forgetting matrix (mse_matrix2, 5 ckpts
+× 5 tasks, paired-noise, same instrument as B/absmax/naive) then jitter/OOD grid
+(t0/t3/t4, clean+state+image, swap-slots, E52 convention). Results → addendum 4.
+
+---
+### Entry 59 addendum 4 (5 Aug 26, morning) — probe battery part 1: jitter/OOD grid (the interleave beats the SPECIALISTS on nearly every perturbation cell) + slot autopsy (prior-core writes 4.4x below B; e7's read mass lives in the deep banks as designed).
+
+**Jitter/OOD grid** (probe_jitter, t0/t3/t4 × clean/state@0.1/state@0.2/image@0.05,
+final ckpt, chunk MSE; comparators: E53 spread-arm [B's placement family, pre-corefrac]
+and compact+corefrac, plus the e2/e7 specialists — all at the matched instrument):
+
+| cell | interleave | spread-fam | compact+cf | specialist |
+|---|---|---|---|---|
+| e4 clean | **0.0160** | 0.0332 | 0.0360 | — |
+| e4 state@0.2 | **0.0517** | 0.0871 | 0.1067 | — |
+| e2 clean | **0.0235** | 0.0335 | 0.0421 | 0.0308 |
+| e2 state@0.2 | **0.0487** | 0.0709 | 0.0996 | 0.0611 |
+| e7 clean | **0.0247** | 0.0318 | 0.0392 | 0.0330 |
+| e7 state@0.1 | **0.0477** | 0.0656 | 0.0811 | 0.0553 |
+| e7 state@0.2 | **0.0960** | 0.1329 | 0.1458 | 0.1168 |
+| e7 image@0.05 | 0.1798 | 0.1765 | 0.1996 | 0.1861 |
+
+Chunk error down 30-52% vs the family comparator at every cell but e7-image (parity),
+and **below the specialist at every shared cell** — including e7 clean (0.0247 vs
+0.0330), where E56's arbiter had B at parity-with-spec and still losing rollouts 3x.
+Standing caveats hold: chunk/success decoupling (never rank substrates on chunk alone),
+and E57's radius result (jitter shell 0.1-0.2σ probes ~10x nearer than real rollout
+excursions at 0.5-2.5σ) — this is a NEAR-manifold function read; the far-region read
+is the harvest-bank rescore (addendum 5). But the margins here are an order larger
+than any B-vs-spec chunk difference previously recorded.
+
+**Slot autopsy** (e59_slots.py, interleave vs B, outputs/analysis/e59/slots_e59.*):
+- **Prior-core write events (ev into earlier task's core50): 1,684 total vs B 7,376**
+  (4.4x fewer). Same dominant lawful cell in both — the e2 block into e9's core at the
+  2nd-from-bottom expert bank (here E8 1,273; B E4 4,928) — attenuated, not eliminated.
+  Trainer-level corefrac protection events: 0 (pre-registration met at the protected
+  set; the autopsy count is the wider statistical core50, on which B was never 0 either).
+- **The depth design realizes:** e7's expert read mass concentrates DEEP — effnum
+  E10 7,357 / E12 6,084 vs E6 4,208 (B's e7 leaned bottom-heavy: E2 7,388). e9, the
+  other spatial task, same shape (E10/E12 12,265/12,465). The banks the placement bet
+  added are the ones the hard tasks actually read.
+- **VLM palettes are tighter low:** e7's VLM effnum 1,616-2,591 across V7-V13 vs B's
+  2,341-5,366 across V10-V16; e2's V7 core50 = 80 slots. The E49 low-layer geometry
+  yields more concentrated, less diffuse retrieval — consistent with the famIoU-free
+  win and the palette pathology NOT materializing.
+- Self-coverage 0.74-0.99 everywhere (healthy); cumulative core-RTO ≤ 21% worst cell
+  (e9 core @E8 21%, vs B's 23% @E4) — same structure, smaller.
+
+**Scorecard updates:** MSE-matrix gate PASS (drifts +0.0 to +3.6%, addendum 3 table);
+prior-core: protection-set 0 = PASS, autopsy-count 4.4x-better-than-B = the honest
+line; jitter = the strongest OOD certificate any substrate has produced. Rescore of
+the final ckpt on the E57 e7 harvest bank RUNNING (unit e59-probes2; SCORE_FEAT_LAYER=6
+— below this model's first VLM bank at 7; proprio axis unaffected) -> addendum 5.
+
+---
+### Entry 59 addendum 5 (5 Aug 26, 04:44 UTC) — harvest-bank rescore: DEEP PLACEMENT WIDENED THE VALUE COMPETENCE RADIUS. Far-region disagreement with the specialist's validated behavior drops 29% vs B (Q4 spec/succ D 0.482 → 0.344), beating the calibrated noise arm (0.379) — with a TIGHTER demo-manifold fit (anchor 0.0263 vs B 0.0340). The call-2 commitment signature persists; the residual e7 gap (38 vs 60) still lives beyond the widened radius.
+
+**Instrument:** probe_offtrail_score on the E56/E57 e7 harvest bank (823 states: 418
+B-fail / 67 B-succ / 220 spec-fail / 198 spec-succ / 120 demo), paired seeds/batching
+vs chunks_spec_e7; report vs the specialist as reference. 9 min GPU — the bank is now
+a fast standing instrument. SCORE_FEAT_LAYER=6 (memory-free below this model's first
+VLM bank at 7); READ 1b grades on the model-independent proprio axis (same quartile
+bins 0.567/1.287/2.334 as every prior report — perfectly paired). READ 2/3 rows are
+B-trace context (vnoise precedent), not arm measurements.
+
+**READ 1b — D(arm, spec) vs proprio distance, the decisive populations:**
+
+| population | Q1 | Q2 | Q3 | Q4(far) |
+|---|---|---|---|---|
+| spec/succ: B | 0.094 | 0.120 | 0.123 | 0.482 |
+| spec/succ: vnoise05x | 0.103 | 0.126 | 0.120 | 0.379 |
+| spec/succ: **interleave** | **0.089** | **0.105** | **0.110** | **0.344** |
+| spec/fail: B → interleave | 0.090→0.079 | 0.133→0.124 | 0.181→0.146 | 0.385→0.318 |
+| harv_B/fail: B → interleave | 0.109→0.116 | 0.172→0.179 | 0.254→0.225 | 0.408→0.313 |
+| demo: B → interleave | 0.0169→0.0154 | | | |
+
+On the states where the specialist's far-region behavior is episode-validated
+(spec/succ Q4 — E57's "the specialist traverses the far region"), the interleave's
+function sits 29% closer than B's did, and closer than the E58 noise arm achieved —
+the placement lever beat the regularization lever on the exact axis the noise was
+designed for, while ALSO fitting the demo manifold tighter (anchor chunk 0.0263 vs
+B 0.0340; the noise arms traded a little on-manifold fit for radius). Direction
+consistent at every quartile and population.
+
+**Held honestly:** (i) residual far-region D 0.344 >> demo 0.015 — most of the
+remaining 38-vs-60 rollout gap still lives out there; the radius widened, it did not
+close. (ii) D is symmetric and far states may be multimodal — part of Q4 D is
+mode-mismatch, bounded by the same caveat as E57. (iii) READ 4 on the interleave-D:
+divergences still concentrate at call ≤2 on both harvests (the first-grasp
+commitment) — the failure GEOMETRY is unchanged; what improved is how far the
+function stays right before it diverges.
+
+**Board implications:** (1) the E57 ledger closes coherently — retrieval was never
+the problem, value content was, and value PLACEMENT (depth) is a working lever on it.
+(2) The natural next arm is stacking: recalibrated value-input noise ON the
+interleaved substrate (dose from a fresh calib run — E58's sigmas were measured on
+B's layers) — the two levers act on the same axis by different mechanisms (0.344 and
+0.379 from independent directions; if even half-additive, spec-succ-Q4 approaches
+the multimodality floor). (3) A fresh harvest of THIS model's e7 rollouts (50 eps,
+traces on) would give its own failure autopsy + READ 2/3 as arm measurements —
+cheap (~1h) and reusable, the natural pre-step before the compass decision.
