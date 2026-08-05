@@ -26,7 +26,7 @@ from lerobot.scripts.lerobot_sequential_train import (
     SequentialOnlineConfig, _build_dataloader_for_task, _collect_task_index_to_name,
 )
 
-LAYERS = [7, 9, 11, 13, 15, 16]
+LAYERS = json.loads(os.environ.get("QS_LAYERS", "[7, 9, 11, 13, 15, 16]"))
 TASKS = list(range(10))
 FAMILY = [(4, 5), (4, 7), (5, 7)]
 NB, BS = 13, 8

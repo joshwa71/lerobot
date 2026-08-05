@@ -6050,3 +6050,76 @@ B's layers) — the two levers act on the same axis by different mechanisms (0.3
 the multimodality floor). (3) A fresh harvest of THIS model's e7 rollouts (50 eps,
 traces on) would give its own failure autopsy + READ 2/3 as arm measurements —
 cheap (~1h) and reusable, the natural pre-step before the compass decision.
+
+---
+### Entry 59 addendum 6 (5 Aug 26, ~07:00 UTC) — sub-L7 querystats extension: the E49 curve is a V with its MINIMUM AT L7. "Lower is better" is dead; L7 is the measured optimum of the whole stack. V3/V4 excluded (constancy extreme); V5 CLEARED as viable (L9-grade-or-better separation, L13-band constancy) — a lesion-map judgment call, not a geometry kill.
+
+**Instrument:** probe_querystats_image.py extended below the E49 range — QS_LAYERS
+env knob added (default preserves the E49 invocation), layers [3,4,5,6,7] on the
+stage-1 base checkpoint (= the router input under frozen-route/prepass), 104
+samples/task x 10 tasks. 3.5 min GPU. outputs/analysis/e59/querystats_image_subL7.json.
+**Calibration: L7 inter 0.721 vs E49's 0.722 — reproduces to the 3rd decimal.**
+
+**Full merged curve** (instr-pool anchor, b=0: inter = between-task cos, lower =
+better separation; intra = within-task cos, higher = more palette-constant):
+
+| L | 3 | 4 | 5 | 6 | **7** | 9 | 11 | 13 | 15 | 16 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| inter | .794 | .775 | .734 | .775 | **.721** | .785 | .820 | .869 | .840 | .898 |
+| intra | **.926** | .915 | .895 | .904 | .882 | .877 | .888 | .899 | .869 | .911 |
+
+**Reads.** (1) The downward-improving E49 trend REVERSES below 7 — L7 is the global
+separation optimum; nothing sub-7 beats it on either axis. The mechanistic
+prediction (anchor conditionality needs attention mixing) confirms directionally:
+intra climbs monotonically toward constancy as depth decreases. (2) BUT sub-L7 is a
+slope, not a cliff: L5 inter 0.734 is BETTER than L9's 0.785 (a working bank), and
+L5 intra 0.895 sits in the L13 band (0.899, also a working bank) — V5 is viable
+geometry in unexplored territory, settled by lesion not by probe. First read
+over-called this ("drop V5") from the sub-L7 table alone; the merged curve corrects
+it — recorded as an instrument lesson: NEVER verdict a placement from a
+range-restricted slice of a curve whose comparators live outside the slice.
+(3) V3/V4 stay excluded: L3 intra 0.926 = the constancy extreme of the entire
+measured stack (above even L16) with zero separation advantage — the one
+out-of-band signal, on exactly the predicted pathology axis.
+
+---
+## Entry 60 - 5 Aug 26 (GO-BIG PLACEMENT SEARCH launched — 12 modules, expert [4,6,8,10,12,14,16] + VLM [5,7,9,11,13], frozen_prepass; first production use of the BG-FIRST gate; deliverable = the LESION MAP + a trimmed 3.2B retrain, not this run's own number)
+
+**Rationale (from the E59 verdict):** placement is the proven highest-value axis
+(+4.4 at matched budget; radius 0.482->0.344) and capacity is NOT binding (worst
+core50 ~2.4K of 65K slots) — so more modules buy SITES, not slots. Search-by-lesion
+beats search-by-chains: one big chain + zero-ablation evals maps all sites for the
+cost of ~one config sweep candidate. Additive memory (MLP(x)+Memory(x)) makes
+zeroing a module a clean lesion.
+
+**Sites:** expert 14/16 = never-run deep territory, the primary targets (depth
+gradient L8->L9->L12 + e7's read mass in E10/E12 hasn't turned over); expert 4
+re-added as the expected-dead control (E36/E53) calibrating the map's zero; VLM
+[7,9,11,13] unchanged (at the measured optimum); VLM 5 included per addendum 6
+(viable, unexplored, map-settled); V3/V4 excluded (constancy extreme).
+
+**Chain** (joint_bigsearch_e4to16_v5to13_prepass_full_chain.sh, unit
+`e60-bigsearch`, launched 07:06 UTC): warm-up 10k (router-only fast, anchored
+w0.40 + sep8, FiLM-free, PREPASS=true) -> audit bs8x400 -> **BG-FIRST GATE** (E59
+standing rule, first production use: expert bg <= 0.10 + mean core50 >= 400 +
+min-eff >= 300; VLM min-eff >= 150 = the V5 arbiter + famIoU >= 0.45 backstop only;
+famIoU otherwise INFORMATIONAL — expect lawful anchor-source elevation at expert
+14/16) -> A-phase 10k -> 5-task sequential (C-config: corefrac, lr 2e-3->2e-4,
+top_t 3072, bs16x2 ladder, 50-ep final). n256/r2 both towers = 4.8B values (+50%
+vs interleave-8's 3.2B — capacity confound ACCEPTED; search run, not paper cell).
+
+**Pre-registered reads** (comparator interleave-8 57.6 = 42/68/56/84/38, NOT
+budget-matched): >= ~57.6-noise = 12 modules break nothing; e7 vs 38 = do E14/E16
+extend the depth lever; e2 >= 80 AND e4 >= 40 (spread survival); give-back >= -3;
+MSE matrix <= ~+5%; prior-core autopsy vs the 1,684/7,376 ladder; updt_s recorded
+(12-module prepass cost). **LESION PROTOCOL (pre-registered, implemented at
+landing):** zero-ablate each of 12 modules at the final ckpt -> delta-success/task
+at 20-ep (12x5x20 = 1,200 rollouts, one overnight) + delta-chunk screen; greedy
+backward elimination to a 3.2B 8-module layout; RETRAIN that layout = the paper
+cell. Trim criterion = lesion delta, NOT read mass (usage != importance). Expert-4
+lesion ~0 = the control passing.
+
+**Launch health:** config echo + INTERLEAVED banner verified (frozen_prepass=True,
+expert [4,6,8,10,12,14,16] / VLM [5,7,9,11,13]); GPU 80% @ 39.8GB (vs 33.4GB at 8
+modules). Gate verdict expected ~12:00-13:00 UTC; sequential lands ~6 Aug. Monitor
+armed (gate lines + errors + boundaries + 90-min step heartbeat).
