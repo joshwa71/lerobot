@@ -6193,3 +6193,43 @@ efficiency claim (>= 57.6 ⇒ regularizer net-positive); rescore spec/succ Q4
 <= ~15%, prior-core <= ~2K, updt_s ~0.93. If it holds 57.6 at 1.6B: the cleanest
 statement of the thesis — the memory's power is WHERE IT READS, not how much it
 stores.
+
+---
+### Entry 61 addendum (5 Aug 26) — write-semantics design review (Josh): top-t and the protection store under sharing. DECISIONS: per-site top-t with union (budget follows demand); protection per table via MAX-sync for cell 1 (instrument-comparable), with NOISY-OR pre-registered as the follow-up composition if the measured overlap is material. Two adjudicator logs added + re-smoked (3/3).
+
+**The unit question:** sharing splits "the module" into site (demand) and table
+(content). Resolution: write budget follows demand (per site); protection follows
+content (per table); statistics follow attribution (per site, table-level realized).
+
+**top-t:** per-site 3072 + UNION on the shared table (chosen — single-delta vs
+interleave-8 where these same sites each had 3072; top_t is a tuned lever).
+Alternatives held: joint per-table ranking (conserves table write surface but sites
+compete + new TF/IDF-merge machinery — the fallback arm if union shows churn);
+top-t/2 per site (budget-cut confound); leader-only (arbitrary, rejected). Cost
+stated: per-table write surface becomes 3072-6144, data-dependent on pair overlap.
+
+**Protection store — the sum debate.** Josh: "why not sum — that's the true
+importance of a slot." Conceded in principle (damage is ~additive across read
+paths). Three counters carried the decision: (1) the instrument has NEVER measured
+aggregate importance — u is max-over-TASKS within a site; sum-across-sites would be
+a semantic hybrid (additive across layers, max across tasks) = a new instrument,
+not an extension. (2) sum couples protection dose to the UNKNOWN overlap structure:
+disjoint cores => sum==max (moot); full overlap => sum==2x-max clamped (dose
+doubling + saturation cliff exactly on the jointly-read core — the block-min/
+write-starvation lever the E51 history warns about). At beta=4, a 0.5/0.5 slot:
+discount 0.0625 (max) / 0.0039 (noisy-OR) / 0 hard veto (clamped sum). (3) much of
+sum-max on correlated adjacent-site reads (shared keys!) double-counts ONE
+underlying reliance through two channels. **The better form of the additive
+instinct: NOISY-OR, u = 1 - prod(1-u_i)** — additive where additivity is linear
+(small u), smooth saturation (no cliff), and FACTORIZES under the rank gate:
+(1-u)^beta = prod_i (1-u_i)^beta = every site's tuned discount applied
+independently. Verdict (Josh: "No you're right"): cell 1 keeps MAX; noisy-OR is
+the pre-registered follow-up arm iff the overlap log says the rules diverge.
+
+**Adjudicator instrumentation added (trainer, legacy no-op, re-smoked 3/3 PASS):**
+(1) `[E61 union]` — realized per-table mask size + overlap at merge time
+(rate-limited): 3072-ish = pairs converge on the same slots; 6144-ish = the table
+self-partitions. (2) `[E61]` boundary sync line now reports, per group: slots with
+all-member u>0.1, protected-count u>0.5 under max VS noisy-OR, and total u-mass
+under both — the counterfactual that decides whether the composition debate ever
+mattered, measured on the cell's own data.

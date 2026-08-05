@@ -1640,7 +1640,19 @@ def _merge_allowed_rows(
     if prev is None:
         allowed_by_param[p] = rows
         return
-    allowed_by_param[p] = torch.unique(torch.cat([prev.to(device=rows.device), rows]))
+    merged = torch.unique(torch.cat([prev.to(device=rows.device), rows]))
+    allowed_by_param[p] = merged
+    # E61 adjudicator log: the realized per-table write surface (3072..6144) is the
+    # earliest readout of whether a shared pair converges on the same slots or
+    # partitions the table. Rate-limited; 2999 is coprime with the merge cadence.
+    _n = getattr(_merge_allowed_rows, "_log_n", 0)
+    _merge_allowed_rows._log_n = _n + 1
+    if _n % 2999 == 0:
+        overlap = prev.numel() + rows.numel() - merged.numel()
+        logging.info(
+            f"[E61 union] shared-table mask: {prev.numel()} + {rows.numel()} -> {merged.numel()} "
+            f"rows (overlap {overlap})"
+        )
 
 
 def _merge_protect_scale(
@@ -1681,14 +1693,28 @@ def _sync_shared_protection_stores(unwrapped_policy: PreTrainedPolicy) -> None:
         if not vecs:
             continue
         merged = vecs[0].clone()
+        one_minus_or = (1.0 - vecs[0]).clone()
         for v in vecs[1:]:
-            merged = torch.maximum(merged, v.to(device=merged.device))
-        for k in keys:
-            _protect_usefulness_by_module[k] = merged.clone()
+            v = v.to(device=merged.device)
+            merged = torch.maximum(merged, v)
+            one_minus_or = one_minus_or * (1.0 - v)
+        # E61 adjudicator log (max-vs-noisy-OR debate, 5 Aug): report how much the
+        # composition rule would matter on this group's ACTUAL overlap. u_or =
+        # 1 - prod(1-u_i) factorizes under the rank gate into applying every site's
+        # (1-u)^beta discount independently — the pre-registered follow-up arm if
+        # the overlap here is material. Cell 1 deploys MAX (instrument-comparable).
+        u_or = 1.0 - one_minus_or
+        joint = int(torch.stack([(v > 0.1) for v in [x.to(merged.device) for x in vecs]]).all(dim=0).sum())
+        n_hi_max = int((merged > 0.5).sum())
+        n_hi_or = int((u_or > 0.5).sum())
         logging.info(
             f"[E61] synced shared-table protection store across {len(keys)} sites "
-            f"({keys[0].split('layers.')[-1]}<-group): u = elementwise max."
+            f"({keys[0].split('layers.')[-1]}<-group): u = elementwise max. "
+            f"Overlap: {joint} slots with all-member u>0.1; protected u>0.5: "
+            f"{n_hi_max} (max) vs {n_hi_or} (noisy-OR); mass {float(merged.sum()):.0f} vs {float(u_or.sum()):.0f}."
         )
+        for k in keys:
+            _protect_usefulness_by_module[k] = merged.clone()
 
 
 def _apply_gradient_mask_to_memory_values(allowed_by_param: dict[torch.nn.Parameter, torch.Tensor]):
