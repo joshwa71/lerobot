@@ -6233,3 +6233,35 @@ self-partitions. (2) `[E61]` boundary sync line now reports, per group: slots wi
 all-member u>0.1, protected-count u>0.5 under max VS noisy-OR, and total u-mass
 under both — the counterfactual that decides whether the composition debate ever
 mattered, measured on the cell's own data.
+
+---
+### Entry 60 addendum (6 Aug 26) — mid-run findings: OOM ladder x2 (12-module fixed cost ~84GB; A-phase on grad-ckpt at 4.0s/step, seq settled bs8x4 no-ckpt at 3.6s/step), DISK-FULL incident at the 015000 save (ENOSPC -> chain down ~40min; freed ~300G = vnoise arms' optimizer states; resumed from 010000 with full cross-task state: protection+IDF x12 modules). Boundary trail through 2 tasks: fresh e4 55 (best-ever opener), 10K = e4 60 / e6 60 (e4 ROSE through the e6 block).
+
+**Certificate (bg-first gate, first production use — PASSED):** expert bg 0.029-0.088
+(L16 nearest ceiling), capacity floors clear at all 12 modules; famIoU informational
+0.169-0.247 with L16 = highest ever certified (would have hard-failed the old gate).
+**V5's first trained-router arbitration: famIoU 0.107 (~V7-grade; this run's L7 =
+0.117), min-eff 253 vs the >=150 palette tripwire — the sub-L7 constancy worry did
+NOT materialize.** E49 gradient reproduces extended: 0.107->0.159 monotone L5->L11.
+Deep expert never-runs L14/L16: bg clean, core50 1153/1972 + min-eff 909/949 = the
+largest certified expert footprints.
+
+**Cost of 12 modules (the go-big premium, now measured):** fixed VRAM ~84GB (26 wts
++ 19 grads + 39 Adam on 4.8B fp32 values) -> A-phase OOM'd bs32 AND bs16x2, ran on
+bs16x2+ckpt at 4.0s/step (10.5h); seq OOM'd bs16x2, settled bs8x4 no-ckpt at
+~3.6s/step wall (25K ~= 25h). ~2x the 8-module chain wall-clock. DISK: ~65G per
+per-task checkpoint -> ~400G/chain at save_after_each_task; the boot disk (2.5T) hit
+100% at the 015000 save (SafetensorError ENOSPC), killing the chain mid-e9-block.
+Recovery: freed training_state/ of the two COMPLETED vnoise arms (~300G;
+pretrained_model + sequential_state + analyses kept), wiped partial 015000,
+relaunched stage-B-only (resume_bigsearch_seq.sh) with SEQ_LADDER starting at the
+settled rung; trainer restored 2/5 tasks + protection/IDF stores x12 and re-entered
+the e9 block (~4.5h retrained). STANDING NOTE: disk is now a planning axis — sweep
+optimizer states of completed runs BEFORE each new chain (E61 pre-launch cleanup:
+interleave training_states ~150G + old warm-up dirs are next candidates, Josh to see
+the list first).
+
+**Boundary trail (20-ep, +/-11pp):** 5K fresh e4 = 55 (best opener in any chain;
+interleave/B opened 45); 10K = e4 60 / e6 60 — e4 rose +5 through the e6 block
+(net-transfer signature), fresh e6 60 vs interleave's 70 (in-band). Seen-mean 60.0
+vs interleave 52.5 / B ~50 at matched boundary. The 50-ep final arbitrates.
