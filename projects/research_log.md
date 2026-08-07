@@ -6411,3 +6411,20 @@ reads per Entry 61 pre-registration with comparator interleave-8 = 60.6 at the
 
 ---
 ### Entry 60 addendum 5 (7 Aug 26, eve) — baseline rows queued for the 4-seed table (Josh): multitask-LoRA (standing 49.2) + naive seq-LoRA r256 final (standing 17.6, the forgetting foil; added on the same-instrument principle — flag to Josh, one line to skip). Unit `baseline-seeds`, gated on the e61-sharepairs chain exiting; results land in outputs/analysis/e60/seeds_{multitask5,naive_final}.json and complete the ICRA table at one instrument. E61 A-phase note: HOLDS bs32 (1.75 s/step, 134.7GB) — the first config to keep rung 1; the halved tables cleared exactly the fixed cost that forced every other ladder demotion.
+
+---
+### Entry 60 addendum 6 (7 Aug 26, eve) — FULL-FINETUNE baselines queued for the 4-seed table (Josh): (1) raw pi05 base -> libero_10 full FT 50K -> 4-seed eval; (2) the libero_90 stage-1 substrate -> libero_10 full FT 50K -> 4-seed eval (the "same substrate" cell). ARCHAEOLOGY CORRECTION: the deleted "72.6" was E31's B1 = libero_90+libero_10 JOINT finetune; the libero_10-only cell was B2, KILLED before completion — these are NEW cells, cleaner than the 72.6 (no pretraining data mixed into the finetune), and the standing 72.6 is NOT their expected value.
+
+Scripts fullft_l10_from_base_seeds.sh / fullft_l10_from_l90_seeds.sh: train args
+mirror E31/stage-1 verbatim (bs32, grad-ckpt — measured full-backbone
+requirement, warmup 4K/decay 50K, pi05 default LR; raw base = hub snapshot
+9e55186, verified on VM); in-run eval disabled — the 4-seed campaign
+(seeds_fullft_l10.json / seeds_fullft_l90_l10.json) is the instrument;
+preemption-safe (save_freq=10K + --resume from train_config.json; non-final
+optimizer states pruned post-run, ~40G each). Units armed as a gate CHAIN:
+e61-sharepairs -> baseline-seeds (multitask+naive) -> fullft-l10 -> fullft-l90l10.
+Wall estimate ~17-20h per FT => full table complete ~Mon 10 Aug morning. GPU is
+booked through the weekend — the lesion battery queues behind unless
+reprioritized. When done the ICRA table exists at ONE instrument: bigsearch /
+interleave / sharepairs / specialists / multitask-LoRA / naive-seq / full-FT
+(fresh) / full-FT (same-substrate).
