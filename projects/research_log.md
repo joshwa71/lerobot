@@ -6265,3 +6265,46 @@ the list first).
 interleave/B opened 45); 10K = e4 60 / e6 60 — e4 rose +5 through the e6 block
 (net-transfer signature), fresh e6 60 vs interleave's 70 (in-band). Seen-mean 60.0
 vs interleave 52.5 / B ~50 at matched boundary. The 50-ep final arbitrates.
+
+---
+### Entry 60 addendum 2 (7 Aug 26, 01:32 UTC) — LANDING: **59.6 — NEW FRONTIER** (+2.0 over interleave-8 at +50% budget, 12 modules). **e7 = 58: the depth lever CLOSES to two points of the specialist (60)** — B 20 -> interleave 38 -> 58. e9 64 and e4 46 = best-ever sequential cells. e2 74 MISSES its >= 80 pre-registration (fresh 95 at 20-ep -> 74 at 50-ep through the e7 block). **The per-task-best pool now EXCEEDS the specialist oracle: 64.0 vs 63.2.**
+
+**50-ep final** (step 25000): **59.6** = e4 46 / e6 56 / e9 64 / e2 74 / e7 58.
+Comparators: interleave-8 57.6 = 42/68/56/84/38; B 53.2 = 44/60/56/86/20;
+specialists 63.2 = 58/44/70/84/60. Oracle gap: -3.6.
+
+**Pre-registration scorecard (E60 header):**
+- >= ~57.6-noise -> **PASS at 59.6**: "more sites help even before trimming."
+- e7 vs 38 -> **58 (+20)**. The never-run E14/E16 sites extend the depth lever to
+  near-specialist parity. The E57 arc (far-region value content, addressable by
+  depth) is now ~fully cashed: 20 -> 38 -> 58 vs spec 60.
+- e4 >= 40 -> PASS (46, best ever; B 44). e2 >= 80 -> **MISS (74)**; fresh e2 was 95
+  (the best 20-ep cell ever recorded) and gave back ~21 through the e7 block at
+  mixed instruments — the FIRST spread-cell casualty of scale. With e6 56 (vs
+  interleave 68) the pattern reads: the 12-module e7 block moves earlier tasks more
+  than the 8-module one did. Matrix + autopsy arbitrate (running).
+- Boundary trail (20-ep): 55 / 60 / 63.3 / **71.25** seen-means — every boundary
+  the best ever at its position; fresh e2 95 = highest single cell ever.
+- updt_s 0.645-0.649 at bs8x4 (~3.6 s/opt-step; ~1.9x the 8-module wall).
+- Ops: disk-full incident at the first 015000 save (ENOSPC; ~40 min + one
+  retrained block); ~1.05T freed and ~630G archived to cold DURING the run
+  (Batch 2, 21/21 verified) — chain undisturbed post-resume.
+
+**Interpretations.** (1) SITES KEEP PAYING: +2.0 over interleave with the capacity
+confound acknowledged — the trimmed 3.2B retrain (lesion-selected) is the clean
+claim; but e7 58 is placement, not capacity (capacity was never binding). (2) The
+pool's simultaneity milestone: best-per-task across configs {46,68,64,84,58} =
+64.0 > oracle 63.2 — the substrate family now collectively BEATS per-task
+specialist training; one config holding the pool is the remaining engineering gap.
+(3) The new cost surface: e2/e6 give-back under 12 modules = the first evidence
+FOR trimming (some sites hurt retention even as others buy e7) — exactly the
+question the lesion map answers per-site. (4) The bg-first gate's second
+production validation: famIoU 0.244/0.247 sites (L10/L16) delivered e7 58.
+
+**Battery LAUNCHED** (unit e60-probes): MSE matrix + jitter grid + slot autopsy
+(bigsearch/interleave/B triple) + harvest-bank rescore TAG=bigsearch
+(SCORE_FEAT_LAYER=4, below this model's first VLM bank at 5). At e7 58 vs spec
+60, READ 1b's spec/succ Q4 is the arbiter of whether the function CONVERGED to
+the specialist's far-region behavior (D -> demo-level) or wins differently.
+Then: lesion machinery (pre-registered protocol, Entry 60) -> E61 shared-pairs
+chain on the freed GPU.
