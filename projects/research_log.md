@@ -6408,3 +6408,6 @@ lines confirm per-site masks with union-merge on the real tables. A-phase next
 (1.6B values; fixed cost ~26GB — may hold bs32); sequential overnight; landing
 reads per Entry 61 pre-registration with comparator interleave-8 = 60.6 at the
 4-seed instrument (57.6 at seed-1000/50-ep history).
+
+---
+### Entry 60 addendum 5 (7 Aug 26, eve) — baseline rows queued for the 4-seed table (Josh): multitask-LoRA (standing 49.2) + naive seq-LoRA r256 final (standing 17.6, the forgetting foil; added on the same-instrument principle — flag to Josh, one line to skip). Unit `baseline-seeds`, gated on the e61-sharepairs chain exiting; results land in outputs/analysis/e60/seeds_{multitask5,naive_final}.json and complete the ICRA table at one instrument. E61 A-phase note: HOLDS bs32 (1.75 s/step, 134.7GB) — the first config to keep rung 1; the halved tables cleared exactly the fixed cost that forced every other ladder demotion.
