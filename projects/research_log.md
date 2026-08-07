@@ -6350,3 +6350,49 @@ gate per site; pre-registration in the chain header + Entry 61). Ops note: one
 wasted re-eval attempt from inline-quoting a task filter through ssh+systemd
 (evaluated all 10 envs; ~45 min) — script-file + validated E58 syntax is the
 standing convention for remote evals now.
+
+---
+### Entry 60 addendum 4 (7 Aug 26, 10:30 UTC) — MULTI-SEED CAMPAIGN LANDS (Josh's spec: 25 eps x 4 seeds, paired states, all finals + all specialists): **THE SEQUENTIAL MEMORY MODEL BEATS THE SPECIALIST ORACLE — 64.6 vs 59.0, positive at 4/4 paired seeds.** The 63.2 "oracle" was single-seed luck; specialists re-base DOWN to 59.0 (their per-cell sd is +-4-11). Frontier ordering bigsearch > interleave confirmed 4/4 (+4.0). e7 is the ONLY remaining below-specialist cell (-9).
+
+**The table** (mean +- sd over 4 seeds x 25 eps; seeds 1000/2000/3000/4000 paired
+across all configs; instrument: eval_seeds_campaign.py, vec bs=13, finals only):
+
+| config | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| bigsearch-12 | 53+-5 | 70+-7 | 69+-10 | 81+-9 | 50+-10 | **64.6** |
+| interleave-8 | 50+-5 | 70+-7 | 58+-10 | 86+-8 | 39+-7 | 60.6 |
+| specialists | 46+-11 | 49+-11 | 61+-7 | 80+-7 | 59+-4 | **59.0** |
+
+**Headline reads:**
+1. **bigsearch > specialist oracle, paired: +3.2 / +10.4 / +5.6 / +3.2 (4/4).**
+   Per-env: e4 +7, e6 +21, e9 +8, e2 +1, e7 -9. The CONTINUAL learner beats
+   per-task specialist fine-tuning on 4 of 5 tasks at matched instrumentation —
+   the project's target ("make up ~10pp toward 63.2") is not just met, the bar
+   itself was mismeasured: the single-seed 63.2 decomposes into specialist
+   per-cell sd of +-4-11 (e4 spans 32-56 across seeds; e6 40-64), re-basing to
+   59.0. Interleave-8 (60.6) ALSO clears the oracle.
+2. **Frontier ordering CONFIRMED at seeds:** bigsearch +4.0 over interleave,
+   positive at all 4 paired seeds (+1.6/+8.8/+1.6/+4.0) — the single-seed +2.0
+   was real and understated. e7 (+11) and e9 (+11) carry it; e2 -5 (3/4 seeds
+   negative) is the honest small cost of the 12-module config.
+3. **e7 residual:** 50+-10 vs specialist 59+-4 — the depth lever closed 20->58
+   at seed-1000/50-ep but the multi-seed read says ~-9 remains. The e7 story is
+   not finished; it is however no longer the frontier's defining deficit (the
+   config-mean gap to specialists is now POSITIVE).
+4. **Instrument notes:** single-seed 50-ep finals mis-read configs in BOTH
+   directions (memory configs read ~4-5 low: 59.6->64.6, 57.6->60.6; the
+   specialist oracle read ~4 high: 63.2->59.0) — seed luck, not a systematic
+   episode-count effect. All prior standing numbers keep their roles as paired
+   seed-1000 history; HEADLINE claims from here on cite the 4-seed instrument.
+   Campaign artifacts: outputs/analysis/e60/seeds_*.json (per-episode success
+   vectors retained for paired per-state analysis).
+
+**Board consequences:** the ICRA narrative inverts — "sparse memory closes the
+specialist gap" becomes **"sparse memory EXCEEDS specialist fine-tuning while
+training sequentially with ~zero forgetting"** (matrix +0-4%, naive baseline
++740-1567%). e6 +21 is the transfer flagship (the multitask substrate beats the
+50-demo specialist by 21 points). Remaining open cells: e7 -9 (noise arm /
+lesion-trim still queued for exactly this) and the e2 -5 scale cost. E61
+shared-pairs LAUNCHED on the freed GPU (10:30:52 UTC, 41s after campaign exit;
+SHARED banners verified both towers) — its pre-registration gains a sharpened
+context: comparator interleave-8 is now 60.6+-noise at the 4-seed instrument.
