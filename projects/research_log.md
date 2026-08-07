@@ -6308,3 +6308,45 @@ production validation: famIoU 0.244/0.247 sites (L10/L16) delivered e7 58.
 the specialist's far-region behavior (D -> demo-level) or wins differently.
 Then: lesion machinery (pre-registered protocol, Entry 60) -> E61 shared-pairs
 chain on the freed GPU.
+
+---
+### Entry 60 addendum 3 (7 Aug 26, morning) — the e2 "give-back" investigation CLOSES: it was the SEED. 2x2 (config x eval-seed) shows bigsearch and interleave exactly TIED at seed 2000 (88.0 both); the entire 74-vs-84 deficit lives in the seed-1000 state set. A 14-point single-seed swing on one task => the multi-seed campaign (Josh's spec) is now the standing instrument; E61 queued behind it.
+
+**Sequence.** Josh's read on the landing: "give-back was probably higher than usual
+— find where and why." (1) MSE matrix (addendum 2 battery): give-back is NOT
+elevated — drifts +4.2/+3.8/+3.7/+1.3/+0.0%, all in-band; percentages inflated by
+E60's LOWEST-EVER diagonals (better per-block fit); in ABSOLUTE terms only e9
+drifts more than E59 (+0.0026 vs +0.0017, accrued in the e2 block — the lawful
+e9<-e2 pair at 12 write surfaces), and E60's FINAL loss is lower than E59's final
+on every task. Fit-level retention: best on record. (2) e2's -10 success (74 vs
+E59's 84) against a flat matrix, 0 protection events, and the best-ever e2 jitter
+cells (clean 0.0197 vs E59 0.0235) = the E56/E57 fit/success decoupling signature.
+(3) Seed re-eval, same ckpt same instrument, seed 2000: **e2 = 88.0.** (4) The 4th
+cell — E59's ckpt at seed 2000: **88.0. Configs exactly tied.**
+
+| e2, 50-ep | seed 1000 | seed 2000 |
+|---|---|---|
+| interleave-8 | 84 | 88 |
+| bigsearch-12 | 74 | 88 |
+
+**Verdict:** no real e2 degradation — a handful of seed-1000 initial states flip
+under the 12-module config while a fresh draw shows parity. NOT worth the harvest
+apparatus. The DURABLE finding is about the instrument: single-seed 50-ep cells
+can swing 14 points on a high-variance task, so the +2.0 frontier claim (59.6 vs
+57.6) is inside single-seed noise until the campaign lands, and 63.2 (the
+specialist oracle) is single-seed folklore on the same terms.
+
+**Multi-seed campaign LAUNCHED** (Josh's spec; unit `e60-seeds`,
+eval_seeds_campaign.py + run_e60_seeds_campaign.sh): 25 eps x 4 seeds
+(1000/2000/3000/4000, PAIRED across configs) x {bigsearch-final,
+interleave-final on all 5 envs; each specialist on its own env}, vec bs=13, one
+policy load per config, per-episode success vectors retained for paired
+per-state analysis. ETA ~08:00-09:00 UTC; results -> addendum 4.
+**E61 QUEUED** (Josh: "make sure the layer share gets going") — unit
+`e61-sharepairs` armed with queue_e61_after_seeds.sh: waits on the e60-seeds
+UNIT (not the completion marker — a dead campaign still frees the GPU), then
+execs the full shared-pairs chain (E59 layout, 4 tables, 1.6B values, bg-first
+gate per site; pre-registration in the chain header + Entry 61). Ops note: one
+wasted re-eval attempt from inline-quoting a task filter through ssh+systemd
+(evaluated all 10 envs; ~45 min) — script-file + validated E58 syntax is the
+standing convention for remote evals now.
