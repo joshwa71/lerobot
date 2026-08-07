@@ -6396,3 +6396,15 @@ lesion-trim still queued for exactly this) and the e2 -5 scale cost. E61
 shared-pairs LAUNCHED on the freed GPU (10:30:52 UTC, 41s after campaign exit;
 SHARED banners verified both towers) — its pre-registration gains a sharpened
 context: comparator interleave-8 is now 60.6+-noise at the 4-seed instrument.
+
+---
+### Entry 61 addendum 2 (7 Aug 26, 14:50 UTC) — E61 CERTIFICATE: gate PASS; **shared keys route indistinguishably from dedicated keys.** famIoU within ~0.01 of E59 at every expert site; V7 0.101 EXACTLY reproduced; VLM 9/11/13 slightly cleaner. First adjudicator data: pairs PARTITION the table (union 1536+1536 -> ~3020-3047, overlap 25-52 rows ~2-3%) — if this holds through the sequential, max-vs-noisy-OR is moot by disjointness.
+
+Cert (audit_heldout_jointwarm_sharepairs_..._10k): expert bg 0.032-0.054, core50
+721-1202, min-eff 559-801; VLM min-eff 266-423, famIoU 0.101-0.145 (informational).
+Two shared-storage lifecycle validations in production: the audit's checkpoint
+load RE-ALIASED both towers (from_pretrained -> attach funnel), and the E61-union
+lines confirm per-site masks with union-merge on the real tables. A-phase next
+(1.6B values; fixed cost ~26GB — may hold bs32); sequential overnight; landing
+reads per Entry 61 pre-registration with comparator interleave-8 = 60.6 at the
+4-seed instrument (57.6 at seed-1000/50-ep history).
