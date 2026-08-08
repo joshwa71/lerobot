@@ -6483,3 +6483,46 @@ alternatives (pair-distance-1 deep grouping? lesion-trim first, then decide
 sharing on the trimmed layout?), and where sharing sits in the ICRA story
 (efficiency claim + the depth-specialization dissociation). Battery results
 (addendum 4) land before then.
+
+---
+### Entry 61 addendum 4 (8 Aug 26, eve) — battery lands, and it REVISES the mechanism story: the site-bleed read FAILS its <= ~15% pre-registration (17-43% at block scale — per-step write masks partition but ACCUMULATED writes land on a third of the partner's read mass); the MSE matrix breaches the <= +5% band for the first time (+7.7/+6.9/+5.7/+4.8/+0.0%); yet the harvest-bank radius HELD (spec/succ Q4 0.318 ~= interleave's 0.344). The e7 damage is invisible to every standing demo/paired-state instrument — it lives in the model's OWN rollout distribution. Plus: baseline 4-seed rows land (multitask-LoRA 51.4; naive foil 18.0 with seed-robust 0/0/0 on all early tasks).
+
+**Site-bleed (the decisive mechanism read, slots_e61.out):** within-pair, same
+task: E(6,8) 22-35%, E(10,12) 25-43%, V(7,9) 17-29%, V(11,13) 23-38%. The
+union-merge lines showed 2-3% overlap PER STEP; over a 5K-step block the
+accumulated other-member write set covers 20-40% of each site's read mass. So
+shared tables do NOT self-partition at block scale — each layer's content is
+substantially co-written by the other layer's training signal. ONE mechanism,
+two signs: cross-layer co-writing = the regularizer that improved the four
+shallow tasks (+3 mean) AND the corruption that killed e7 (-16). The
+pre-registered <= 15% read fails; consolidation headroom is NOT confirmed.
+
+**Matrix (first band breach of any substrate):** +7.7/+6.9/+5.7/+4.8/+0.0% vs
+interleave's +3.6/+3.0/+2.2/+1.3/+0.0 at near-identical diagonals — genuine
+extra cross-task drift from the shared write surface (same-family cells, ~2x
+drift). Still vanishing next to naive's +740-1567%, but sharing measurably
+costs retention at the fit level.
+
+**Rescore (the surprise):** spec/succ Q4 D = 0.318 (interleave 0.344, B 0.482)
+— the far-region function on the STANDING bank did not regress; harv_B/succ Q4
+0.087 is the closest-to-reference read any config has produced. The e7 crater
+(38->22 in rollouts) is therefore INVISIBLE to demo states, paired jitter,
+the matrix, AND the harvest bank — it manifests only on the model's own rollout
+distribution (the E56 lesson at a new scale: conversion damage need not appear
+on other models' state banks). A fresh sharepairs-e7 harvest would localize it;
+deferred to tomorrow's discussion (E61b would obsolete the question).
+
+**Baseline rows (4-seed instrument, campaign JSONs):** multitask-LoRA **51.4**
+(41/47/39/78/52; standing 49.2 was fair; its e7 52 rivals bigsearch's 50 — the
+dense-adapter e7 pattern reproduces at seeds; e9 spread 24-60 is the wildest
+cell yet). Naive seq-LoRA final **18.0** (0/0/0/55/35; standing 17.6 dead on;
+the 0s are seed-robust — catastrophic forgetting with error bars).
+
+**One-instrument table so far:** bigsearch 64.6 / interleave 60.6 / specialists
+59.0 / multitask-LoRA 51.4 / naive 18.0; sharepairs row + both full-FT rows
+pending (armed). **Inputs staged for the 9 Aug discussion:** the three-way
+dissociation now has a mechanism caveat — "content identity at depth" rests on
+the ROLLOUT dissociation (pre-registered, clean) while the bleed data suggests
+the proximate cause is cross-writing rather than addressing; E61b (solo deep
+tables) remains the prescription either way, with the alternative framings
+(distance-1 pairing, trim-first) queued for the discussion.
