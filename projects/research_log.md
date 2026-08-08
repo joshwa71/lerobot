@@ -6428,3 +6428,51 @@ booked through the weekend — the lesion battery queues behind unless
 reprioritized. When done the ICRA table exists at ONE instrument: bigsearch /
 interleave / sharepairs / specialists / multitask-LoRA / naive-seq / full-FT
 (fresh) / full-FT (same-substrate).
+
+---
+### Entry 61 addendum 3 (8 Aug 26, 14:00 UTC) — LANDING: **56.8 at HALF the adaptation state (1.6B vs 3.2B)** — the >= ~55 gate PASSES: "sites, not slots" is confirmed CAUSALLY. And the depth-specialization arbiter FIRED exactly as pre-registered: **e7 38 -> 22 with every shallow/anchor cell held or improved** (e4 +8, e9 +6, e2 +2, e6 -4 vs interleave) — depth-specialized value content is REAL, separated from placement for the first time. Follow-up per the pre-registration: ASYMMETRIC capacity (solo deep tables, shared shallow).
+
+**50-ep final** (step 25000): **56.8** = e4 50 / e6 64 / e9 62 / e2 86 / e7 **22**.
+Comparator interleave-8 (same sites, dedicated tables): 57.6 = 42/68/56/84/38.
+Non-e7 mean: **65.5 vs 62.5** — sharing IMPROVED the four shared-survivable tasks
+(the E58-analogue regularization bet paying) while cratering the deep-bank task.
+
+**Pre-registration scorecard (Entry 61):**
+1. >= ~55 => PASS (56.8; -0.8 vs interleave = tied within the single-seed
+   instrument). Frontier-band continual learning at HALF the stored adaptation
+   state — the efficiency claim stands, with the e7 asterisk.
+2. e7 >= ~30 w/ e2 >= 80 => **FAIL exactly along the pre-registered fault line**:
+   e2 86 (held), e7 22 (cratered). Verdict as written in the header: "depth-
+   specialized content is real => asymmetric capacity (solo deep tables, shared
+   shallow) is the follow-up." The E(10,12) pair — where e7's read mass
+   concentrates (E59 autopsy) — cannot express both layers' content in one table.
+3. Cost: updt_s 0.890-0.901 (BETTER than interleave's 0.935 — halved optimizer/
+   clip work: opt_s 0.033 vs 0.066); held bs32 in A-phase (first config ever);
+   union-merge overhead invisible (apmsk_s 0.005).
+4. Adjudicators: write sets partition (union 3072+~3072 -> ~3020-3047/pair-step,
+   overlap 25-52 rows ~2-3%); protection composition low-stakes at the clean
+   boundary-1 read (max vs noisy-OR differ 1.6-3.8%) — max stands, debate CLOSED.
+   INSTRUMENT NOTE: boundary >= 2 counterfactuals are self-contaminated (the sync
+   overwrites members with the merged u, so later "overlap"/OR reads double-count
+   the shared baseline — deployed max unaffected, it is idempotent; fix for any
+   future cell = per-site pre-sync accumulators). Crowding: shared tables carry
+   both members' protection, topping at ~36% of E(10,12) at u>0.5 after 5 tasks —
+   not binding at top_t 3072/site.
+5. Boundary trail: fresh e4 70 = best opener ever recorded; trail wobble
+   70/50/40/50 pure instrument; fresh e6 65 / e9 75 / e2 80.
+
+**The scientific yield** — E61 turns "the depth pattern" into a three-way
+dissociation: (a) PLACEMENT matters (E59/E60: deep sites buy e7); (b) CAPACITY
+does not (E59 autopsy: banks near-empty); (c) **CONTENT IDENTITY at depth
+matters (E61: one table across L10+L12 kills e7 while four tasks thrive)** — the
+deep banks need layer-specific values even at trivial occupancy. This is the
+cleanest mechanism statement the project has produced, and it PRESCRIBES the
+architecture: share where consumption contexts are interchangeable (shallow/
+anchor tasks), dedicate where they are not (deep spatial/far-region content).
+
+**In motion:** battery (unit e61-probes: msemat+jitter, autopsy incl. the
+site-bleed read, harvest rescore — e7 22 predicts the radius REGRESSES from
+0.344) -> addendum 4. sharepairs 4-seed row armed behind the full-FT chain.
+Baseline evals (multitask+naive) running concurrently. Follow-up cell sketched,
+NOT launched (Josh's call): asymmetric E61b = shared (6,8) + SOLO 10 + SOLO 12
++ shared VLM pairs = 2.4B (25% saving) with the depth lever intact.
