@@ -6476,3 +6476,10 @@ site-bleed read, harvest rescore — e7 22 predicts the radius REGRESSES from
 Baseline evals (multitask+naive) running concurrently. Follow-up cell sketched,
 NOT launched (Josh's call): asymmetric E61b = shared (6,8) + SOLO 10 + SOLO 12
 + shared VLM pairs = 2.4B (25% saving) with the depth lever intact.
+
+**[PENDING DISCUSSION — Josh, 9 Aug]** E61 verdict + the follow-up decision:
+asymmetric capacity (E61b: shared shallow / solo deep, 2.4B sketch above) vs
+alternatives (pair-distance-1 deep grouping? lesion-trim first, then decide
+sharing on the trimmed layout?), and where sharing sits in the ICRA story
+(efficiency claim + the depth-specialization dissociation). Battery results
+(addendum 4) land before then.
