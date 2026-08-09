@@ -6526,3 +6526,14 @@ the ROLLOUT dissociation (pre-registered, clean) while the bleed data suggests
 the proximate cause is cross-writing rather than addressing; E61b (solo deep
 tables) remains the prescription either way, with the alternative framings
 (distance-1 pairing, trim-first) queued for the discussion.
+
+---
+### Entry 60 addendum 7 (9 Aug 26) — full-FT throughput ladder (Josh's push to drop grad-ckpt), MEASURED: bs32-no-ckpt OOM 138.69G (reproduces the 29 Jun test exactly); bs16xacc2-no-ckpt OOM by 612MB (138.95G — the un-checkpointed activation graph is ~100G at bs16); **bs8xacc4-no-ckpt WINS: 2.20 s/step vs 3.05 with ckpt (1.39x), 92G resident.** FT#1 resumed from 010000 on the new rung; both FT scripts updated; gates re-armed.
+METHODS NOTE for the baseline row: FT#1 trained steps 0-10K at bs32+ckpt and
+10K-50K at bs8xacc4-no-ckpt — effective batch 32 and the LR schedule are
+IDENTICAL throughout (grad-ckpt and micro-batching are numerically neutral up
+to accumulation-order rounding); FT#2 runs bs8xacc4 end-to-end. Ops footnote:
+the first no-ckpt resume attempt FATAL'd and the unit-state gate let FT#2 start
+out of order for ~10 min (nothing invested, stopped) — unit-state gates fire on
+ANY exit, incl. failures; acceptable for this chain, remembered for future
+gating. Revised landing: FT#1 ~Mon 09:00 UTC, FT#2 ~Tue eve, table ~Wed early.

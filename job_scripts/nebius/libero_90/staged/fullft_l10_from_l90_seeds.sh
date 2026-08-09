@@ -37,7 +37,8 @@ if [ -d "$OUT/checkpoints/050000" ]; then
 elif [ -d "$OUT/checkpoints/last/pretrained_model" ]; then
   echo "[ft] RESUMING from $(readlink -f $OUT/checkpoints/last)"
   lerobot-train --resume=true \
-    --config_path="$OUT/checkpoints/last/pretrained_model/train_config.json"
+    --config_path="$OUT/checkpoints/last/pretrained_model/train_config.json" \
+    --batch_size=8 --gradient_accumulation_steps=4 --policy.gradient_checkpointing=false
 else
   lerobot-train \
     --policy.path="$PI05_BASE" \
@@ -53,8 +54,8 @@ else
     --output_dir="$OUT" \
     --save_freq=10000 \
     --steps=50000 \
-    --batch_size=32 \
-    --gradient_accumulation_steps=1 \
+    --batch_size=8 \
+    --gradient_accumulation_steps=4 \
     --num_workers=8 \
     --eval.batch_size=1 \
     --eval.n_episodes=50 \
@@ -69,7 +70,7 @@ else
     --wandb.enable=true \
     --wandb.project=vla-memory \
     --wandb.disable_artifact=true \
-    --policy.gradient_checkpointing=true
+    --policy.gradient_checkpointing=false
 fi
 [ -d "$OUT/checkpoints/050000/pretrained_model" ] || { echo "[ft] FATAL: 050000 missing"; exit 1; }
 
