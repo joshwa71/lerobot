@@ -6617,3 +6617,73 @@ train-on-a-neighbourhood effect, so redundancy is a live (and paper-worthy)
 outcome; (4) 10-task on the finalized config (architecture + noise decision
 baked in) + lesion battery behind it. The sharepairs 4-seed row (armed,
 lands ~Wed) calibrates how real the 56.8-vs-57.6 single-seed tie was.
+
+---
+### Entry 61 addendum 6 (9 Aug 26) — SHARE-CRITERION PROBE RESULT: the similarity hypothesis is INVERTED by the calibration — the pair that failed sharing has the MOST similar router inputs (E(10,12) raw-cos 0.639) while the pair that shared fine has less similar ones (E(6,8) 0.527); VLM pairs are MORE similar than the failed pair (0.65-0.73) and all shared fine → no global similarity threshold exists in either direction. Adopted rule: the metric is a VETO within the expert tower (high-sim deep pairs flagged), composed with the depth rule; proposed 6x2 layout keeps the proven deep sites SOLO.
+
+**Probe** (probe_share_criterion.py on the stage-1 checkpoint, libero_10, 3 min
+GPU alongside FT#1; outputs/analysis/e61/share_criterion_stage1.json). Per
+adjacent pair: raw/centered per-token cosine between the two layers' router
+inputs, relative stream change, task-geometry agreement (RSA).
+
+Expert (raw_cos / cent_cos / rel_delta / task_rsa):
+  2-4   0.484  0.546  0.960  0.903
+  4-6   0.523  0.616  1.054  0.939
+  6-8   0.527  0.580  1.070  0.935   <- SHARED FINE in E61
+  8-10  0.566  0.580  1.037  0.921
+  10-12 0.639  0.666  0.875  0.971   <- KILLED e7 in E61
+  12-14 0.544  0.572  0.992  0.964
+  14-16 0.642  0.656  0.981  0.907
+VLM instr16 raw_cos: 3-5 0.606 / 5-7 0.653 / 7-9 0.696 / 9-11 0.727 /
+11-13 0.724 / 13-15 0.605 — (7,9) and (11,13) both shared fine in E61.
+
+**Findings.**
+1. All four metrics separate the two expert calibration pairs (raw delta
+   0.113) — but with the OPPOSITE sign to the hypothesis: "similar inputs ->
+   share" is falsified. The failed pair is the most-similar expert pair.
+2. No inverted global rule either: VLM pairs sit at 0.65-0.73 similarity
+   (above the failed 0.639) and all shared fine. Similarity alone does not
+   determine shareability across towers.
+3. Unified reading consistent with ALL calibration points + the E61 bleed
+   data: sharing fails when similar inputs make both layers address the SAME
+   slots (write collision) AND the content each layer needs from those slots
+   differs (deep expert, the E61 content-identity finding). It survives when
+   either the layers address different slots (E(6,8) — inputs differ ->
+   tables self-partition -> co-writing acts as neighbourhood regularization)
+   or the content is interchangeable (VLM anchor/palette content).
+   Danger = same addresses x non-interchangeable content.
+4. Curiosity for the record: expert similarity is NOT monotone in depth —
+   (12,14) reads 0.544 (low band) while (10,12)/(14,16) read ~0.64. The
+   metric's genuinely novel prediction (a (12,14) share would be safe) is
+   exactly the kind of untested inversion we should NOT bet the paper cell
+   on.
+
+**Adopted rule (conservative composition, stated for the paper):** the
+similarity metric is a VETO, not a license — within the expert tower, do not
+share any pair in the high-similarity band (>= ~0.6: (10,12), (14,16)); do
+not share deep pairs regardless of similarity (the E61 direct evidence);
+VLM pairs shareable per E61. The criterion is "validated as a veto against
+the E61 contrast," which is the honest claim.
+
+**Proposed 6x2 layout under the rule (to freeze with Josh before Wed):**
+- Expert [4,6,8,10,14,16]: share (4,6) [0.523] + (8,10) [0.566], SOLO 14 +
+  SOLO 16 — keeps the exact deep sites that took e7 20->38->58, shares the
+  four shallowest, all shared pairs in the metric's safe band. Drops L12
+  (its role subsumed by solo 14/16; bigsearch's e7=58 came with 14/16
+  present). Residual risk flagged: e7's interleave-8 read mass sat at
+  E10/E12, and 10 is inside a shared pair here — the (8,10) share is the
+  layout's one bet the calibration does not directly cover.
+  Alternative if that risk reads too hot: expert [4,6,8,10,12,14] with
+  share (4,6)+(8,10)? — no: same 10-share; the truly conservative variant
+  is [2,4,6,8,14,16] share (2,4)+(6,8) (both directly calibration-approved)
+  at the cost of spending sites on the known-marginal L2/L4.
+- VLM [5,7,9,11,13,15]: all three pairs shared [(5,7) 0.653, (9,11) 0.727,
+  (13,15) 0.605] = 3 tables.
+- Total: 4 expert + 3 VLM = 7 tables = **2.8B — 12.5% UNDER the 3.2B paper
+  budget** at 12 sites (bigsearch's site count).
+
+**Instrument note:** the monitor watching the probe unit never fired —
+`systemctl is-active` exits nonzero for "inactive", which the ssh poll
+chain swallowed as a failed connection. Standing fix for gate/monitor
+one-liners: never rely on is-active's exit code, capture the string with
+`; true` and compare.
