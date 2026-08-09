@@ -6477,12 +6477,11 @@ Baseline evals (multitask+naive) running concurrently. Follow-up cell sketched,
 NOT launched (Josh's call): asymmetric E61b = shared (6,8) + SOLO 10 + SOLO 12
 + shared VLM pairs = 2.4B (25% saving) with the depth lever intact.
 
-**[PENDING DISCUSSION — Josh, 9 Aug]** E61 verdict + the follow-up decision:
-asymmetric capacity (E61b: shared shallow / solo deep, 2.4B sketch above) vs
-alternatives (pair-distance-1 deep grouping? lesion-trim first, then decide
-sharing on the trimmed layout?), and where sharing sits in the ICRA story
-(efficiency claim + the depth-specialization dissociation). Battery results
-(addendum 4) land before then.
+**[RESOLVED — discussion held 9 Aug, decisions in Entry 61 addendum 5]** The
+E61b asymmetric sketch above is superseded: hand-picking which layers share is
+rejected as config-fitting; the follow-up is the 6-per-tower merged config with
+the share/solo assignment set by a measured criterion (the share-criterion
+probe). Full decisions + sequencing in addendum 5.
 
 ---
 ### Entry 61 addendum 4 (8 Aug 26, eve) — battery lands, and it REVISES the mechanism story: the site-bleed read FAILS its <= ~15% pre-registration (17-43% at block scale — per-step write masks partition but ACCUMULATED writes land on a third of the partner's read mass); the MSE matrix breaches the <= +5% band for the first time (+7.7/+6.9/+5.7/+4.8/+0.0%); yet the harvest-bank radius HELD (spec/succ Q4 0.318 ~= interleave's 0.344). The e7 damage is invisible to every standing demo/paired-state instrument — it lives in the model's OWN rollout distribution. Plus: baseline 4-seed rows land (multitask-LoRA 51.4; naive foil 18.0 with seed-robust 0/0/0 on all early tasks).
@@ -6542,3 +6541,72 @@ gating. Revised landing: FT#1 ~Mon 09:00 UTC, FT#2 ~Tue eve, table ~Wed early.
 multitask ceiling" framing; eval front-5 only). Table caption must state the
 data budgets: full-FT = all 10 tasks' demos; multitask-LoRA (loraft_multitask5)
 and the memory sequentials = front-5 adaptation data only.
+
+---
+### Entry 61 addendum 5 (9 Aug 26) — THE E61 FOLLOW-UP DISCUSSION (Josh): E61b hand-picked asymmetry REJECTED as config-fitting; the next config bet is the **6-per-tower MERGED stack ("6x2"): 12 sites at the 3.2B paper budget, shallow pairs sharing tables, deep layers solo — CONDITIONAL on a measured share-criterion probe** (launching now). 10-task validation made a REQUIREMENT for any shared config; lesion battery demoted to paper evidence.
+
+Discussion held (all four of Josh's points below), decisions recorded:
+
+**1. Merge the layer-max and sharing branches — accepted, at the 6-per-tower
+dose.** Sharing decouples site count from parameter count, and sites are the
+proven axis (57.6 -> 59.6 -> 64.6-at-seeds) while store capacity never was.
+The full 8-per-tower version is rejected on layer inventory: the VLM has only
+~6 certified-good routing layers (V3/V4 excluded for the constancy pathology,
+E59 addendum 6) and the expert side below ~L6 has always been marginal
+(E36/E53) — 8 per tower forces known-bad territory.
+
+**2. Hand-picking which layers share (E61b) is REJECTED as overfitting the
+config to the benchmark.** Replacement: a PRE-EVAL measured criterion.
+Hypothesis (Josh): adjacent layers whose router inputs/queries are SIMILAR
+should share (shallow); layers whose queries DIFFER get their own tables
+(deep). Cheap to test — under frozen-prepass every router reads the memory-free
+stage-1 features, so cross-layer similarity of the actual router inputs is a
+forward-pass probe on the stage-1 checkpoint (the E59-addendum-6 precedent).
+**Validation requirement (pre-registered): the metric must separate E(6,8)
+[shareable — held/improved in E61] from E(10,12) [not — e7 38->22], and call
+all VLM pairs shareable.** Warning recorded: E61's own overlap statistics
+FAILED this test — per-step write-mask overlap (2-3%) and block-scale
+site-bleed (E(6,8) 22-35% vs E(10,12) 25-43%, overlapping ranges) do not
+discriminate the good pair from the bad one, so validation is substantive,
+not a formality. If raw query cosine also fails (adjacent residual-stream
+states are similar everywhere), try task-conditional variants (centered
+similarity, task-geometry RSA) before falling back to the depth rule — which
+remains defensible (pre-registered arbiter, architectural not task-specific).
+
+**3. The chosen middle ground ("6x2", Josh's sketch): 6 layers per tower,
+shallow 4 merged in adjacent pairs, deep 2 solo = 4 tables/tower = 8 tables =
+3.2B — the paper budget — carrying 12 sites = bigsearch's site count at 2/3
+its parameters.** Working layout sketch (final pairing set by the probe, not
+by hand): expert [6,8,10,12,14,16] with (6,8)+(10,12) shared and 14/16 solo;
+VLM [5,7,9,11,13,15] pairs shared (all VLM pairs survived E61). This is the
+disciplined version of the merge idea: it embeds the E61 design rule (share
+where consumption contexts are interchangeable, dedicate at depth) instead of
+fighting it, and it has a real shot at bigsearch-level results (64.6) at
+2/3 the parameters. **This displaces E61b and is the next config bet,
+conditional on the probe.**
+
+**4. 10-task validation is a REQUIREMENT before any shared config headlines
+(Josh's point: the +7.7% matrix breach is only validated at 5 tasks).** Two
+pre-registered degradation mechanisms, both measurable: (a) cross-writing
+accumulates PER BLOCK — an early task sits under 9 subsequent blocks at 10
+tasks vs 4 at 5, roughly doubling co-writing exposure (the +7.7% could grow
+to +15%+); (b) protection crowding on shared tables — both members' protection
+accumulates on one table (36% of E(10,12) at u>0.5 after 5 tasks); at 10
+tasks late writers risk write starvation, the known over-protection failure
+mode. The 10-task run doubles as the ICRA catastrophe-elimination
+demonstration — one run serves both.
+
+**Also decided:** lesion battery demoted from blocking step to paper evidence
+(the depth ladder 20->38->58 already justifies the layout; the map slots in
+later as site-choice justification). Risk stated out loud: the 6x2 becomes
+the de facto paper bet, with bigsearch-12 (64.6 at 4.8B) as the fallback
+headline if it disappoints — acceptable, worst case we still hold 64.6.
+The fresh sharepairs-e7 harvest (localizing the rollout-only damage) stays
+deferred unless the mechanism section needs it.
+
+**Sequencing:** (1) share-criterion probe NOW, in FT#1's GPU headroom
+(~49GB free; probe ~15-20GB, forward-only); (2) 6x2 chain (warm-up -> audit
+-> A-phase -> 5-task, standard pre-registrations) when the baseline chain
+frees the GPU (~Wed); (3) 10-task on the winner + lesion battery behind it.
+The sharepairs 4-seed row (armed, lands ~Wed) calibrates how real the
+56.8-vs-57.6 single-seed tie was.
