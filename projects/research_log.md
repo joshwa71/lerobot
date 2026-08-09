@@ -6537,3 +6537,8 @@ the first no-ckpt resume attempt FATAL'd and the unit-state gate let FT#2 start
 out of order for ~10 min (nothing invested, stopped) — unit-state gates fire on
 ANY exit, incl. failures; acceptable for this chain, remembered for future
 gating. Revised landing: FT#1 ~Mon 09:00 UTC, FT#2 ~Tue eve, table ~Wed early.
+
+**[Decision — Josh, 9 Aug]** Full-FT baselines stay ALL-10-task (the "all-data
+multitask ceiling" framing; eval front-5 only). Table caption must state the
+data budgets: full-FT = all 10 tasks' demos; multitask-LoRA (loraft_multitask5)
+and the memory sequentials = front-5 adaptation data only.
