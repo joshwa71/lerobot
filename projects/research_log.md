@@ -6607,6 +6607,13 @@ deferred unless the mechanism section needs it.
 **Sequencing:** (1) share-criterion probe NOW, in FT#1's GPU headroom
 (~49GB free; probe ~15-20GB, forward-only); (2) 6x2 chain (warm-up -> audit
 -> A-phase -> 5-task, standard pre-registrations) when the baseline chain
-frees the GPU (~Wed); (3) 10-task on the winner + lesion battery behind it.
-The sharepairs 4-seed row (armed, lands ~Wed) calibrates how real the
-56.8-vs-57.6 single-seed tie was.
+frees the GPU (~Wed); (3) **noise arm on the step-2 winner (Josh, 9 Aug):**
+value-input noise at the E58 half dose, with sigmas RE-CALIBRATED on the
+winner's layers (the E58 values were measured per-layer on B's layout —
+probe_value_input_calib rerun, ~2h, before the arm). Pre-registered question:
+does noise still add anything ON TOP of sharing — the shared tables'
+cross-writing already provides a version of the same
+train-on-a-neighbourhood effect, so redundancy is a live (and paper-worthy)
+outcome; (4) 10-task on the finalized config (architecture + noise decision
+baked in) + lesion battery behind it. The sharepairs 4-seed row (armed,
+lands ~Wed) calibrates how real the 56.8-vs-57.6 single-seed tie was.
