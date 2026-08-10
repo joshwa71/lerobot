@@ -32,6 +32,13 @@ RUN=libero_10_pi05_fullft_frombase_nomem_50k
 OUT=$ROOT/outputs/train/$RUN
 RENAME='{"observation.images.image":"observation.images.base_0_rgb","observation.images.image2":"observation.images.left_wrist_0_rgb"}'
 
+# stub-dir guard (E55/E60 lesson): an aborted start leaves an output dir with no
+# checkpoints, which blocks lerobot-train's validate() on the next launch
+if [ -d "$OUT" ] && [ ! -d "$OUT/checkpoints" ]; then
+  echo "[ft] wiping stub output dir (no checkpoints): $OUT"
+  rm -rf "$OUT"
+fi
+
 if [ -d "$OUT/checkpoints/050000" ]; then
   echo "[ft] final checkpoint exists - skipping train."
 elif [ -d "$OUT/checkpoints/last/pretrained_model" ]; then
