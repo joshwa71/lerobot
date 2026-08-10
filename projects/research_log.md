@@ -6687,3 +6687,42 @@ the E61 contrast," which is the honest claim.
 chain swallowed as a failed connection. Standing fix for gate/monitor
 one-liners: never rely on is-active's exit code, capture the string with
 `; true` and compare.
+
+---
+### Entry 60 addendum 8 (10 Aug 26) — FULL-FT BASELINE #1 LANDS (raw pi05 base -> libero_10 ALL-10-task full fine-tune, 50K) + 4-seed row: **67.6** — the all-data, full-backbone, no-continual-constraint cell sits only **+3.0 over bigsearch (64.6)**, positive at 4/4 paired seeds but marginally (+8.0/+0.0/+1.6/+2.4); **the memory model BEATS full fine-tuning by 21 points on e4** at half the adaptation data.
+
+Training completed 05:18 UTC (50K steps; bs32+ckpt for 0-10K, bs8xacc4-no-ckpt
+for 10-50K per the E60-add-7 methods note), checkpoint 050000 verified,
+intermediate optimizer states pruned (~160G), disk 51%. Campaign
+seeds_fullft_l10.json (25 eps x 4 paired seeds):
+
+| env | full-FT (all-10 data) | bigsearch-12 (front-5, sequential) | delta |
+|---|---|---|---|
+| e4 | 32.0 +- 5.7 | 53.0 +- 5.0 | **-21.0** |
+| e6 | 81.0 +- 6.0 | 70.0 +- 6.9 | +11.0 |
+| e9 | 73.0 +- 11.0 | 69.0 +- 10.0 | +4.0 |
+| e2 | 98.0 +- 2.3 | 81.0 +- 8.9 | +17.0 |
+| e7 | 54.0 +- 11.5 | 50.0 +- 9.5 | +4.0 |
+| **mean** | **67.6** | **64.6** | +3.0 |
+
+Reads:
+1. **The headline framing survives contact with the strongest baseline:** a
+   sequentially-trained, frozen-backbone memory model using only the front-5
+   tasks' demos lands within ~3 points of a full-backbone joint fine-tune
+   given ALL TEN tasks' demos and no continual constraint — and wins e4
+   outright by 21. (Data-budget caption per the 9 Aug decision: full-FT =
+   all-10 demos; memory sequentials + multitask-LoRA = front-5 only.)
+2. e4 is now full-FT's WORST cell (32 +- 5.7). Note the old E31 90+10-joint
+   run scored 52 on e4 — suggesting libero-90 data in the fine-tune mix was
+   carrying e4, not backbone plasticity. FT#2 (same recipe FROM the libero-90
+   substrate) tests exactly this; if its e4 recovers toward ~50, the
+   "same-substrate" cell becomes the sharper comparison.
+3. e2 98 +- 2.3 confirms e2 is nearly saturated for an unconstrained model;
+   our 81 +- 8.9 keeps e2 as one of the two real remaining gaps (with e6).
+4. One-instrument table now: full-FT(fresh) 67.6 / bigsearch 64.6 /
+   interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0.
+   Pending: full-FT(from-l90) ~Tue eve, sharepairs 4-seed behind it.
+
+FT#2 (fullft-l90l10) confirmed started IN ORDER at 07:21 UTC (the E60-add-7
+out-of-order footnote did not repeat). Cold-shipper still armed for both
+full-FT dirs after the second campaign.
