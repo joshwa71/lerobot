@@ -6793,3 +6793,30 @@ Reads:
    interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0**;
    sharepairs 4-seed row running now (last pending cell); E62 merged-6x2
    fires when it finishes. Cold-shipper takes both FT dirs after that.
+
+---
+### Entry 61 addendum 7 (11 Aug 26) — SHAREPAIRS 4-SEED ROW: **58.4** (-2.2 vs interleave-8's 60.6 at HALF the state) — and **e7 = 32.0 +- 0.0: four identical draws.** The depth-sharing damage is deterministic-grade, not noise; the E61 single-seed non-e7 advantage does NOT replicate (non-e7 65.0 vs interleave 66.0 ~ tied). THE ONE-INSTRUMENT TABLE IS COMPLETE.
+
+seeds_sharepairs.json (25 eps x 4 paired seeds; per-seed means 55.2/56.8/61.6/60.0):
+e4 48.0+-10.6 / e6 67.0+-3.8 / e9 62.0+-7.0 / e2 83.0+-5.0 / **e7 32.0+-0.0** -> mean **58.4**.
+
+Reads:
+1. **e7 32.0 with ZERO variance across four seeds** — the sharpest error-bar
+   statement of the depth-specialization finding: the shared-deep-table damage
+   is a stable property of the policy, not eval luck. (Slightly above the
+   50-ep final's 22 — that read was a low draw; the damage is real either way:
+   interleave e7 = 39+-7.)
+2. **The efficiency claim's honest form:** -2.2 overall at half the state,
+   with the entire deficit in e7 (-7); non-e7 tied (65.0 vs 66.0). The E61
+   single-seed "+3 on shallow tasks" regularizer advantage does NOT replicate
+   at seeds — sharing is ~free where content is interchangeable, harmful
+   where it isn't, and the E62 solo-deep layout is exactly the config this
+   row prescribes.
+3. **THE COMPLETE ONE-INSTRUMENT TABLE** (25 eps x 4 paired seeds, finals):
+   FT-l90 (ceiling) 78.2 / FT-fresh 67.6 / **bigsearch-12 64.6** /
+   interleave-8 60.6 / specialists 59.0 / sharepairs 58.4 /
+   multitask-LoRA 51.4 / naive seq-LoRA 18.0. Caption budgets: full-FT rows
+   = all-10 demos + full backbone + joint; memory rows = front-5 demos,
+   sequential, frozen backbone; specialists = per-task models with task ID.
+4. E62 merged-6x2 fires now on the freed GPU; cold-shipper takes both FT
+   dirs (Batch 3).
