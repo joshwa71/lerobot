@@ -6726,3 +6726,37 @@ Reads:
 FT#2 (fullft-l90l10) confirmed started IN ORDER at 07:21 UTC (the E60-add-7
 out-of-order footnote did not repeat). Cold-shipper still armed for both
 full-FT dirs after the second campaign.
+
+---
+## Entry 62 - 11 Aug 26 (E62 MERGED 6x2 QUEUED — the go-big + sharing merge: 12 sites (bigsearch's count) at 7 tables = 2.8B (12.5% under the paper budget), share/solo assignment from the E61-add-6 veto rule; unit e62-merged6x2 armed behind the sharepairs-seeds eval)
+
+Chain `joint_merged6x2_e468101416_v579111315_prepass_full_chain.sh` (commit
+48a723c9), queued via `queue_merged6x2_after_sharepairs_seeds.sh` (unit
+e62-merged6x2, armed 11 Aug ~15:10 UTC; fires when the E61 4-seed eval frees
+the GPU — expected this evening).
+
+**Layout (per the adopted veto rule + depth rule, E61 addenda 5/6):**
+- Expert [4,6,8,10,14,16]: share (4,6) [sim 0.523] + (8,10) [0.566]; SOLO 14,
+  16 (the e7 depth lever keeps dedicated content; L12 dropped). The (8,10)
+  share is the one bet the E61 calibration does not directly cover (e7/e9
+  read mass partly at E10 in interleave-8) — pre-registered read #4 isolates
+  it.
+- VLM [5,7,9,11,13,15]: all three pairs shared [(5,7) 0.653, (9,11) 0.727,
+  (13,15) 0.605].
+- B router recipe verbatim (anchor 0.40, sep8, FiLM-free, broadcast), prepass
+  on, bg-first gate, then A-phase + 5-task C-config sequential (corefrac,
+  lr2x, top_t 3072, 50-ep final). First solo+shared MIX in production
+  (config validation confirmed coverage-free; E61 smokes covered full
+  pairing).
+
+**Pre-registration (full text in the chain header):** e7 >= ~40 (solo-deep
+must avoid sharepairs' 22); final >= ~57.6 = frontier band at 2.8B, >= ~59.6
+= matches bigsearch at 58% of its params (the paper-cell branch); e4 >= 40
+AND e2 >= 80; matrix <= ~+8% (shared-write band); prior-core events = 0;
+updt_s recorded. Noise arm (recalibrated dose) follows on the winner per the
+add-5 sequencing.
+
+**Meanwhile — FT#2 (same-substrate full FT) campaign in flight:** seeds
+1000/2000/3000 = 79.2 / 80.8 / 75.2 per-seed means, and **e4 recovered 32 ->
+72-88** — the FT#1 e4 anomaly was the missing libero-90 data, confirmed.
+Full row + addendum when seed 4000 lands.
