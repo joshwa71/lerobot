@@ -6760,3 +6760,36 @@ add-5 sequencing.
 1000/2000/3000 = 79.2 / 80.8 / 75.2 per-seed means, and **e4 recovered 32 ->
 72-88** — the FT#1 e4 anomaly was the missing libero-90 data, confirmed.
 Full row + addendum when seed 4000 lands.
+
+---
+### Entry 60 addendum 9 (11 Aug 26) — FULL-FT BASELINE #2 LANDS (the "same substrate" cell: libero-90 stage-1 -> libero_10 ALL-10 full FT, 50K) + 4-seed row: **78.2** — the substrate-matched, all-data, unconstrained ceiling. The libero-90 substrate is worth +10.6 even to full fine-tuning (67.6 -> 78.2), and FT#1's e4 anomaly is CLOSED (32 -> 78: it was the missing libero-90 data). The honest memory-vs-ceiling gap is now 13.6.
+
+Campaign seeds_fullft_l90_l10.json (25 eps x 4 paired seeds; per-seed means
+79.2 / 80.8 / 75.2 / 77.6):
+
+| env | FT#2 (from-l90, all-10) | FT#1 (fresh, all-10) | bigsearch-12 (front-5, seq) |
+|---|---|---|---|
+| e4 | 78.0 +- 7.7 | 32.0 | 53.0 |
+| e6 | 78.0 +- 4.0 | 81.0 | 70.0 |
+| e9 | 79.0 +- 8.2 | 73.0 | 69.0 |
+| e2 | 90.0 +- 4.0 | 98.0 | 81.0 |
+| e7 | 66.0 +- 5.2 | 54.0 | 50.0 |
+| **mean** | **78.2** | 67.6 | 64.6 |
+
+Reads:
+1. **The one-instrument ceiling row is 78.2** (FT#2 holds every advantage at
+   once: same substrate as ours, all-10 demos, full backbone, no continual
+   constraint). The deleted-72.6 folklore is replaced by two measured cells:
+   fresh 67.6 / same-substrate 78.2. Our bigsearch sits 13.6 below the
+   substrate-matched ceiling with front-5 data, sequential training, and a
+   frozen backbone — the honest headline framing for the table caption.
+2. **Substrate transfer is worth +10.6 even to full FT** (e4 +46, e7 +12) —
+   consistent with the whole project's premise that the libero-90 stage-1
+   carries most of the competence; adaptation methods differ in how much of
+   it they can use.
+3. FT#2's e7 = 66 is the best e7 cell measured anywhere (spec 59, bigsearch
+   50) — e7's remaining headroom for us is real, not task-intrinsic.
+4. One-instrument table: **FT-l90 78.2 / FT-fresh 67.6 / bigsearch 64.6 /
+   interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0**;
+   sharepairs 4-seed row running now (last pending cell); E62 merged-6x2
+   fires when it finishes. Cold-shipper takes both FT dirs after that.
