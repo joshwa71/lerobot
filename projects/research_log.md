@@ -6820,3 +6820,21 @@ Reads:
    sequential, frozen backbone; specialists = per-task models with task ID.
 4. E62 merged-6x2 fires now on the freed GPU; cold-shipper takes both FT
    dirs (Batch 3).
+
+---
+### Entry 60 addendum 10 (12 Aug 26) — COLD-STORAGE BATCH 3 COMPLETE: both full-FT baseline dirs shipped, byte-verified, and deleted from the VM (~116G freed; VM disk 54%)
+
+The 8 Aug shipper died in the desk-PC reboot (20:23 that evening) before
+transferring anything — discovered 12 Aug on Josh's check-in; both dirs and
+both 4-seed JSONs were intact on the VM, so the gate was satisfied with
+nobody watching. Relaunched (setsid-detached); both dirs shipped to
+/media/josh/Backup/memory-models with rsync -aHc zero-delta + du -sb
+byte-exact verification, then VM-deleted on PASS per protocol:
+  - libero_10_pi05_fullft_frombase_nomem_50k  (61,913,893,214 bytes cold)
+  - libero_10_pi05_fullft_froml90_nomem_50k   (61,912,597,142 bytes cold)
+SHIP-FULLFT-DONE fail=0; manifest Batch-3 section appended; 0 fullft dirs
+remain on the VM (disk 1.3T/2.5T = 54%). The 4-seed campaign JSONs
+(seeds_fullft_l10.json / seeds_fullft_l90_l10.json) stay hot on the VM +
+mirrored in the log (E60 addenda 8/9) — the checkpoints are recoverable from
+cold if any re-eval is ever needed. E62 chain was undisturbed throughout
+(mid-task-1 during the transfer).
