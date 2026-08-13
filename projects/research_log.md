@@ -6886,3 +6886,50 @@ anti-overfitting requirement is satisfied in the config that would headline.
 the one-instrument table, then the noise arm (sigmas re-calibrated on this
 layout), then the REQUIRED 10-task validation before any shared-config
 headline.
+
+---
+### Entry 62 addendum 2 (13 Aug 26, ~02:30 UTC) — BATTERY: all pending gates PASS. The merged layout does NOT pay sharepairs' retention tax (matrix +0.0-4.2%, clean corefrac band vs sharepairs' +7.7 breach) despite site-bleed in the same 14-51% band — co-writing present, not converting. Solo E14/E16 prior-core events = 0 exactly (depth-lever integrity clean). Jitter = best OOD grid ever (e4 clean 0.0149; e7 clean 0.0238 < specialist 0.0330). Far-region radius held (spec/succ Q4 D 0.332 ~= interleave 0.344).
+
+Battery ran clean (unit e62-battery, 0 FAILED lines; artifacts
+outputs/analysis/e62/ + the rescore in e56_offtrail).
+
+**MSE forgetting matrix** (paired-noise, just-trained -> final; gate <= ~+8%):
+e4 +4.2% / e6 +1.1% / e9 +0.0% / e2 +0.5% / e7 0.0 — **PASS, and back in the
+clean corefrac band** (interleave +3.6/+3.0/+2.2/+1.3/0.0; sharepairs' breach
+was +7.7/+6.9/+5.7/+4.8). The E61-add-5 worry (shared-write drift growing with
+sharing) does not materialize in the veto-rule layout: the matrix is
+indistinguishable from dedicated-tables interleave.
+
+**Site-bleed on the 5 shared pairs** (victim reads on other-member-updated
+slots): expert (4,6) 19-41%, (8,10) 22-39%; VLM (5,7) 14-22%, (9,11) 20-34%,
+(13,15) 25-51% (the one above-band cell: V13<-V15 t0 51%). Same band as E61
+(17-43%) — co-writing is a stable property of sharing — but with the matrix
+flat and 66.8 on the board, the E61 "one mechanism, two signs" reading
+resolves here to the benign sign: on veto-safe pairs the cross-writing is
+neighbourhood regularization, not corruption.
+
+**Prior-core write events** (autopsy core50): **solo E14/E16 = 0 exactly at
+every victim** — the depth-lever content is untouched by later tasks, which is
+the mechanism behind e7 54. VLM all-zero at all 6 banks. The one leak is
+E4 (25,210 events into e9's statistical core; interleave's worst was E8 1,273)
+with E8 minor (20-209) — E4 is the known-marginal shallow site, and e9
+finished 64 (ABOVE interleave's 56), so the leak has no measured rollout
+cost. Watch item for the 10-task run, not a 5-task problem.
+
+**Jitter/OOD grid** (final ckpt, chunk MSE): e4 clean **0.0149** / state@0.2
+0.0526 / image 0.1112; e2 clean 0.0198 / state@0.2 0.0498; e7 clean
+**0.0238** / state@0.2 0.0841 / image 0.1894. Beats interleave (prev best
+OOD certificate) on every clean and state cell — e7 clean sits below the
+specialist's 0.0330 with state@0.2 0.0841 vs its 0.1168. Third consecutive
+substrate whose fit AND shell improve together.
+
+**Harvest-bank rescore** (e7, vs spec_e7 reference; proprio-quartile D):
+demo anchor 0.0155; spec/succ Q4 **0.332** (pre-reg <= 0.344: PASS —
+interleave 0.344, sharepairs 0.318, B 0.482); spec/fail Q4 0.263, B-fail Q4
+0.284 — the far-region competence radius held through the merge. The
+residual e7 gap (54 vs spec ~59-60 at seeds) still lives beyond the radius.
+
+**Scorecard complete: every pre-registered E62 gate passes.** In motion:
+the 4-seed campaign row (unit e62-seeds, fired on the battery's exit) —
+the headline instrument read that decides the paper cell. Then the noise-arm
+calibration probe on this layout, then the required 10-task validation.
