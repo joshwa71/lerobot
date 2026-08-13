@@ -6933,3 +6933,37 @@ residual e7 gap (54 vs spec ~59-60 at seeds) still lives beyond the radius.
 the 4-seed campaign row (unit e62-seeds, fired on the battery's exit) —
 the headline instrument read that decides the paper cell. Then the noise-arm
 calibration probe on this layout, then the required 10-task validation.
+
+---
+### Entry 62 addendum 3 (13 Aug 26, 04:42 UTC) — 4-SEED ROW: **65.2** — merged6x2 STATISTICALLY TIES bigsearch-12 (64.6) at 58% of its parameters (2.8B vs 4.8B, 12.5% under the paper budget). Paired deltas +1.6/+0.8/+1.6/-1.6 (3/4 positive, all small) — the +7.2 seed-1000 read was partly a high draw; the durable claim is PARITY-AT-HALF-THE-STATE, which is the paper cell. The memory rows now hold ranks 3-4 in the full table, both above the specialist oracle.
+
+seeds_merged6x2.json (25 eps x 4 paired seeds; per-seed means 64.8/71.2/62.4/62.4):
+e4 56.0+-5.7 / e6 73.0+-6.0 / e9 70.0+-10.6 / e2 84.0+-4.6 / e7 43.0+-8.9
+-> mean **65.2**.
+
+Reads:
+1. **The paper cell confirmed at the headline instrument**: 65.2 vs bigsearch
+   64.6 — tied within noise, at 2.8B vs 4.8B values and the fastest training
+   config yet (updt_s 0.59 vs 0.65). "12 sites at 7 tables matches 12 sites
+   at 12 tables" = the constructive sites-not-slots proof, now with error
+   bars. Also +4.6 over interleave-8 (60.6) at 88% of ITS parameters, and
+   +6.2 over the specialist oracle (59.0).
+2. **e7 43+-8.9** vs bigsearch 50+-10, sharepairs 32+-0, specialists 59+-4:
+   the solo-deep rescue holds at seeds (11 over sharepairs), overlapping
+   bigsearch's band; the seed-1000 54 was a high draw. e7 remains the one
+   below-specialist cell (-16) — unchanged as the noise-arm target.
+3. e4 56+-5.7 = the best e4 in any memory row (bigsearch 53, interleave 50);
+   e6 73 ~= bigsearch's 70 transfer flagship; e9 70 matches bigsearch's 69;
+   e2 84 splits interleave's 86 / bigsearch's 81.
+4. **THE ONE-INSTRUMENT TABLE (updated)**: FT-l90 78.2 / FT-fresh 67.6 /
+   **merged6x2 65.2** / bigsearch-12 64.6 / interleave-8 60.6 / specialists
+   59.0 / sharepairs 58.4 / multitask-LoRA 51.4 / naive 18.0. Caption gains
+   one line: merged6x2 = 2.8B values (vs bigsearch 4.8B) at 12 sites/7 shared
+   tables, layout set by the measured share-criterion veto rule.
+
+**Next per the standing sequencing (E61 add-5):** noise-arm calibration probe
+on the merged6x2 layout (probe_value_input_calib on its 12 sites, ~2h — the
+E58 sigmas were per-layer on B's layout and do not transfer), then the
+half-dose arm; then the REQUIRED 10-task validation. The pre-registered
+noise question stands: does value-input noise still add on top of sharing's
+cross-writing (redundancy = a live, paper-worthy outcome).
