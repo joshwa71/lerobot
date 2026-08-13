@@ -131,7 +131,7 @@ seq_stage () {
     --wandb.enable=true \
     --wandb.project=vla-memory \
     --job_name="$SEQ_RUN" \
-    --online_task_ids='[0,1,2,3,4]' \
+    --online_task_ids="${SEQ_TASK_IDS:-[0,1,2,3,4]}" \
     --online_steps_per_task=5000 \
     --policy.train_router_only=false \
     --policy.memory_layer.vlm_route_once=true \
@@ -165,13 +165,13 @@ seq_stage () {
 # refuses to resume rather than silently running later tasks unprotected.
 SEQ_POLICY_PATH="$A_CKPT"
 SEQ_RESUME_FLAG=""
-if [ -f "$SEQ_OUT/checkpoints/last/sequential_state.pt" ] && [ ! -d "$SEQ_OUT/checkpoints/025000" ]; then
+if [ -f "$SEQ_OUT/checkpoints/last/sequential_state.pt" ] && [ ! -d "$SEQ_OUT/checkpoints/${SEQ_FINAL_CKPT:-025000}" ]; then
   SEQ_POLICY_PATH="$SEQ_OUT/checkpoints/last/pretrained_model"
   SEQ_RESUME_FLAG="--resume_sequential=true"
   echo "[seq5] RESUMING from $(readlink -f "$SEQ_OUT/checkpoints/last" 2>/dev/null)"
 fi
 
-if [ -d "$SEQ_OUT/checkpoints/025000" ]; then
+if [ -d "$SEQ_OUT/checkpoints/${SEQ_FINAL_CKPT:-025000}" ]; then
   echo "[seq5] final checkpoint exists - skipping."
 elif [ -z "$SEQ_LADDER" ]; then
   seq_stage $SEQ_BS $SEQ_ACCUM ${SEQ_GRAD_CKPT:-false}
