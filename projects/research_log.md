@@ -6989,3 +6989,36 @@ Guardrails: block-mins <= ~1.10x the chain's; matrix <= ~+5%; e7 vs 54
 the target cell; only a 4-seed row (vs 65.2) decides a recipe change.
 Landing ~tonight; the REQUIRED 10-task validation queues on the finalized
 architecture+noise decision after it.
+
+---
+### Entry 62 addendum 5 (13 Aug 26, PM) — WEEKEND QUEUE ARMED (Josh's spec: "pull all the baselines ... get their baseline results; if done before I'm back, the 10-task results for the 6x2 arms, noise and no noise"). Four gated units chained behind the running noise arm; FT checkpoints restoring from cold storage.
+
+**Interpretation adopted:** the existing baseline rows are all FRONT-5; the
+weekend completes them for the 10-TASK table at the standing 4-seed
+instrument, then runs the 10-task 6x2 validations.
+
+**Chain (systemd units, each gated on its predecessor):**
+1. `e62-vnoise` (+ `e62-vnoise-battery`) — the running 5-task noise arm,
+   battery, and 4-seed row (lands ~09:00 UK Fri).
+2. `weekend-baselines` — (a) full-FT #1/#2 BACK-5 4-seed campaigns (envs
+   [0,8,1,3,5]; the front-5 rows exist; checkpoints rsyncing back from cold
+   storage now — 8.8G each, model dirs only, cold copies untouched);
+   (b) the five MISSING back-5 LoRA specialists (task_index 5-9, recipe
+   byte-identical to the front-5 anchors; episode ranges verified from meta:
+   192-224/225-253/254-302/303-337/338-378) + per-specialist 4-seed rows;
+   (c) 10-task multitask-LoRA (all 379 episodes; BUDGET CONVENTION FLAGGED:
+   front-5 used 1k steps/task -> 10k total here) + all-10 4-seed row.
+   ETA ~Sat afternoon.
+3. `weekend-10task` — seq10 merged6x2 NO-noise (the required shared-config
+   validation + catastrophe-elimination run), then seq10 WITH noise.
+   Plumbing: SEQ_TASK_IDS + SEQ_FINAL_CKPT env fallbacks added to
+   joint_aphase_seq5_common.sh (byte-identical unset); both wrappers reuse
+   the E62 A-checkpoint; sequential-resume-safe. Pre-registered watch items
+   (E61 add-5): per-block cross-writing accumulation (5-task band +0-4.2%
+   -> watch toward +8-15%) and protection crowding on shared tables (late
+   writers' block-mins vs their 5-task levels). ETA: no-noise ~Mon, noise
+   ~mid-week (conditional tail, per the spec).
+
+Campaign JSONs land in outputs/analysis/e60/ next to the existing rows
+(seeds_{fullft_l10_back5, fullft_l90_l10_back5, spec_e0/e8/e1/e3/e5,
+multitask10}.json). Commit 29b70dcd carries the six new scripts + plumbing.
