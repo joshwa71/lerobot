@@ -6838,3 +6838,51 @@ remain on the VM (disk 1.3T/2.5T = 54%). The 4-seed campaign JSONs
 mirrored in the log (E60 addenda 8/9) — the checkpoints are recoverable from
 cold if any re-eval is ever needed. E62 chain was undisturbed throughout
 (mid-task-1 during the transfer).
+
+---
+### Entry 62 addendum (13 Aug 26, 01:16 UTC) — LANDING: **66.8 — NEW FRONTIER at seed-1000/50-ep** (e4 58 / e6 74 / e9 64 / e2 84 / e7 54): the merged 6x2 beats bigsearch-12 (59.6) by +7.2 at 58% of its parameters (2.8B vs 4.8B, and 12.5% UNDER the 3.2B paper budget). The paper-cell branch fires with margin. e7 = 54 with the (8,10) share in place — risk cell #4 CLEARS; the veto-rule layout (solo 14/16) preserved the depth lever that sharing killed in sharepairs (22).
+
+**50-ep final** (step 25000): **66.8** = e4 58 / e6 74 / e9 64 / e2 84 / e7 54.
+Chain completed clean 01:15:58 UTC (warm-up -> gate PASS -> A-phase -> 5-task
+sequential, no incidents after the two expected ladder demotions).
+
+**Pre-registration scorecard (chain header):**
+- final >= ~57.6 (frontier band at 2.8B) -> **PASS**; >= ~59.6 (match bigsearch
+  at 58% params) -> **PASS at 66.8, +7.2 OVER bigsearch's seed-1000 final** —
+  the strongest single-seed 50-ep final in project history (prior best:
+  bigsearch 59.6). Seed-1000 comparators: bigsearch-12 59.6 / interleave-8
+  57.6 / sharepairs 56.8 / B 53.2.
+- e7 >= ~40 -> **PASS (54)**. Sequence across the sharing program: interleave
+  (dedicated tables) 38 -> sharepairs (shared deep) 22 -> merged6x2 (solo
+  deep, shared shallow) 54. The E61 design rule — share where content is
+  interchangeable, dedicate at depth — is now validated in BOTH directions,
+  and the solo-deep cells (E14/E16, the bigsearch depth lever) carried it.
+- Risk cell #4 (the (8,10) share under e7/e9's E10 read mass): **CLEARS** —
+  e7 54 and e9 64 with E10 inside a shared pair. The share-criterion veto
+  band (only pairs < ~0.6 similarity shared) survives its first
+  out-of-calibration bet.
+- e4 >= 40 -> **PASS (58** — best-ever seed-1000 e4 sequential cell; bigsearch
+  46, interleave 42); e2 >= 80 -> **PASS (84)**.
+- Boundary trail (20-ep, retired instrument): fresh 80/65/75/80 — the e4=80
+  opener is the best fresh cell ever recorded at t0. Mixed-instrument
+  give-back ~-4 (init-mean ~70.8 -> 66.8); the honest retention read is the
+  MSE matrix (battery running).
+- updt_s: **0.587-0.598** at bs16xacc2 — FASTER than interleave-8's 0.933
+  and sharepairs' 0.890 (7 tables' optimizer work + the halved state; the
+  cheapest production config yet).
+- Pending gates (unit e62-battery, launched 01:5x UTC): MSE matrix <= ~+8%
+  (the shared-write band), prior-core events (autopsy incl. the solo E14/E16
+  cells), site-bleed on the 5 shared pairs vs the E61 17-43% band, jitter
+  grid, harvest-bank rescore (spec/succ Q4 vs interleave's 0.318-0.344).
+  Results -> next addendum.
+
+**Reads (pre-battery):** (1) the go-big + sharing merge WORKS — 12 sites at
+7 tables delivers bigsearch-band-or-better performance below the paper
+budget; "sites, not slots" now has its constructive proof, not just the
+sharepairs efficiency tie. (2) The share/solo assignment came from a
+MEASURED criterion (E61 add-6 veto rule), not hand-picking — the
+anti-overfitting requirement is satisfied in the config that would headline.
+(3) Next per the standing sequencing (E61 add-5): 4-seed campaign row for
+the one-instrument table, then the noise arm (sigmas re-calibrated on this
+layout), then the REQUIRED 10-task validation before any shared-config
+headline.
