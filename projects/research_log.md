@@ -6967,3 +6967,25 @@ E58 sigmas were per-layer on B's layout and do not transfer), then the
 half-dose arm; then the REQUIRED 10-task validation. The pre-registered
 noise question stands: does value-input noise still add on top of sharing's
 cross-writing (redundancy = a live, paper-worthy outcome).
+
+---
+### Entry 62 addendum 4 (13 Aug 26, ~05:05 UTC) — NOISE ARM LAUNCHED (unit e62-vnoise): value-input noise at the E58 half dose, sigmas RE-CALIBRATED on the merged-6x2's 12 sites. Calibration (13 min, not the estimated 2h — the probe is cheap on the standing harvest bank): the depth-lawful displacement ladder reproduces on the new layout — expert mid-band dim-ratio 0.148 (E4) -> 0.982 (E16) monotone, VLM 0.406 (V5) -> 0.829 (V15); expert structure still concentrated (SVD-10 ~0.63-0.76), VLM ~isotropic (0.17-0.43) — the E58 per-dim approximation stands, same eyes-open caveat.
+
+Calibration: outputs/analysis/e62/value_input_calib_merged6x2.json
+(probe_value_input_calib on the merged6x2 final ckpt, e56 harvest bank,
+runner run_e62_vnoise_calib.sh). Half-dose derivation per the E58
+convention (dose1x = ratio x2 variance-matched at p=0.25; half = x1.0):
+expert [4,6,8,10,14,16] sigma [0.15,0.35,0.5,0.7,0.95,1.0]; VLM
+[5,7,9,11,13,15] sigma [0.4,0.47,0.56,0.64,0.74,0.83]; p=0.25, amp
+U[0.5,1.5].
+
+Arm (seq5_merged6x2_vnoise05x.sh, sequential-only, reuses the E62
+A-checkpoint — skip-guard confirmed in-log): E62 chain config VERBATIM +
+the noise flags = a clean single delta. Pre-registered (the E61-add-5
+redundancy question): spec/succ Q4 rescore vs merged6x2's own 0.332 —
+noise must ADD on top of sharing's cross-writing; ~unchanged = redundancy
+confirmed (paper-worthy either way) and noise drops from the recipe.
+Guardrails: block-mins <= ~1.10x the chain's; matrix <= ~+5%; e7 vs 54
+the target cell; only a 4-seed row (vs 65.2) decides a recipe change.
+Landing ~tonight; the REQUIRED 10-task validation queues on the finalized
+architecture+noise decision after it.
