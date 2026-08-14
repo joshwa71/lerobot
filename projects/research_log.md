@@ -7081,3 +7081,56 @@ but pair-local, noise is isotropic per-site — different neighbourhoods.
 ~1.2 sigma on its own. The 4-seed row (running now, lands ~05:00 UTC) is the
 pre-registered decision instrument for any recipe change. If it confirms,
 noise@half-dose joins the recipe and the 10-task validation runs WITH it.
+
+---
+### Entry 62 addendum 7 (14 Aug 26) — NOISE ARM VERDICT AT THE DECISION INSTRUMENT: **60.6 vs the no-noise twin's 65.2 — NEGATIVE AT ALL FOUR PAIRED SEEDS** (-7.2/-4.8/-2.4/-4.0). e7 is TIED at seeds (45+-5.0 vs 43+-8.9): the seed-1000 e7=66 that drove addendum 6 was the high draw of a distribution centred ~45. The harvest rescore confirms the mechanism read INDEPENDENTLY: far-region D vs the specialist went UP (spec/succ Q4 0.380 vs the no-noise 0.332) — noise moved the off-manifold function AWAY from the reference it was supposed to approach. **The E61-add-5 redundancy question resolves AGAINST noise on this substrate: sharing's cross-writing already supplies the neighbourhood training, and isotropic value-input noise on top is redundant AND costly. Noise is DROPPED from the recipe.**
+
+seeds_vnoise05x.json (25 eps x 4 paired seeds; per-seed 57.6/66.4/60.0/58.4):
+e4 51.0+-6.8 / e6 67.0+-13.2 / e9 57.0+-14.4 / e2 83.0+-2.0 / e7 45.0+-5.0
+-> mean **60.6** (no-noise twin 65.2 = 56/73/70/84/43).
+
+**Pre-registration scorecard (arm header) — the arm passes every SAFETY gate
+and fails the VALUE question:**
+- Fit cost <= ~1.10x: **PASS at ~1.00-1.04x** (paired-noise diagonals
+  0.0375/0.1300/0.2663/0.1816/0.2305 vs the twin's
+  0.0372/0.1256/0.2691/0.1796/0.2278). Noise is free on fit, as in E58.
+- MSE matrix <= ~+5%: **PASS** (+3.9/+1.0/+0.3/+0.2/+0.0%) — cleanest
+  retention profile of any arm; noise does not interact with
+  stationarity/protection, exactly as the architecture argues.
+- Harvest rescore (the redundancy arbiter, "noise must ADD"): **FAIL** —
+  Q4 spec/succ 0.380 > 0.332; demo anchor 0.0164 (unchanged, instrument
+  sound). On B (E58) the same dose moved this metric the RIGHT way
+  (0.482 -> 0.379); on the merged/shared substrate it moves the wrong way.
+- 4-seed row (the stated decision instrument): **FAIL, 4/4 paired negative.**
+
+**Correction owned (addendum 6):** I wrote "value-input noise is NOT
+redundant with sharing's cross-writing — the two neighbourhood mechanisms
+compose" off a single-seed 69.2/e7=66. That claim is FALSIFIED. The
+project's own standing rule (E41 retired 20-ep cells; E60-add-3 measured
+14-point single-seed swings) existed precisely for this, and the arm's own
+pre-registration named the 4-seed row as the arbiter — the narrative should
+have waited for it. Standing rule restated: **single-seed 50-ep finals are
+for pre-registration scoring only; NO mechanism claim enters the log on
+one seed.**
+
+**Scientific yield (the negative is informative):** value-input noise's E58
+win on the dedicated-table B substrate does NOT transfer to a shared-table
+substrate. This is direct evidence FOR the E61 mechanism story — cross-layer
+co-writing on shared tables IS a neighbourhood regularizer, occupying the
+same axis noise targets, so stacking them over-regularizes. One lever per
+axis; the shared architecture already bought it, at negative parameter cost.
+
+**Board consequence:** the frontier recipe is the NO-NOISE merged 6x2
+(65.2 at 4 seeds, 2.8B). The weekend `weekend-10task` queue runs no-noise
+FIRST (unaffected); its noise tail is now low-value — RECOMMEND CANCELLING
+(`sudo systemctl stop weekend-10task` after the no-noise chain completes,
+or let it run as originally instructed). Flagged for Josh's call on return;
+left armed as specified rather than unilaterally cut.
+
+**Also landed (weekend chain, stage 1):** full-FT BACK-5 4-seed rows —
+FT-fresh back-5 **68.0** (e0 57/e8 69/e1 39/e3 80/e5 95), FT-l90 back-5
+**81.2** (e0 80/e8 82/e1 60/e3 89/e5 95). Both track their front-5 rows
+(67.6 / 78.2) closely, so the 10-task ceiling rows will land ~67.8 and
+~79.7 — the back-5 tasks are NOT systematically easier or harder, which
+makes the 10-task table directly comparable to the front-5 one. Back-5
+specialists training now (t5/e0 started 08:59 UTC).
