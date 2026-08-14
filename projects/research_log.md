@@ -7022,3 +7022,24 @@ instrument, then runs the 10-task 6x2 validations.
 Campaign JSONs land in outputs/analysis/e60/ next to the existing rows
 (seeds_{fullft_l10_back5, fullft_l90_l10_back5, spec_e0/e8/e1/e3/e5,
 multitask10}.json). Commit 29b70dcd carries the six new scripts + plumbing.
+
+---
+### Entry 62 addendum 6 (14 Aug 26, 01:28 UTC) — NOISE ARM LANDS: **69.2 at seed-1000/50-ep** (e4 54 / e6 72 / e9 70 / e2 84 / **e7 66**) — +2.4 over the no-noise twin (66.8), with the ENTIRE gain concentrated on the pre-registered target cell: **e7 54 -> 66, the best sequential e7 ever recorded** (specialist 60; FT-l90 ceiling 66). First read: value-input noise is NOT redundant with sharing's cross-writing — the two neighbourhood mechanisms compose on the conversion-bound cell. The 4-seed row (running, ~06:00 UTC) is the decision instrument.
+
+Boundary trail (20-ep): fresh 70/65/85/90 — e9's fresh 85 and e2's fresh 90
+at the high end of their historical bands; no cell collapsed through later
+blocks. Non-e7 cells vs the twin: e4 54 vs 58, e6 72 vs 74, e9 70 vs 64,
+e2 84 vs 84 — all within single-seed noise; the +12 on e7 carries the delta.
+
+Pre-registration scorecard (arm header):
+- e7 vs 54 -> **+12 (66)** — the target cell moved decisively.
+- 50-ep final vs 66.8 -> **69.2, the additive-evidence branch**.
+- Fit-cost guardrail (block-min <= ~1.10x twin) + matrix band + harvest
+  rescore (spec/succ Q4 vs 0.332 — the redundancy arbiter) -> battery
+  running (unit e62-vnoise-battery), results next addendum.
+- Cost of the noise: updt_s ~1.03 vs 0.59 (the sampling overhead) — a
+  training-time-only price; inference unchanged.
+
+If the 4-seed row confirms at ~66+: the noise recipe beats FT-fresh (67.6)
+and closes most of the e7 deficit — the weekend 10-task noise run (already
+queued) becomes the likely paper config rather than the conditional tail.
