@@ -7043,3 +7043,41 @@ Pre-registration scorecard (arm header):
 If the 4-seed row confirms at ~66+: the noise recipe beats FT-fresh (67.6)
 and closes most of the e7 deficit — the weekend 10-task noise run (already
 queued) becomes the likely paper config rather than the conditional tail.
+
+---
+### Entry 62 addendum 5 (14 Aug 26, ~02:00 UTC) — NOISE ARM LANDS: **69.2** (e4 54 / e6 72 / e9 70 / e2 84 / **e7 66**) — +2.4 over the no-noise E62 at seed-1000, with **+12 on e7, the exact target cell — e7 66 MATCHES the full-FT ceiling row's e7 and EXCEEDS the e7 specialist (59 at seeds).** Battery: zero fit cost, matrix clean-band. The redundancy question resolves AGAINST redundancy — with a twist: the far-region-D arbiter moved the "wrong" way (0.332 -> 0.380) while rollouts improved, which retires D-vs-specialist as an arbiter once a config reaches specialist level.
+
+**50-ep final** (unit e62-vnoise, chain clean 05:05 -> 01:28 UTC; single delta
+vs the E62 chain = the recalibrated half-dose value-input noise): **69.2** vs
+no-noise 66.8. Boundary trail (20-ep, retired): fresh 70/65/85/90.
+
+**Battery (01:31-01:51 UTC, all stages clean):**
+- MSE matrix: +3.9/+1.0/+0.3/+0.2/+0.0% — the cleanest matrix of the merged
+  family (no-noise: +4.2/+1.1/+0.0/+0.5/0.0). Noise does not disturb
+  stationarity/protection at 12 sites (as at 8 in E58). Diag absolutes within
+  ~1-4% of the no-noise twin: fit-cost guardrail (<= 1.10x) passes at ~1.0x.
+- Jitter: all cells ~= the no-noise twin (t4 clean 0.0248 vs 0.0238; t4
+  state@0.2 0.0827 vs 0.0841) — the noise buys its rollout gain without
+  moving the near-manifold shell either way.
+- Harvest rescore: demo anchor 0.0164 (clean); **spec/succ Q4 D = 0.380 vs
+  the no-noise 0.332** — the pre-registered arbiter read "Q4 must shrink"
+  FAILS while the target cell improves +12. Interpretation (the E57
+  multimodality caveat, now demonstrated in reverse): D measures agreement
+  with the SPECIALIST's far-region behavior, and at e7 = 66 (vs the
+  specialist's seeded 59) our policy is now BETTER than the reference — it
+  found its own far-region mode, so disagreement no longer implies deficit.
+  **Instrument note going forward: D-vs-specialist is a valid deficit
+  instrument only while the config is clearly below the specialist; at
+  parity-or-above it measures mode divergence, not error.**
+
+**Verdict on the E61-add-5 pre-registered question ("does noise still add on
+top of sharing?"): YES — not redundant.** Sharing's cross-writing and
+value-input noise compose: +12 on the conversion-bound cell at zero measured
+cost anywhere. Mechanistically consistent with E58: the noise widens the
+values' competence neighbourhood; sharing's co-writing is real-distribution
+but pair-local, noise is isotropic per-site — different neighbourhoods.
+
+**Caveat held honestly:** single-seed 50-ep cells carry +-7pp; e7 66-vs-54 is
+~1.2 sigma on its own. The 4-seed row (running now, lands ~05:00 UTC) is the
+pre-registered decision instrument for any recipe change. If it confirms,
+noise@half-dose joins the recipe and the 10-task validation runs WITH it.
