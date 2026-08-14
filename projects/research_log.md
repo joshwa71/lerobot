@@ -7134,3 +7134,34 @@ FT-fresh back-5 **68.0** (e0 57/e8 69/e1 39/e3 80/e5 95), FT-l90 back-5
 ~79.7 — the back-5 tasks are NOT systematically easier or harder, which
 makes the 10-task table directly comparable to the front-5 one. Back-5
 specialists training now (t5/e0 started 08:59 UTC).
+
+---
+### Entry 62 addendum 8 (14 Aug 26) — WEEKEND QUEUE STATUS + PRE-EMPTIVE DISK SWEEP (the E60 ENOSPC lesson, applied BEFORE the incident this time): ~380G freed, disk 67% -> 54%, both 10-task runs now fit with ~370G margin.
+
+**Arithmetic that forced it:** the merged6x2 per-task checkpoint is 39G
+(19G weights + 21G optimizer state). A 10-task run saves 10 of them =
+~390G; both queued 10-task runs = ~780G against 823G free — i.e. the
+no-noise run would have completed and the noise run would have hit ENOSPC
+mid-save, reproducing the E60 incident (chain killed at a checkpoint write,
+~40 min + one retrained block).
+
+**Swept:** `training_state/` (optimizer states only — NEVER weights) from
+seven COMPLETED runs whose analyses are discharged: merged6x2 5-task
+(no-noise + vnoise), sharepairs 5-task, bigsearch 5-task final, and the
+three A-phase/warm-up dirs. Guard used: only runs with an existing final
+`pretrained_model` were touched. All model weights + `sequential_state.pt`
++ memory_by_task JSONs + evals retained (12/12 pretrained_model dirs intact
+across the two merged6x2 runs). The merged6x2 A-phase checkpoint the
+10-task chains reuse is unaffected — they consume `pretrained_model` only.
+Standing note upgraded: **sweep optimizer states BEFORE each new chain, not
+after the disk fills.**
+
+**Queue state at this write:** `weekend-baselines` active — full-FT back-5
+rows DONE (68.0 / 81.2, addendum 7), back-5 specialists training (t5/e0
+started 08:59 UTC, ~2.6h each => five done ~Sat 01:00 UTC), then their
+5 seed rows, then multitask-LoRA-10 + its all-10 row (~Sat afternoon).
+`weekend-10task` armed and gated behind it: no-noise 10-task first
+(~Sun-Mon), noise 10-task tail second (now recommended-cancel per addendum
+7 — left armed per the original instruction; one `systemctl stop
+weekend-10task` kills it after the no-noise chain).
+Fresh session monitor armed with a DISK TRIPWIRE at 88%.
