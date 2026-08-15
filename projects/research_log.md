@@ -7165,3 +7165,44 @@ started 08:59 UTC, ~2.6h each => five done ~Sat 01:00 UTC), then their
 7 — left armed per the original instruction; one `systemctl stop
 weekend-10task` kills it after the no-noise chain).
 Fresh session monitor armed with a DISK TRIPWIRE at 88%.
+
+---
+### Entry 62 addendum 9 (15 Aug 26, ~01:15 UTC) — WEEKEND STAGE 1-3 COMPLETE: the **10-TASK SPECIALIST ORACLE ROW = 63.7** (front-5 59.0 / back-5 68.4) at the 4-seed instrument. The back-5 tasks are EASIER for specialists by +9.4, so the 10-task oracle sits ABOVE the front-5 one — the bar our 10-task memory run must clear is 63.7, not 59.0.
+
+All ten per-task LoRA specialists now exist (front-5 from E42/E55/E56;
+back-5 trained overnight, recipe byte-identical) and all ten 4-seed rows are
+in. Per-env (25 eps x 4 paired seeds, mean +- sd):
+
+| front-5 | | back-5 | |
+|---|---|---|---|
+| e4 | 46.0 +- 10.6 | e0 | 46.0 +- 10.1 |
+| e6 | 49.0 +- 11.5 | e8 | 67.0 +- 6.8 |
+| e9 | 61.0 +- 6.8 | e1 | 62.0 +- 5.2 |
+| e2 | 80.0 +- 7.3 | e3 | 84.0 +- 11.8 |
+| e7 | 59.0 +- 3.8 | e5 | 83.0 +- 5.0 |
+| **mean** | **59.0** | **mean** | **68.4** |
+
+**ALL-10 SPECIALIST ORACLE = 63.7.**
+
+Reads:
+1. **The 10-task bar is HIGHER than the 5-task bar** (63.7 vs 59.0): the
+   back-5 contains three of the suite's easiest tasks for a specialist
+   (e3 84, e5 83, e8 67 — bowl+drawer, book+caddy, both-mokas) against one
+   hard cell (e0 46, soup+sauce). Our front-5 win over specialists (+6.2 at
+   65.2 vs 59.0) does NOT transfer automatically; the 10-task memory run
+   must reach ~64+ to keep the "beats per-task fine-tuning" claim at 10
+   tasks. Pre-registered as the headline test for the running 10-task chain.
+2. Cross-check with the full-FT rows, which show the SAME easier-back-5
+   structure (FT-l90 front-5 78.2 / back-5 81.2; FT-fresh 67.6 / 68.0) —
+   consistent, so this is a property of the task set, not a specialist
+   artifact.
+3. Per-cell sd stays wide (3.8-11.8) — the E60-add-4 lesson that the
+   single-seed 63.2 "oracle" was luck holds: the honest all-10 oracle is
+   63.7 with per-cell error bars of that size.
+
+Stage 4 (multitask-LoRA-10) started training 00:45 UTC; its all-10 seed row
+follows, then `weekend-10task` takes the GPU (no-noise 10-task first).
+Instrument note: the weekend monitor's grep matches training banners but
+NOT campaign progress, so heartbeats repeat the last training line while
+seed campaigns run silently — verified directly instead (specialist
+checkpoints + seed JSONs + GPU). Widen the pattern next time.
