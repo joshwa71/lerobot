@@ -7206,3 +7206,36 @@ Instrument note: the weekend monitor's grep matches training banners but
 NOT campaign progress, so heartbeats repeat the last training line while
 seed campaigns run silently — verified directly instead (specialist
 checkpoints + seed JSONs + GPU). Widen the pattern next time.
+
+---
+### Entry 62 addendum 10 (15 Aug 26, ~10:40 UTC) — **WEEKEND BASELINES COMPLETE: the 10-TASK TABLE'S BASELINE ROWS ALL EXIST at one instrument.** FT-l90 79.7 / FT-fresh 67.8 / specialist oracle 63.7 / multitask-LoRA-10 53.2. The 10-task no-noise merged-6x2 chain has STARTED (shared-table machinery live in-log).
+
+All rows 25 eps x 4 paired seeds (1000/2000/3000/4000), envs in train order
+e4/e6/e9/e2/e7/e0/e8/e1/e3/e5:
+
+| row | all-10 | front-5 | back-5 | budget/advantages |
+|---|---|---|---|---|
+| **FT-l90** (ceiling) | **79.7** | 78.2 | 81.2 | all-10 demos, full backbone, joint |
+| **FT-fresh** | **67.8** | 67.6 | 68.0 | same, minus the libero-90 substrate |
+| **specialist oracle** | **63.7** | 59.0 | 68.4 | 10 separate models + task ID at test |
+| **multitask-LoRA-10** | **53.2** | — | — | one adapter, all-10 demos, no continual constraint |
+
+multitask-LoRA-10 per-env: e4 35 / e6 47 / e9 49 / e2 62 / e7 46 / e0 47 /
+e8 46 / e1 52 / e3 81 / e5 67 (10k steps = the front-5 cell's 1k/task
+convention scaled; front-5 multitask was 51.4 at 5 tasks, so breadth cost
+it ~nothing per task — consistent with the E43 breadth law).
+
+**What the memory run must clear (pre-registered for the running chain):**
+63.7 to keep "beats per-task fine-tuning" at 10 tasks (the bar ROSE from
+59.0 — addendum 9), 53.2 to keep the multitask-adapter margin, and any
+number at all keeps the catastrophic-forgetting contrast (naive seq-LoRA
+18.0 at 5 tasks; a 10-task naive row was NOT in the weekend spec and does
+not exist — flagged as the one missing baseline cell if the paper wants the
+foil at 10 tasks; ~15-17h to add).
+
+**10-task chain live** (00:37 UTC start on the freed GPU): the `[E61 union]`
+line confirms shared-table write machinery in production at 10 tasks —
+mask 3072+3072 -> 6023 rows, overlap 121 (~2%), the same per-step partition
+measured at 5 tasks. Estimated landing ~Sun evening / Mon morning UTC
+(10 blocks + boundary evals that grow with seen-task count + a 10-task
+50-ep final).
