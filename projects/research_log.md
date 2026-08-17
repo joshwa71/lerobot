@@ -7239,3 +7239,76 @@ mask 3072+3072 -> 6023 rows, overlap 121 (~2%), the same per-step partition
 measured at 5 tasks. Estimated landing ~Sun evening / Mon morning UTC
 (10 blocks + boundary evals that grow with seen-task count + a 10-task
 50-ep final).
+
+---
+## Entry 63 - 17 Aug 26 (THE 10-TASK VALIDATION LANDS: **67.8** — the required shared-config run at full suite length CLEARS every bar. Beats the 10-task specialist oracle (63.7) by +4.1 on 8/10 tasks, beats multitask-LoRA-10 (53.2) by +14.6, EQUALS full-FT-from-scratch (67.8) exactly, and sits 11.9 below the substrate-matched ceiling. NO catastrophic forgetting at 10 tasks: front-5 67.2 vs back-5 68.4 — the early tasks are NOT degraded by five subsequent blocks. The E61-add-5 degradation worry does not materialize.)
+
+**The run:** `libero_10_seq10_jw_merged6x2_..._beta4corefrac_topt3072_lr2x_steps5k`
+— the merged 6x2 (12 sites / 7 shared tables / 2.8B) config verbatim from the
+E62 5-task cell, extended to all ten libero_10 tasks (10 blocks x 5000 steps,
+20-ep boundaries + 50-ep final on all 10). Chain clean start-to-finish; the
+first five boundaries reproduced the 5-task run bit-for-bit (same
+A-checkpoint/seed/order, empty protection store) — a free end-to-end check on
+the 10-task plumbing.
+
+**50-ep final (step 50000), train order, vs the 10-task specialist oracle:**
+
+| env | task | ours | specialist | delta |
+|---|---|---|---|---|
+| e4 | two mugs | 52 | 46 | +6 |
+| e6 | mug+pudding | 76 | 49 | **+27** |
+| e9 | mug+microwave | 64 | 61 | +3 |
+| e2 | stove+moka | 90 | 80 | +10 |
+| e7 | soup+cheese | 54 | 59 | -5 |
+| e0 | soup+sauce | 48 | 46 | +2 |
+| e8 | both mokas | 74 | 67 | +7 |
+| e1 | cheese+butter | 42 | 62 | **-20** |
+| e3 | bowl+drawer | 86 | 84 | +2 |
+| e5 | book+caddy | 92 | 83 | +9 |
+| | **MEAN** | **67.8** | **63.7** | **+4.1** |
+
+**Scorecard against the pre-registrations (E61 add-5 + addendum 9):**
+1. **>= 63.7 (keep "beats per-task fine-tuning" at 10 tasks) -> PASS at 67.8,
+   on 8/10 tasks.** The bar ROSE going to 10 tasks (59.0 -> 63.7) and we
+   cleared it by more than we cleared the 5-task one (+4.1 vs +6.2 at 5;
+   both single-seed-instrument reads pending the seed campaign).
+2. **>= 53.2 (multitask-LoRA-10) -> PASS by +14.6.**
+3. **Degradation mechanism (a), per-block cross-writing accumulation ->
+   DOES NOT MATERIALIZE.** front-5 mean 67.2 vs back-5 68.4: the five tasks
+   that sat under five subsequent blocks are within 1.2 points of the five
+   that did not. At 5 tasks the same config gave front-5 66.8. **Early-task
+   performance is FLAT in the number of subsequent blocks** — the central
+   catastrophe-elimination claim, now demonstrated at full suite length.
+4. **Degradation mechanism (b), protection crowding on shared tables ->
+   no visible late-writer starvation**: the last three trained tasks
+   (e1 42 / e3 86 / e5 92) show no systematic deficit; e1 is a basket-family
+   task (below), not a late-writer artifact.
+5. Instrument note: the 20-ep boundary trace was uninformative as usual —
+   e7 swung 65/40/60/25/60 across consecutive boundaries and finished at 54.
+   My block-8 attribution of that dip to basket-hub interference was
+   noise-driven and is withdrawn; the family signal that DOES survive to the
+   final is e1 (below), not e7.
+
+**The one real deficit: e1 (cheese+butter) at 42 vs its specialist's 62.**
+This is the basket family's third member, present only at 10 tasks (train
+order position 8). e7 (soup+cheese) shares "cheese" with it and e0
+(soup+sauce) shares "soup" with e7 — the E27/E28 same-scene family. Our three
+basket cells (e7 54 / e0 48 / e1 42) are the three lowest non-e4 cells in the
+table, and the family is the only place we lose to specialists. Consistent
+with every prior finding: the family collision is scene-genuine, routing
+cannot separate it (E28 forward probe), and it is now the clearest remaining
+target at 10 tasks.
+
+**Placement in the full 10-task table (all rows at 25 eps x 4 paired seeds
+except this run, at 50 eps / seed 1000 — the seed campaign is the next step):**
+FT-l90 79.7 / **merged6x2-10task 67.8** = FT-fresh 67.8 / specialists 63.7 /
+multitask-LoRA-10 53.2. **The sequential frozen-backbone memory model with no
+task identity EQUALS a full-backbone joint finetune given all ten tasks'
+demos at once**, and sits 11.9 under the substrate-matched ceiling.
+
+**Next:** (1) 4-seed campaign on this checkpoint — the headline instrument,
+and the only thing that makes the +4.1 and the FT-fresh tie quotable;
+(2) the standard battery (10x10 MSE forgetting matrix — the paired,
+noise-free retention read at 10 tasks; jitter; slot autopsy with the 5-pair
+site-bleed and prior-core reads at 10-task exposure); (3) the noise 10-task
+tail is queued behind this and remains recommended-cancel (E62 addendum 7).
