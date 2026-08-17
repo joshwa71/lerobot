@@ -58,7 +58,8 @@ def main(cfg: SequentialOnlineConfig):
                 print(f"[warn] {st}: unexpected={unexpected[:5]}")
             del sd
             per_task = _eval_loss_on_seen_tasks(
-                policy, accelerator, dataset, task_index_to_name, [0,1,2,3,4],
+                policy, accelerator, dataset, task_index_to_name,
+                [int(x) for x in os.environ.get("MSEMAT_TASKS", "0,1,2,3,4").split(",")],
                 batch_size=32, num_workers=4, device=device, n_batches=16,
                 preprocessor=preprocessor, seed=0,
             )
