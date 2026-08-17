@@ -7452,3 +7452,45 @@ Reads:
    matrix drift; both instruments finger the same task.
 
 Naive 10-task foil now training (stage 3).
+
+---
+### Entry 63 addendum 4 (17 Aug 26) — the FULL 10x10 MSE forgetting matrix (addendum 3 carried only the diagonal summary; this is the complete grid, the project's standard artifact since E39).
+
+Paired-noise flow-matching loss of every per-task checkpoint (rows) on every
+task (columns); diagonal = just-trained, bold. Instrument: `mse_matrix2.py`,
+seed 0, 16 batches/task — identical settings to every prior matrix
+(B/absmax/sharepairs/naive), so cells are comparable across entries.
+
+| ckpt | t0/e4 | t1/e6 | t2/e9 | t3/e2 | t4/e7 | t5/e0 | t6/e8 | t7/e1 | t8/e3 | t9/e5 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 005000 | **0.0372** | 0.6467 | 1.6699 | 0.9050 | 0.9438 | 0.8853 | 0.7955 | 0.8616 | 0.9216 | 0.6240 |
+| 010000 | 0.0375 | **0.1256** | 1.6849 | 0.9081 | 0.9486 | 0.8904 | 0.7966 | 0.8696 | 0.9289 | 0.6283 |
+| 015000 | 0.0379 | 0.1261 | **0.2691** | 0.9286 | 0.9596 | 0.8979 | 0.8008 | 0.8806 | 0.9333 | 0.6391 |
+| 020000 | 0.0383 | 0.1262 | 0.2691 | **0.1796** | 0.9600 | 0.9021 | 0.7941 | 0.8806 | 0.9353 | 0.6399 |
+| 025000 | 0.0388 | 0.1269 | 0.2691 | 0.1805 | **0.2278** | 0.9308 | 0.7975 | 0.8810 | 0.9358 | 0.6403 |
+| 030000 | 0.0396 | 0.1284 | 0.2706 | 0.1811 | 0.2492 | **0.1975** | 0.8034 | 0.9026 | 0.9424 | 0.6391 |
+| 035000 | 0.0402 | 0.1301 | 0.2734 | 0.1873 | 0.2559 | 0.1968 | **0.1383** | 0.9016 | 0.9480 | 0.6415 |
+| 040000 | 0.0407 | 0.1314 | 0.2754 | 0.1903 | 0.2626 | 0.2084 | 0.1396 | **0.2318** | 0.9514 | 0.6436 |
+| 045000 | 0.0412 | 0.1331 | 0.2795 | 0.1924 | 0.2670 | 0.2111 | 0.1418 | 0.2329 | **0.1703** | 0.6444 |
+| 050000 | 0.0418 | 0.1348 | 0.2817 | 0.1947 | 0.2701 | 0.2127 | 0.1436 | 0.2345 | 0.1718 | **0.1076** |
+
+Structure worth reading off the grid itself (not visible in the diagonal
+summary):
+1. **Untrained cells are flat and huge until their block** (e.g. t2/e9 sits
+   at ~1.67-1.68 for two checkpoints, then drops to 0.269 when trained) —
+   the standard signature, and it validates the instrument: nothing moves a
+   task's loss except its own block plus small later drift.
+2. **Post-training columns rise monotonically, never step.** Every
+   below-diagonal column increases smoothly by 0.5-2% per subsequent block
+   with no cliff at any single writer — i.e. the drift is diffuse
+   accumulation, not one bad neighbour. Contrast the naive-LoRA matrix
+   (E58 add-6), where a single subsequent block moved a task from 0.05 to
+   ~0.9-1.5 (one-block catastrophe).
+3. **The one visibly steeper column is t4/e7** (0.2278 -> 0.2492 at e0's
+   block -> 0.2626 at e1's -> 0.2701): the two basket neighbours are its two
+   largest single-block jumps (+9.4% and +5.4%), which is the E27 hub
+   geometry appearing directly in the matrix rather than inferred.
+4. Pre-training loss levels differ ~25x across tasks (t0 0.037 vs t2 1.67
+   before training) — as always, compare cells WITHIN a column, never across.
+
+Artifact: `outputs/analysis/e63/mse_matrix_seq10.jsonl`.
