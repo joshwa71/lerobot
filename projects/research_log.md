@@ -7351,3 +7351,47 @@ The autopsy's RUNS dict now carries the seq10 run and gracefully skips
 ETA: seeds ~4-5h (10 envs x 4 seeds), battery ~3h (the 10x10 matrix is 100
 cells vs the 5x5's 25), naive train ~15-17h + its seeds — full queue ~Tue
 afternoon UTC.
+
+---
+### Entry 63 addendum 2 (17 Aug 26) — 10-TASK 4-SEED ROW: **65.1** (vs the 10-task specialist oracle 63.7, **+1.4, winning 7/10 tasks**). The seed-1000 67.8 was a mild high draw (per-seed 60.4/66.8/66.8/66.4). Retention holds at seeds — front-5 64.6 vs back-5 65.6 — so the no-catastrophic-forgetting claim survives the headline instrument. The basket family is the entire remaining deficit: e1 -24, e0 -9, e7 -5; on the other seven tasks we are +2 to +13.
+
+| env | task | ours (4-seed) | specialist | delta |
+|---|---|---|---|---|
+| e4 | two mugs | 59.0 +- 14.4 | 46.0 | **+13.0** |
+| e6 | mug+pudding | 60.0 +- 8.0 | 49.0 | **+11.0** |
+| e9 | mug+microwave | 63.0 +- 6.8 | 61.0 | +2.0 |
+| e2 | stove+moka | 87.0 +- 5.0 | 80.0 | +7.0 |
+| e7 | soup+cheese | 54.0 +- 4.0 | 59.0 | -5.0 |
+| e0 | soup+sauce | 37.0 +- 10.0 | 46.0 | -9.0 |
+| e8 | both mokas | 76.0 +- 5.7 | 67.0 | +9.0 |
+| e1 | cheese+butter | 38.0 +- 9.5 | 62.0 | **-24.0** |
+| e3 | bowl+drawer | 86.0 +- 5.2 | 84.0 | +2.0 |
+| e5 | book+caddy | 91.0 +- 2.0 | 83.0 | +8.0 |
+| | **MEAN** | **65.1** | **63.7** | **+1.4** |
+
+**THE COMPLETE 10-TASK TABLE (all rows 25 eps x 4 paired seeds):**
+FT-l90 (ceiling) **79.7** / FT-fresh **67.8** / **merged6x2 10-task 65.1** /
+specialists **63.7** / multitask-LoRA-10 **53.2** / naive seq-LoRA-10 (running).
+
+Reads:
+1. **The claim holds at 10 tasks, with a thinner margin than at 5** (+1.4 vs
+   +6.2 at 5 tasks). Both are single-config-vs-oracle comparisons at the
+   same instrument; the 10-task margin is inside ~1 sd of the per-seed
+   spread (per-seed 60.4-66.8), so the honest phrasing is "matches or
+   modestly exceeds the per-task oracle at 10 tasks", not "beats it".
+2. **Retention confirmed at seeds:** front-5 64.6 vs back-5 65.6. Tasks that
+   sat under five subsequent blocks are NOT degraded relative to the late
+   ones — the E61-add-5 accumulation worry is dead at the headline
+   instrument, not just at seed-1000.
+3. **The basket family is now the ENTIRE deficit.** Sum over the three
+   basket cells (e7/e0/e1) = -38 against specialists; sum over the other
+   seven = +52. Remove the family and the config beats per-task fine-tuning
+   by ~7 points per task. e1 (-24) is the worst cell in project history
+   against its specialist and exists only at 10 tasks. This is the E27/E28
+   same-scene collision, now the single named target for any further work.
+4. e4's sd of 14.4 (32-72 across seeds) is the widest cell in the table —
+   consistent with its history as the noisiest task; its +13 is real in
+   direction but weakly determined in magnitude.
+
+Battery in flight (matrix 6/10 checkpoints at this write); naive 10-task
+foil behind it.
