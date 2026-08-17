@@ -7312,3 +7312,42 @@ and the only thing that makes the +4.1 and the FT-fresh tie quotable;
 noise-free retention read at 10 tasks; jitter; slot autopsy with the 5-pair
 site-bleed and prior-core reads at 10-task exposure); (3) the noise 10-task
 tail is queued behind this and remains recommended-cancel (E62 addendum 7).
+
+---
+### Entry 63 addendum (17 Aug 26) — noise 10-task CANCELLED (Josh); E63 post-landing queue launched: 4-seed row -> battery -> naive 10-task foil.
+
+**Cancelled:** the queued 10-task noise arm (unit `weekend-10task` stopped;
+it had reached ~1K steps of block 0). Rationale is the E62-addendum-7
+verdict — value-input noise lost at 4 seeds on this substrate (60.6 vs
+65.2, negative 4/4 paired) and the harvest rescore showed it moving the
+far-region function AWAY from the specialist reference. Its partial dir
+(wandb debris, no checkpoints — the stub-dir pattern that blocks relaunches)
+was removed after inspection. ~2 GPU-days reclaimed for the queue below.
+
+**Launched (unit `e63-queue`), in Josh's order:**
+1. **4-seed campaign** on the 10-task final, all ten envs (25 eps x seeds
+   1000/2000/3000/4000). This is what makes the +4.1-over-oracle and the
+   FT-fresh tie quotable — every other row in the 10-task table is already
+   at this instrument, and Entry 63's 67.8 is currently seed-1000/50-ep.
+   -> outputs/analysis/e60/seeds_seq10_merged6x2.json
+2. **Battery**: 10x10 MSE forgetting matrix (paired-noise; the noise-free
+   read that converts "front-5 67.2 vs back-5 68.4" into a retention claim
+   and tests the E61-add-5 cross-writing worry at fit level — the 5-task
+   band was +0.0-4.2%, sharepairs breached at +7.7%), jitter/OOD grid on
+   four tasks incl. the basket cells, and the slot autopsy at 10-task
+   exposure (5-pair site-bleed vs the 17-43% band, prior-core events incl.
+   the solo E14/E16 depth cells).
+3. **Naive sequential LoRA r256 at 10 tasks** — the catastrophic-forgetting
+   foil beside the 67.8 row (the 5-task cell was 18.0 with three tasks at
+   literal 0%). Script is the 5-task one with two deltas (task ids [0..9],
+   final ckpt 050000); its own 4-seed row follows.
+
+**Instrument work shipped with it (commit 3d1de6f4):** `MSEMAT_TASKS` env
+on mse_matrix2.py and `SLOTS_NTASKS`/`SLOTS_OUT_DIR`/`SLOTS_TAG` on the slot
+autopsy — both previously hardcoded to 5 tasks; defaults byte-identical.
+The autopsy's RUNS dict now carries the seq10 run and gracefully skips
+5-task runs when NT=10.
+
+ETA: seeds ~4-5h (10 envs x 4 seeds), battery ~3h (the 10x10 matrix is 100
+cells vs the 5x5's 25), naive train ~15-17h + its seeds — full queue ~Tue
+afternoon UTC.
