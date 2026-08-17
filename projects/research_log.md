@@ -7395,3 +7395,60 @@ Reads:
 
 Battery in flight (matrix 6/10 checkpoints at this write); naive 10-task
 foil behind it.
+
+---
+### Entry 63 addendum 3 (17 Aug 26) — 10-TASK BATTERY: forgetting stays SMALL but is no longer flat — mean function drift **+6.5%** (5-task band was +0.0-4.2%), and it is **ordered by exposure** (first-5 +10.3% vs last-5 +2.7%), i.e. the accumulation mechanism IS real at fit level even though it does not convert to rollout loss (front-5 64.6 vs back-5 65.6 at seeds). Solo deep tables remain untouched (E14/E16 = 0 events at every one of nine victims); the whole prior-core leak is the shallow E4 site. Site-bleed at 10 tasks is unchanged from 5 (14-51%). Jitter shows the basket cell e7 as the brittlest.
+
+**MSE forgetting matrix (10x10, paired-noise; own-block -> final):**
+
+| task | own | final | drift |
+|---|---|---|---|
+| t0/e4 | 0.0372 | 0.0418 | +12.4% |
+| t1/e6 | 0.1256 | 0.1348 | +7.4% |
+| t2/e9 | 0.2691 | 0.2817 | +4.7% |
+| t3/e2 | 0.1796 | 0.1947 | +8.4% |
+| t4/e7 | 0.2278 | 0.2701 | **+18.6%** |
+| t5/e0 | 0.1975 | 0.2127 | +7.7% |
+| t6/e8 | 0.1383 | 0.1436 | +3.9% |
+| t7/e1 | 0.2318 | 0.2345 | +1.2% |
+| t8/e3 | 0.1703 | 0.1718 | +0.9% |
+| t9/e5 | 0.1076 | 0.1076 | +0.0% |
+| | | **mean** | **+6.5%** |
+
+Reads:
+1. **The E61-add-5 prediction is CONFIRMED at fit level and REFUTED at
+   rollout level.** Drift is monotone-ish in exposure (first-5 +10.3%,
+   last-5 +2.7%) exactly as "cross-writing accumulates per block" predicts,
+   and the 5-task band (+0.0-4.2%) roughly doubles at 10 tasks — the
+   predicted +8-15% range, at its low end. But the same tasks' ROLLOUT
+   scores do not degrade (front-5 64.6 vs back-5 65.6 at 4 seeds). So the
+   accumulated drift is real and measurable while sitting below the
+   threshold where it costs success — the E42/E52 "drift converts only at
+   the threshold" result, now demonstrated across a 2x exposure change.
+   Honest framing for the paper: "function drift grows with the number of
+   subsequent tasks but remains an order of magnitude below the naive
+   baseline's (+740-1567%) and does not convert to success loss at this
+   scale" — NOT "zero forgetting" at 10 tasks.
+2. **e7 is the worst drift cell (+18.6%)** — the basket hub, damaged by both
+   e0 (t5) and e1 (t7) blocks, exactly the E27 hub geometry. Its rollout
+   (54, -5 vs specialist) understates the internal damage; e1's own drift is
+   trivial (+1.2%, it trained late) yet its rollout is the worst cell (-24),
+   so e1's deficit is NOT forgetting — it is fit/conversion on a
+   family-colliding task. **Two different mechanisms in the same family.**
+3. **Solo deep tables: 0 prior-core write events at E14/E16 for all nine
+   victims** (as at 5 tasks) — the depth-lever integrity that carries e7/e9
+   survives 10-task exposure intact. VLM banks likewise all-zero. The single
+   leak remains shallow E4 (25,570 events into e9's core, same site and
+   scale as the 5-task run's 25,210) — no growth with exposure, and e9
+   finished 63 (+2 vs specialist), so it stays a watch item, not a cost.
+4. **Site-bleed unchanged by task count** (E4/E6 14-41%, E8/E10 19-39%,
+   V13/V15 20-51%) — the same 17-43%-ish band measured at 5 tasks in E61.
+   Co-writing is a per-block property, not a cumulative one; what
+   accumulates is its effect on older content, per read 1.
+5. **Jitter (final ckpt):** t0/e4 clean 0.0170 (state@0.2 0.0546, image
+   0.1171), t3/e2 0.0298, t7/e1 0.0223, **t4/e7 0.0628** — e7 is 2-4x the
+   others clean AND worst under every perturbation (image 0.2329), the only
+   cell whose function is genuinely degraded. Consistent with its +18.6%
+   matrix drift; both instruments finger the same task.
+
+Naive 10-task foil now training (stage 3).
