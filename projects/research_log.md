@@ -7808,3 +7808,13 @@ starts the VM via the local nebius CLI with backoff and relaunches the unit.
 built one for the SEQUENTIAL trainer only), so a preemption during stage 1 or 2
 restarts that run from scratch — up to ~31 h for the multitask. Stage 3 (naive,
 sequential trainer) resumes normally.
+
+**Instrument note (18 Aug, checked at step ~250 of the r512 multitask so a restart
+would have been free):** the logged `lr:` is the AverageMeter value over the
+log_freq window, not the instantaneous LR — `lr:5.0e-05` at step 200 with
+warmup_steps=200 is the mean of the ramp, not a half-rate scheduler. Confirmed
+against the r32 multitask-10 run under the identical recipe: 5.0e-05 (200) ->
+9.9e-05 (400) -> 9.8e-05 (600) -> 1.0e-05 (10K) = the decay_lr floor exactly at
+the end of the run. Schedules complete as configured under bs16xacc2; no action.
+Run health at step 200: loss 0.464, grdn 0.268, updt_s 1.121, data_s 0.059,
+smpl 6K (= 200 x 32, effective batch confirmed).
