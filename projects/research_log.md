@@ -7494,3 +7494,65 @@ summary):
    before training) — as always, compare cells WITHIN a column, never across.
 
 Artifact: `outputs/analysis/e63/mse_matrix_seq10.jsonl`.
+
+---
+### Entry 63 addendum 5 (18 Aug 26) — LOG HOUSEKEEPING PASS (Josh: "make sure everything from the past few days is in the log"): one DUPLICATE-NUMBERED addendum identified, its since-falsified claim explicitly retracted, and three ops/instrument lessons from 13-17 Aug that never made it into an entry.
+
+**1. Duplicate numbering, 13-14 Aug (bookkeeping).** Two concurrent sessions
+each appended a "Entry 62 addendum 5":
+  - **addendum 5 (13 Aug, PM) = WEEKEND QUEUE ARMED** — canonical, keep.
+  - **addendum 5 (14 Aug, ~02:00) = NOISE ARM LANDS 69.2** — a DUPLICATE of
+    addendum 6 (same landing, same numbers, written ~30 min apart by the
+    other session). Read them as one event; the canonical landing write-up is
+    addendum 6.
+No renumbering applied (the log is append-only and every commit message
+references the numbers as written); this note is the index.
+
+**2. RETRACTION extending addendum 7.** The duplicate (14 Aug ~02:00) carried
+a STRONGER conclusion than addendum 6 did — *"the redundancy question resolves
+AGAINST redundancy ... which retires D-vs-specialist as an arbiter once a
+config reaches specialist level."* **Both halves are falsified by the 4-seed
+row (addendum 7):** the noise arm lost 60.6 vs 65.2, negative at 4/4 paired
+seeds, and its e7 was TIED at seeds (45+-5.0 vs 43+-8.9) — so there was no
+"rollout improvement" for the far-region D to be inconsistent with, and the
+D-vs-specialist arbiter was reading correctly all along (it moved the wrong
+way BECAUSE the arm was worse). **D-vs-specialist is NOT retired; it is
+retained as an arbiter, and it agreed with the seeds when the single-seed
+rollout did not.** Addendum 7 corrected addendum 6 by name; this closes the
+same correction against the duplicate.
+
+**3. Ops/instrument items from the period, not previously logged:**
+- **Local push broke silently after a session restart (14 Aug).** The GitHub
+  key is passphrase-protected and lives in the desktop keyring, so a fresh
+  shell has no agent: `git push` failed with "Permission denied (publickey)"
+  while the commit succeeded locally, the VM pulled nothing, and the first
+  battery unit died on a missing file. Fix: route pushes through
+  `SSH_AUTH_SOCK=/run/user/1000/keyring/ssh`. **Standing rule: after any
+  session restart, verify the push landed (not just the commit) before
+  launching anything on the VM that depends on it** — CLAUDE.md 9.8's
+  local-first rule assumes the push succeeded.
+- **Two monitor bugs, both silent-wrong rather than loud (15-16 Aug).**
+  (a) A "last matching log line" watcher went stale for hours whenever a
+  stage emitted no matching banner — five seed campaigns ran invisibly while
+  it repeated a training line. (b) Its replacement counted checkpoints with
+  the glob `0??????` (7 chars) against 6-char dirs, so it reported 0/10
+  blocks while 2 were on disk. **Rule: monitors report ARTIFACT STATE
+  (file/dir counts, parsed rows), never "the last line that matched"; and any
+  glob used as a counter gets checked against a real path once.** Both were
+  caught by direct verification, which is why the standing habit of checking
+  artifacts rather than trusting heartbeats stays.
+- **Cold-shipper died in a desk-PC reboot (8 Aug, found 12 Aug)** — logged in
+  E60 add-10; repeated here only as the pattern: session-side background
+  processes do not survive a reboot, VM-side systemd units do. Anything that
+  must survive belongs in a unit on the VM.
+
+**4. Coverage confirmed for 12-18 Aug** (no other gaps found): E62 landing +
+battery + 4-seed (add 1-3), noise calibration + arm (add 4), weekend queue
+(add 5), noise landing (add 6 + the duplicate), noise 4-seed FAIL + FT back-5
+rows (add 7), disk sweep (add 8), 10-task specialist oracle (add 9), weekend
+baselines complete (add 10), 10-task landing (Entry 63), cancellation + E63
+queue (add 1), 10-task 4-seed (add 2), battery (add 3), full matrix (add 4).
+IN FLIGHT, to be appended on landing: naive seq-LoRA 10-task (training, 4/10
+blocks at this write; boundary trail already reproducing the 5-task
+catastrophe — e4 35 -> 0 after one block, e6 60 -> 0 after one) and its
+4-seed row.
