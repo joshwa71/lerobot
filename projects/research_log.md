@@ -7556,3 +7556,139 @@ IN FLIGHT, to be appended on landing: naive seq-LoRA 10-task (training, 4/10
 blocks at this write; boundary trail already reproducing the 5-task
 catastrophe — e4 35 -> 0 after one block, e6 60 -> 0 after one) and its
 4-seed row.
+
+---
+## Entry 64 - 18 Aug 26 (LoRA BASELINE RE-PROVISIONING at uniform r=256 — the multitask-LoRA rows were the E43 breadth PROBE (r32, 1k steps/task) promoted into the paper table unrevised: 5x fewer steps than every other row AND the smallest adapter in the table. Supervisor's "match active parameters" request → the ACTIVE-PARAMETER LADDER written down (no single equivalent r exists; per-token we are a rank-2 adapter, per-step r~140, total = full FT). DECISION (Josh): 10-task multitask at r256/a64/50k + ALL TEN specialists at r256/a64/5k, 4-seed rows; queued behind the naive-10 foil. Also settled: every LoRA row is trained from the LIBERO-90 finetune (stage-1), not raw pi05.)
+
+### The finding that forced this (verified from the scripts, not memory)
+
+Budgets of the rows in the paper table as they stand:
+
+| row | trainable | total steps | steps per task |
+|---|---|---|---|
+| ours (merged 6x2) | 2.8B | 25k (5-task) / 50k (10-task) | 5k |
+| specialists (r32) | 53M each | 5k each | 5k |
+| naive seq-LoRA (r256) | 426M | 25k (5-task) / 50k (10-task, running) | 5k |
+| **multitask-LoRA (r32)** | **53M** | **5k (5-task) / 10k (10-task)** | **1k** |
+
+`loraft_multitask5.sh` was written in E43 as a within-architecture BREADTH probe
+("at the SAME 5k-step budget as each specialist => 1/5 the per-task exposure;
+only breadth changes") — a deliberate design for that question. It was then
+promoted into the paper table (E44 -> the 4-seed row, E61-add-4 -> the 10-task
+twin at the same 1k/task convention, flagged in E62-add-5 but never revisited).
+So the multitask row is under-provisioned twice over — the fewest steps per task
+and the smallest adapter in the table — and it is the row where our margin looks
+largest (+13.8 at 5 tasks, +11.9 at 10). Some of that margin is real (E43's
+breadth law: r32 at 1k/task already reached 49-51), but the size is currently
+undefendable. Every other row is budget-matched to ours (specialists 5k/task,
+naive 25k/50k, full-FT the all-data ceiling).
+
+### Supervisor's request: "benchmark LoRA at the same ACTIVE parameters" — the ladder
+
+For a dense LoRA, active = total = r x sum(d_in+d_out) — one number. For a
+sparse-retrieval model the count depends on the window you ask over, because
+retrieval is a hard top-k (exactly knn x heads slots per query, always — the
+count is stable, only WHICH slots varies) but the union grows with the window.
+Paper cell (expert 6 sites n256/r2/knn36/4 heads; VLM 6 sites n256/r2/knn16/4
+heads; slot = 4,096 params expert / 8,192 VLM); LoRA over our full target set
+costs 1.66M params per unit rank (53.2M at r32, measured E43):
+
+| rung | ours | LoRA rank that matches |
+|---|---|---|
+| per token, compute-active (the MoE-paper meaning) | 144 x 4.1k x 6 = ~3.5M (expert token); 64 x 8.2k x 6 = ~3.1M (routed VLM key); image tokens 0 | **r ~ 2** |
+| per optimizer step, receives gradient (write mask 3072/site) | ~0.23B | r ~ 140 |
+| per task, adapted footprint | core ~70M / effective 0.4-0.9B / touched 1-1.5B (slot JSONs) | r ~ 40 / 250-540 / 600-900 |
+| total stored | 2.8B (+ frozen router/keys) | r ~ 1700 = beyond full rank on the expert side = full FT |
+| (per-SITE reading: one token's memory map at a site has bottleneck <= 2 x knn x heads) | 288 expert / 128 VLM | — at 12 sites, vs LoRA's ~250 matrices |
+
+The same model is "a rank-2 adapter" per token and "full fine-tuning" by
+storage. That is not an accounting nuisance, it is the mechanism (large storage,
+sparse compute, sparse protected writes) — and it is why no dense adapter can be
+matched to us on more than one rung, which is the claim. Standard MoE practice
+(report per-token active AND total; compare to dense at matched active) applies;
+each comparison must state its rung. A "matched r=512 everywhere" baseline would
+be ~250x our per-token active and ~1/3 our storage — matched on nothing; if that
+figure came from the per-site bottleneck (288 -> "neatly above" -> 512), the
+error is extrapolating a 12-site bottleneck to all ~250 matrices.
+
+**Chosen: r=256, alpha=64, uniform across every LoRA row.** Rationale: the
+smallest rank that sits ABOVE us on every compute/optimization rung at once
+(~120x per token, ~1.9x per step, ~parity even on the generous per-site reading)
+and below only total storage — which the full-FT rows already match. It is the
+rank the naive foil already runs at (E58: r256@a64), and alpha/r = 0.25 held
+keeps the effective update scale identical to the r32@a8 rows, so the only delta
+vs the rows replaced is capacity (+ steps for the multitask). Rejected: r=128
+(above per-token, ~= per-step, below per-site — arguable); r=512 (clears every
+reading but breaks consistency with the naive row and puts an 850M adapter on
+30-50 episodes — a baseline built to overfit).
+
+### Also settled this session: which base the LoRA baselines start from
+
+Every LoRA row loads `libero_90_pi05_base_nomem_50k` = the LIBERO-90 full
+finetune of pi05 (stage-1): all ten specialists (front-5 + back-5), multitask-5
+and -10, naive seq r256 at 5 and 10 tasks, and the compass cells. The ONLY row
+from raw pi05 (hub snapshot 9e55186) is full-FT #1, deliberately (the
+"no libero-90 substrate" cell). So the table is substrate-matched everywhere
+except that one row — a clean caption line, and the reason the specialists are
+as strong as they are (the substrate is worth +10.6 even to full FT, E60-add-9).
+
+### Decisions (Josh, 18 Aug)
+
+1. **10-task multitask LoRA at r=256 / a=64 / 50,000 steps** (= 5k/task, our
+   budget), all 379 episodes, lr 1e-4 -> 1e-5 (warmup 200, decay 50000 — the
+   schedule honored, E20 gotcha), bs16 x acc2 no-ckpt (E56 standard LoRA-cell
+   config), same targets, same stage-1 base. Replaces the r32/10k row (53.2).
+   The 5-task multitask row is NOT rerun (Josh: "just the 10 task") — the
+   5-task table keeps the r32/1k-per-task cell, to be footnoted/dropped or
+   twinned later (r256/25k twin ~15h) at Josh's call.
+2. **All ten per-task specialists at r=256 / a=64 / 5,000 steps** — uniform
+   rank across the table; the r32 specialists become the appendix sensitivity
+   row. Replaces the oracle row (all-10 63.7 / front-5 59.0). Recipe otherwise
+   byte-identical to the r32 anchors (5k, bs16 x acc2 no-ckpt, lr 1e-4).
+   Risk stated plainly: the oracle bar may move. UP -> the 10-task "+1.4"
+   becomes "matches" and the 5-task "+6.2" shrinks; DOWN is plausible too (the
+   r32 specialists already sit at chunk ~0.02 — not capacity-limited — and E43
+   found the e9 specialist extremely image-brittle; more rank on 30-50
+   episodes may overfit). Either way the paper reports the pre-declared
+   uniform-rank oracle with r32 in the appendix; running it before a reviewer
+   does beats the alternative.
+3. **4-seed rows on both** at the standing instrument (25 eps x paired seeds
+   1000/2000/3000/4000, vec bs=13): `seeds_multitask10_r256.json` (all 10
+   envs), `seeds_spec_r256_e{env}.json` x10 — next to the existing rows in
+   outputs/analysis/e60/.
+4. LR footnote for the paper: the naive r256 foil ran at lr 2.5e-5 -> 2.5e-6
+   (pi05's default base LR, in the sequential trainer) vs the specialists'/
+   multitask's 1e-4. It still fitted specialist-grade diagonals (E58-add-6:
+   0.049-0.098) so it is not starved; the new r256 rows keep 1e-4 so their only
+   delta from the rows they replace is rank/alpha(/steps). Footnote, not a rerun.
+
+**Pre-registered reads.** Multitask-10 r256/50k: expect a real rise over 53.2
+(5x steps, 8x capacity); the honest question is how much of the +11.9 margin
+over multitask survives — the paper's multitask comparison is whatever this
+lands at, full stop. Specialists r256: the new all-10 / front-5 oracle bars
+replace 63.7 / 59.0; our 65.1 (10-task) and 65.2 (5-task) are re-scored against
+them. Both are baseline cells: no memory-side change follows from either
+outcome, only the wording of the claim.
+
+### Ops
+
+- Scripts (commit e907807d, `git add -f` per the job_scripts rule):
+  `job_scripts/nebius/baselines/loraft_multitask10_r256_50k.sh`,
+  `job_scripts/nebius/baselines/loraft_specialists10_r256.sh` (all ten, TASKS
+  env override for subsets), `scripts/vla_analysis/run_e64_lora_r256_queue.sh`
+  (gate on `e63-queue` exiting -> stage 1 multitask train + all-10 row -> stage
+  2 specialists + per-specialist rows; stage-level skip-guards; failures logged,
+  queue continues). Unit `e64-lora-r256`.
+- **No PEFT resume exists for `lerobot-train`** (E58-add-5 built one for the
+  SEQUENTIAL trainer only; here `--resume` would reload the adapter frozen and
+  re-wrap on top). Both new scripts therefore move a partial/stub dir aside and
+  RESTART FROM SCRATCH after a preemption; the 50k run keeps save_freq=10000 as
+  salvage only. Expected preemption loss <= elapsed fraction of a ~30h run.
+- ETA from a Wed-morning start (naive-10 at 4/10 blocks + its serial final eval
+  + seed row first): multitask ~30h + ~5h seeds -> ~Thu eve/Fri; specialists
+  ~3h x 10 + ~2.5h seeds -> ~Sat/Sun 22-23 Aug UK. Disk: adapters + optimizer
+  states are a few GB per checkpoint (736G free).
+- Everything else on the sim to-do list (protection-off ablation on the paper
+  cell, training-seed replicates, B/zero-shot 4-seed rows, lesion map, the
+  reviewer-risk baselines) queues BEHIND this unit; the paper-checkpoint
+  cold-ship runs in parallel off-GPU.
