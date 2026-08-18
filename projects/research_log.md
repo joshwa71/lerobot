@@ -7772,3 +7772,39 @@ would need r512 twins (~15h + ~30h) for full uniformity there — Josh's call.
 Everything else on the sim to-do list (protection-off ablation, training-seed
 replicates, B/zero-shot 4-seed rows, lesion map) queues behind this unit; the
 paper-checkpoint cold-ship runs off-GPU in parallel.
+
+---
+### Entry 64 addendum 2 (18 Aug 26) — r512 queue live; heartbeat armed.
+
+**Launch (unit `e64-lora-r512`, 08:05 UTC):** multitask-10 r512/a128,
+num_learnable_params = **850,427,904**, bs16xacc2 no-ckpt, 2.24 s/step,
+136.2 GB VRAM, 50,000 steps -> ~31 h.
+
+**Killed before this launch:** `e64-lora-r256` (never fired), `e63-queue`
+(naive r256 10-task, stopped at ~23K steps = block 5/10). Its banked boundary
+evals, 20-ep, from `eval/results.jsonl`:
+
+| after block | t4/e4 | t6/e6 | t9/e9 | t2/e2 |
+|---|---|---|---|---|
+| 5000  | 35.0 | | | |
+| 10000 | 0.0 | 60.0 | | |
+| 15000 | 0.0 | 0.0 | 60.0 | |
+| 20000 | 0.0 | 0.0 | 0.0 | 90.0 |
+
+No final, no seed row; run dir retained.
+
+**Heartbeat** (`scripts/ops/heartbeat_e64.sh`, session-side Monitor): polls the
+VM every 10 min over the multiplexed SSH connection, emits on artifact-state
+change (unit state, multitask ckpt count, specialist count, naive ckpt count,
+seed-JSON count, disk %, error-line count) plus a forced beat every 6 h;
+tripwires = new Traceback/OOM/[FAIL] lines, disk >= 88%, unit down with the
+queue incomplete. Counter globs verified against real paths before arming
+(6-char ckpt glob -> 10 on the seq10 run; specialist glob -> 10 on the r32
+dirs; seeds glob -> 10 on the r32 spec rows). Unreachable-host branch
+cross-checks github:22 before concluding preemption (1 Aug precedent), then
+starts the VM via the local nebius CLI with backoff and relaunches the unit.
+
+**Known gap, not addressed:** `lerobot-train` has no PEFT resume (E58 add-5
+built one for the SEQUENTIAL trainer only), so a preemption during stage 1 or 2
+restarts that run from scratch — up to ~31 h for the multitask. Stage 3 (naive,
+sequential trainer) resumes normally.
