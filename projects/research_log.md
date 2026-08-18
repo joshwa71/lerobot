@@ -7818,3 +7818,51 @@ against the r32 multitask-10 run under the identical recipe: 5.0e-05 (200) ->
 the end of the run. Schedules complete as configured under bs16xacc2; no action.
 Run health at step 200: loss 0.464, grdn 0.268, updt_s 1.121, data_s 0.059,
 smpl 6K (= 200 x 32, effective batch confirmed).
+
+---
+### Entry 64 addendum 3 (18 Aug 26) — stage 3 in-run eval REPLACED by a post-hoc 4-seed retention TRIANGLE, and the same triangle added as stage 4 on our merged6x2 10-task checkpoints (Josh). Two paired 10x10 rollout retention matrices at the headline instrument.
+
+**Measured throughput** (from the E63 campaign, 17 Aug): 10 envs x 4 seeds x 25 eps
+= 1,000 episodes in 4.65 h => **~200 eps/h** batched at vec bs=13, one policy load
+per checkpoint. Single-specialist rows: 100 eps in 38 min.
+
+**Instrument change.** The sequential trainer's in-run boundary evals are 20 eps at
+ONE seed, serial bs=1 (~0.8 min/episode) — the instrument retired from decisions in
+E41, and ~19 h of a 10-task run (12.2 h across blocks 1-9 + 6.8 h for the serial
+50-ep final). Replaced by the standing headline instrument at EVERY boundary:
+25 eps x 4 paired seeds (1000/2000/3000/4000), batched. For a 10-task run that is
+the lower triangle, 1+2+...+10 = 55 cells x 100 eps = 5,500 episodes ~ 28 h.
+
+Net cost on the naive foil: 57 h (33 h train + 19 h serial evals + 5 h final row)
+-> 60.5 h (33 h train + 28 h triangle, final row subsumed as b10) = **+3.5 h for
+100 episodes/cell across 4 seeds instead of 20 at one seed.**
+
+**Stage 4 (new):** the identical triangle on the merged6x2 10-task run's ten
+per-task checkpoints (all present on disk, 391 G). 45 measured cells (~22.5 h);
+b10 is copied from the existing `seeds_seq10_merged6x2.json` — same checkpoint,
+same seeds, same episodes as row 10, so it is adopted rather than re-measured.
+
+**Scripts:** `scripts/vla_analysis/run_e64_retention_triangle.sh <naive|merged6x2>`
+(per-boundary campaign, skip-guarded per row, env slice = the first k of train
+order 4,6,9,2,7,0,8,1,3,5; outputs `seeds_tri_<tag>_b{1..10}.json` in the standard
+campaign schema); `naive_seq_lora_r512_10task.sh` now runs `--eval.type=none`
+(save_after_each_task stays true — the per-task checkpoints ARE the input);
+queue gained stages 3b and 4.
+
+**Ops hazard handled — bash reads a running script lazily.** The queue script was
+already executing under `e64-lora-r512` (stage 1) when stages 3b/4 were appended,
+so the running process may hold the pre-triangle revision. Rather than restart the
+unit (which would discard the in-flight 50 k-step multitask run — no PEFT resume in
+lerobot-train), the triangles were ALSO armed as a separate unit
+(`run_e64_triangles_after_queue.sh`, gated on `e64-lora-r512` exiting). Every stage
+is skip-guarded on its output JSON, so the result is identical either way: if the
+running bash has the new queue the triangles are already done and the unit skips;
+if it has the old queue, its stage-3 `camp` writes `seeds_naive10_r512_final.json`,
+which the triangle script adopts as naive b10, and the unit measures the rest.
+Nothing is measured twice under either branch.
+
+**Revised schedule** (no preemption): stage 1 train Wed 15:15 UTC, its row Wed
+~20:15; stage 2 Fri ~03:20 / rows Fri ~06:20; stage 3 train Sat ~15:00, naive
+triangle Sun ~19:00; stage 4 triangle Mon ~17:30 UTC. Naive cells are mostly
+failures, which run the full horizon, so the triangle estimate carries a +20%
+band (28-33 h).

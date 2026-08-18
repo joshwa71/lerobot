@@ -16,7 +16,14 @@
 #     specialists trained under", which was wrong — the specialist scripts use
 #     optimizer_lr=1e-4). Same base (stage-1 libero_90 finetune), same targets,
 #     bs16 x acc2 no-ckpt, 20-ep boundary evals + 50-ep final (the memory runs'
-#     protocol); the 4-seed campaign is the headline instrument.
+#     protocol) -- SUPERSEDED, see below.
+#   IN-RUN EVAL DISABLED (eval.type=none, Josh 18 Aug): the trainer's boundary evals
+#     are 20 eps at ONE seed, serial bs=1 (~0.8 min/episode; ~19 h across a 10-task
+#     run). Replaced by the POST-HOC 4-SEED TRIANGLE (run_e64_retention_triangle.sh):
+#     25 eps x 4 paired seeds at EVERY boundary, vec-batched at ~200 eps/h. Net cost
+#     ~+3.5 h for a 5x better instrument at every cell, and identical treatment for
+#     our merged6x2 10-task run (stage 4) => the retention matrices are paired.
+#     save_after_each_task stays true - the 10 per-task checkpoints ARE the input.
 # PREEMPTION: this wrapper is SELF-RESUMING. If checkpoints/last/sequential_state.pt
 # exists and the final 050000 does not, it relaunches via the E58-add-5 PEFT
 # resume branch (--policy.path=<last ckpt> --policy.use_peft=true
@@ -41,7 +48,7 @@ RENAME='{"observation.images.image":"observation.images.base_0_rgb","observation
 [ -d "$BASE_CKPT" ] || { echo "ERROR: stage-1 base checkpoint missing"; exit 1; }
 
 RUN=libero_10_seq10_naive_lora_r512_a128_steps5k
-TASKS='[0,1,2,3,4,5,6,7,8,9]'; STEPS=5000; EVAL_TYPE=env; WANDB=true; FINAL=050000
+TASKS='[0,1,2,3,4,5,6,7,8,9]'; STEPS=5000; EVAL_TYPE=none; WANDB=true; FINAL=050000
 if [ "$SMOKE" = "1" ]; then
   RUN=smoke_naive_lora_r512; TASKS='[0,1]'; STEPS=20; EVAL_TYPE=none; WANDB=false; FINAL=000040
   rm -rf $ROOT/outputs/train/$RUN

@@ -10,8 +10,16 @@
 #          -> seeds_multitask10_r512.json
 # Stage 2: ten per-task specialists r512 / 5k -> per-specialist rows
 #          -> seeds_spec_r512_e{env}.json
-# Stage 3: naive sequential LoRA r512 / 10 tasks (self-resuming wrapper)
-#          -> all-10 4-seed row -> seeds_naive10_r512_final.json
+# Stage 3: naive sequential LoRA r512 / 10 tasks (self-resuming wrapper), in-run
+#          eval DISABLED -> post-hoc 4-seed retention TRIANGLE: 25 eps x 4 paired
+#          seeds at every boundary (55 cells) -> seeds_tri_naive10_r512_b{1..10}.json
+#          (b10 = the all-10 final row). Replaces ~19 h of serial 20-ep/1-seed
+#          in-run evals with ~28 h of batched 4-seed cells: ~+3.5 h net.
+# Stage 4: the SAME triangle on our merged6x2 10-task per-task checkpoints ->
+#          seeds_tri_merged6x2_10task_b{1..10}.json (b10 copied from the existing
+#          seeds_seq10_merged6x2.json — identical ckpt/seeds/episodes). ~22.5 h.
+#          Stages 3b+4 give two PAIRED 10x10 rollout retention matrices at the
+#          headline instrument.
 # All campaigns: 25 eps x paired seeds 1000/2000/3000/4000, vec bs=13 — the
 # standing headline instrument; JSONs in outputs/analysis/e60/. Stage-level
 # skip-guards; failures logged, queue continues. Relaunching this unit after a
@@ -69,10 +77,16 @@ for T in 0 1 2 3 4 5 6 7 8 9; do
   camp spec_r512_e${ENV} "$ROOT/outputs/train/loraft_baseline_r512/task${T}_e${ENV}/checkpoints/005000/pretrained_model" "[$ENV]" "--policy.use_peft=true"
 done
 
-# ---- stage 3: naive sequential LoRA r512, 10 tasks (self-resuming) + all-10 row ----
+# ---- stage 3: naive sequential LoRA r512, 10 tasks (self-resuming; NO in-run eval)
+#      + the post-hoc 4-seed retention TRIANGLE (55 cells; row 10 = the all-10 row) ----
 echo "[e64] stage 3: naive seq LoRA r512, 10 tasks $(date -u)"
 bash job_scripts/nebius/baselines/naive_seq_lora_r512_10task.sh || echo "[FAIL] naive r512 10-task train"
-NAIVE=$ROOT/outputs/train/libero_10_seq10_naive_lora_r512_a128_steps5k
-camp naive10_r512_final "$NAIVE/checkpoints/050000/pretrained_model" "$ALL10" "--policy.use_peft=true"
+echo "[e64] stage 3b: naive retention triangle (4 seeds x 25 eps at every boundary) $(date -u)"
+bash scripts/vla_analysis/run_e64_retention_triangle.sh naive || echo "[FAIL] naive retention triangle"
+
+# ---- stage 4: the SAME triangle on our merged6x2 10-task checkpoints (paired
+#      instrument; b10 is copied from the existing final row, not re-measured) ----
+echo "[e64] stage 4: merged6x2 10-task retention triangle $(date -u)"
+bash scripts/vla_analysis/run_e64_retention_triangle.sh merged6x2 || echo "[FAIL] merged6x2 retention triangle"
 
 echo "=== E64 LoRA-r512 QUEUE COMPLETE $(date -u) ==="
