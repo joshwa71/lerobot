@@ -38,6 +38,7 @@ remote_state() {
 R=/home/josh/lerobot
 L=$R/outputs/e64_lora_r512.log
 u=$(systemctl is-active e64-lora-r512 2>/dev/null); true
+tri_u=$(systemctl is-active e64-triangles 2>/dev/null); true
 mt=$(ls -d $R/outputs/train/loraft_multitask10_r512_50k/checkpoints/[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | wc -l)
 step=$(grep -oE "[0-9]+/50000" $L 2>/dev/null | tail -1 | cut -d/ -f1)
 sp=$(ls -d $R/outputs/train/loraft_baseline_r512/task*/checkpoints/005000 2>/dev/null | wc -l)
@@ -45,11 +46,14 @@ nv=$(ls -d $R/outputs/train/libero_10_seq10_naive_lora_r512_a128_steps5k/checkpo
 sd=$(ls $R/outputs/analysis/e60/seeds_multitask10_r512.json \
         $R/outputs/analysis/e60/seeds_spec_r512_e*.json \
         $R/outputs/analysis/e60/seeds_naive10_r512_final.json 2>/dev/null | wc -l)
+trin=$(ls $R/outputs/analysis/e60/seeds_tri_naive10_r512_b*.json 2>/dev/null | wc -l)
+trim=$(ls $R/outputs/analysis/e60/seeds_tri_merged6x2_10task_b*.json 2>/dev/null | wc -l)
 dk=$(df --output=pcent /home/josh | tail -1 | tr -dc '0-9')
 er=$(grep -cE "Traceback|OutOfMemoryError|CUDA out of memory|\[FAIL\]" $L 2>/dev/null)
 done_marker=$(grep -c "QUEUE COMPLETE" $L 2>/dev/null)
+tri_done=$(grep -c "TRIANGLES COMPLETE" $R/outputs/e64_triangles.log 2>/dev/null)
 gpu=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader 2>/dev/null | tr -d ' ')
-echo "unit=$u mt=$mt/5 step=${step:-0} spec=$sp/10 naive=$nv/10 seeds=$sd/12 disk=${dk}% err=$er fin=$done_marker gpu=${gpu:-NA}"
+echo "unit=$u tri_unit=$tri_u mt=$mt/5 step=${step:-0} spec=$sp/10 naive=$nv/10 seeds=$sd/12 tri=$trin/10+$trim/10 disk=${dk}% err=$er fin=$done_marker tri_fin=$tri_done gpu=${gpu:-NA}"
 REMOTE
 }
 
@@ -111,16 +115,19 @@ while true; do
     err=$(sed -E 's/.* err=([0-9]+) .*/\1/' <<<"$state")
     disk=$(sed -E 's/.* disk=([0-9]+)%.*/\1/' <<<"$state")
     unit=$(sed -E 's/^unit=([a-z]+) .*/\1/' <<<"$state")
+    tri_unit=$(sed -E 's/.* tri_unit=([a-z]+) .*/\1/' <<<"$state")
+    tri_fin=$(sed -E 's/.* tri_fin=([0-9]+) .*/\1/' <<<"$state")
     fin=$(sed -E 's/.* fin=([0-9]+) .*/\1/' <<<"$state")
 
     [ "${err:-0}" -gt "${prev_err:-0}" ] 2>/dev/null && emit "NEW ERROR LINES (err ${prev_err}->${err}) | $state"
     [ "${disk:-0}" -ge "$DISK_TRIPWIRE" ] 2>/dev/null && emit "DISK TRIPWIRE ${disk}% >= ${DISK_TRIPWIRE}% | $state"
 
-    if [ "$unit" != "active" ] && [ "$unit" != "activating" ]; then
-      if [ "${fin:-0}" -ge 1 ] 2>/dev/null; then
-        emit "QUEUE COMPLETE | $state"; exit 0
+    if [ "$unit" != "active" ] && [ "$unit" != "activating" ] \
+       && [ "$tri_unit" != "active" ] && [ "$tri_unit" != "activating" ]; then
+      if [ "${fin:-0}" -ge 1 ] 2>/dev/null && [ "${tri_fin:-0}" -ge 1 ] 2>/dev/null; then
+        emit "QUEUE + TRIANGLES COMPLETE | $state"; exit 0
       fi
-      emit "UNIT DOWN (unit=$unit) with queue incomplete | $state"
+      emit "BOTH UNITS DOWN with work incomplete | $state"
       sleep "$POLL"; i=$((i+1)); prev_err=${err:-0}; prev_key="$key"; continue
     fi
 
