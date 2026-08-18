@@ -1,26 +1,26 @@
 #!/bin/bash
-# E64 (18 Aug): ALL TEN per-task LoRA specialists re-provisioned at r=256 /
-# lora_alpha=64 — the uniform adapter rank across every LoRA row of the paper
-# table (multitask-10 r256/50k, naive-seq r256, and now the specialist oracle),
+# E64 (18 Aug): ALL TEN per-task LoRA specialists re-provisioned at r=512 /
+# lora_alpha=128 — the uniform adapter rank across every LoRA row of the paper
+# table (multitask-10 r512/50k, naive-seq r512, and now the specialist oracle),
 # chosen to sit above our method on every compute/optimization rung of the
-# active-parameter ladder (per-token ~120x, per-step ~1.9x) while below only its
+# active-parameter ladder (per-site bottleneck 288/128 -> 512 is above both; per-step ~3.7x) while below only its
 # total storage (matched by the full-FT rows). The r=32 specialists stay as the
 # appendix sensitivity row.
 # Everything else byte-identical to the r32 anchors (loraft_pertask_baseline.sh /
 # loraft_back5_specialists.sh): frozen stage-1 backbone, attn+MLP both towers +
 # action projections, 5000 steps (= our per-task budget), bs16 x accum2 no-ckpt,
 # lr 1e-4 cosine, warmup 200 / decay 5000. NO in-run eval — the 4-seed campaign
-# (run_e64_lora_r256_queue.sh) is the instrument. Per task ~3h; ~30h all ten.
+# (run_e64_lora_r512_queue.sh) is the instrument. Per task ~3h; ~30h all ten.
 # Episode ranges verified from meta/episodes parquet (13 Aug):
 #   t0 0-37 (e4)   t1 38-73 (e6)   t2 74-107 (e9)  t3 108-148 (e2)  t4 149-191 (e7)
 #   t5 192-224 (e0) t6 225-253 (e8) t7 254-302 (e1) t8 303-337 (e3) t9 338-378 (e5)
 # 5k-step runs are short enough that a preempted task simply reruns (partial dir
 # moved aside; skip-guard on the final checkpoint).
 set -eo pipefail
-echo "E64 r256 LoRA specialists (all 10) started on $(hostname) at $(date)"
+echo "E64 r512 LoRA specialists (all 10) started on $(hostname) at $(date)"
 ROOT_DIR=/home/josh/lerobot
 BASE_CKPT="$ROOT_DIR/outputs/train/libero_90_pi05_base_nomem_50k/checkpoints/last/pretrained_model"
-OUT_ROOT="$ROOT_DIR/outputs/train/loraft_baseline_r256"
+OUT_ROOT="$ROOT_DIR/outputs/train/loraft_baseline_r512"
 export MUJOCO_GL=osmesa; unset DISPLAY
 export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1
 export PYTORCH_ALLOC_CONF=expandable_segments:True
@@ -51,7 +51,7 @@ for T in ${TASKS:-0 1 2 3 4 5 6 7 8 9}; do
     mv "$RUN_DIR" "$ASIDE"
   fi
   EPS="[$(seq -s, ${EP_LO[$T]} ${EP_HI[$T]})]"
-  echo "[t$T/e$ENV] training r256 LoRA specialist ($(date))"
+  echo "[t$T/e$ENV] training r512 LoRA specialist ($(date))"
   lerobot-train \
     --policy.path="$BASE_CKPT" \
     --policy.dtype=bfloat16 \
@@ -63,8 +63,8 @@ for T in ${TASKS:-0 1 2 3 4 5 6 7 8 9}; do
     --policy.scheduler_decay_lr=1e-5 \
     --policy.normalization_mapping='{"VISUAL":"IDENTITY","STATE":"MEAN_STD","ACTION":"MEAN_STD"}' \
     --peft.method_type=LORA \
-    --peft.r=256 \
-    --peft.lora_alpha=64 \
+    --peft.r=512 \
+    --peft.lora_alpha=128 \
     --peft.target_modules="$TARGETS" \
     --peft.full_training_modules='[]' \
     --dataset.repo_id=libero_10 \
@@ -79,7 +79,7 @@ for T in ${TASKS:-0 1 2 3 4 5 6 7 8 9}; do
     --save_freq=5000 \
     --wandb.enable=true \
     --wandb.project=vla-memory \
-    --job_name="loraft_baseline_r256_t${T}_e${ENV}"
+    --job_name="loraft_baseline_r512_t${T}_e${ENV}"
   [ -d "$RUN_DIR/checkpoints/005000" ] || echo "[t$T/e$ENV] WARNING: 005000 missing after training"
 done
-echo "E64 r256 LoRA specialists completed at $(date)"
+echo "E64 r512 LoRA specialists completed at $(date)"

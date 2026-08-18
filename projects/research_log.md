@@ -7692,3 +7692,83 @@ outcome, only the wording of the claim.
   cell, training-seed replicates, B/zero-shot 4-seed rows, lesion map, the
   reviewer-risk baselines) queues BEHIND this unit; the paper-checkpoint
   cold-ship runs in parallel off-GPU.
+
+---
+### Entry 64 addendum (18 Aug 26) — REVISED before launch: uniform **r=512 / alpha=128** for ALL THREE LoRA rows (multitask-10, ten specialists, AND the naive foil), everything from scratch (Josh: "then we can defend every point against the reviewer"). The r256 plan is withdrawn unfired; the running r256 naive-10 killed at block 5. Correction owned: my "per-token equivalent r ~ 2" was a whole-model PARAM-COUNT average — the right per-token number is the per-SITE bottleneck 2 x heads x knn = 288 (expert) / 128 (VLM), Josh's count, and "neatly above" that is r=512.
+
+**The correction.** Josh: "for each token our method has n_heads x knn slots — per
+token is 2 x n x knn." Correct. One token's memory output at an expert site is a
+sum of 144 rank-2 slot maps -> bottleneck <= 2 x 4 x 36 = **288** (VLM: 2 x 4 x 16
+= **128**), and the parameter count says the same thing: 144 slots x 4,096 =
+590k = 288 x (1024 + 1024) — EXACTLY a rank-288 LoRA on one 1024x1024 matrix.
+My r ~ 2 came from dividing the per-token param count across the six sites a
+token passes (~3.5M) by LoRA's cost per unit rank over the ENTIRE target set
+(~250 matrices, 1.66M/rank): a compute statement ("how many adapter params does
+a token pass through in total") that spreads our concentrated capacity over 20x
+more matrices and hides placement breadth. Not what "matched active" should
+mean, and not the number a reader would compute. Ladder rung 1 in Entry 64 is
+hereby re-stated as: **per token, at a memory site, rank 288 (expert) / 128
+(VLM); r=256 would sit slightly BELOW the expert-site rank; r=512 is the
+smallest power of two above every site.**
+
+**Decision (Josh):** r=512 / alpha=128 (alpha/r = 0.25 held: r32@a8 -> r512@a128,
+same effective update scale) for (1) multitask-10 at 50k steps, (2) all ten
+specialists at 5k, and (3) the naive sequential foil at 10 tasks. Rationale:
+above us on every rung a reviewer could name — per-site bottleneck (512 > 288 /
+128), per-token active (852M vs ~3.5M, ~240x), per-step trained (852M vs ~0.23B,
+~3.7x) — and below only total storage (852M vs 2.8B; the storage-matched rows are
+full FT). One adapter config across every LoRA row: the table becomes
+"the r512 specialist recipe" run three ways (per task / all tasks jointly /
+sequentially). r32 (and the 5-task naive at r256) stay as appendix sensitivity
+rows. All three FROM SCRATCH — the r256 checkpoints (incl. the killed naive's
+four blocks) are shape-incompatible and nothing carries over.
+
+**Killed:** `e64-lora-r256` (never fired — stopped first so its gate could not
+open) then `e63-queue` (naive r256 10-task at ~23K steps, block 5/10). The r256
+naive's four boundaries had reproduced the 5-task run bit-for-bit — 35 / 0,60 /
+0,0,60 / 0,0,0,90 (e4 -> 0 after ONE block, e6 -> 0 after one, e9 -> 0 after one)
+— a free replay check that the 10-task naive plumbing was sound; run dir left in
+place (`libero_10_seq10_naive_lora_r256_a64_steps5k`, small), no seed row.
+`seeds_naive10_final.json` never existed. Entry-63 add-5's "in flight, to be
+appended on landing" item is discharged by this kill; the r512 naive replaces it.
+
+**Naive foil made recipe-identical to the specialists:** lr **1e-4 -> 1e-5**
+per-block linear (the r256 foil ran 2.5e-5 -> 2.5e-6; its script header called
+that "the pi05 preset the specialists trained under" — WRONG, the specialist
+scripts use optimizer_lr=1e-4). With rank/alpha/lr/targets/base/steps-per-task
+now all equal to the specialists', the foil is literally "the specialists,
+trained one after another" — the cleanest reviewer statement. Everything else
+per E58: same base, per-task optimizer reinit, no protection/tfidf/memory,
+20-ep boundaries + 50-ep final (the memory runs' protocol; the 4-seed row is
+the headline instrument).
+
+**Scripts (this commit; the r256 drafts renamed/edited, never run):**
+`loraft_multitask10_r512_50k.sh` (r512/a128, 50k, decay 50000, warmup 200, lr
+1e-4->1e-5, bs16xacc2 no-ckpt; NO PEFT resume in lerobot-train -> partial dirs
+moved aside, restart from scratch; save_freq 10000 = salvage only),
+`loraft_specialists10_r512.sh` (all ten, TASKS env override for subsets, same
+restart rule), `naive_seq_lora_r512_10task.sh` (SELF-RESUMING via the E58-add-5
+PEFT sequential-resume branch when `checkpoints/last/sequential_state.pt`
+exists; L1(lora_B)=0 hard-guard refuses a fresh adapter), and the runner
+`scripts/vla_analysis/run_e64_lora_r512_queue.sh` (unit `e64-lora-r512`; gate =
+both old units inactive; stage 1 multitask + all-10 row -> stage 2 specialists +
+per-specialist rows -> stage 3 naive + all-10 row; relaunch-safe). Seed JSONs:
+`seeds_multitask10_r512.json`, `seeds_spec_r512_e{env}.json` x10,
+`seeds_naive10_r512_final.json`.
+
+**Pre-registered reads (unchanged in kind):** multitask-10 r512/50k replaces the
+53.2 row — the paper's multitask margin is whatever it lands at; specialists
+r512 replace the oracle bars 63.7 (all-10) / 59.0 (front-5) — our 65.1 / 65.2
+are re-scored against them, either direction; naive r512 at 10 tasks is
+expected to reproduce the one-block collapse (any rank; the point of the row).
+No memory-side change follows from any outcome; only the wording of the claims.
+
+**Cost / ETA (one H200, serial):** multitask ~32-35h + ~5h seeds; specialists
+~3.3h x 10 + ~2.5h; naive ~10 x (1.4h train + growing boundary evals) + a
+serial 50-ep x 10-env final (~6-7h) + ~5h seeds — ~4.5-5 GPU-days total ->
+complete ~Sun 23 / Mon 24 Aug UK barring preemption. Open item flagged, not
+queued: the 5-task table's LoRA rows (multitask r32/1k-per-task, naive r256)
+would need r512 twins (~15h + ~30h) for full uniformity there — Josh's call.
+Everything else on the sim to-do list (protection-off ablation, training-seed
+replicates, B/zero-shot 4-seed rows, lesion map) queues behind this unit; the
+paper-checkpoint cold-ship runs off-GPU in parallel.
