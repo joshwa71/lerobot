@@ -7866,3 +7866,22 @@ Nothing is measured twice under either branch.
 triangle Sun ~19:00; stage 4 triangle Mon ~17:30 UTC. Naive cells are mostly
 failures, which run the full horizon, so the triangle estimate carries a +20%
 band (28-33 h).
+
+---
+### Entry 64 addendum 4 (19 Aug 26) — stage 1 TRAINING COMPLETE: multitask-LoRA-10 r512/a128, 50,000 steps.
+
+Run `loraft_multitask10_r512_50k`, base = stage-1 libero_90 finetune, all 379
+libero_10 episodes, r=512 / lora_alpha=128, bs16 x acc2 (effective 32), lr 1e-4 ->
+1e-5 (warmup 200, decay 50000), no grad-ckpt.
+
+num_learnable_params = **850,427,904**
+steps 50,000 / samples 2.0M / epochs 15.77
+start 2026-08-18 08:05:18 UTC, final ckpt 2026-08-19 15:11:02 UTC = **31.1 h**
+updt_s 1.118, data_s 0.055
+checkpoints on disk: 010000 020000 030000 040000 050000
+final log-window loss 0.029 (last three windows 0.032 / 0.031 / 0.029), grdn 0.077,
+lr 1.0e-05
+Traceback/OOM/[FAIL] count: 0
+
+4-seed campaign on 050000 started 2026-08-19 15:11:49 UTC (10 envs x seeds
+1000/2000/3000/4000 x 25 eps) -> outputs/analysis/e60/seeds_multitask10_r512.json.
