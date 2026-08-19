@@ -7885,3 +7885,26 @@ Traceback/OOM/[FAIL] count: 0
 
 4-seed campaign on 050000 started 2026-08-19 15:11:49 UTC (10 envs x seeds
 1000/2000/3000/4000 x 25 eps) -> outputs/analysis/e60/seeds_multitask10_r512.json.
+
+---
+### Entry 64 addendum 5 (19 Aug 26) — stage 1 ROW: multitask-LoRA-10 r512/a128/50k, 4-seed campaign.
+
+`seeds_multitask10_r512.json`, checkpoint 050000, 25 eps x seeds
+1000/2000/3000/4000, envs in train order:
+
+| env | seed 1000 | 2000 | 3000 | 4000 | mean | sd |
+|---|---|---|---|---|---|---|
+| e4 | 64 | 56 | 72 | 76 | 67.0 | 7.7 |
+| e6 | 84 | 76 | 84 | 64 | 77.0 | 8.2 |
+| e9 | 92 | 96 | 96 | 88 | 93.0 | 3.3 |
+| e2 | 100 | 96 | 100 | 96 | 98.0 | 2.0 |
+| e7 | 60 | 64 | 60 | 64 | 62.0 | 2.0 |
+| e0 | 72 | 64 | 76 | 72 | 71.0 | 4.4 |
+| e8 | 76 | 92 | 84 | 72 | 81.0 | 7.7 |
+| e1 | 32 | 36 | 36 | 40 | 36.0 | 2.8 |
+| e3 | 84 | 88 | 100 | 88 | 90.0 | 6.0 |
+| e5 | 96 | 92 | 100 | 96 | 96.0 | 2.8 |
+| **MEAN** | 76.0 | 76.0 | 80.8 | 75.6 | **77.1** | |
+
+Stage 2 started 2026-08-19 19:38:25 UTC (ten r512 specialists, 5000 steps each);
+t0/e4 training from 19:38:31 UTC.
