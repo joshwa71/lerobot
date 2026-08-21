@@ -7957,3 +7957,38 @@ checkpoint 005000, 25 eps x seeds 1000/2000/3000/4000, envs in train order:
 
 Stage 3 started 2026-08-21 08:18:03 UTC: naive sequential LoRA r512/a128,
 10 tasks x 5000 steps, fresh start from the stage-1 base, in-run eval disabled.
+
+---
+### Entry 64 addendum 8 (21 Aug 26) — DECISION: keep r512 as the provisioned baseline, add an r128 LADDER POINT, and re-frame the claim. Ordering set (Josh): triangles -> cold-ship + r128 in parallel -> ablation/replicates.
+
+**The r512 rows moved both bars** (addenda 5/7): specialist oracle 63.7 -> **74.9**
+(front-5 70.8, back-5 79.0), multitask-10 53.2 -> **77.1**. Ours (merged6x2 10-task,
+4-seed) is 65.1. Rank effect isolated on the specialists, which are 5k steps at both
+ranks: **+11.2 over four doublings = ~+2.8/doubling**. The multitask jump (+23.9) is
+NOT a rank effect — that row also went 1k -> 5k steps/task; rank and budget are
+confounded there and no r32/50k row exists.
+
+**Rejected: switching the baseline to r256/r128.** The rank was chosen at 512
+BEFORE any result, on a stated criterion (above the per-site bottleneck 288 expert /
+128 VLM). Re-choosing it after learning 512 wins is outcome-selection, and the r512
+runs exist. Kept as the provisioned baseline.
+
+**Adopted: report the ladder and state an equivalent specialist rank.** New run
+(`loraft_specialists10_r128.sh`, r=128 / alpha=32, 5,000 steps, recipe otherwise
+byte-identical to the r32 and r512 points): the all-10 mean carries se ~2 against a
+~2.8/doubling effect, so adjacent ranks are inside the noise — r128 is two doublings
+from r32 (~+5.6 predicted, ~69) and the closest resolvable point. Its job is to close
+the bracket ABOVE 65.1, which is already statistically tied with r32's 63.7. Predicted
+placement of our method by log-linear interpolation: **r ~ 45**. NOT run for multitask
+(joint-training upper bound, not a ladder point; one well-provisioned version suffices).
+
+**Caveat recorded for the writeup:** the aggregate equivalent-rank number hides the
+per-env profile — ours beats every specialist rank on e4 (59.0 vs r512's 52.0) and
+loses badly on e1 (38.0 vs 61.0). Per-env table must accompany the single number.
+
+**Ordering (Josh, 21 Aug):** (1) finish both retention triangles; (2) start the
+cold-storage ship of the E64 r512 batch; (3) in parallel, kick off r128 on the GPU
+(the ship is desk-PC-side, no GPU contention); (4) then protection-off ablation and
+training-seed replicates. Units armed: `e64b-r128` (VM, gated on `e64-triangles`),
+`scripts/ops/ship_e64_batch_to_cold.sh` (desk PC, gated on the triangles unit + all
+20 triangle rows, launched detached).
