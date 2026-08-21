@@ -7908,3 +7908,28 @@ Traceback/OOM/[FAIL] count: 0
 
 Stage 2 started 2026-08-19 19:38:25 UTC (ten r512 specialists, 5000 steps each);
 t0/e4 training from 19:38:31 UTC.
+
+---
+### Entry 64 addendum 6 (21 Aug 26) — stage 2 TRAINING COMPLETE: ten per-task LoRA specialists at r512/a128, 5,000 steps each.
+
+`loraft_baseline_r512/task{0..9}_e{env}`, base = stage-1 libero_90 finetune,
+per-task episode ranges, r=512 / lora_alpha=128, bs16 x acc2 (effective 32),
+lr 1e-4 -> 1e-5 (warmup 200, decay 5000), no grad-ckpt, 5,000 steps each.
+
+| task/env | start (UTC) | ckpt 005000 (UTC) | final loss | grdn |
+|---|---|---|---|---|
+| t0/e4 | 08-19 19:38:31 | 08-19 22:46 | 0.033 | 0.062 |
+| t1/e6 | 08-19 22:47:34 | 08-20 01:56 | 0.027 | 0.057 |
+| t2/e9 | 08-20 01:57:00 | 08-20 05:05 | 0.065 | 0.094 |
+| t3/e2 | 08-20 05:06:25 | 08-20 08:14 | 0.040 | 0.071 |
+| t4/e7 | 08-20 08:15:44 | 08-20 11:24 | 0.049 | 0.083 |
+| t5/e0 | 08-20 11:25:22 | 08-20 14:33 | 0.033 | 0.066 |
+| t6/e8 | 08-20 14:34:42 | 08-20 17:43 | 0.032 | 0.054 |
+| t7/e1 | 08-20 17:44:13 | 08-20 20:52 | 0.049 | 0.083 |
+| t8/e3 | 08-20 20:53:45 | 08-21 00:02 | 0.040 | 0.065 |
+| t9/e5 | 08-21 00:02:53 | 08-21 03:11 | 0.025 | 0.045 |
+
+10/10 checkpoints on disk; ~3.13 h each, 31.5 h total (19:38:31 19 Aug ->
+03:11 21 Aug). updt_s 1.117-1.124 throughout. Traceback/OOM/[FAIL] count: 0.
+Per-specialist 4-seed campaigns started ~03:11 UTC 21 Aug (each: own env,
+25 eps x seeds 1000/2000/3000/4000) -> seeds_spec_r512_e{env}.json.
