@@ -7933,3 +7933,27 @@ lr 1e-4 -> 1e-5 (warmup 200, decay 5000), no grad-ckpt, 5,000 steps each.
 03:11 21 Aug). updt_s 1.117-1.124 throughout. Traceback/OOM/[FAIL] count: 0.
 Per-specialist 4-seed campaigns started ~03:11 UTC 21 Aug (each: own env,
 25 eps x seeds 1000/2000/3000/4000) -> seeds_spec_r512_e{env}.json.
+
+---
+### Entry 64 addendum 7 (21 Aug 26) — stage 2 ROW: per-task LoRA specialist oracle at r512/a128/5k, 4-seed campaign, all ten tasks.
+
+`seeds_spec_r512_e{env}.json`, each specialist evaluated on its own env,
+checkpoint 005000, 25 eps x seeds 1000/2000/3000/4000, envs in train order:
+
+| env | seed 1000 | 2000 | 3000 | 4000 | mean | sd |
+|---|---|---|---|---|---|---|
+| e4 | 64 | 48 | 48 | 48 | 52.0 | 6.9 |
+| e6 | 80 | 64 | 68 | 72 | 71.0 | 5.9 |
+| e9 | 84 | 76 | 68 | 84 | 78.0 | 6.6 |
+| e2 | 84 | 84 | 84 | 88 | 85.0 | 1.7 |
+| e7 | 76 | 72 | 60 | 64 | 68.0 | 6.3 |
+| e0 | 92 | 84 | 68 | 92 | 84.0 | 9.8 |
+| e8 | 64 | 68 | 76 | 72 | 70.0 | 4.5 |
+| e1 | 68 | 60 | 60 | 56 | 61.0 | 4.4 |
+| e3 | 84 | 92 | 84 | 84 | 86.0 | 3.5 |
+| e5 | 96 | 96 | 96 | 88 | 94.0 | 3.5 |
+
+**ALL-10 ORACLE = 74.9**; front-5 70.8, back-5 79.0.
+
+Stage 3 started 2026-08-21 08:18:03 UTC: naive sequential LoRA r512/a128,
+10 tasks x 5000 steps, fresh start from the stage-1 base, in-run eval disabled.
