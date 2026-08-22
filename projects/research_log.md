@@ -7992,3 +7992,36 @@ cold-storage ship of the E64 r512 batch; (3) in parallel, kick off r128 on the G
 training-seed replicates. Units armed: `e64b-r128` (VM, gated on `e64-triangles`),
 `scripts/ops/ship_e64_batch_to_cold.sh` (desk PC, gated on the triangles unit + all
 20 triangle rows, launched detached).
+
+---
+### Entry 64 addendum 9 (22 Aug 26) — naive sequential LoRA r512, 10 tasks: TRAINING COMPLETE (raw)
+
+Run `libero_10_seq10_naive_lora_r512_a128_steps5k`.
+Base: `libero_90_pi05_base_nomem_50k` (stage-1 LIBERO-90 finetune).
+r=512, lora_alpha=128. Trainable 850,427,904 / 4,993,832,720 total.
+10 online tasks x 5,000 steps = 50,000 steps, bs16 x grad_accum 2, num_workers 8.
+optimizer_lr 1e-4 -> 1e-5 linear per block, reinit_optimizer_each_task=true,
+protect_prior_slots=false, tfidf_enable=false, eval.type=none.
+Task order (dataset task_index -> env): 0->4, 1->6, 2->9, 3->2, 4->7, 5->0, 6->8,
+7->1, 8->3, 9->5.
+
+Start 2026-08-21 08:18:03 UTC. End 2026-08-22 15:35:02 UTC. Wall clock 31 h 17 min.
+Run directory 93 G. 10 per-task checkpoints written, no failures, no restarts.
+
+Terminal training loss at each block boundary:
+
+| block | ckpt | dataset_task_id | env | loss |
+|---|---|---|---|---|
+| 1 | 005000 | 0 | 4 | 0.034 |
+| 2 | 010000 | 1 | 6 | 0.025 |
+| 3 | 015000 | 2 | 9 | 0.053 |
+| 4 | 020000 | 3 | 2 | 0.030 |
+| 5 | 025000 | 4 | 7 | 0.039 |
+| 6 | 030000 | 5 | 0 | 0.024 |
+| 7 | 035000 | 6 | 8 | 0.024 |
+| 8 | 040000 | 7 | 1 | 0.029 |
+| 9 | 045000 | 8 | 3 | 0.026 |
+| 10 | 050000 | 9 | 5 | 0.017 |
+
+Stage 3b (naive retention triangle, 4 seeds x 25 eps at every boundary) started
+2026-08-22 15:35 UTC. VM disk 82%.
