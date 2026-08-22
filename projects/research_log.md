@@ -8025,3 +8025,33 @@ Terminal training loss at each block boundary:
 
 Stage 3b (naive retention triangle, 4 seeds x 25 eps at every boundary) started
 2026-08-22 15:35 UTC. VM disk 82%.
+
+---
+### Entry 64 addendum 10 (22 Aug 26) — naive sequential LoRA r512, 10 tasks: ALL-10 FINAL ROW, 4-seed (raw)
+
+`seeds_naive10_r512_final.json`. Checkpoint 050000 (after all 10 blocks) of
+`libero_10_seq10_naive_lora_r512_a128_steps5k`. 25 episodes x seeds
+1000/2000/3000/4000, vec batch_size 13, `--policy.use_peft=true`.
+Envs listed in train order.
+
+| env | s1000 | s2000 | s3000 | s4000 | mean |
+|---|---|---|---|---|---|
+| 4 | 0 | 0 | 0 | 0 | 0.0 |
+| 6 | 0 | 0 | 0 | 0 | 0.0 |
+| 9 | 0 | 0 | 0 | 0 | 0.0 |
+| 2 | 0 | 0 | 0 | 0 | 0.0 |
+| 7 | 0 | 0 | 0 | 0 | 0.0 |
+| 0 | 0 | 0 | 0 | 0 | 0.0 |
+| 8 | 0 | 0 | 0 | 0 | 0.0 |
+| 1 | 0 | 0 | 0 | 0 | 0.0 |
+| 3 | 0 | 0 | 0 | 0 | 0.0 |
+| 5 | 92 | 100 | 96 | 100 | 97.0 |
+
+**ALL-10 MEAN = 9.7**; front-5 0.0, back-5 19.4.
+
+This row is adopted as b10 of the naive retention triangle (identical checkpoint,
+seeds and episode count; not re-measured).
+
+Stage 3b/4 (both retention triangles, b1-b9 each = 45 cells per model) started
+under unit `e64-triangles` 2026-08-22 19:30 UTC. `e64-lora-r512` exited
+(QUEUE COMPLETE) after stage 3. VM disk 82%.
