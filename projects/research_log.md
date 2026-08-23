@@ -8055,3 +8055,37 @@ seeds and episode count; not re-measured).
 Stage 3b/4 (both retention triangles, b1-b9 each = 45 cells per model) started
 under unit `e64-triangles` 2026-08-22 19:30 UTC. `e64-lora-r512` exited
 (QUEUE COMPLETE) after stage 3. VM disk 82%.
+
+---
+### Entry 64 addendum 11 (23 Aug 26) — naive sequential LoRA r512, 10 tasks: RETENTION TRIANGLE, 4-seed (raw)
+
+`seeds_tri_naive10_r512_b{1..10}.json`. Run
+`libero_10_seq10_naive_lora_r512_a128_steps5k`. Lower triangle: after block k,
+the k envs seen so far. Each cell 25 episodes x seeds 1000/2000/3000/4000
+(100 episodes), vec batch_size 13, `--policy.use_peft=true`. Cells are 4-seed means.
+Envs in train order. b10 adopted from `seeds_naive10_r512_final.json` (add-10).
+
+| after block | ckpt | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| b1 | 005000 | 70.0 | - | - | - | - | - | - | - | - | - | 70.0 |
+| b2 | 010000 | 0.0 | 64.0 | - | - | - | - | - | - | - | - | 32.0 |
+| b3 | 015000 | 0.0 | 1.0 | 82.0 | - | - | - | - | - | - | - | 27.7 |
+| b4 | 020000 | 0.0 | 0.0 | 0.0 | 96.0 | - | - | - | - | - | - | 24.0 |
+| b5 | 025000 | 0.0 | 0.0 | 0.0 | 32.0 | 58.0 | - | - | - | - | - | 18.0 |
+| b6 | 030000 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 73.0 | - | - | - | - | 12.2 |
+| b7 | 035000 | 0.0 | 0.0 | 0.0 | 2.0 | 0.0 | 7.0 | 67.0 | - | - | - | 10.9 |
+| b8 | 040000 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 38.0 | - | - | 4.8 |
+| b9 | 045000 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 86.0 | - | 9.6 |
+| b10 | 050000 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 97.0 | 9.7 |
+
+Diagonal (env measured immediately after its own block): 70.0, 64.0, 82.0, 96.0,
+58.0, 73.0, 67.0, 38.0, 86.0, 97.0. Mean 73.1.
+
+Prior-task mean per row (row excluding the just-trained env): b2 0.0, b3 0.5,
+b4 0.0, b5 8.0, b6 0.0, b7 1.5, b8 0.0, b9 0.0, b10 0.0.
+
+Naive triangle wall clock 2026-08-22 19:30 -> 2026-08-23 13:21 UTC (17 h 51 min),
+45 measured cells + 1 adopted, 4,500 episodes. No failures.
+
+merged6x2 triangle started 2026-08-23 13:21 UTC (b10 adopted from
+`seeds_seq10_merged6x2.json`). VM disk 82%.
