@@ -56,7 +56,17 @@ for c in "${DIRS[@]}"; do
   done
   [ "$ok" = 1 ] || { echo "FAIL-TRANSFER $c" | tee -a "$STATUS" >> "$LOG"; fail=1; continue; }
   # verify: checksum dry-run must show zero transfer, and byte counts must match
-  delta=$(rsync -aHc --dry-run --itemize-changes "$SRC_HOST:$SRC_BASE/$c" "$DEST/" 2>/dev/null | grep -c '^[<>ch]') || delta=999
+  # NB: `grep -c` exits 1 when the count is ZERO, which is exactly the PASS case.
+  # An earlier revision wrote `... | grep -c ...) || delta=999`, so a perfect
+  # verification scored as FAIL-VERIFY delta=999 (24 Aug, all four dirs). Capture
+  # the rsync output first, and separate "no differences" from "command failed".
+  vout=$(rsync -aHc --dry-run --itemize-changes "$SRC_HOST:$SRC_BASE/$c" "$DEST/" 2>/dev/null); vrc=$?
+  if [ "$vrc" -ne 0 ]; then
+    delta=999   # the verify command itself failed -- genuinely unverified
+  else
+    delta=$(printf '%s\n' "$vout" | grep -c '^[<>ch]'); true
+    delta=${delta:-999}
+  fi
   vm_b=$(ssh -o BatchMode=yes "$SRC_HOST" "du -sb $SRC_BASE/$c | cut -f1")
   co_b=$(du -sb "$DEST/$c" | cut -f1)
   if [ "$delta" = "0" ] && [ "$vm_b" = "$co_b" ]; then
