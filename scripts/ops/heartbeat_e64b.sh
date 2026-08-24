@@ -48,7 +48,8 @@ REMOTE
 
 ship_state() {
   local alive pass fail
-  pgrep -f "bash scripts/ops/ship_e64_batch_to_cold" >/dev/null && alive=yes || alive=NO
+  # match the repo script OR the immutable run-copy it is launched from (24 Aug)
+  pgrep -f "ship_e64_(batch_to_cold|fixed)\.sh" >/dev/null && alive=yes || alive=NO
   pass=$(grep -c "^PASS " "$STATUS" 2>/dev/null); true
   fail=$(grep -cE "^FAIL" "$STATUS" 2>/dev/null); true
   pass=${pass:-0}; fail=${fail:-0}
