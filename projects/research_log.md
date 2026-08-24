@@ -8089,3 +8089,39 @@ Naive triangle wall clock 2026-08-22 19:30 -> 2026-08-23 13:21 UTC (17 h 51 min)
 
 merged6x2 triangle started 2026-08-23 13:21 UTC (b10 adopted from
 `seeds_seq10_merged6x2.json`). VM disk 82%.
+
+---
+### Entry 64 addendum 12 (24 Aug 26) — merged6x2 10-task: RETENTION TRIANGLE, 4-seed (raw)
+
+`seeds_tri_merged6x2_10task_b{1..10}.json`. Run
+`libero_10_seq10_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k`.
+Same instrument and layout as add-11: lower triangle, each cell 25 episodes x seeds
+1000/2000/3000/4000 (100 episodes), vec batch_size 13. Cells are 4-seed means.
+Envs in train order. b10 adopted from `seeds_seq10_merged6x2.json`.
+
+| after block | ckpt | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| b1 | 005000 | 54.0 | - | - | - | - | - | - | - | - | - | 54.0 |
+| b2 | 010000 | 54.0 | 65.0 | - | - | - | - | - | - | - | - | 59.5 |
+| b3 | 015000 | 50.0 | 66.0 | 71.0 | - | - | - | - | - | - | - | 62.3 |
+| b4 | 020000 | 51.0 | 54.0 | 65.0 | 87.0 | - | - | - | - | - | - | 64.2 |
+| b5 | 025000 | 53.0 | 72.0 | 65.0 | 89.0 | 51.0 | - | - | - | - | - | 66.0 |
+| b6 | 030000 | 54.0 | 65.0 | 64.0 | 83.0 | 40.0 | 40.0 | - | - | - | - | 57.7 |
+| b7 | 035000 | 51.0 | 64.0 | 73.0 | 89.0 | 45.0 | 48.0 | 71.0 | - | - | - | 63.0 |
+| b8 | 040000 | 47.0 | 67.0 | 60.0 | 88.0 | 46.0 | 46.0 | 76.0 | 41.0 | - | - | 58.9 |
+| b9 | 045000 | 53.0 | 70.0 | 66.0 | 87.0 | 48.0 | 44.0 | 77.0 | 43.0 | 83.0 | - | 63.4 |
+| b10 | 050000 | 59.0 | 60.0 | 63.0 | 87.0 | 54.0 | 37.0 | 76.0 | 38.0 | 86.0 | 91.0 | 65.1 |
+
+Diagonal: 54.0, 65.0, 71.0, 87.0, 51.0, 40.0, 71.0, 41.0, 83.0, 91.0. Mean 65.4.
+
+Prior-task mean per row (row excluding the just-trained env): b2 54.0, b3 58.0,
+b4 56.7, b5 69.8, b6 61.2, b7 61.7, b8 61.4, b9 61.0, b10 62.2.
+
+merged6x2 triangle wall clock 2026-08-23 13:21 -> 2026-08-24 10:12 UTC (20 h 51 min),
+45 measured cells + 1 adopted, 4,500 episodes. No failures.
+
+Both triangles complete: 90 measured cells, 9,000 episodes, unit `e64-triangles`
+exited 2026-08-24 10:12 UTC. VM disk 82%.
+
+Follow-on started at the same boundary: `e64b-r128` (ten r128/a32 specialists +
+ten 4-seed rows) on the VM; E64 r512 batch cold-storage ship on the desk PC.
