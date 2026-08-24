@@ -92,7 +92,7 @@ recover() {
   fi
 }
 
-prev_key=""; prev_err=0; prev_ship=""; i=0; unreachable_run=0
+prev_key=""; prev_err=0; prev_ship=""; prev_fail=0; i=0; unreachable_run=0
 emit "heartbeat-B armed: r128 ladder + E64 cold ship; poll ${POLL}s, forced beat every $((POLL*HEARTBEAT_EVERY/3600))h"
 while true; do
   s_ship=$(ship_state)
@@ -110,7 +110,11 @@ while true; do
 
     [ "${err:-0}" -gt "${prev_err:-0}" ] 2>/dev/null && emit "NEW ERROR LINES (err ${prev_err}->${err}) | $state"
     [ "${disk:-0}" -ge "$DISK_TRIPWIRE" ] 2>/dev/null && emit "DISK TRIPWIRE ${disk}% | $state"
-    grep -qE "^FAIL" "$STATUS" 2>/dev/null && emit "ARCHIVE FAILURE in $STATUS | $s_ship"
+    # edge-triggered: a standing FAIL line must not re-alarm every poll (24 Aug --
+    # the spurious FAIL-VERIFY from the shipper's grep -c bug fired every 10 min).
+    nfail=$(sed -E 's/.* fail=([0-9]+).*/\1/' <<<"$s_ship")
+    [ "${nfail:-0}" -gt "${prev_fail:-0}" ] 2>/dev/null && emit "NEW ARCHIVE FAILURE (fail ${prev_fail:-0}->${nfail}) in $STATUS | $s_ship"
+    prev_fail=${nfail:-0}
     [[ "$s_ship" == *"ship=NO"* ]] && [[ "$s_ship" != *"pass=4/4"* ]] && emit "SHIPPER PROCESS GONE with transfers incomplete | $s_ship"
 
     if [ "$unit" != "active" ] && [ "$unit" != "activating" ]; then
