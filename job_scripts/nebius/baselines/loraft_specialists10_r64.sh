@@ -54,7 +54,7 @@ for T in ${TASKS:-0 1 2 3 4 5 6 7 8 9}; do
     mv "$RUN_DIR" "$ASIDE"
   fi
   EPS="[$(seq -s, ${EP_LO[$T]} ${EP_HI[$T]})]"
-  echo "[t$T/e$ENV] training r128 LoRA specialist ($(date))"
+  echo "[t$T/e$ENV] training r64 LoRA specialist ($(date))"
   lerobot-train \
     --policy.path="$BASE_CKPT" \
     --policy.dtype=bfloat16 \
