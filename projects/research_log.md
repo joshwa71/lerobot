@@ -8156,3 +8156,49 @@ r512 850,427,904 (1.66 M per unit rank over the target set).
 
 Ten 4-seed rows (25 eps x seeds 1000/2000/3000/4000, one env each) started
 2026-08-25 13:13 UTC. VM disk 73%.
+
+---
+### Entry 64 addendum 14 (25 Aug 26) — r128 SPECIALIST ORACLE = 69.5, 4-seed (raw)
+
+`seeds_spec_r128_e{env}.json`, ten rows. Each row: the r128/alpha32 specialist for
+that env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
+1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13,
+`--policy.use_peft=true`. Envs in train order.
+
+| env | s1000 | s2000 | s3000 | s4000 | mean |
+|---|---|---|---|---|---|
+| 4 | 72 | 72 | 76 | 68 | 72.0 |
+| 6 | 72 | 68 | 72 | 68 | 70.0 |
+| 9 | 76 | 60 | 56 | 64 | 64.0 |
+| 2 | 76 | 76 | 84 | 68 | 76.0 |
+| 7 | 64 | 56 | 68 | 60 | 62.0 |
+| 0 | 64 | 60 | 76 | 48 | 62.0 |
+| 8 | 60 | 68 | 72 | 68 | 67.0 |
+| 1 | 48 | 48 | 44 | 44 | 46.0 |
+| 3 | 84 | 80 | 96 | 88 | 87.0 |
+| 5 | 96 | 92 | 80 | 88 | 89.0 |
+
+**ALL-10 ORACLE = 69.5**; front-5 68.8, back-5 70.2.
+
+Rows ran 2026-08-25 13:13:51 -> 18:27:01 UTC (5 h 13 min, 1,000 episodes).
+Unit `e64b-r128` exited 18:27:01 UTC. No failures.
+
+Specialist oracle ladder to date (all 5,000 steps, alpha/r = 0.25, same base and
+target set): r32 63.7 / r128 69.5 / r512 74.9.
+Per-env, same ordering: 
+
+| env | r32 | r128 | r512 |
+|---|---|---|---|
+| 4 | 46.0 | 72.0 | 52.0 |
+| 6 | 49.0 | 70.0 | 71.0 |
+| 9 | 61.0 | 64.0 | 78.0 |
+| 2 | 80.0 | 76.0 | 85.0 |
+| 7 | 59.0 | 62.0 | 68.0 |
+| 0 | 46.0 | 62.0 | 84.0 |
+| 8 | 67.0 | 67.0 | 70.0 |
+| 1 | 62.0 | 46.0 | 61.0 |
+| 3 | 84.0 | 87.0 | 86.0 |
+| 5 | 83.0 | 89.0 | 94.0 |
+
+`e64c-r64` (ten r64/alpha16 specialists + ten 4-seed rows) released at 18:27 UTC.
+VM disk 73%.
