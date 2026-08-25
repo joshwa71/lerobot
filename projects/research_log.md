@@ -8125,3 +8125,34 @@ exited 2026-08-24 10:12 UTC. VM disk 82%.
 
 Follow-on started at the same boundary: `e64b-r128` (ten r128/a32 specialists +
 ten 4-seed rows) on the VM; E64 r512 batch cold-storage ship on the desk PC.
+
+---
+### Entry 64 addendum 13 (25 Aug 26) — ten r128 LoRA specialists: TRAINING COMPLETE (raw)
+
+`outputs/train/loraft_baseline_r128/task{0..9}_e{env}`. Base:
+`libero_90_pi05_base_nomem_50k` (stage-1 LIBERO-90 finetune).
+r=128, lora_alpha=32 (alpha/r = 0.25 held). Trainable 212,606,976 per specialist.
+5,000 steps each, bs16 x grad_accum 2, optimizer_lr 1e-4 -> 1e-5, same targets and
+recipe as the r32 and r512 ladder points.
+
+Start 2026-08-24 10:12:17 UTC. End 2026-08-25 13:12:55 UTC. Wall clock 27 h 01 min
+(~2 h 42 min per specialist, 1.91 s/step). Run directory 24 G. No failures, no restarts.
+
+| task | env | ckpt written (UTC) | final loss |
+|---|---|---|---|
+| t0 | 4 | 2026-08-24 12:53:46 | 0.041 |
+| t1 | 6 | 2026-08-24 15:36:04 | 0.036 |
+| t2 | 9 | 2026-08-24 18:18:20 | 0.085 |
+| t3 | 2 | 2026-08-24 21:00:17 | 0.052 |
+| t4 | 7 | 2026-08-24 23:42:34 | 0.066 |
+| t5 | 0 | 2026-08-25 02:24:31 | 0.044 |
+| t6 | 8 | 2026-08-25 05:07:04 | 0.039 |
+| t7 | 1 | 2026-08-25 07:49:20 | 0.063 |
+| t8 | 3 | 2026-08-25 10:31:09 | 0.052 |
+| t9 | 5 | 2026-08-25 13:12:55 | 0.031 |
+
+Trainable-parameter counts across the ladder: r32 53,151,744 / r128 212,606,976 /
+r512 850,427,904 (1.66 M per unit rank over the target set).
+
+Ten 4-seed rows (25 eps x seeds 1000/2000/3000/4000, one env each) started
+2026-08-25 13:13 UTC. VM disk 73%.
