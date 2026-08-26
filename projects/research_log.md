@@ -8202,3 +8202,32 @@ Per-env, same ordering:
 
 `e64c-r64` (ten r64/alpha16 specialists + ten 4-seed rows) released at 18:27 UTC.
 VM disk 73%.
+
+---
+### Entry 64 addendum 15 (26 Aug 26) — ten r64 LoRA specialists: TRAINING COMPLETE (raw)
+
+`outputs/train/loraft_baseline_r64/task{0..9}_e{env}`. Base:
+`libero_90_pi05_base_nomem_50k`. r=64, lora_alpha=16 (alpha/r = 0.25 held).
+Trainable 106,303,488 per specialist. 5,000 steps each, bs16 x grad_accum 2,
+optimizer_lr 1e-4 -> 1e-5, same targets and recipe as the r32 / r128 / r512 points.
+
+Start 2026-08-25 18:29:42 UTC. End 2026-08-26 21:07:00 UTC. Wall clock 26 h 37 min
+(~2 h 40 min per specialist). Run directory 12 G. No failures, no restarts.
+
+| task | env | ckpt written (UTC) | final loss |
+|---|---|---|---|
+| t0 | 4 | 2026-08-25 21:09:15 | 0.052 |
+| t1 | 6 | 2026-08-25 23:48:54 | 0.041 |
+| t2 | 9 | 2026-08-26 02:28:45 | 0.098 |
+| t3 | 2 | 2026-08-26 05:08:29 | 0.060 |
+| t4 | 7 | 2026-08-26 07:47:47 | 0.075 |
+| t5 | 0 | 2026-08-26 10:27:46 | 0.050 |
+| t6 | 8 | 2026-08-26 13:08:05 | 0.043 |
+| t7 | 1 | 2026-08-26 15:48:04 | 0.073 |
+| t8 | 3 | 2026-08-26 18:27:36 | 0.064 |
+| t9 | 5 | 2026-08-26 21:07:00 | 0.035 |
+
+Trainable params across the ladder: r32 53,151,744 / r64 106,303,488 /
+r128 212,606,976 / r512 850,427,904.
+
+Ten 4-seed rows started 2026-08-26 21:07:25 UTC. VM disk 73%.
