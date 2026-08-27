@@ -30,6 +30,7 @@ SCRATCH="$OUTD/_scratch_geom_${TAG}_$$"
 OUT_JSON="$OUTD/task_geometry_${TAG}.json" OUT_NPZ="$OUTD/task_geometry_${TAG}.npz" \
 python scripts/vla_analysis/realworld/probe_task_geometry_rw.py \
   --policy.path="$CKPT" \
+  --policy.push_to_hub=false \
   --policy.dtype=bfloat16 \
   --policy.empty_cameras=1 \
   --policy.normalization_mapping='{"VISUAL":"IDENTITY","STATE":"MEAN_STD","ACTION":"MEAN_STD"}' \
