@@ -75,4 +75,12 @@ else
   [ "$ok" = 1 ] || { echo "ERROR: all S1_LADDER rungs failed"; exit 1; }
 fi
 [ -d "$STAGE1_CKPT" ] || { echo "ERROR: stage 1 finished but $STAGE1_CKPT does not exist"; exit 1; }
+# Disk hygiene (E60-add-6 / E62-add-8 rule, made automatic): the intermediate save_freq
+# checkpoints exist only as preemption salvage; once the final exists, drop their optimizer
+# states (weights kept). ~50G each on a full-backbone run.
+last_target="$(readlink -f "$STAGE1_OUT/checkpoints/last")"
+for c in "$STAGE1_OUT"/checkpoints/[0-9]*; do
+  [ "$(readlink -f "$c")" = "$last_target" ] && continue
+  [ -d "$c/training_state" ] && { echo "[stage1] pruning optimizer state of intermediate $(basename "$c")"; rm -rf "$c/training_state"; }
+done
 echo "[stage1] checkpoint: $STAGE1_CKPT"
