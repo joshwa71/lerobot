@@ -8459,3 +8459,30 @@ no env) → warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_e468101416_v579111
 (5 × 5000, corefrac β4, top_t 3072, lr 2e-3→2e-4, ladder 32:1/16:2/8:4/16:2+ckpt, eval.type=loss
 20 batches, per-task checkpoints). Stage-1 at launch: 92,169 MiB, 94% util. VM disk 73% (689G free).
 Watcher: `scripts/ops/heartbeat_rw_chain.sh` (Monitor, 10-min poll) + 3-hourly cron self-check.
+
+### Entry 65 addendum 1 (27 Aug 26, ~09:30 UTC) — real-world landing battery built (realworld duplicates of the E62 battery; cross-checked against the E62 artifacts) — raw
+
+Files (`scripts/vla_analysis/realworld/`, commit fbec3d8e): `run_rw_battery.sh` (orchestrator; log
+`outputs/rw_battery_${RW_TAG}.log`; prints `RW-BATTERY-DONE`), `run_rw_msemat_jitter.sh` (GPU part:
+MSE matrix over the 5 per-task checkpoints × 5 seq tasks via `mse_matrix_rw.py`, then `probe_jitter.py`
+unchanged on the final checkpoint, t0/t3/t4 × clean/state@0.1/state@0.2/image@0.05, swap-slots; no
+`--env.*`, no `--ds_to_env_map_json`, dataset = `realworld_seq_${RW_TAG}`), `mse_matrix_rw.py`
+(= `mse_matrix2.py`; n_batches/batch_size/num_workers env-overridable, defaults 16/32/4 unchanged),
+`rw_slots.py` (= `e62_slots.py` numerics; single run dir, seq→pool labels `0:p0,1:p10,2:p16,3:p7,4:p1`,
+pairs E4-6/E8-10/V5-7/V9-11/V13-15, JSON twin), `rw_matrix_report.py` (`inrun` = `eval/loss_results.jsonl`
+matrix + just-trained→final table; `msemat` = the same on the mse-matrix jsonl). The harvest-bank
+rescore has no real-world analogue (needs rollouts) — omitted. Sequential checkpoints expected:
+005000,…,025000 (5 × 5,000).
+
+Cross-check on the E62 sim artifacts (VM, CPU): `rw_slots.py` on
+`libero_10_seq5_jw_merged6x2_…_steps5k` (labels e4/e6/e9/e2/e7) vs `outputs/analysis/e62/slots_e62.out`
+merged6x2 section: all 14 numeric lines identical (`diff` empty). `rw_matrix_report.py msemat` on
+`outputs/analysis/e62/mse_matrix_merged6x2.jsonl`: just-trained→final t0 0.03724→0.03879 (+4.18%),
+t1 0.12555→0.12693 (+1.10%), t2 0.26910→0.26909 (−0.01%), t3 0.17963→0.18054 (+0.51%),
+t4 0.22776→0.22776 (+0.00%) (Entry 62 add-2 recorded +4.2/+1.1/+0.0/+0.5/0.0). `inrun` mode exercised on
+a synthetic `loss_results.jsonl` in `_append_loss_results_jsonl`'s format (5 rows, lower-triangular):
+baseline recovered as `task_t − forget_t`, table and JSON written. GPU path (`mse_matrix_rw.py` /
+`probe_jitter.py` on real-world data) not yet exercised — no real-world memory checkpoint exists until the
+warm-up stage; planned dry run on the stage-1 010000 checkpoint (`PROBE_SWAP_SLOTS=0`, MINI) when it lands.
+
+Stage-1 at 09:15 UTC: step 9K, loss 0.053, grdn 0.489, lr 2.3e-05, updt_s 0.593, GPU 92,331 MiB, disk 73%.
