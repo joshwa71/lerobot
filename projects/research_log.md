@@ -8231,3 +8231,50 @@ Trainable params across the ladder: r32 53,151,744 / r64 106,303,488 /
 r128 212,606,976 / r512 850,427,904.
 
 Ten 4-seed rows started 2026-08-26 21:07:25 UTC. VM disk 73%.
+
+---
+### Entry 64 addendum 16 (27 Aug 26) — r64 SPECIALIST ORACLE = 68.8, 4-seed (raw)
+
+`seeds_spec_r64_e{env}.json`, ten rows. Each row: the r64/alpha16 specialist for that
+env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
+1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13,
+`--policy.use_peft=true`. Envs in train order.
+
+| env | s1000 | s2000 | s3000 | s4000 | mean |
+|---|---|---|---|---|---|
+| 4 | 68 | 68 | 60 | 44 | 60.0 |
+| 6 | 56 | 48 | 56 | 80 | 60.0 |
+| 9 | 72 | 72 | 72 | 84 | 75.0 |
+| 2 | 88 | 84 | 84 | 80 | 84.0 |
+| 7 | 48 | 52 | 64 | 48 | 53.0 |
+| 0 | 68 | 68 | 80 | 60 | 69.0 |
+| 8 | 76 | 72 | 72 | 80 | 75.0 |
+| 1 | 56 | 48 | 52 | 52 | 52.0 |
+| 3 | 68 | 84 | 84 | 72 | 77.0 |
+| 5 | 84 | 92 | 76 | 80 | 83.0 |
+
+**ALL-10 ORACLE = 68.8**; front-5 66.4, back-5 71.2.
+
+Rows ran 2026-08-26 21:07:25 -> 2026-08-27 02:13:53 UTC (5 h 06 min, 1,000 episodes).
+Unit `e64c-r64` exited 02:13:53 UTC. No failures.
+
+Complete specialist oracle ladder (all 5,000 steps, alpha/r = 0.25, same LIBERO-90
+base and target set; trainable params per specialist in brackets):
+
+| env | r32 (53.2M) | r64 (106.3M) | r128 (212.6M) | r512 (850.4M) |
+|---|---|---|---|---|
+| 4 | 46.0 | 60.0 | 72.0 | 52.0 |
+| 6 | 49.0 | 60.0 | 70.0 | 71.0 |
+| 9 | 61.0 | 75.0 | 64.0 | 78.0 |
+| 2 | 80.0 | 84.0 | 76.0 | 85.0 |
+| 7 | 59.0 | 53.0 | 62.0 | 68.0 |
+| 0 | 46.0 | 69.0 | 62.0 | 84.0 |
+| 8 | 67.0 | 75.0 | 67.0 | 70.0 |
+| 1 | 62.0 | 52.0 | 46.0 | 61.0 |
+| 3 | 84.0 | 77.0 | 87.0 | 86.0 |
+| 5 | 83.0 | 83.0 | 89.0 | 94.0 |
+| **all-10** | **63.7** | **68.8** | **69.5** | **74.9** |
+| front-5 | 59.0 | 66.4 | 68.8 | 70.8 |
+| back-5 | 68.4 | 71.2 | 70.2 | 79.0 |
+
+VM disk 73%.
