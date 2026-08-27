@@ -357,7 +357,11 @@ def _rebuild_data_and_meta(
 def split_dataset_by_task(
     src_root: Path,
     dst_root_parent: Path,
+    exclude_episode_indices: set[int] | None = None,
 ) -> None:
+    # exclude_episode_indices: source episode indices to drop from every per-task output
+    # (e.g. degenerate recordings). Video files are copied whole, so this never re-encodes.
+    exclude_episode_indices = set(exclude_episode_indices or ())
     # Load source metadata
     src_meta = LeRobotDatasetMetadata(repo_id="local/src", root=src_root)
 
@@ -378,6 +382,11 @@ def split_dataset_by_task(
     for task_index in task_indices:
         task_name = _find_task_name(tasks_df, task_index)
         episodes_to_keep = _filter_episode_indices_for_task(episode_task_indices, task_index)
+        if exclude_episode_indices:
+            dropped = [e for e in episodes_to_keep if int(e) in exclude_episode_indices]
+            if dropped:
+                logging.info(f"Task {task_index}: excluding episodes {dropped}")
+                episodes_to_keep = [e for e in episodes_to_keep if int(e) not in exclude_episode_indices]
         if len(episodes_to_keep) == 0:
             logging.info(f"Skip task {task_index}: '{task_name}' (no episodes)")
             continue
@@ -462,11 +471,20 @@ def main():
         required=True,
         help="Directory where per-task datasets will be created.",
     )
+    parser.add_argument(
+        "--exclude_episode_indices",
+        type=str,
+        default="[]",
+        help='JSON list of source episode indices to drop from every output, e.g. "[548]".',
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
-    split_dataset_by_task(Path(args.src_root), Path(args.dst_root_parent))
+    import json
+
+    exclude = {int(x) for x in json.loads(args.exclude_episode_indices)}
+    split_dataset_by_task(Path(args.src_root), Path(args.dst_root_parent), exclude_episode_indices=exclude)
 
 
 if __name__ == "__main__":

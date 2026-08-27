@@ -29,22 +29,19 @@ conda activate lerobot-memory-updated
 cd "$ROOT"
 for d in "$PRE" "$SEQ" "$PARTS"; do [ -e "$d" ] && { echo "ERROR: $d exists - refusing to overwrite"; exit 1; }; done
 
-# 1. clean pool
-if [ -d "$CLEAN/meta" ]; then
-  echo "[split] clean pool exists: $CLEAN"
-else
-  echo "[split] dropping episodes $DROP_EPISODES from $POOL -> $CLEAN"
-  python src/lerobot/scripts/lerobot_edit_dataset.py \
-    --repo_id realworld_all_tasks --root "$POOL" \
-    --new_repo_id realworld_all_tasks_clean --new_root "$CLEAN" \
-    --operation.type delete_episodes --operation.episode_indices "$DROP_EPISODES"
-fi
+# 1. verify the pool as-is. NB: 14/1005 pool episodes have video spans longer than their
+#    parquet length (recorder ran on); the trainer only decodes the rows it is given (v1
+#    trained on them), but lerobot_edit_dataset's delete_episodes RE-ENCODES video segments
+#    and asserts on exactly that, so degenerate episodes are dropped inside the splitter
+#    (whole-file video copy, no re-encode) instead of via a "clean pool".
+CLEAN=$POOL
 python "$TOOLS" verify "$CLEAN" 20
 
-# 2. per-task parts
-echo "[split] splitting $CLEAN into per-task parts under $PARTS"
+# 2. per-task parts (dropping DROP_EPISODES)
+echo "[split] splitting $CLEAN into per-task parts under $PARTS (excluding episodes $DROP_EPISODES)"
 mkdir -p "$PARTS"
-python src/lerobot/scripts/split_dataset_by_task.py --src_root "$CLEAN" --dst_root_parent "$PARTS"
+python src/lerobot/scripts/split_dataset_by_task.py --src_root "$CLEAN" --dst_root_parent "$PARTS" \
+  --exclude_episode_indices "$DROP_EPISODES"
 
 # 3. single-task tables
 for p in "$PARTS"/libero_task_*; do

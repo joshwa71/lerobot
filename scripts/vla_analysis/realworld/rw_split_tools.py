@@ -93,14 +93,17 @@ def cmd_manifest(out, pool, pre, seq, heldout_csv):
     pre_t = _tasks_df(pre); seq_t = _tasks_df(seq)
     pre_names = {int(r["task_index"]): str(n) for n, r in pre_t.iterrows()}
     seq_names = {int(r["task_index"]): str(n) for n, r in seq_t.iterrows()}
+    pre_counts = per_task_counts(pre); seq_counts = per_task_counts(seq)   # counts from the BUILT datasets
     name_to_pool = {v: k for k, v in pool_names.items()}
     m = {
         "pool": pool, "pretrain_root": pre, "seq_root": seq,
         "heldout_pool_ids_in_seq_order": heldout,
         "seq": [{"seq_task_index": i, "pool_task_index": name_to_pool[n], "task": n,
-                 "eps": pool_counts[n][0], "frames": pool_counts[n][1]} for i, n in sorted(seq_names.items())],
+                 "eps": seq_counts[n][0], "frames": seq_counts[n][1],
+                 "pool_eps": pool_counts[n][0], "pool_frames": pool_counts[n][1]} for i, n in sorted(seq_names.items())],
         "pretrain": [{"pretrain_task_index": i, "pool_task_index": name_to_pool[n], "task": n,
-                      "eps": pool_counts[n][0], "frames": pool_counts[n][1]} for i, n in sorted(pre_names.items())],
+                      "eps": pre_counts[n][0], "frames": pre_counts[n][1],
+                      "pool_eps": pool_counts[n][0], "pool_frames": pool_counts[n][1]} for i, n in sorted(pre_names.items())],
     }
     m["seq_frames"] = sum(x["frames"] for x in m["seq"]); m["seq_eps"] = sum(x["eps"] for x in m["seq"])
     m["pretrain_frames"] = sum(x["frames"] for x in m["pretrain"]); m["pretrain_eps"] = sum(x["eps"] for x in m["pretrain"])
