@@ -8460,46 +8460,14 @@ no env) → warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_e468101416_v579111
 20 batches, per-task checkpoints). Stage-1 at launch: 92,169 MiB, 94% util. VM disk 73% (689G free).
 Watcher: `scripts/ops/heartbeat_rw_chain.sh` (Monitor, 10-min poll) + 3-hourly cron self-check.
 
-### Entry 65 addendum 1 (27 Aug 26, ~09:30 UTC) — real-world landing battery built (realworld duplicates of the E62 battery; cross-checked against the E62 artifacts) — raw
+### Entry 65 addendum 1 (27 Aug 26) — real-world landing battery scripts (raw)
+`scripts/vla_analysis/realworld/run_rw_battery.sh` (mse matrix + jitter + slot autopsy + matrix reports; no
+harvest rescore — needs rollouts). Cross-check on the E62 artifacts: `rw_slots.py` output identical to
+`slots_e62.out` (14/14 lines); `rw_matrix_report.py` on `mse_matrix_merged6x2.jsonl` → +4.18 / +1.10 / −0.01 /
++0.51 / +0.00 % (Entry 62 add-2: +4.2 / +1.1 / +0.0 / +0.5 / 0.0).
 
-Files (`scripts/vla_analysis/realworld/`, commit fbec3d8e): `run_rw_battery.sh` (orchestrator; log
-`outputs/rw_battery_${RW_TAG}.log`; prints `RW-BATTERY-DONE`), `run_rw_msemat_jitter.sh` (GPU part:
-MSE matrix over the 5 per-task checkpoints × 5 seq tasks via `mse_matrix_rw.py`, then `probe_jitter.py`
-unchanged on the final checkpoint, t0/t3/t4 × clean/state@0.1/state@0.2/image@0.05, swap-slots; no
-`--env.*`, no `--ds_to_env_map_json`, dataset = `realworld_seq_${RW_TAG}`), `mse_matrix_rw.py`
-(= `mse_matrix2.py`; n_batches/batch_size/num_workers env-overridable, defaults 16/32/4 unchanged),
-`rw_slots.py` (= `e62_slots.py` numerics; single run dir, seq→pool labels `0:p0,1:p10,2:p16,3:p7,4:p1`,
-pairs E4-6/E8-10/V5-7/V9-11/V13-15, JSON twin), `rw_matrix_report.py` (`inrun` = `eval/loss_results.jsonl`
-matrix + just-trained→final table; `msemat` = the same on the mse-matrix jsonl). The harvest-bank
-rescore has no real-world analogue (needs rollouts) — omitted. Sequential checkpoints expected:
-005000,…,025000 (5 × 5,000).
-
-Cross-check on the E62 sim artifacts (VM, CPU): `rw_slots.py` on
-`libero_10_seq5_jw_merged6x2_…_steps5k` (labels e4/e6/e9/e2/e7) vs `outputs/analysis/e62/slots_e62.out`
-merged6x2 section: all 14 numeric lines identical (`diff` empty). `rw_matrix_report.py msemat` on
-`outputs/analysis/e62/mse_matrix_merged6x2.jsonl`: just-trained→final t0 0.03724→0.03879 (+4.18%),
-t1 0.12555→0.12693 (+1.10%), t2 0.26910→0.26909 (−0.01%), t3 0.17963→0.18054 (+0.51%),
-t4 0.22776→0.22776 (+0.00%) (Entry 62 add-2 recorded +4.2/+1.1/+0.0/+0.5/0.0). `inrun` mode exercised on
-a synthetic `loss_results.jsonl` in `_append_loss_results_jsonl`'s format (5 rows, lower-triangular):
-baseline recovered as `task_t − forget_t`, table and JSON written. GPU path (`mse_matrix_rw.py` /
-`probe_jitter.py` on real-world data) not yet exercised — no real-world memory checkpoint exists until the
-warm-up stage; planned dry run on the stage-1 010000 checkpoint (`PROBE_SWAP_SLOTS=0`, MINI) when it lands.
-
-Stage-1 at 09:15 UTC: step 9K, loss 0.053, grdn 0.489, lr 2.3e-05, updt_s 0.593, GPU 92,331 MiB, disk 73%.
-
-### Entry 65 addendum 2 (27 Aug 26, ~09:55 UTC) — stage-1 checkpoint 010000 + GPU dry run of the real-world battery plumbing — raw
-
-Stage-1 checkpoint 010000 (09:47:21 UTC "Checkpoint policy after step 10000" → last file 09:47:56, ~35 s):
-`pretrained_model` 8.8 GB (model.safetensors 9,354,050,752 B), `training_state` 15 GB. tqdm at 10,000/50,000:
-2.20 s/step, 24:28 remaining. Step 10K: loss 0.050, grdn 0.492, lr 2.3e-05, updt_s 0.593, data_s 0.012.
-
-Dry run (unit `rw-dryrun`, 09:48–09:52 UTC, beside the trainer; trainer GPU 92,331 MiB before/during/after):
-`run_rw_msemat_jitter.sh` with `RW_SEQ_RUN=realworld_v5_pi05_base_nomem_50k MSEMAT_STEPS=010000
-PROBE_SWAP_SLOTS=0 MSEMAT_NB=1 MSEMAT_BS=4 MINI=1 JIT_CKPTS=t0:010000,t3:010000` on
-`realworld_seq_v5` — i.e. the NO-memory stage-1 model at 10k, zero-shot on the held-out seq tasks, MINI
-scale (1 batch × bs4 for the matrix; 2 batches × bs8 × 1 seed for jitter). Both instruments completed
-("=== RW probe battery (msemat + jitter) COMPLETE ==="), 0 slot tensors loaded (expected: no memory).
-Paired-noise MSE per seq task: t0 0.1022, t1 0.1373, t2 0.0541, t3 0.1188, t4 0.1505.
-Jitter chunk MSE / late10: t0 clean 0.2933/0.3834, state@0.1 0.2879/0.3641, state@0.2 0.2907/0.4118,
-image@0.05 0.3625/0.5427; t3 clean 0.1918/0.3179, state@0.1 0.2013/0.3470, state@0.2 0.2256/0.3384,
-image@0.05 0.2261/0.3725. Artifacts `outputs/analysis/realworld/_dryrun/` (+ `_dryrun.log`).
+### Entry 65 addendum 2 (27 Aug 26) — stage-1 ckpt 010000; battery dry run (raw)
+Stage-1 010000: 24 GB (8.8 weights + 15 optimizer), save 35 s; 2.20 s/step; step 10K loss 0.050, grdn 0.492.
+Battery dry run on it (no memory, zero-shot on realworld_seq_v5; MINI: 1 batch × bs4 matrix, 2 × bs8 jitter):
+ran clean. MSE t0 0.1022, t1 0.1373, t2 0.0541, t3 0.1188, t4 0.1505. Jitter chunk t0 clean 0.2933 / state@0.1
+0.2879 / state@0.2 0.2907 / image@0.05 0.3625; t3 0.1918 / 0.2013 / 0.2256 / 0.2261.
