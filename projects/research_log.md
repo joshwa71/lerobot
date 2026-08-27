@@ -8486,3 +8486,20 @@ baseline recovered as `task_t − forget_t`, table and JSON written. GPU path (`
 warm-up stage; planned dry run on the stage-1 010000 checkpoint (`PROBE_SWAP_SLOTS=0`, MINI) when it lands.
 
 Stage-1 at 09:15 UTC: step 9K, loss 0.053, grdn 0.489, lr 2.3e-05, updt_s 0.593, GPU 92,331 MiB, disk 73%.
+
+### Entry 65 addendum 2 (27 Aug 26, ~09:55 UTC) — stage-1 checkpoint 010000 + GPU dry run of the real-world battery plumbing — raw
+
+Stage-1 checkpoint 010000 (09:47:21 UTC "Checkpoint policy after step 10000" → last file 09:47:56, ~35 s):
+`pretrained_model` 8.8 GB (model.safetensors 9,354,050,752 B), `training_state` 15 GB. tqdm at 10,000/50,000:
+2.20 s/step, 24:28 remaining. Step 10K: loss 0.050, grdn 0.492, lr 2.3e-05, updt_s 0.593, data_s 0.012.
+
+Dry run (unit `rw-dryrun`, 09:48–09:52 UTC, beside the trainer; trainer GPU 92,331 MiB before/during/after):
+`run_rw_msemat_jitter.sh` with `RW_SEQ_RUN=realworld_v5_pi05_base_nomem_50k MSEMAT_STEPS=010000
+PROBE_SWAP_SLOTS=0 MSEMAT_NB=1 MSEMAT_BS=4 MINI=1 JIT_CKPTS=t0:010000,t3:010000` on
+`realworld_seq_v5` — i.e. the NO-memory stage-1 model at 10k, zero-shot on the held-out seq tasks, MINI
+scale (1 batch × bs4 for the matrix; 2 batches × bs8 × 1 seed for jitter). Both instruments completed
+("=== RW probe battery (msemat + jitter) COMPLETE ==="), 0 slot tensors loaded (expected: no memory).
+Paired-noise MSE per seq task: t0 0.1022, t1 0.1373, t2 0.0541, t3 0.1188, t4 0.1505.
+Jitter chunk MSE / late10: t0 clean 0.2933/0.3834, state@0.1 0.2879/0.3641, state@0.2 0.2907/0.4118,
+image@0.05 0.3625/0.5427; t3 clean 0.1918/0.3179, state@0.1 0.2013/0.3470, state@0.2 0.2256/0.3384,
+image@0.05 0.2261/0.3725. Artifacts `outputs/analysis/realworld/_dryrun/` (+ `_dryrun.log`).
