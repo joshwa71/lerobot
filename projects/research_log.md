@@ -8278,3 +8278,184 @@ base and target set; trainable params per specialist in brackets):
 | back-5 | 68.4 | 71.2 | 70.2 | 79.0 |
 
 VM disk 73%.
+
+---
+## Entry 65 - 27 Aug 26 (REAL-WORLD (WidowX AI) chain: dataset inventory, tier-1 task-geometry probe, v5 split, pipeline smoke, chain LAUNCHED — raw)
+
+### Datasets on the VM (`/home/josh/lerobot/outputs/`)
+
+All LeRobot v3.0, fps 30, robot_type `widowxai_follower_robot`, features: `action` float32 [7]
+(joint_0..5.pos, left_carriage_joint.pos), `observation.state` float32 [7] (same names),
+`observation.images.cam_high` / `cam_wrist` video [480, 640, 3].
+
+| dataset | tasks | eps | frames | size | note |
+|---|---|---|---|---|---|
+| realworld_all_tasks | 20 | 1005 | 347,664 | 5.2G | the pool |
+| realworld_pretrain | 15 | 751 | 267,547 | 4.0G | v1 split (pool ids minus {0,1,4,10,12}) |
+| realworld_seq | 5 | 254 | 80,117 | 1.3G | v1 split: pool ids 0,1,4,10,12 |
+
+HF cache: `datasets--joshwa71--vla-wm-real` = 288K stub (task_1..task_20 folders, no data);
+`datasets--joshwa71--realworld-multi-modal-v2` = 12K, no snapshot. No v2/v3/v4 split dirs on this VM.
+
+Pool task table (task_index, eps, frames, mean/min/max episode length in frames):
+
+| id | eps | frames | mean | min | max | task |
+|---|---|---|---|---|---|---|
+| 0 | 51 | 18278 | 358 | 265 | 538 | Put the mustard in the basket |
+| 1 | 51 | 22108 | 433 | 336 | 569 | put the red bow on the plate |
+| 2 | 50 | 14569 | 291 | 235 | 542 | stack the small pan on the large pan |
+| 3 | 51 | 17759 | 348 | 255 | 498 | Place the orange in the blender |
+| 4 | 52 | 16182 | 311 | 209 | 515 | Place the orange in the black basket |
+| 5 | 50 | 12165 | 243 | 168 | 367 | Push over the red and yellow lego bricks |
+| 6 | 50 | 15297 | 306 | 198 | 556 | Stack the baskets |
+| 7 | 50 | 13377 | 268 | 207 | 475 | Place the scredriver in the tub |
+| 8 | 50 | 21987 | 440 | 309 | 656 | Put the lid on the blender jug |
+| 9 | 50 | 25844 | 517 | 361 | 668 | Place the red mug on the red plate and the white mug on the white plate |
+| 10 | 50 | 8412 | 168 | 40 | 647 | Push over the white lego brick |
+| 11 | 50 | 18317 | 366 | 239 | 651 | Place the grey water bottle in front of the red water bottle |
+| 12 | 50 | 15137 | 303 | 243 | 447 | Stand the grey bottle up |
+| 13 | 50 | 34757 | 695 | 475 | 899 | Stack the blocks with green on the bottom, then yellow, then red |
+| 14 | 50 | 13887 | 278 | 203 | 395 | Remove the blender lid and place it on the red plate |
+| 15 | 50 | 14808 | 296 | 207 | 405 | Unstack the yellow brick and place to the left of the green brick |
+| 16 | 50 | 15167 | 303 | 243 | 407 | Stack the small yellow brick on the large yellow brick |
+| 17 | 50 | 21812 | 436 | 318 | 682 | Stack stack the peas on top of the chopped tomatos |
+| 18 | 50 | 15469 | 309 | 236 | 482 | Place the yellow cube inside the orange cub |
+| 19 | 50 | 12332 | 247 | 184 | 354 | Place the red brick in the tub |
+
+Pool episode-length quantiles (frames): p0 40 / p1 131 / p5 199 / p50 312 / p95 606 / p99 780 / p100 899.
+Episodes shorter than 120 frames: 548 (40), 535 (100), 536 (107), 533 (108), 530 (116) — all task 10.
+Episodes whose video span (to_timestamp − from_timestamp) × fps exceeds the parquet `length`:
+14/1005 (identical set for cam_high and cam_wrist; delta max 420 frames; e.g. ep 71 414 vs 428,
+ep 75 365 vs 618, ep 144 239 vs 319, ep 305 501 vs 727); per task: 11:1, 7:2, 18:1, 10:3, 8:1,
+6:1, 13:1, 12:1, 1:2, 2:1. realworld_seq (v1) carries 6 of them (10:3, 12:1, 1:2).
+`lerobot_edit_dataset delete_episodes` fails on the pool with `AssertionError: Episode length
+mismatch: 245 vs 309` (`dataset_tools._copy_and_reindex_videos`, the video re-encode path).
+Historical splits in pool ids: v1 seq {0,1,4,10,12}; v2 pretrain = 15 pool tasks + multi-modal
+tasks (25 tasks, 381,156 frames; data not on this VM); v3 seq {0,1,10,14,19}; v4 seq {0,1,10,11,19}.
+
+### Tier-1 task-geometry probe (`scripts/vla_analysis/realworld/probe_task_geometry_rw.py`)
+
+Checkpoint: raw `pi05_base` snapshot 9e55186 (no memory). Dataset: realworld_all_tasks, all 20
+tasks, 16 batches × 8 = 128 samples/task, noise/time seeded per batch index (SEED 1000).
+Flags: empty_cameras=1, rename cam_high→base_0_rgb / cam_wrist→left_wrist_0_rgb,
+normalization VISUAL IDENTITY / STATE MEAN_STD / ACTION MEAN_STD, bf16. Prefix layout:
+1224 positions = 1024 image (4 camera slots × 256; 2 real) + 200 language. "▁State" (token 3040)
+boundary found in 2560/2560 samples (0 skipped); instruction lengths 6–8 tokens.
+Spaces captured: expert MLP input at expert L[4,6,8,10,14,16] (mean over action tokens);
+LM MLP input at L[4,5,6,7,8,9,10,11,13,14,15,16] pooled over instruction [3,b) / state [b+3,v−5)
+/ key = 1.0·nrm(instr)+0.5·nrm(state) / per-camera image (256 positions each).
+Outputs: `outputs/analysis/realworld/task_geometry_pi05base.{json,npz}`, log `geom_pi05base.log`.
+Ranker `rank_heldout_subsets_rw.py`: 18 deployed spaces (expert L4-16, instr L4-16 anchor
+sources, key L5-15), off-diagonal cosines z-scored per space, Z = mean z. Runtime ~20 min GPU.
+
+Most similar pairs (Z; raw mean cos per group expert / anchor / vlm-key):
+
+| a | b | Z | exp | anc | vlm |
+|---|---|---|---|---|---|
+| 5 | 10 | 2.30 | 0.947 | 0.897 | 0.919 |
+| 3 | 4 | 2.10 | 0.913 | 0.888 | 0.904 |
+| 13 | 16 | 1.78 | 0.927 | 0.844 | 0.890 |
+| 4 | 19 | 1.78 | 0.900 | 0.852 | 0.881 |
+| 18 | 19 | 1.75 | 0.871 | 0.861 | 0.891 |
+| 15 | 16 | 1.71 | 0.913 | 0.846 | 0.885 |
+| 4 | 18 | 1.55 | 0.888 | 0.833 | 0.870 |
+| 1 | 9 | 1.54 | 0.916 | 0.805 | 0.865 |
+| 3 | 19 | 1.50 | 0.895 | 0.833 | 0.871 |
+| 15 | 19 | 1.48 | 0.877 | 0.832 | 0.880 |
+| 7 | 19 | 1.40 | 0.832 | 0.837 | 0.874 |
+| 13 | 15 | 1.32 | 0.852 | 0.827 | 0.865 |
+| 0 | 4 | 1.19 | 0.823 | 0.804 | 0.860 |
+| 16 | 18 | 1.18 | 0.801 | 0.816 | 0.865 |
+| 7 | 9 | 1.14 | 0.958 | 0.754 | 0.833 |
+| 16 | 19 | 1.05 | 0.851 | 0.797 | 0.852 |
+| 3 | 7 | 1.02 | 0.781 | 0.813 | 0.861 |
+| 9 | 14 | 1.02 | 0.784 | 0.804 | 0.853 |
+
+Per-task nearest neighbour (Z): 0→4 1.19 · 1→9 1.54 · 2→17 0.32 · 3→4 2.10 · 4→3 2.10 ·
+5→10 2.30 · 6→7 0.15 · 7→19 1.40 · 8→1 0.71 · 9→1 1.54 · 10→5 2.30 · 11→18 0.63 · 12→7 0.74 ·
+13→16 1.78 · 14→9 1.02 · 15→16 1.71 · 16→13 1.78 · 17→16 0.92 · 18→19 1.75 · 19→4 1.78.
+Pair (1,14) Z = 0.74.
+
+Pairwise Z among tasks 0,1,2,7,10,11,12,16,17,19:
+
+| | 0 | 1 | 2 | 7 | 10 | 11 | 12 | 16 | 17 | 19 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | – | 0.73 | 0.19 | 0.07 | −0.81 | 0.31 | −0.12 | −0.49 | −0.04 | 0.41 |
+| 1 | 0.73 | – | −0.21 | 0.83 | −1.17 | −0.55 | −0.06 | −0.01 | −0.57 | 0.41 |
+| 2 | 0.19 | −0.21 | – | −0.56 | −1.00 | 0.06 | −0.64 | −0.36 | 0.32 | −0.38 |
+| 7 | 0.07 | 0.83 | −0.56 | – | −1.05 | −0.15 | 0.74 | 0.15 | 0.06 | 1.40 |
+| 10 | −0.81 | −1.17 | −1.00 | −1.05 | – | −0.85 | −0.55 | −0.31 | −0.76 | −0.59 |
+| 11 | 0.31 | −0.55 | 0.06 | −0.15 | −0.85 | – | 0.39 | −0.61 | 0.23 | 0.30 |
+| 12 | −0.12 | −0.06 | −0.64 | 0.74 | −0.55 | 0.39 | – | −0.17 | 0.08 | −0.05 |
+| 16 | −0.49 | −0.01 | −0.36 | 0.15 | −0.31 | −0.61 | −0.17 | – | 0.92 | 1.05 |
+| 17 | −0.04 | −0.57 | 0.32 | 0.06 | −0.76 | 0.23 | 0.08 | 0.92 | – | 0.44 |
+| 19 | 0.41 | 0.41 | −0.38 | 1.40 | −0.59 | 0.30 | −0.05 | 1.05 | 0.44 | – |
+
+5-subset scores (coll_max = max pair Z in the subset; coll_mean; support = mean over subset of
+max Z to a task outside it; 15,504 subsets):
+- pure geometry top-5: [2,5,6,8,19] −0.38/−0.98/1.05; [2,6,8,10,19] −0.38/−0.95/1.05;
+  [6,8,10,11,16] −0.29/−1.00/1.12; [2,6,8,10,16] −0.29/−0.91/1.05; [2,6,10,12,16] −0.17/−0.67/1.06.
+- forced {0,10}, no multi-step (9,13,14,15), mean length ≤15 s, top-3: [0,6,10,12,16] −0.12/−0.62/1.24;
+  [0,6,10,12,17] 0.08/−0.61/1.06; [0,6,7,10,16] 0.15/−0.58/1.31.
+- candidates: [0,2,7,10,16] 0.19 (0–2) / −0.42 / 1.40 (per-task support 1.19, 0.32, 1.40, 2.30, 1.78);
+  [0,1,7,10,16] 0.83 (1–7) / −0.21 / 1.64 (1.19, 1.54, 1.40, 2.30, 1.78);
+  [0,1,10,11,16] 0.73 (0–1) / −0.35 / 1.49 (1.19, 1.54, 2.30, 0.63, 1.78);
+  [0,1,10,12,16] 0.73 (0–1) / – / 1.51; [0,2,10,12,16] 0.19 / −0.42 / 1.27.
+- historical: v1 [0,1,4,10,12] rank 7954/15504, coll_max 1.19 (0–4), support 1.50;
+  v3 [0,1,10,14,19] rank 3037, 0.74 (1–14), 1.57; v4 [0,1,10,11,19] rank 2890, 0.73 (0–1), 1.49.
+
+### Split v5 (`scripts/vla_analysis/realworld/build_rw_split.sh`, manifest `outputs/analysis/realworld/split_manifest_v5.json`)
+
+Chosen (Josh, 27 Aug): B = pool ids **0, 10, 16, 7, 1** in that sequential order; episode 548
+dropped. Built via `split_dataset_by_task.py --exclude_episode_indices "[548]"` (new option,
+whole-file video copy) → per-task tables patched to one row → `merge_datasets.py` in order.
+
+| seq task_index | pool id | task | eps | frames |
+|---|---|---|---|---|
+| 0 | 0 | Put the mustard in the basket | 51 | 18278 |
+| 1 | 10 | Push over the white lego brick | 49 | 8372 |
+| 2 | 16 | Stack the small yellow brick on the large yellow brick | 50 | 15167 |
+| 3 | 7 | Place the scredriver in the tub | 50 | 13377 |
+| 4 | 1 | put the red bow on the plate | 51 | 22108 |
+
+`realworld_seq_v5`: 5 tasks / 251 eps / 77,302 frames. `realworld_pretrain_v5`: 15 tasks
+(pool ids 2,3,4,5,6,8,9,11,12,13,14,15,17,18,19 in pool order) / 753 eps / 270,322 frames.
+Both verified: contiguous task ids, data task_index == table, totals == info.json.
+Audit family (informational): seq pairs 0-4 and 3-4.
+
+### Pipeline smoke (`SMOKE=1`, v1 datasets, seq ids [0,1], 6 steps/stage; scripts `job_scripts/nebius/realworld/rw_*.sh`)
+
+Stages run: stage-1 (bs8×acc4 no-ckpt, num_learnable 4,143,404,816, checkpoint 000006 +
+train_config.json) → warm-up (router_only_fast, prepass, anchors B=0.4, SHARED storage
+expert [[4,6],[8,10]] / VLM [[5,7],[9,11],[13,15]], 31 trainable / 905 frozen) → audit
+(realworld_seq ids [0,1], bs4 × 2 steps, 2 memory_by_task JSONs) → analyses (famIoU n/a; bgIoU
+expert L4/6/8/10/14/16 = 0.140/0.098/0.091/0.077/0.075/0.144, core50 mean 872/574/628/558/672/1094,
+min-eff 1853/1278/1475/1465/1587/2245; VLM L5/7/9/11/13/15 bgIoU 0.047/0.048/0.047/0.064/0.077/0.071,
+min-eff 316/296/334/358/308/375) → gate HARD FAIL (informational under SMOKE) → A-phase (bs16×acc2,
+86 trainable / 850 frozen) → sequential (bs16×acc2; "Trainable params (memory values only) =
+2,684,354,560 / 6,944,755,484"; `[E61 union] shared-table mask: 3072 + 3072 -> 6017 rows (overlap 127)`;
+corefrac fold after each task; `--eval.type=loss`, 2 batches).
+`eval/loss_results.jsonl`: `{"step": 6, "task_0": 0.40917760133743286, "forget_0": 0.0}`;
+`{"step": 12, "task_0": 0.4093666672706604, "forget_0": 0.00018906593322753906, "task_1": 0.45846541225910187, "forget_1": 0.0}`.
+Resume test: checkpoint 000012 removed, `last` → 000006, chain relaunched: stage-1/warm-up/audit/
+A-phase skipped on guards; `[seq] RESUMING from .../000006`; `Skipping task 1/2 (already complete,
+resumed)`; task 2 retrained; second row reproduced: task_0 0.4093666672706604, task_1
+0.45846541225910187. Load message `55 memory param keys initialized from scratch (checkpoint has
+no memory weights)` present; identical line appears 11× in outputs/e60–e63 LIBERO logs; both smoke
+checkpoints hold 117 memory tensors (followers stored under `_storage_shared_from.*`).
+Smoke dir sizes: stage-1 23G, warm-up 20G, A-phase 40G, seq (2 tasks) 78G, audit 13M; deleted.
+`src/` change: `split_dataset_by_task.py` `--exclude_episode_indices` only.
+
+### Chain LAUNCHED (unit `rw-chain`, 03:41:11 UTC 27 Aug; log `outputs/rw_chain_v5.log`; HEAD 532f83ea)
+
+`RW_TAG=v5 RW_FAMILY=0-4,3-4 rw_merged6x2_full_chain.sh`: stage-1 `realworld_v5_pi05_base_nomem_50k`
+(pi05_base 9e55186 → realworld_pretrain_v5, no memory, bs8 × acc4 no-ckpt, 50,000 steps, warmup 4000 /
+decay 50000, save_freq 10000 with intermediate optimizer states pruned on completion, eval_freq 0,
+no env) → warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_e468101416_v579111315_anchor040_sep8_prepass`
+(10k) → audit `audit_heldout_rw_v5_jointwarm_..._10k` (bs8 × 400 steps/task, ids [0..4]) → gate
+(bg ≤ 0.10, mean core50 ≥ 400, min-eff ≥ 300, VLM min-eff ≥ 150; famIoU informational) → A-phase
+`realworld_v5_pi05_jointA10k_...` (10k; ladder 32:1 → 16:2 → 16:2+ckpt) → sequential
+`realworld_v5_seq5_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k`
+(5 × 5000, corefrac β4, top_t 3072, lr 2e-3→2e-4, ladder 32:1/16:2/8:4/16:2+ckpt, eval.type=loss
+20 batches, per-task checkpoints). Stage-1 at launch: 92,169 MiB, 94% util. VM disk 73% (689G free).
+Watcher: `scripts/ops/heartbeat_rw_chain.sh` (Monitor, 10-min poll) + 3-hourly cron self-check.
