@@ -8471,3 +8471,9 @@ Stage-1 010000: 24 GB (8.8 weights + 15 optimizer), save 35 s; 2.20 s/step; step
 Battery dry run on it (no memory, zero-shot on realworld_seq_v5; MINI: 1 batch × bs4 matrix, 2 × bs8 jitter):
 ran clean. MSE t0 0.1022, t1 0.1373, t2 0.0541, t3 0.1188, t4 0.1505. Jitter chunk t0 clean 0.2933 / state@0.1
 0.2879 / state@0.2 0.2907 / image@0.05 0.3625; t3 0.1918 / 0.2013 / 0.2256 / 0.2261.
+
+### Entry 65 addendum 3 (28 Aug 26) — stage-1 done; warm-up started (raw)
+Stage-1 `realworld_v5_pi05_base_nomem_50k`: 50,000 steps in 30 h 28 min (2.19 s/step), final loss 0.014, grdn 0.343;
+loss by 10k: 0.050 / 0.032 / 0.020 / 0.016 / 0.014. Intermediates pruned to weights (8.8 GB each), final 23 GB; disk 75%.
+Warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_…_anchor040_sep8_prepass` started 10:09 UTC: num_learnable 41,443,328
+(31 tensors trainable / 905 frozen), shared storage E(4,6)(8,10) V(5,7)(9,11)(13,15), frozen pre-pass, anchor B=0.4.
