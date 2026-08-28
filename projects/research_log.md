@@ -8494,3 +8494,9 @@ samples RW 0.85–0.91 (sim 0.87–0.92); state-pool cos RW 0.77–0.90 (sim 0.8
 t3 11,531); top-slot hit fraction E4 t0 0.83 / t1 1.00 / t3 0.97 (sim 0.92 / 0.97); eff V5 190 / 98 / 254 (sim 711 / 250),
 V15 519 / 89 / 440 (sim 2990 / 824), E16 4,639 / 304 / 2,731 (sim 5,416 / 1,927). Warm-up aux terms as run: contrastive
 (sample, w 0.05, queue 512, margin 0), inter-task separation w 8; VLM pool (1.0, 0.5); expert anchor 0.4.
+
+### Entry 65 addendum 6 (28 Aug 26, 14:52 UTC) — rebalanced warm-up arm launched (raw)
+Josh: option 2. Chain relaunched with ARM `merged6x2_e468101416_v579111315_anchor040_sep4_c010_prepass`: inter-task separation
+w 8 → 4, contrastive (sample, negatives_only=false, queue 512) w 0.05 → 0.1; everything else byte-identical. Stage-1 skipped
+(final exists); warm-up started 14:52 UTC; gate re-run on the same 5-task audit; A-phase/sequential follow automatically on PASS
+(seq run `realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k`).
