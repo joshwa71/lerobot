@@ -8511,4 +8511,4 @@ as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six). Chain stopped
 ### Entry 65 addendum 8 (28 Aug 26, 19:38 UTC) — arm 3 launched (raw)
 Arm 3 `…anchor040_sep2_c030_prepass`: contrastive 0.1 → 0.3, sep 4 → 2 (anchor 0.40, VLM pool (1.0, 0.5) unchanged). Josh: if
 it fails but improves, keep stepping the same axis overnight (arm 4 c 1.0 / sep 1; arm 5 adds anchor 0.30 + VLM pool (1.0, 1.0)).
-Arm-to-arm comparison: `scripts/vla_analysis/realworld/compare_gate_arms.py` (arm 1 → 2: 18/18 metrics up, binding mean +11.4%).
+Arm-to-arm comparison: `scripts/vla_analysis/realworld/compare_gate_arms.py` (arm 1 → 2: 18/18 metrics up, binding mean +11.6%).
