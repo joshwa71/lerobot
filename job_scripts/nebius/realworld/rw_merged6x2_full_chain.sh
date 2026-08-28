@@ -40,7 +40,8 @@ export VLM_N=256 VLM_R=2 VLM_KNN=16
 export ROUTER_FAST=true
 export LANG_TO_QUERY=false
 export EXPERT_ANCHOR=text
-export EXPERT_ANCHOR_W=0.40
+export EXPERT_ANCHOR_W=${EXPERT_ANCHOR_W:-0.40}
+export VLM_POOL_W=${VLM_POOL_W:-[1.0,0.5]}
 export SEP_W=${SEP_W:-8.0}
 export CONTRASTIVE_W=${CONTRASTIVE_W:-0.05}
 export PREPASS=true

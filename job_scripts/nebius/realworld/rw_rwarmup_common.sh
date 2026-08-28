@@ -69,7 +69,7 @@ else
     --policy.memory_layer.vlm_mem_knn=$VLM_KNN \
     --policy.memory_layer.vlm_text_span=200 \
     --policy.memory_layer.vlm_router_pool=anchored \
-    --policy.memory_layer.vlm_router_pool_weights='[1.0,0.5]' \
+    --policy.memory_layer.vlm_router_pool_weights="${VLM_POOL_W:-[1.0,0.5]}" \
     --policy.memory_layer.vlm_route_once=false \
     --policy.memory_layer.vlm_image_regions=${IMG_REGIONS:-0} \
     --policy.memory_layer.vlm_image_pool_weights="${IMG_POOL_W:-[1.0,0.5]}" \

@@ -22,6 +22,8 @@ RW_FAMILY=${RW_FAMILY:-0-4,3-4}
 ARM=${ARM:-merged6x2_e468101416_v579111315_anchor040_sep8_prepass}
 SEP_W=${SEP_W:-8.0}
 CONTRASTIVE_W=${CONTRASTIVE_W:-0.05}
+EXPERT_ANCHOR_W=${EXPERT_ANCHOR_W:-0.40}
+VLM_POOL_W=${VLM_POOL_W:-[1.0,0.5]}
 CHAIN=/home/josh/lerobot/job_scripts/nebius/realworld/rw_merged6x2_full_chain.sh
 LOG=/home/josh/lerobot/outputs/rw_chain_${RW_TAG}.log
 POLL=${POLL:-600}
@@ -58,7 +60,7 @@ REMOTE
 key_of() { sed -E 's/ step=[0-9]*K?//; s/ gpu=[^ ]*//' <<<"$1"; }
 
 relaunch_unit() {
-  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' --setenv=ARM_TAG=$ARM --setenv=SEP_W=$SEP_W --setenv=CONTRASTIVE_W=$CONTRASTIVE_W /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
+  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' --setenv=ARM_TAG=$ARM --setenv=SEP_W=$SEP_W --setenv=CONTRASTIVE_W=$CONTRASTIVE_W --setenv=EXPERT_ANCHOR_W=$EXPERT_ANCHOR_W '--setenv=VLM_POOL_W=$VLM_POOL_W' /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
 }
 
 recover() {
