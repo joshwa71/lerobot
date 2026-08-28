@@ -8485,3 +8485,12 @@ min-task effnum 242/226/230/241/274/304 (min is task 1 in every layer; task-1 co
 0.005/0.056/0.105/0.085. VLM L5/L7/L9/L11/L13/L15 — min-eff 98/99/92/96/92/89; bg 0.007/0.006/0.008/0.010/0.010/0.015;
 famIoU 0.017/0.015/0.026/0.061/0.102/0.139. Gate (expert bg ≤0.10, mean core50 ≥400, min-eff ≥300; VLM min-eff ≥150):
 HARD FAIL — bg passes everywhere; core50 fails L4–L10, min-eff fails L4–L14, VLM min-eff fails all six. Chain stopped.
+
+### Entry 65 addendum 5 (28 Aug 26) — gate-fail diagnostics (raw)
+State tokens: realworld_seq_v5 distinct 256-bin state vectors 0.797 of rows (libero_10 0.975); |z|>1 fraction 0.346 (0.289).
+Pooled-key probe (VLM, warm-up ckpt, 32 samples/task; sim = libero_90 warm-up on libero_10 t0/t3): composite-key cos across
+samples RW 0.85–0.91 (sim 0.87–0.92); state-pool cos RW 0.77–0.90 (sim 0.85–0.91); distinct slots hit by state-key rows RW
+415–918 (sim 401–763). Audit mass (3,200 samples/task): E4 slots touched t0 19,670 / t1 1,426 / t3 16,684 (sim t0 35,033 /
+t3 11,531); top-slot hit fraction E4 t0 0.83 / t1 1.00 / t3 0.97 (sim 0.92 / 0.97); eff V5 190 / 98 / 254 (sim 711 / 250),
+V15 519 / 89 / 440 (sim 2990 / 824), E16 4,639 / 304 / 2,731 (sim 5,416 / 1,927). Warm-up aux terms as run: contrastive
+(sample, w 0.05, queue 512, margin 0), inter-task separation w 8; VLM pool (1.0, 0.5); expert anchor 0.4.
