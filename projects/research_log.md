@@ -8512,3 +8512,11 @@ as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six). Chain stopped
 Arm 3 `…anchor040_sep2_c030_prepass`: contrastive 0.1 → 0.3, sep 4 → 2 (anchor 0.40, VLM pool (1.0, 0.5) unchanged). Josh: if
 it fails but improves, keep stepping the same axis overnight (arm 4 c 1.0 / sep 1; arm 5 adds anchor 0.30 + VLM pool (1.0, 1.0)).
 Arm-to-arm comparison: `scripts/vla_analysis/realworld/compare_gate_arms.py` (arm 1 → 2: 18/18 metrics up, binding mean +11.6%).
+
+### Entry 65 addendum 9 (28 Aug 26, 23:50 UTC) — arm 3 (sep 2 / c 0.30): GATE HARD FAIL (raw)
+Expert L4/L6/L8/L10/L14/L16 — mean core50 393/333/282/437/849/1287 (arm 2: 239/212/184/303/660/1004); min-task effnum
+283/288/309/335/322/397 (arm 2: 265/248/254/291/285/344); bgIoU 0.012/0.012/0.009/0.012/0.025/0.042. VLM L5–L15 min-eff
+114/114/105/105/96/111 (arm 2: 109/110/97/100/99/102); bg 0.008–0.020. Task 1 is the min everywhere (expert eff 283–397,
+VLM 96–114); other tasks' VLM eff 184–645. Per-task expert L4 core50 t0 552 / t1 98 / t2 420 / t3 305 / t4 589. Compare arm
+2→3: 17/18 metrics up, binding mean +21.3%, worst −3.0% (V13); arm 1→3: 18/18, binding mean +36.0%. Still failing: E4 core50
+(393), E4 eff (283), E6 core50 (333), E6 eff (288), E8 core50 (282), VLM min-eff ×6. Chain stopped.
