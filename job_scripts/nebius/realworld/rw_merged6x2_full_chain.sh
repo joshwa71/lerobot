@@ -41,7 +41,8 @@ export ROUTER_FAST=true
 export LANG_TO_QUERY=false
 export EXPERT_ANCHOR=text
 export EXPERT_ANCHOR_W=0.40
-export SEP_W=8.0
+export SEP_W=${SEP_W:-8.0}
+export CONTRASTIVE_W=${CONTRASTIVE_W:-0.05}
 export PREPASS=true
 source "$SCRIPT_DIR/rw_rwarmup_common.sh"
 
@@ -97,7 +98,7 @@ export SEQ_VALUE_LR_END=0.0002
 export SEQ_BS=16
 export SEQ_ACCUM=2
 export SEQ_PROTECT_UNORM=corefrac
-export SEQ_RUN=${RUN_PREFIX}realworld_${RW_TAG}_seq${RW_N_SEQ}_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k
+export SEQ_RUN=${SEQ_RUN:-${RUN_PREFIX}realworld_${RW_TAG}_seq${RW_N_SEQ}_jw_${GRAD_TAG}_beta4corefrac_topt3072_lr2x_steps5k}
 if [ "$SMOKE" = "1" ]; then
   export SEQ_LADDER=${SEQ_LADDER:-"16:2:false"}
   export A_LADDER=${A_LADDER:-"16:2:false"}

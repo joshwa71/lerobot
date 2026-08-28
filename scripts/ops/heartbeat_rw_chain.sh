@@ -19,6 +19,9 @@ VM_ID=computeinstance-e00hks7a4fq3atcpsm
 UNIT=rw-chain
 RW_TAG=${RW_TAG:-v5}
 RW_FAMILY=${RW_FAMILY:-0-4,3-4}
+ARM=${ARM:-merged6x2_e468101416_v579111315_anchor040_sep8_prepass}
+SEP_W=${SEP_W:-8.0}
+CONTRASTIVE_W=${CONTRASTIVE_W:-0.05}
 CHAIN=/home/josh/lerobot/job_scripts/nebius/realworld/rw_merged6x2_full_chain.sh
 LOG=/home/josh/lerobot/outputs/rw_chain_${RW_TAG}.log
 POLL=${POLL:-600}
@@ -30,9 +33,9 @@ ts() { date -u +%H:%MZ; }
 emit() { echo "[$(ts)] $*"; }
 
 remote_state() {
-  ssh -o ConnectTimeout=10 -o BatchMode=yes "$VM" "RW_TAG=$RW_TAG LOG=$LOG bash -s" <<'REMOTE'
+  ssh -o ConnectTimeout=10 -o BatchMode=yes "$VM" "RW_TAG=$RW_TAG LOG=$LOG ARM=$ARM bash -s" <<'REMOTE'
 R=/home/josh/lerobot/outputs/train
-ARM=merged6x2_e468101416_v579111315_anchor040_sep8_prepass
+SEQR=realworld_${RW_TAG}_seq5_jw_${ARM}_beta4corefrac_topt3072_lr2x_steps5k
 u=$(systemctl is-active rw-chain 2>/dev/null); true
 s1=$(ls -d $R/realworld_${RW_TAG}_pi05_base_nomem_50k/checkpoints/[0-9]* 2>/dev/null | wc -l)
 s1f=$([ -d $R/realworld_${RW_TAG}_pi05_base_nomem_50k/checkpoints/050000 ] && echo 1 || echo 0)
@@ -40,8 +43,8 @@ warm=$([ -d $R/realworld_${RW_TAG}_pi05_jointwarm10k_${ARM}/checkpoints/last/pre
 aud=$(ls $R/audit_heldout_rw_${RW_TAG}_jointwarm_${ARM}_10k/memory_by_task/*.json 2>/dev/null | wc -l)
 gate=$(grep -oE "^GATE: (PASS|HARD FAIL)" $LOG 2>/dev/null | tail -1 | cut -d' ' -f2- | tr ' ' '_')
 aph=$([ -d $R/realworld_${RW_TAG}_pi05_jointA10k_${ARM}/checkpoints/last/pretrained_model ] && echo 1 || echo 0)
-seq=$(ls -d $R/realworld_${RW_TAG}_seq5_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k/checkpoints/[0-9]* 2>/dev/null | wc -l)
-lrows=$(wc -l < $R/realworld_${RW_TAG}_seq5_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k/eval/loss_results.jsonl 2>/dev/null); lrows=${lrows:-0}
+seq=$(ls -d $R/$SEQR/checkpoints/[0-9]* 2>/dev/null | wc -l)
+lrows=$(wc -l < $R/$SEQR/eval/loss_results.jsonl 2>/dev/null); lrows=${lrows:-0}
 step=$(grep -oE "step:[0-9]+K?" $LOG 2>/dev/null | tail -1 | cut -d: -f2)
 stage=$(grep -oE "^\[(stage1|warmup|audit|A-phase|seq)\]|^RW joint router warm-up|^Audit .* started|^RW graduation chain|^RW-CHAIN-DONE" $LOG 2>/dev/null | tail -1 | tr ' ' '_' | cut -c1-24)
 dk=$(df --output=pcent /home/josh | tail -1 | tr -dc '0-9')
@@ -55,7 +58,7 @@ REMOTE
 key_of() { sed -E 's/ step=[0-9]*K?//; s/ gpu=[^ ]*//' <<<"$1"; }
 
 relaunch_unit() {
-  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
+  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' --setenv=ARM_TAG=$ARM --setenv=SEP_W=$SEP_W --setenv=CONTRASTIVE_W=$CONTRASTIVE_W /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
 }
 
 recover() {
