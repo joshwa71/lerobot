@@ -8520,3 +8520,8 @@ Expert L4/L6/L8/L10/L14/L16 — mean core50 393/333/282/437/849/1287 (arm 2: 239
 VLM 96–114); other tasks' VLM eff 184–645. Per-task expert L4 core50 t0 552 / t1 98 / t2 420 / t3 305 / t4 589. Compare arm
 2→3: 17/18 metrics up, binding mean +21.3%, worst −3.0% (V13); arm 1→3: 18/18, binding mean +36.0%. Still failing: E4 core50
 (393), E4 eff (283), E6 core50 (333), E6 eff (288), E8 core50 (282), VLM min-eff ×6. Chain stopped.
+
+### Entry 65 addendum 10 (28 Aug 26, 23:57 UTC) — arm 4 launched (raw)
+Arm 4 `…anchor030_pool1010_sep1_c100_prepass`: contrastive 1.0, sep 1.0, expert anchor 0.40 → 0.30, VLM pool (1.0, 0.5) → (1.0, 1.0);
+everything else byte-identical. Josh: no further optimisation intended beyond this — real-world tasks are simpler and pi05_base a
+stronger prior, so lower effective palette needs are expected.
