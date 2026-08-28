@@ -8507,3 +8507,8 @@ Expert L4/L6/L8/L10/L14/L16 — bgIoU 0.006/0.006/0.005/0.007/0.018/0.032; mean 
 VLM L5–L15 min-eff 109/110/97/100/99/102 (arm 1: 98/99/92/96/92/89); bg 0.007–0.015. Per-task expert L16 core50 t0 2014,
 t1 117, t2 1213, t3 1295, t4 380 (arm 1: 874 mean); VLM L15 eff t0 396, t1 102, t2 271, t3 498, t4 180. Same failing clauses
 as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six). Chain stopped.
+
+### Entry 65 addendum 8 (28 Aug 26, 19:38 UTC) — arm 3 launched (raw)
+Arm 3 `…anchor040_sep2_c030_prepass`: contrastive 0.1 → 0.3, sep 4 → 2 (anchor 0.40, VLM pool (1.0, 0.5) unchanged). Josh: if
+it fails but improves, keep stepping the same axis overnight (arm 4 c 1.0 / sep 1; arm 5 adds anchor 0.30 + VLM pool (1.0, 1.0)).
+Arm-to-arm comparison: `scripts/vla_analysis/realworld/compare_gate_arms.py` (arm 1 → 2: 18/18 metrics up, binding mean +11.4%).
