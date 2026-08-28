@@ -8500,3 +8500,10 @@ Josh: option 2. Chain relaunched with ARM `merged6x2_e468101416_v579111315_ancho
 w 8 → 4, contrastive (sample, negatives_only=false, queue 512) w 0.05 → 0.1; everything else byte-identical. Stage-1 skipped
 (final exists); warm-up started 14:52 UTC; gate re-run on the same 5-task audit; A-phase/sequential follow automatically on PASS
 (seq run `realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k`).
+
+### Entry 65 addendum 7 (28 Aug 26, 19:03 UTC) — rebalanced arm (sep 4 / c 0.10): GATE HARD FAIL (raw)
+Expert L4/L6/L8/L10/L14/L16 — bgIoU 0.006/0.006/0.005/0.007/0.018/0.032; mean core50 239/212/184/303/660/1004 (arm 1:
+202/180/166/256/553/874); min-task effnum 265/248/254/291/285/344 (arm 1: 242/226/230/241/274/304), min = task 1 everywhere.
+VLM L5–L15 min-eff 109/110/97/100/99/102 (arm 1: 98/99/92/96/92/89); bg 0.007–0.015. Per-task expert L16 core50 t0 2014,
+t1 117, t2 1213, t3 1295, t4 380 (arm 1: 874 mean); VLM L15 eff t0 396, t1 102, t2 271, t3 498, t4 180. Same failing clauses
+as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six). Chain stopped.
