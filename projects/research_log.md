@@ -8477,3 +8477,11 @@ Stage-1 `realworld_v5_pi05_base_nomem_50k`: 50,000 steps in 30 h 28 min (2.19 s/
 loss by 10k: 0.050 / 0.032 / 0.020 / 0.016 / 0.014. Intermediates pruned to weights (8.8 GB each), final 23 GB; disk 75%.
 Warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_…_anchor040_sep8_prepass` started 10:09 UTC: num_learnable 41,443,328
 (31 tensors trainable / 905 frozen), shared storage E(4,6)(8,10) V(5,7)(9,11)(13,15), frozen pre-pass, anchor B=0.4.
+
+### Entry 65 addendum 4 (28 Aug 26, 14:20 UTC) — held-out routing audit: GATE HARD FAIL (raw)
+Warm-up final: loss 0.232, grdn 0.001 (10k, 1.34 s/step). Audit 5 tasks × 400 × bs8, family (0-4),(3-4):
+expert L4/L6/L8/L10/L14/L16 — bgIoU 0.004/0.004/0.004/0.005/0.015/0.025; mean core50 202/180/166/256/553/874;
+min-task effnum 242/226/230/241/274/304 (min is task 1 in every layer; task-1 core50 82–105); famIoU 0.018/0.010/
+0.005/0.056/0.105/0.085. VLM L5/L7/L9/L11/L13/L15 — min-eff 98/99/92/96/92/89; bg 0.007/0.006/0.008/0.010/0.010/0.015;
+famIoU 0.017/0.015/0.026/0.061/0.102/0.139. Gate (expert bg ≤0.10, mean core50 ≥400, min-eff ≥300; VLM min-eff ≥150):
+HARD FAIL — bg passes everywhere; core50 fails L4–L10, min-eff fails L4–L14, VLM min-eff fails all six. Chain stopped.
