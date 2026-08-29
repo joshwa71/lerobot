@@ -8532,3 +8532,23 @@ Expert L4/L6/L8/L10/L14/L16 — mean core50 1308/1078/866/915/1265/1566 (arm 3: 
 passes. VLM L5–L15 min-eff 132/125/125/129/113/140 (arm 3: 114/114/105/105/96/111), all task 1; other tasks 259–1023; bg
 0.015–0.031. Compare arm 3→4: 18/18 up, binding mean +79.9%, worst +9.6%. Per-task expert L4 core50 t0 2075 / t1 147 /
 t2 1115 / t3 1479 / t4 1725. Failing clauses: VLM min-eff < 150 at all six layers. Chain stopped.
+
+### Entry 65 addendum 12 (29 Aug 26, 04:41 UTC) — VLM-capacity review verdict → arm 4 graduated with the VLM tripwire OVERRIDDEN (Josh); A-phase + sequential LAUNCHED (raw)
+Review of E44–E56/E59–E63 for VLM-specific capacity evidence (Josh's ask, no subagents). Provenance: the VLM min-eff ≥150 tripwire is
+a-priori (E44, re-anchored from E21's expert numbers, "per-task-bias signature"), made permissive at E45 (kill ≤100), re-introduced at
+E60 as "the V5 arbiter" (placement question, settled: V5 253). Never calibrated on a VLM outcome; every graduated sim run had min-eff
+≥247. Only graduated small-palette case: E47→E49 arm 3-old (global ~2-draw palettes, 32.4 vs 37.2/40.0) — mechanisms overlap-mediated
+(protection lock-out, family collisions); E46 arm C: broader VLM palettes → WORSE fit; E55/E59: small VLM cores on the best cells
+(e2 V7 core50 80 → 84). E54: c/sep global levers VLM-safe, shallow (c +5–10%/3×); "content-structural, not dose" (E45).
+Task 1 geometry (arm 4 audit JSONs, hit counts): VLM V5/V15 slots>0 6.4k/13.0k (t0 13.4k/33.2k); top-64 mass 0.652/0.618 (t0 0.345/0.241),
+top-256 0.874/0.889 (t0 0.671/0.489); arm 1 was top-64 0.782/0.832. Expert E4 t1 slots>0 1,426 (arm 1) → 15,129 (arm 4), top-256 0.886 → 0.674.
+Pooled-key probe (frozen features, checkpoint-independent): t1 cos_k 0.911/0.862 (L5/L15; t0 0.863/0.858, t3 0.896/0.860, sim 0.87–0.92);
+t1 cos_state 0.895 ≈ cos_instr 0.902; distinct slots state-key rows 504/683 (t0 593/918); instr rows 103/95 (t0 280/619, t3 360/540).
+Read: task 1 = over-constant VLM read (~65% of every draw is the same ~64 slots) with a normal state-driven tail — NOT the E47 collapse
+geometry; key not degenerate; content-driven (shortest, least-varied task), the allowed levers have shallow slope on it (0.78→0.65 over 20× c).
+Routes: arm 1 dead (expert core50 166–256 = E21 band); pool arm dead (state pool as constant as instr pool); drop-task-1 = fallback only;
+arm-3 bake-off optional. DECISION (Josh: "Do it"): SKIP_GATE=1 on arm 4. Pre-registered t1 reads: own-block MSE reduction (005000→010000
++ in-run task_1 vs baseline) vs the other tasks' (outlier = < half their mean); forget_1 ≤ ~+5% after blocks 2–4; jitter with JIT_T=0,1,3,4;
+slot autopsy. Contingency if outlier: task-1 LoRA r256 specialist (E64 recipe) arbitrates data vs VLM capacity → knn36 (permission) or 4-task.
+Launched 04:41:36 UTC (unit rw-chain, SKIP_GATE=1, ARM anchor030_pool1010_sep1_c100, HEAD 758c3f06 — heartbeat carries SKIP_GATE on
+relaunch): stage-1/warm-up/audit skipped on guards → A-phase realworld_v5_pi05_jointA10k_<arm> → seq realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k.
