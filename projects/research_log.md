@@ -8566,3 +8566,19 @@ Heartbeat WEEKEND=1 watches both units, relaunches after preemption (never on SM
 relaunches). Wrappers job_scripts/nebius/realworld/rw_loraft_specialists_r64.sh, rw_naive_seq_lora_r64.sh. Dry-run from a
 throwaway clone on the VM OK (HEAD 950d315a): assertions pass, commands as intended. ETA (UK): chain finals ~01:30 Sun →
 battery ~02:30 → specialists ~17:00 Sun → naive ~07:00 Mon → matrices ~08:00 Mon.
+
+### Entry 65 addendum 14 (29 Aug 26, 19:30 UTC) — task-0 one-boundary drift +14.3% ROOT-CAUSED: write-mask SATURATION bypasses corefrac on low-diversity real-world batches (raw)
+In-run rows (paired, 20×bs16): t0 jt 0.009367 → after t1 0.010708 (+14.3%, abs +0.00134); t1 jt 0.008882 (fits fine, not an outlier).
+Sim E62 matrix (16×bs32) one-boundary t0: 0.03724 → 0.03753 (+0.8%, abs +0.00030); final +4.2%.
+Production profiles (memory_by_task), task-1 block writes vs task-0 reads, per site (RW arm 4 / SIM E62):
+  t1 update-events on t0 core50: RW E4 179, E6 0, E8 149k, E10 174k, E14 502k, E16 14k, V5–V13 16–45k, V15 172; SIM 0 at all 12 sites.
+  t0 read-mass on t1-updated slots: RW 5.8–31.7% (core part 0–14.6%); SIM 1.3–10.4% (core 0).
+  Mean distinct slots read per logical batch, t1: RW 3.8k–6.8k; SIM 14.8k–31.8k. Mean mask size k: RW 2.5k–3.07k (sat k/n_read 0.45–0.68); SIM 3072 exactly (sat 0.10–0.21).
+  t0-core update/read ratio: RW 0.46–0.85 at E8/E10/E14/V5/V7/V9/V11/V13 (sites with n_read/batch ≲ 3072), ~0 at E4/E6/V15/E16; SIM 0.000 everywhere. t0-shoulder update/read: RW 0.46–0.68 vs SIM 0.11–0.15.
+  Value displacement 005000→010000 (read-mass-weighted ||Δslot||/||slot||) on t0: E14 core 6.3% / shoulder 12.3%; V5 9.9% / 12.7%; V13 3.0% / 7.1%; E16 0.9% / 7.7%; E4-table 0.1% / 8.2%.
+Mechanism (lerobot_sequential_train.py ~L1455–1560, rank mode, hard_u=0.0 in this run): mask k = min(top_t=3072, n_read); protected slots get score
+tfidf·(1−u)^4 = 0 but STAY candidates ("with top_t ≥ candidate count a zero-score slot would still be selected") → when a batch reads ≤3072 distinct
+slots the mask is the whole read set incl. t0's core. Sim never saturated (n_read ≫ 3072); RW task 1 (over-constant routing, repetitive data) does at 8/12
+sites. Second, smaller channel: mask coverage 0.45–0.68 of each read set vs 0.10–0.21 in sim → shoulder writes 4–5× more frequent per read, on a t0
+support that spans 93% of the bank (arm-4 breadth). Existing remedies in code (NOT launched — Josh's call): --protect_hard_u=0.9 (E42 candidacy veto),
+or protect_mode=budget (k capped at positive-score count), or top_t scaled to batch read diversity. Run continues unchanged; battery matrix at landing.
