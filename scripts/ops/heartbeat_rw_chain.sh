@@ -11,6 +11,8 @@
 # Emits on discrete state change + a forced beat every HEARTBEAT_EVERY polls; always emits on:
 # new error lines, gate verdict, unit down with the chain incomplete, disk tripwire, unreachable.
 # ONESHOT=1 prints one state line and exits (for the cron self-prompt).
+# SKIP_GATE=1 mirrors a gate-overridden launch: passed through on relaunch, and a HARD_FAIL gate line
+# is then NOT read as 'stopped at gate' (a dead unit is reported as UNIT DOWN instead).
 set -uo pipefail
 
 VM=nebius-spot
@@ -30,6 +32,7 @@ POLL=${POLL:-600}
 HEARTBEAT_EVERY=${HEARTBEAT_EVERY:-36}     # 6 h forced emit at POLL=600
 DISK_TRIPWIRE=${DISK_TRIPWIRE:-88}
 ONESHOT=${ONESHOT:-0}
+SKIP_GATE=${SKIP_GATE:-0}   # 1 = chain launched with the gate overridden (Josh's call, E65 add-12); relaunches MUST carry it
 
 ts() { date -u +%H:%MZ; }
 emit() { echo "[$(ts)] $*"; }
@@ -60,7 +63,7 @@ REMOTE
 key_of() { sed -E 's/ step=[0-9]*K?//; s/ gpu=[^ ]*//' <<<"$1"; }
 
 relaunch_unit() {
-  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' --setenv=ARM_TAG=$ARM --setenv=SEP_W=$SEP_W --setenv=CONTRASTIVE_W=$CONTRASTIVE_W --setenv=EXPERT_ANCHOR_W=$EXPERT_ANCHOR_W '--setenv=VLM_POOL_W=$VLM_POOL_W' /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
+  ssh -o ConnectTimeout=8 -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=RW_TAG=$RW_TAG '--setenv=RW_FAMILY=$RW_FAMILY' --setenv=ARM_TAG=$ARM --setenv=SEP_W=$SEP_W --setenv=CONTRASTIVE_W=$CONTRASTIVE_W --setenv=EXPERT_ANCHOR_W=$EXPERT_ANCHOR_W '--setenv=VLM_POOL_W=$VLM_POOL_W' --setenv=SKIP_GATE=$SKIP_GATE /bin/bash -c 'bash $CHAIN >> $LOG 2>&1'" >/dev/null 2>&1
 }
 
 recover() {
@@ -103,7 +106,7 @@ if [ "$ONESHOT" = "1" ]; then
 fi
 
 prev_key=""; prev_err=0; prev_gate="none"; i=0; unreachable_run=0
-emit "heartbeat-RW armed: unit $UNIT tag $RW_TAG; poll ${POLL}s, forced beat every $((POLL*HEARTBEAT_EVERY/3600))h"
+emit "heartbeat-RW armed: unit $UNIT tag $RW_TAG arm $ARM skip_gate=$SKIP_GATE; poll ${POLL}s, forced beat every $((POLL*HEARTBEAT_EVERY/3600))h"
 while true; do
   if state=$(remote_state 2>/dev/null) && [ -n "$state" ]; then
     if [ "$unreachable_run" -gt 0 ]; then
@@ -125,7 +128,7 @@ while true; do
     if [ "$unit" != "active" ] && [ "$unit" != "activating" ]; then
       if [ "${fin:-0}" -ge 1 ] 2>/dev/null; then
         emit "RW CHAIN COMPLETE | $state"; exit 0
-      elif [ "$gate" = "HARD_FAIL" ]; then
+      elif [ "$gate" = "HARD_FAIL" ] && [ "$SKIP_GATE" != "1" ]; then
         emit "CHAIN STOPPED AT GATE (by design; SKIP_GATE=1 to override) | $state"
       else
         emit "UNIT DOWN with chain incomplete | $state"
