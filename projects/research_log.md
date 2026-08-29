@@ -8552,3 +8552,17 @@ arm-3 bake-off optional. DECISION (Josh: "Do it"): SKIP_GATE=1 on arm 4. Pre-reg
 slot autopsy. Contingency if outlier: task-1 LoRA r256 specialist (E64 recipe) arbitrates data vs VLM capacity → knn36 (permission) or 4-task.
 Launched 04:41:36 UTC (unit rw-chain, SKIP_GATE=1, ARM anchor030_pool1010_sep1_c100, HEAD 758c3f06 — heartbeat carries SKIP_GATE on
 relaunch): stage-1/warm-up/audit skipped on guards → A-phase realworld_v5_pi05_jointA10k_<arm> → seq realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k.
+
+### Entry 65 addendum 13 (29 Aug 26, 07:00 UTC) — WEEKEND BASELINES armed (Josh): r64/a16 LoRA specialists ×5 + r64/a16 naive sequential LoRA, queued behind the arm-4 chain (raw)
+Recipes = the sim E64c r64 rung (specialists) and the E64 naive wrapper, RW substitutions only: base = stage-1
+realworld_v5_pi05_base_nomem_50k; realworld_seq_v5 episodes t0 0–50 / t1 51–99 / t2 100–149 / t3 150–199 / t4 200–250
+(re-asserted at runtime from meta); RW rename/norm maps; empty_cameras=1; no --env; naive --eval.type=loss (20 batches).
+Specialists: 5k steps, bs16×acc2 no-ckpt, lr 1e-4 cosine (warmup 200 / decay 5000 → 1e-5), α/r 0.25, no in-run eval.
+Naive: one adapter, 5×5k in chain order, per-block lr 1e-4→1e-5 linear + optimizer reinit, no protection/memory, self-resuming
+(PEFT sequential resume). Queue scripts/vla_analysis/realworld/run_rw_weekend_queue.sh (unit rw-weekend; bootstrap waits for
+RW-CHAIN-DONE + rw-chain stopped → git pull → battery JIT_T=0,1,3,4 on the arm-4 seq → 20-step smokes (fatal) → specialists →
+own-task MSE (mse_matrix_peft.py, tasks 0–4) → naive → adapter-swap MSE matrix + inrun/msemat reports → RW-WEEKEND-DONE).
+Heartbeat WEEKEND=1 watches both units, relaunches after preemption (never on SMOKE/BOOTSTRAP-FAIL; gives up after 3 no-progress
+relaunches). Wrappers job_scripts/nebius/realworld/rw_loraft_specialists_r64.sh, rw_naive_seq_lora_r64.sh. Dry-run from a
+throwaway clone on the VM OK (HEAD 950d315a): assertions pass, commands as intended. ETA (UK): chain finals ~01:30 Sun →
+battery ~02:30 → specialists ~17:00 Sun → naive ~07:00 Mon → matrices ~08:00 Mon.
