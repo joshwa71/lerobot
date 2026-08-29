@@ -8525,3 +8525,10 @@ VLM 96–114); other tasks' VLM eff 184–645. Per-task expert L4 core50 t0 552 
 Arm 4 `…anchor030_pool1010_sep1_c100_prepass`: contrastive 1.0, sep 1.0, expert anchor 0.40 → 0.30, VLM pool (1.0, 0.5) → (1.0, 1.0);
 everything else byte-identical. Josh: no further optimisation intended beyond this — real-world tasks are simpler and pi05_base a
 stronger prior, so lower effective palette needs are expected.
+
+### Entry 65 addendum 11 (29 Aug 26, 04:09 UTC) — arm 4 (c 1.0 / sep 1 / anchor 0.30 / pool 1,1): GATE HARD FAIL on the VLM tripwire only (raw)
+Expert L4/L6/L8/L10/L14/L16 — mean core50 1308/1078/866/915/1265/1566 (arm 3: 393/333/282/437/849/1287); min-task effnum
+430/439/381/467/430/566 (arm 3: 283/288/309/335/322/397); bgIoU 0.048/0.040/0.028/0.031/0.043/0.059 — every expert clause
+passes. VLM L5–L15 min-eff 132/125/125/129/113/140 (arm 3: 114/114/105/105/96/111), all task 1; other tasks 259–1023; bg
+0.015–0.031. Compare arm 3→4: 18/18 up, binding mean +79.9%, worst +9.6%. Per-task expert L4 core50 t0 2075 / t1 147 /
+t2 1115 / t3 1479 / t4 1725. Failing clauses: VLM min-eff < 150 at all six layers. Chain stopped.
