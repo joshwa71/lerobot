@@ -17,7 +17,8 @@ source /home/josh/lerobot/job_scripts/nebius/realworld/rw_env.sh
 DRYRUN=${DRYRUN:-0}
 LORA_R=${LORA_R:-64}; LORA_ALPHA=${LORA_ALPHA:-16}
 TARGETS='(.*\.gemma_expert\.model\.layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)|.*\.language_model\.layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)|model\.(state_proj|action_in_proj|action_out_proj|action_time_mlp_in|action_time_mlp_out))'
-BASE_CKPT=$STAGE1_CKPT
+# the REAL stage-1 checkpoint even under SMOKE=1 (rw_env prefixes STAGE1_CKPT with _smoke_; no smoke stage-1 exists)
+BASE_CKPT=${BASE_CKPT:-$ROOT_DIR/outputs/train/${STAGE1_RUN}/checkpoints/last/pretrained_model}
 TASKS=$RW_SEQ_TASK_IDS; N=$RW_N_SEQ; STEPS=$SEQ_STEPS
 if [ "$SMOKE" = "1" ]; then TASKS='[0,1]'; N=2; fi
 STEPS_TAG=$([ "$STEPS" = 5000 ] && echo 5k || echo "$STEPS")

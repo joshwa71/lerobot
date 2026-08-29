@@ -20,9 +20,11 @@ DRYRUN=${DRYRUN:-0}
 LORA_R=${LORA_R:-64}; LORA_ALPHA=${LORA_ALPHA:-16}
 STEPS=${SPEC_STEPS:-5000}
 TASK_LIST=${TASKS:-"0 1 2 3 4"}
-if [ "$SMOKE" = "1" ]; then STEPS=20; TASK_LIST=${TASKS:-"1"}; fi
+WARMUP=200
+if [ "$SMOKE" = "1" ]; then STEPS=20; WARMUP=2; TASK_LIST=${TASKS:-"1"}; fi
 FINAL=$(printf '%06d' "$STEPS")
-BASE_CKPT=$STAGE1_CKPT
+# the REAL stage-1 checkpoint even under SMOKE=1 (rw_env prefixes STAGE1_CKPT with _smoke_; no smoke stage-1 exists)
+BASE_CKPT=${BASE_CKPT:-$ROOT_DIR/outputs/train/${STAGE1_RUN}/checkpoints/last/pretrained_model}
 OUT_ROOT=$ROOT_DIR/outputs/train/${RUN_PREFIX}rw_${RW_TAG}_loraft_baseline_r${LORA_R}
 TARGETS='(.*\.gemma_expert\.model\.layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)|.*\.language_model\.layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)|model\.(state_proj|action_in_proj|action_out_proj|action_time_mlp_in|action_time_mlp_out))'
 declare -A EP_LO=( [0]=0  [1]=51 [2]=100 [3]=150 [4]=200 )
@@ -70,7 +72,7 @@ for T in $TASK_LIST; do
     --policy.push_to_hub=false
     --gradient_accumulation_steps=2
     --policy.optimizer_lr=1e-4
-    --policy.scheduler_warmup_steps=200
+    --policy.scheduler_warmup_steps=$WARMUP
     --policy.scheduler_decay_steps=$STEPS
     --policy.scheduler_decay_lr=1e-5
     --policy.normalization_mapping="$RW_NORM_MAP"
