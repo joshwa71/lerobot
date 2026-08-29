@@ -93,7 +93,11 @@ fi
 # ---- stage 4+5: A-phase + sequential (C-config levers verbatim from E62) ----
 export WARM_RUN=$RUN
 export GRAD_TAG=${ARM_TAG}
-export SEQ_TOP_T=3072
+# E65 add-14/15 (Josh, 30 Aug): env-overridable so the top_t rerun is a SINGLE DELTA on the same
+# A-phase checkpoint. Default unchanged (3072) => byte-identical when unset. The RW rerun uses
+# SEQ_TOP_T=1536: task 1 reads too few distinct slots per batch for k=min(top_t, n_read) to leave
+# corefrac's zero-score core slots out of the mask (mask saturation, E65 add-14).
+export SEQ_TOP_T=${SEQ_TOP_T:-3072}
 export SEQ_VALUE_LR=0.002
 export SEQ_VALUE_LR_END=0.0002
 export SEQ_BS=16
