@@ -61,7 +61,7 @@ peft_msemat () {   # <run_dir> <steps csv> <first ckpt> <out jsonl> <scratch dir
 }
 
 echo "=== RW WEEKEND QUEUE v3 started $(date -u) arm=$ARM r=$LORA_R/a$LORA_ALPHA rerun_top_t=$RERUN_TOP_T HEAD=$(git rev-parse --short HEAD) dryrun=$DRYRUN ==="
-echo "[weekend] order: battery(topt3072) -> rerun(topt$RERUN_TOP_T) -> battery(topt$RERUN_TOP_T) -> arm5 route+audit -> smokes -> specialists -> naive"
+echo "[weekend] order: battery(topt3072) -> rerun(topt$RERUN_TOP_T) -> battery(topt$RERUN_TOP_T) -> smokes -> specialists -> naive"
 if [ "$DRYRUN" = "1" ]; then
   echo "[weekend] A=$SEQ_RUN_A"; echo "[weekend] B=$SEQ_RUN_B"; echo "[weekend] specialists=$SPEC_ROOT"; echo "[weekend] naive=$NAIVE_RUN (final $SEQ_FINAL)"
   DRYRUN=1 SMOKE=1 bash "$RWD/rw_loraft_specialists_r64.sh" && DRYRUN=1 SMOKE=1 bash "$RWD/rw_naive_seq_lora_r64.sh" \
@@ -104,9 +104,15 @@ fi
 # whether contrastive breadth alone carries core50/min-eff, or whether the anchor reduction did.
 # Certificate only (STOP_AFTER_AUDIT=1): ~4.25h, no A-phase, no sequential. Read: family pairIoU
 # (0-4, 3-4) vs arm 4's expert 0.119 / VLM 0.055, against core50 >=400 and min-eff >=300.
+# DISABLED by default (Josh, 30 Aug): add-20 falsified its rationale — the family-interference damage
+# is governed by write-mask COVERAGE, not routing separation, and topt1536 already cuts mean drift
+# 10.9% -> 2.7%. Kept opt-in (RUN_ARM5=1) as the "is E53's empty window also empty in RW" probe.
+RUN_ARM5=${RUN_ARM5:-0}
 ARM5=${ARM5:-merged6x2_e468101416_v579111315_anchor040_pool1005_sep1_c100_prepass}
 ARM5_AUDIT=$ROOT_DIR/outputs/train/${RUN_PREFIX}audit_heldout_rw_${RW_TAG}_jointwarm_${ARM5}_10k
-if [ -d "$ARM5_AUDIT/memory_by_task" ] && [ "$(ls "$ARM5_AUDIT"/memory_by_task/*.json 2>/dev/null | wc -l)" -ge "$RW_N_SEQ" ]; then
+if [ "$RUN_ARM5" != "1" ]; then
+  stage "arm5-skip (disabled; RUN_ARM5=1 to enable)"
+elif [ -d "$ARM5_AUDIT/memory_by_task" ] && [ "$(ls "$ARM5_AUDIT"/memory_by_task/*.json 2>/dev/null | wc -l)" -ge "$RW_N_SEQ" ]; then
   stage "arm5-skip (audit exists)"
 else
   stage "arm5:route+audit"
