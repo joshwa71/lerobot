@@ -8582,3 +8582,26 @@ slots the mask is the whole read set incl. t0's core. Sim never saturated (n_rea
 sites. Second, smaller channel: mask coverage 0.45–0.68 of each read set vs 0.10–0.21 in sim → shoulder writes 4–5× more frequent per read, on a t0
 support that spans 93% of the bank (arm-4 breadth). Existing remedies in code (NOT launched — Josh's call): --protect_hard_u=0.9 (E42 candidacy veto),
 or protect_mode=budget (k capped at positive-score count), or top_t scaled to batch read diversity. Run continues unchanged; battery matrix at landing.
+
+### Entry 65 addendum 15 (30 Aug 26, 02:12 UTC) — ARM-4 SEQUENTIAL LANDS (topt3072). In-run drift +10.9% mean; TWO mechanisms, only one fixable by top_t (raw)
+In-run paired MSE (20 batches × bs16), % = drift vs that task's just-trained value:
+  row1 @5k   t0 0.00937 jt
+  row2 @10k  t0 0.01071 +14.3% | t1 0.00888 jt
+  row3 @15k  t0 0.01088 +16.1% | t1 0.00943  +6.1% | t2 0.00685 jt
+  row4 @20k  t0 0.01111 +18.7% | t1 0.00975  +9.8% | t2 0.00690 +0.6% | t3 0.00920 jt
+  row5 @25k  t0 0.01220 +30.2% | t1 0.01038 +16.8% | t2 0.00700 +2.1% | t3 0.00970 +5.4% | t4 0.01325 jt
+Mean final drift +10.9% (sim E62 5-task +1.2%, E63 10-task +6.5%). Just-trained fits 0.00937/0.00888/0.00685/0.00920/0.01325.
+Per-writer autopsy (memory_by_task, mean over 12 sites, NB=5000):
+  writer t1: 4,701 distinct reads/batch, mask k 2,807 (sat 0.60) — SATURATES at 8/12 sites (V5,V7,E8,V9,E10,V11,V13,E14)
+             and lands 958k update events on t0's core50. Writers t2/t3/t4: 15.8-19.1k reads/batch, k = 3072 exactly
+             (sat 0.16-0.19, sim band 0.10-0.21), prior-core events EXACTLY 0 at every victim×site. corefrac is intact
+             for them; only the saturating writer breaches it.
+  So t0's per-block increments (+14.3 / +1.8 / +2.6 / +11.5) split by cause: t1 = mask saturation; t4 = NOT a mask defect.
+Victim read mass on writer-updated slots (core / shoulder): t0<-t1 0.180 (0.068 core / 0.112 shoulder);
+  t0<-t4 0.103 (0 / 0.103); t3<-t4 0.116 (0 / 0.116); t0<-t2 0.026; t0<-t3 0.068; t1<-t4 0.046; t2<-t4 0.073.
+  Production read-mass IoU: t3-t4 0.116, t0-t4 0.061, t0-t3 0.069 vs t0-t1 0.015 — and (0,4),(3,4) are exactly the
+  pairs declared as the audit FAMILY. => t4's damage is the E27/E28 family collision (scene-genuine shoulder overlap),
+  not a masking defect; top_t cannot remove it, only halve its shoulder coverage.
+Expectation for the queued topt1536 rerun, pre-registered: removes t1's saturation channel (~+14pp on t0) and ~halves
+shoulder coverage; t0 predicted ~+12-18% (not near-flat). Verification: realized mean k must equal 1536 at every site.
+Chain complete 02:12 UTC; weekend queue v3 running battery A (HEAD 1f8a6a70 pulled by the bootstrap).
