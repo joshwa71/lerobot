@@ -8659,3 +8659,17 @@ Optimizer states (`training_state/`) deliberately NOT archived — weights + `se
 E62/E63 matrix re-runs are possible from cold with no retrain (the matrix only reads slot tensors in `pretrained_model/`).
 Diagnostic surface kept ON the VM: `outputs/analysis/_run_artifacts/<run>/` x11 (memory_by_task + eval + wandb + top-level
 files, ~390M/run) — analysis dir 7.3G -> 11G, ALSO copied to cold (`_analysis_vm/`, both passes) and retained on the VM per Josh.
+
+### Entry 65 addendum 19 (30 Aug 26, 09:10 UTC) — topt1536 rerun, block 1: the SATURATION CHANNEL IS CLOSED (raw)
+Pre-registered checks on the rerun (`..._beta4corefrac_topt1536_lr2x_steps5k`), both PASS:
+1. No saturation: realized mean mask k = 1537 at ALL 12 sites (read sets 6.5k-40k/batch) vs topt3072's 2472-3072 with
+   k<n_read at 8/12. `min(top_t, n_read)` no longer collapses onto the read set, so corefrac's zero-score veto binds.
+2. Writer t1 -> victim t0 core50 write events, per site (3072 -> 1536): E4 179->0, V5 16,102->0, V7 16,611->0,
+   E8 148,965->0, V9 21,939->0, E10 173,864->0, V11 18,865->0, V13 45,027->0, E14 502,370->**60**, V15 172->0,
+   E16 14,243->0, E6 0->0. **TOTAL 958,337 -> 60 (a 16,000x reduction; corefrac's design guarantee restored).**
+In-run rows so far, topt1536 vs topt3072 at the same boundary:
+  row1 @5k   t0 jt 0.00963 (3072: 0.00937, +2.8% = the coverage cost, inside the +-5% pre-registration)
+  row2 @10k  t0 **+0.1%** (3072: **+14.3%**) | t1 jt 0.00921 (3072: 0.00888, +3.7%)
+=> the add-14 attribution is confirmed end-to-end: task 1's damage was mask saturation, not overlap. Remaining
+pre-registration: t4's family channel is untouched by top_t, so the FINAL row should land ~+12-18% on t0, not near-flat
+(add-15: t0's +11.5pp from t4's block came at ZERO core events, all shoulder, on the declared family pairs 0-4 / 3-4).
