@@ -8647,3 +8647,15 @@ Before the fix the same cells read 0.00921/0.04633/0.02273/0.03924/0.05883 — t
 +15.8%. Broken artifacts kept as `mse_matrix_merged6x2{.jsonl,_report.json}.broken-10of14`.
 => add-15's in-run rows stand as the RW retention result; the RW drift is ~+12% mean, ~10x sim's reported 5-task band
 (which is itself an under-report pending the E62/E63 re-runs noted in add-16).
+
+### Entry 65 addendum 18 (30 Aug 26, 04:07 UTC) — SIM-ERA COLD ARCHIVAL COMPLETE: 11/11 verified, fail=0; VM 85% -> 47% (raw)
+`scripts/ops/ship_e65_batch_to_cold.sh` (protocol = _archive_e60/_e64: rsync -aH 3-retry -> verify `rsync -aHc --dry-run`
+zero itemized changes AND `du -sb` byte-exact, both under `--exclude=training_state` -> preserve artifacts on the VM ->
+rm -rf). Verified bytes: bigsearch seq 139.77G / warm 27.97G / A 27.97G; sharepairs 80.17G; interleave seq 112.40G /
+warm 22.49G / A 22.49G; layermax_A 22.74G; merged6x2 vnoise05x 102.21G; **seq10 204.53G**; merged6x2 seq5 102.21G.
+Total ~865G copied; ~1.07T reclaimed on the VM (the extra ~200G = seq10's pruned optimizer state, deleted not copied).
+Disk 85% -> **47%** (1.3T free). Cold 3.1T used / 8.1T free. Ledger `_archive_e65_status.txt` = 11 PASS + 11 DELETED, fail=0.
+Optimizer states (`training_state/`) deliberately NOT archived — weights + `sequential_state.pt` kept, so the add-16
+E62/E63 matrix re-runs are possible from cold with no retrain (the matrix only reads slot tensors in `pretrained_model/`).
+Diagnostic surface kept ON the VM: `outputs/analysis/_run_artifacts/<run>/` x11 (memory_by_task + eval + wandb + top-level
+files, ~390M/run) — analysis dir 7.3G -> 11G, ALSO copied to cold (`_analysis_vm/`, both passes) and retained on the VM per Josh.
