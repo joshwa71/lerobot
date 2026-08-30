@@ -8631,3 +8631,19 @@ was complete and the comparison was unfair. E59/E60 (dedicated) and the jitter/s
 **Fix committed:** filter is now `".mlp.mem." in k and (".slot_down" in k or ".slot_up" in k)` in both scripts (unit-tested
 against the real key set: 14/14, router/keys excluded). Re-runs needed: RW battery A matrix (~20 min) and, for the paper,
 the E62 5-task + E63 10-task matrices (checkpoints are in cold storage, E65 archival).
+
+### Entry 65 addendum 17 (30 Aug 26, 03:05 UTC) — matrix re-run with the fixed loader VALIDATES the fix and the add-15 drift numbers (raw)
+Battery A matrix re-computed at 14/14 slot tensors (`[load] 005000: 14 slot tensors`). Corrected grid (paired, 16x bs32, seed 0):
+  ckpt      t0        t1        t2        t3        t4
+  005000  0.00921   0.31675   0.18377   0.33890   0.48671
+  010000  0.01065   0.00923   0.18520   0.33825   0.48617
+  015000  0.01094   0.00956   0.00626   0.33760   0.48604
+  020000  0.01124   0.00998   0.00636   0.00932   0.47886
+  025000  0.01247   0.01070   0.00651   0.00993   0.01155
+Diagonal drift, matrix vs the live in-run instrument (add-15): t0 +35.5 / +30.2 %, t1 +15.8 / +16.8, t2 +4.0 / +2.1,
+t3 +6.6 / +5.4, t4 +0.0 / +0.0 — the two independent instruments now AGREE (mean +12.4% vs +10.9%). Just-trained levels
+also reconcile: matrix 0.00921/0.00923/0.00626/0.00932/0.01155 vs in-run 0.00937/0.00888/0.00685/0.00920/0.01325.
+Before the fix the same cells read 0.00921/0.04633/0.02273/0.03924/0.05883 — t1 was 5x off, drift read -0.9% instead of
++15.8%. Broken artifacts kept as `mse_matrix_merged6x2{.jsonl,_report.json}.broken-10of14`.
+=> add-15's in-run rows stand as the RW retention result; the RW drift is ~+12% mean, ~10x sim's reported 5-task band
+(which is itself an under-report pending the E62/E63 re-runs noted in add-16).
