@@ -8695,3 +8695,21 @@ Consequence for the arm-5 probe (queued next, certificate only): its rationale a
 already fixed by coverage. It remains worth its 4.25h as the "is the E53 empty window also empty in RW" question, and as
 the language-vs-state routing measurement, but should NOT be read as the remedy for family interference.
 Open: whether the +4.5% fit tax or the -8.2pp drift matters more is a ROLLOUT question; no RW robot numbers exist yet.
+
+### Entry 65 addendum 21 (30 Aug 26, 18:55 UTC) — battery B confirms topt1536 at the matrix instrument; smokes PASS; specialists running (raw)
+**Battery B, corrected loader (14/14), topt1536 = the RW paper cell (Josh, 30 Aug):**
+  ckpt      t0        t1        t2        t3        t4
+  005000  0.00950   0.31689   0.18333   0.33914   0.48616
+  010000  0.00952   0.01000   0.18329   0.33948   0.48596
+  015000  0.00955   0.01018   0.00659   0.33862   0.48551
+  020000  0.00968   0.01034   0.00662   0.00960   0.47628
+  025000  0.01007   0.01047   0.00669   0.00975   0.01269
+Diagonal drift t0..t4: **+5.9 / +4.7 / +1.4 / +1.6 / +0.0 %, mean +2.7%** — matches the live in-run rows
+(+5.6/+4.9/+1.2/+1.6/+0.0, mean +2.7) to <=0.3pp on every cell; two independent instruments, same answer.
+vs topt3072 corrected matrix (+35.5/+15.8/+4.0/+6.6/+0.0, mean +12.4%): **mean drift 12.4% -> 2.7%, 4.6x.**
+Jitter clean (t0/t1/t3/t4): topt1536 0.0031/0.0028/0.0055/0.0177 vs topt3072 0.0037/0.0027/0.0038/0.0165 — t0 better,
+t3/t4 worse, consistent with the +4.5% mean fit tax (add-20); no absolute crossing of the imgspan kill signature.
+**Arm-5 probe DISABLED** (Josh; add-20 falsified its rationale) — kept opt-in behind `RUN_ARM5=1`.
+**Weekend queue: smokes PASS at 18:54** (both LoRA wrappers exercised end-to-end on the real datasets: specialist
+r64/a16 20-step + naive 2x6-step incl. per-task checkpointing, loss-eval and cross-task state save). Episode-range
+assertions ok for all 5 tasks. Specialists t0..t4 started 18:54:13 (~2h40m each).
