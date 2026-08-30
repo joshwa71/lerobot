@@ -90,6 +90,16 @@ else
   [ "${SKIP_GATE:-0}" = "1" ] || exit 1
 fi
 
+# E65 add-16 (Josh, 30 Aug): certificate-only mode — run warm-up + audit + gate print, then STOP
+# without graduating. Used by the arm-5 routing probe (revert the language knobs at held c/sep and
+# read family IoU against capacity for ~4.25h, instead of committing ~20h to A-phase + sequential).
+# Combine with SKIP_GATE=1 so a HARD FAIL still prints its certificate rather than exiting 1.
+if [ "${STOP_AFTER_AUDIT:-0}" = "1" ]; then
+  echo "RW merged6x2 chain: STOP_AFTER_AUDIT=1 - certificate printed, NOT graduating."
+  echo "RW-CHAIN-AUDIT-ONLY"
+  exit 0
+fi
+
 # ---- stage 4+5: A-phase + sequential (C-config levers verbatim from E62) ----
 export WARM_RUN=$RUN
 export GRAD_TAG=${ARM_TAG}

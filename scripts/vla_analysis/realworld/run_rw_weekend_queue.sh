@@ -61,7 +61,7 @@ peft_msemat () {   # <run_dir> <steps csv> <first ckpt> <out jsonl> <scratch dir
 }
 
 echo "=== RW WEEKEND QUEUE v3 started $(date -u) arm=$ARM r=$LORA_R/a$LORA_ALPHA rerun_top_t=$RERUN_TOP_T HEAD=$(git rev-parse --short HEAD) dryrun=$DRYRUN ==="
-echo "[weekend] order: battery(topt3072) -> rerun(topt$RERUN_TOP_T) -> battery(topt$RERUN_TOP_T) -> smokes -> specialists -> naive"
+echo "[weekend] order: battery(topt3072) -> rerun(topt$RERUN_TOP_T) -> battery(topt$RERUN_TOP_T) -> arm5 route+audit -> smokes -> specialists -> naive"
 if [ "$DRYRUN" = "1" ]; then
   echo "[weekend] A=$SEQ_RUN_A"; echo "[weekend] B=$SEQ_RUN_B"; echo "[weekend] specialists=$SPEC_ROOT"; echo "[weekend] naive=$NAIVE_RUN (final $SEQ_FINAL)"
   DRYRUN=1 SMOKE=1 bash "$RWD/rw_loraft_specialists_r64.sh" && DRYRUN=1 SMOKE=1 bash "$RWD/rw_naive_seq_lora_r64.sh" \
@@ -95,6 +95,27 @@ fi
 [ -d "$ROOT_DIR/outputs/train/$SEQ_RUN_B/checkpoints/$SEQ_FINAL" ] \
   && run_battery "$SEQ_RUN_B" merged6x2_topt${RERUN_TOP_T} \
   || echo "[weekend] battery B skipped (no rerun final)"
+
+# ---- 3b. ARM 5 routing probe: warm-up + audit ONLY (Josh, 30 Aug) ----
+# Arm 4 weakened BOTH language knobs (expert anchor 0.40->0.30, VLM pool (1,0.5)->(1,1.0)) to rescue
+# the expert capacity clauses; the frozen-feature probe shows that cost +0.043 family key cosine
+# (state pool is near-degenerate at cos 0.926 vs instruction 0.759 on these tasks). Arm 5 reverts
+# BOTH while HOLDING the breadth knobs that bought the capacity (c=1.0, sep=1.0) — i.e. it asks
+# whether contrastive breadth alone carries core50/min-eff, or whether the anchor reduction did.
+# Certificate only (STOP_AFTER_AUDIT=1): ~4.25h, no A-phase, no sequential. Read: family pairIoU
+# (0-4, 3-4) vs arm 4's expert 0.119 / VLM 0.055, against core50 >=400 and min-eff >=300.
+ARM5=${ARM5:-merged6x2_e468101416_v579111315_anchor040_pool1005_sep1_c100_prepass}
+ARM5_AUDIT=$ROOT_DIR/outputs/train/${RUN_PREFIX}audit_heldout_rw_${RW_TAG}_jointwarm_${ARM5}_10k
+if [ -d "$ARM5_AUDIT/memory_by_task" ] && [ "$(ls "$ARM5_AUDIT"/memory_by_task/*.json 2>/dev/null | wc -l)" -ge "$RW_N_SEQ" ]; then
+  stage "arm5-skip (audit exists)"
+else
+  stage "arm5:route+audit"
+  RW_TAG=$RW_TAG RW_FAMILY=${RW_FAMILY:-0-4,3-4} ARM_TAG=$ARM5 \
+  SEP_W=1.0 CONTRASTIVE_W=1.0 EXPERT_ANCHOR_W=0.40 VLM_POOL_W='[1.0,0.5]' \
+  SKIP_GATE=1 STOP_AFTER_AUDIT=1 \
+    bash "$RWD/rw_merged6x2_full_chain.sh" || echo "[weekend] ARM5 probe FAILED (non-fatal)"
+  stage "arm5-done"
+fi
 
 # ---- 4. smokes (fatal) ----
 if [ -f "$SP/weekend_smoke_ok" ]; then
