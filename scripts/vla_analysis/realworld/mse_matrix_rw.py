@@ -70,7 +70,11 @@ def main(cfg: SequentialOnlineConfig):
             sd = {}
             with _so(sd_path, framework="pt") as f:
                 for k in f.keys():
-                    if ".mlp.mem.slot_" in k:
+                    # E65 add-16: shared tables (E61) save 2 of the 7 storages under
+                    # `<layer>.mlp.mem._storage_shared_from.slot_*`, which the old
+                    # `".mlp.mem.slot_" in k` filter MISSED -> those tables stayed at the first
+                    # checkpoint's values in every row (10 of 14 tensors loaded). Match both.
+                    if ".mlp.mem." in k and (".slot_down" in k or ".slot_up" in k):
                         sd[k] = f.get_tensor(k)
             print(f"[load] {st}: {len(sd)} slot tensors", flush=True)
             _, unexpected = unwrapped.load_state_dict(sd, strict=False)

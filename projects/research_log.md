@@ -8605,3 +8605,29 @@ Victim read mass on writer-updated slots (core / shoulder): t0<-t1 0.180 (0.068 
 Expectation for the queued topt1536 rerun, pre-registered: removes t1's saturation channel (~+14pp on t0) and ~halves
 shoulder coverage; t0 predicted ~+12-18% (not near-flat). Verification: realized mean k must equal 1536 at every site.
 Chain complete 02:12 UTC; weekend queue v3 running battery A (HEAD 1f8a6a70 pulled by the bootstrap).
+
+### Entry 65 addendum 16 (30 Aug 26, 02:40 UTC) — BATTERY A (arm-4 topt3072) + an INSTRUMENT BUG that under-reports forgetting in E62/E63 too (raw)
+**Battery A** (`outputs/analysis/realworld/e65/`, JIT_T=0,1,3,4): jitter/OOD final ckpt, chunk MSE —
+t0 clean 0.0037 / state@0.1 0.0229 / state@0.2 0.0413 / image@0.05 0.0497; t1 0.0027 / 0.0080 / 0.0220 / 0.0571;
+t3 0.0038 / 0.0175 / 0.0383 / 0.0677; t4 0.0165 / 0.0326 / 0.0631 / 0.0743. Slot autopsy: per-task effnum
+t0 E4 11,656 … V15 2,196; t1 E4 737 … V15 285 (the over-constant task, ~15x below its peers); site-bleed on the 5
+shared pairs 13-48% (sim bands E61 17-43% / E62 14-51%); prior-core write events — victim t0: E14 502,370, E10 173,864,
+E8 148,965, V13 45,027, V9 21,939, V7 16,611, V5 16,102, E16 14,243, E4 179, E6/V15 ~0; victims t1-t3 ALL ZERO at every
+site (only the saturating writer t1 breaches, per add-14/15).
+**BUG (found comparing the two instruments): `mse_matrix2.py:53` / `mse_matrix_rw.py:73` selected checkpoint tensors with
+`".mlp.mem.slot_" in k`. Under E61 shared tables, 2 of the 7 storages are saved as
+`<layer>.mlp.mem._storage_shared_from.slot_{down,up}` (expert group (8,10) at L10, VLM group (9,11) at L11) and do NOT
+match — `[load] 005000: 10 slot tensors` of 14. Every matrix row is therefore a model with those 2 tables FROZEN at the
+first checkpoint's values.** Signature: RW battery t0 (whose own state those tables hold at 005000) agrees with the live
+in-run instrument (0.00921 vs 0.00937) while t1-t4 sit ~4x high (t1 0.04633 vs 0.00888 etc.).
+Effect on the drift read — battery (broken) vs in-run (live model, correct): t0 +20.5% vs **+30.2%**; t1 -0.9% vs +16.8%;
+t2 -1.7% vs +2.1%; t3 -1.3% vs +5.4%; t4 +0.0% vs +0.0%. The battery HIDES exactly the damage in E8/E10 + V9/V11 — and
+E10 took 173,864 core-write events. **Use the in-run rows (add-15) as the RW retention numbers.**
+**Scope: SIM IS AFFECTED.** `outputs/e62_battery.log` shows `[load] 005000: 10 slot tensors`; the sim merged6x2
+checkpoints have the identical 14-tensor / 10-matched layout. So E62 add-2 (+0.0-4.2%, "clean corefrac band") and E63
+add-3/add-4 (mean +6.5%, the full 10x10 grid) UNDER-REPORT forgetting on the two shared storages. E62 add-2's
+"indistinguishable from dedicated-tables interleave" is void as stated: interleave-8 had dedicated tables, so ITS matrix
+was complete and the comparison was unfair. E59/E60 (dedicated) and the jitter/slots/harvest instruments are unaffected.
+**Fix committed:** filter is now `".mlp.mem." in k and (".slot_down" in k or ".slot_up" in k)` in both scripts (unit-tested
+against the real key set: 14/14, router/keys excluded). Re-runs needed: RW battery A matrix (~20 min) and, for the paper,
+the E62 5-task + E63 10-task matrices (checkpoints are in cold storage, E65 archival).
