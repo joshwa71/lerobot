@@ -8673,3 +8673,25 @@ In-run rows so far, topt1536 vs topt3072 at the same boundary:
 => the add-14 attribution is confirmed end-to-end: task 1's damage was mask saturation, not overlap. Remaining
 pre-registration: t4's family channel is untouched by top_t, so the FINAL row should land ~+12-18% on t0, not near-flat
 (add-15: t0's +11.5pp from t4's block came at ZERO core events, all shoulder, on the declared family pairs 0-4 / 3-4).
+
+### Entry 65 addendum 20 (30 Aug 26, 18:20 UTC) — topt1536 RERUN LANDS: mean drift 10.9% -> 2.7%; my family-channel prediction was WRONG (raw)
+In-run paired MSE, topt1536 vs topt3072 (same A-phase ckpt, single delta top_t 3072->1536):
+  row              t0            t1           t2           t3          t4
+  1 @5k    jt 0.00963 (0.00937)
+  2 @10k     +0.1% (+14.3%)  jt 0.00921 (0.00888)
+  3 @15k     +0.2% (+16.1%)   +2.8% (+6.1%)  jt 0.00729 (0.00685)
+  4 @20k     +2.6% (+18.7%)   +3.5% (+9.8%)  +0.7% (+0.6%)  jt 0.00942 (0.00920)
+  5 @25k   **+5.6% (+30.2%)  +4.9% (+16.8%)  +1.2% (+2.1%)  +1.6% (+5.4%)  jt 0.01421 (0.01325)**
+MEAN FINAL DRIFT **2.7% vs 10.9%** (4x better). Fit tax (just-trained, 1536 vs 3072): +2.8/+3.7/+6.4/+2.4/+7.2%, mean +4.5%.
+t0 per-block increments: 3072 = +14.3/+1.8/+2.6/+11.5; 1536 = +0.1/+0.1/+2.4/+3.0.
+**CORRECTION to add-15/add-19.** I pre-registered "top_t cannot remove the family channel, only halve its shoulder-write
+rate; expect t0 ~+12-18%". Actual t0 = +5.6%, and t4's (the family hub's) damage to t0 fell **11.5pp -> 3.0pp, -74%**,
+far more than the ~50% a linear coverage model predicts. So: the family READ collision is real and unchanged (routing is
+byte-identical between the two runs — same A-phase, same router), but the DAMAGE it does is mediated by write-mask
+coverage far more strongly than by read overlap. Coverage, not routing separation, was the binding term. Notably t3's
+block damage to t0 was NOT reduced (2.6 -> 2.4pp) — only the hub's was, so the effect is concentrated where the write
+volume x overlap product was largest, not uniform.
+Consequence for the arm-5 probe (queued next, certificate only): its rationale as a DRIFT fix is now weak — the drift is
+already fixed by coverage. It remains worth its 4.25h as the "is the E53 empty window also empty in RW" question, and as
+the language-vs-state routing measurement, but should NOT be read as the remedy for family interference.
+Open: whether the +4.5% fit tax or the -8.2pp drift matters more is a ROLLOUT question; no RW robot numbers exist yet.
