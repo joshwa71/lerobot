@@ -8713,3 +8713,26 @@ t3/t4 worse, consistent with the +4.5% mean fit tax (add-20); no absolute crossi
 **Weekend queue: smokes PASS at 18:54** (both LoRA wrappers exercised end-to-end on the real datasets: specialist
 r64/a16 20-step + naive 2x6-step incl. per-task checkpointing, loss-eval and cross-task state save). Episode-range
 assertions ok for all 5 tasks. Specialists t0..t4 started 18:54:13 (~2h40m each).
+
+### Entry 65 addendum 22 (31 Aug 26, 09:00 UTC) — r64 SPECIALIST ORACLE (5/5): we BEAT the per-task oracle on fit at every task; task 1 is NOT capacity-limited (raw)
+r64/a16 LoRA specialists, one adapter per task from the RW stage-1, 5k steps, no CL constraint, task identity given.
+Own-task MSE at the SAME instrument as our matrices (5 tasks x 16 batches x bs32, seed 0):
+  t                       specialist | topt1536 jt   final | topt3072 jt   final
+  t0 mustard-basket          0.01145 |   0.00950   0.01007 |   0.00921   0.01247
+  t1 push lego brick         0.01075 |   0.01000   0.01047 |   0.00923   0.01070
+  t2 stack yellow bricks     0.00758 |   0.00659   0.00669 |   0.00626   0.00651
+  t3 screwdriver-tub         0.01231 |   0.00960   0.00975 |   0.00932   0.00993
+  t4 red bow-plate           0.01549 |   0.01269   0.01269 |   0.01155   0.01155
+ours(final, topt1536) / specialist = **0.88 / 0.97 / 0.88 / 0.79 / 0.82** — we are BELOW the per-task oracle's own-task
+MSE on ALL FIVE tasks, after sequential training with a frozen backbone and no task identity at inference. (Sim precedent:
+E56 B matched or beat its specialists' FUNCTION on all five while losing rollouts on 3/5 — so this is a fit statement, NOT
+a success statement; the rollout gap is the conversion layer and needs the robot.)
+**THE TASK-1 ARBITER RESOLVES (add-12/add-14 contingency): task 1 is NOT VLM-capacity-limited.** Its specialist reaches
+only 0.01075 — the 2nd-WORST specialist cell — while ours reaches 0.01047 (0.97x). A dedicated 106M-param adapter with
+task identity and no interference does no better than our shared memory on that task. The over-constant VLM read
+(core50 39-46, min-eff 113-140) is a property of the DATA (shortest, most repetitive task, 8,372 frames), exactly as
+Josh predicted on 29 Aug and as the gate-override rationale assumed. The VLM min-eff >=150 tripwire fired on a
+data property, not a defect => the override was correct, and no knn36 / 4-task fallback is needed.
+Task difficulty ordering by specialist MSE: t2 0.00758 < t1 0.01075 < t0 0.01145 < t3 0.01231 < t4 0.01549 — t4
+(the family hub, longest at 22,108 frames) is intrinsically hardest, which is consistent with its worst just-trained
+cell in every run rather than that being a starvation artifact.
