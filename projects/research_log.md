@@ -8736,3 +8736,28 @@ data property, not a defect => the override was correct, and no knn36 / 4-task f
 Task difficulty ordering by specialist MSE: t2 0.00758 < t1 0.01075 < t0 0.01145 < t3 0.01231 < t4 0.01549 — t4
 (the family hub, longest at 22,108 frames) is intrinsically hardest, which is consistent with its worst just-trained
 cell in every run rather than that being a starvation artifact.
+
+### Entry 65 addendum 23 (31 Aug 26, 22:14 UTC) — RW-WEEKEND-DONE: the complete real-world table at ONE instrument (raw)
+All rows = paired flow-matching MSE, 5 tasks x 16 batches x bs32, seed 0 (mse_matrix_rw / mse_matrix_peft, fixed 14/14
+loader per add-16). Naive adapter-swap matrix:
+  ckpt      t0        t1        t2        t3        t4
+  005000  0.01146   0.30375   0.19309   0.31129   0.42211
+  010000  0.16137   0.01024   0.30571   0.49321   0.62480
+  015000  0.23857   0.15024   0.00694   0.46433   0.63069
+  020000  0.46939   0.32725   0.11336   0.01095   0.63604
+  025000  0.46398   0.31368   0.23936   0.17743   0.01283
+**THE TABLE (diagonal drift, just-trained -> final):**
+| row | t0 | t1 | t2 | t3 | t4 | MEAN |
+| ours topt1536 (PAPER CELL) | +5.9 | +4.7 | +1.4 | +1.6 | +0.0 | **+2.7%** |
+| ours topt3072 | +35.5 | +15.8 | +4.0 | +6.6 | +0.0 | +12.4% |
+| naive seq-LoRA r64/a16 | +3950 | +2963 | +3348 | +1521 | +0.0 | **+2356%** |
+=> the paper cell is **~870x** better retained than the naive foil at matched rank/steps/order/budget, and the naive
+numbers sit in the sim band (E63: +740-1567%; here 1521-3950%). Naive plasticity is INTACT (its just-trained cells
+0.01146/0.01024/0.00694/0.01095/0.01283 ~= the specialists') — it learns each task and overwrites the last, the textbook
+signature. Note its UPPER triangle rises too (t3 0.311 -> 0.493 -> 0.464 before training): a drifting adapter degrades
+even never-trained tasks, which memory does not do (ours upper-triangle is flat to 3 decimals).
+**Own-task fit vs the r64 specialist oracle (add-22): ours 0.88 / 0.97 / 0.88 / 0.79 / 0.82 x — below the oracle on all 5.**
+Weekend queue complete 22:13:35 UTC, fail-free: battery A (re-run, fixed loader) -> topt1536 rerun -> battery B ->
+smokes -> 5 specialists + own-task MSE -> naive + adapter-swap matrix. Artifacts in outputs/analysis/realworld/e65/.
+OPEN (unchanged): every number here is function-space. No RW robot rollouts exist; drift->success conversion is
+uncalibrated in the real world (E42/E52 threshold caveat; E56 precedent where matched function still lost rollouts 3/5).
