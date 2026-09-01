@@ -8761,3 +8761,30 @@ Weekend queue complete 22:13:35 UTC, fail-free: battery A (re-run, fixed loader)
 smokes -> 5 specialists + own-task MSE -> naive + adapter-swap matrix. Artifacts in outputs/analysis/realworld/e65/.
 OPEN (unchanged): every number here is function-space. No RW robot rollouts exist; drift->success conversion is
 uncalibrated in the real world (E42/E52 threshold caveat; E56 precedent where matched function still lost rollouts 3/5).
+
+### Entry 65 addendum 24 (1 Sep 26, 09:20 UTC) — E62 5-task matrix RECOMPUTED with the fixed loader: forgetting was under-reported ~3x (raw)
+Checkpoints restored from cold (verified 102,207,357,670 bytes byte-exact) and re-scored with the add-16 fix (14/14 slot
+tensors incl. the `_storage_shared_from` storages for expert (8,10) and VLM (9,11)). Same instrument otherwise
+(mse_matrix2.py, 16 batches x bs32, seed 0).
+  ckpt      t0        t1        t2        t3        t4
+  005000  0.03724   0.64669   1.66991   0.90498   0.94377
+  010000  0.03773   0.03790   1.69692   0.91223   0.95559
+  015000  0.03824   0.03853   0.06843   0.94890   0.97950
+  020000  0.03902   0.03916   0.06983   0.04643   0.98734
+  025000  0.03982   0.03993   0.07115   0.04791   0.05952
+| task | FIXED drift | PUBLISHED (add-2) |
+| t0/e4 | +6.9% | +4.2% |
+| t1/e6 | +5.4% | +1.1% |
+| t2/e9 | +4.0% | +0.0% |
+| t3/e2 | +3.2% | +0.5% |
+| t4/e7 | +0.0% | +0.0% |
+| MEAN  | **+3.9%** | +1.2% |
+=> E62's reported retention was **~3.2x optimistic**; every non-final task moves up. Note t0's just-trained cell is
+UNCHANGED (0.03724) — expected, since at ckpt 005000 the two mis-loaded storages hold t0's own values; only the later
+rows were wrong, exactly the signature identified in add-16.
+**Consequences for the log's standing claims:** (a) E62 add-2's "matrix +0.0-4.2%, clean corefrac band" becomes
++0.0-6.9%, mean +3.9%; (b) its "indistinguishable from dedicated-tables interleave (+3.6/+3.0/+2.2/+1.3/0.0)" is now a
+real if modest gap — merged6x2 IS slightly leakier than dedicated tables, consistent with sharing, and the E61-add-5
+worry was under-measured rather than absent; (c) the corefrac "flat matrix" framing still holds directionally (+3.9% mean
+vs naive's +740-1567%), but the number to quote is +3.9%, not +1.2%. E63's 10-task matrix is recomputing (push ~4.3h).
+Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%.
