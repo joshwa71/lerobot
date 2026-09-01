@@ -25,7 +25,7 @@ remote_state(){
 LFULL=/home/josh/lerobot/outputs/e66_paramatched.log
 # slice from the LAST queue launch so a previous invocation's failures are not re-counted
 L=/tmp/e66_slice.log
-awk '/^=== E66 QUEUE START/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$LFULL" > "$L" 2>/dev/null || cp "$LFULL" "$L
+awk '/^=== E66 QUEUE START/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$LFULL" > "$L" 2>/dev/null || cp "$LFULL" "$L"
 R=/home/josh/lerobot/outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k
 M=/home/josh/lerobot/outputs/analysis/e65_rematrix/mse_matrix_e63_seq10_FIXED.jsonl
 u=$(systemctl is-active e66 2>/dev/null); true
