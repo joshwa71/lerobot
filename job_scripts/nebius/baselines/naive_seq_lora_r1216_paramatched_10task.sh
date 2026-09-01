@@ -74,7 +74,12 @@ else
   POLICY_ARGS=(--policy.path="$BASE_CKPT")
 fi
 
-echo "=== naive seq-LoRA r$LORA_R/a$LORA_ALPHA (parameter-matched to 2.684B memory) — 10 tasks ==="
+# VRAM ladder (E66, 1 Sep): bs16 x acc2 OOMed in the smoke — r=1216 LoRA on the vision tower
+# materialises a [B, 1024, 1216] intermediate at each of 162 image-side modules. Rungs preserve
+# EFFECTIVE BATCH 32 exactly (the oracle/naive recipe); only the microbatch changes.
+LADDER=${LADDER:-"8:4,4:8,16:2"}
+run_seq () {  # <bs> <accum>
+echo "=== naive seq-LoRA r$LORA_R/a$LORA_ALPHA (parameter-matched to 2.684B memory) — 10 tasks, bs$1 x acc$2 ==="
 lerobot-sequential-train \
   "${POLICY_ARGS[@]}" \
   --policy.empty_cameras=1 \
@@ -93,8 +98,8 @@ lerobot-sequential-train \
   --env.task=libero_10 \
   --output_dir="$RUN_DIR" \
   --steps=200000 \
-  --batch_size=16 \
-  --gradient_accumulation_steps=2 \
+  --batch_size=$1 \
+  --gradient_accumulation_steps=$2 \
   --num_workers=8 \
   --eval.type=$EVAL_TYPE \
   --eval.batch_size=1 \
@@ -115,4 +120,16 @@ lerobot-sequential-train \
   --save_after_each_task=true \
   --reinit_optimizer_each_task=true \
   --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}'
+}
+ok=0
+for rung in ${LADDER//,/ }; do
+  IFS=: read -r rb ra <<< "$rung"
+  if run_seq "$rb" "$ra"; then ok=1; break; fi
+  if ls -d "$RUN_DIR"/checkpoints/[0-9]* >/dev/null 2>&1; then
+    echo "[naive-r$LORA_R] rung bs=$rb failed AFTER a checkpoint - not VRAM; aborting."; exit 1
+  fi
+  echo "[naive-r$LORA_R] rung bs=$rb acc=$ra failed before any checkpoint (treating as VRAM) - next rung"
+  rm -rf "$RUN_DIR"
+done
+[ "$ok" = 1 ] || { echo "ERROR: all LADDER rungs failed"; exit 1; }
 echo "=== naive_seq_lora_r${LORA_R}_paramatched_10task (SMOKE=$SMOKE) COMPLETE $(date -u) ==="
