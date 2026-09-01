@@ -8869,3 +8869,20 @@ task whose rollout also lags. (d) E62 add-2's "indistinguishable from dedicated-
 (add-24). (e) The 10x10 grid transcribed in add-4 is superseded by the one above.
 Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%, naive +2356%.
 Artifacts: outputs/analysis/e65_rematrix/mse_matrix_{e62_seq5,e63_seq10}_FIXED.jsonl on the VM.
+
+### Entry 66 addendum 1 (1 Sep 26, 20:15 UTC) — E66 running; the parameter-matched dense baseline costs 3.8x our wall-clock per sample (raw)
+Smoke PASSED on ladder rung 1 (bs8 x acc4; bs16 x acc2 had OOMed at 138.7/139.8 GB inside lora_B(lora_A(x)) —
+r=1216 materialises a [B,1024,1216] intermediate at each of 162 vision modules). Full run started 19:07 UTC,
+step 800 at 20:05, loss 0.098, err=0, 133.1 GB, no demotion.
+**Measured compute asymmetry at MATCHED added parameters and MATCHED effective batch (32):**
+| | micro-batch | updt_s | s/optimizer-step | s/sample |
+| ours merged6x2 (2.684B, sparse) | 16 x acc2 | 0.59 | 1.18 | 0.037 |
+| E66 dense LoRA r1216 (2.681B)   |  8 x acc4 | 1.118 | 4.47 | 0.140 |
+=> **3.8x wall-clock per sample**, and the dense adapter cannot fit bs16 at all on a 140GB H200. This is the
+"dense compute at every token" claim as a measurement: our 2.684B is read by hard top-k retrieval (knn x heads
+slots; rank-2 per token), theirs multiplies through all 416 modules for every token. Pairs with the add-16
+structural finding (a dense adapter of our size is over-complete on 362/416 matrices) — together they say a
+parameter-matched dense control is both degenerate in rank and ~4x the compute.
+**ETA CORRECTION:** 50,000 steps x 4.47 s = ~60h, not the ~14h first estimated (that assumed our own ~1 s/step
+at acc2). Lands ~08:00 UTC 4 Sep, then the 4-seed campaign (~5h). Pre-registration unchanged: expect collapse
+in the naive r512 band (10-task 4-seed 9.7); >~20 would be the surprise.
