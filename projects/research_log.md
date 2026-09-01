@@ -8839,3 +8839,33 @@ state-conditional palette) -> 32.4 vs 40.0 — which already isolates mechanism 
 **Asymmetry worth stating in the paper (favours us):** matching TOTAL parameters hands the baseline
 MORE ACTIVE capacity per token — LoRA and full FT use every parameter on every token; we retrieve
 knn x heads slots. The matched control is generous to the baseline.
+
+### Entry 65 addendum 25 (1 Sep 26, 19:05 UTC) — E62 AND E63 SIM MATRICES RECOMPUTED with the fixed loader: E63's forgetting was under-reported ~5.6x (raw)
+Both runs restored from cold (byte-exact) and re-scored with the add-16 fix (14/14 slot tensors incl. the
+`_storage_shared_from` storages for expert (8,10) and VLM (9,11)). Instrument otherwise unchanged
+(mse_matrix2.py, 16 batches x bs32, seed 0). NB the first E63 attempt scored only tasks 0-4 (MSEMAT_TASKS
+defaults to "0,1,2,3,4" and I did not set it) — redone over all ten.
+**E63 10-task, corrected diagonal drift vs the PUBLISHED add-3/add-4 values:**
+| task | env | FIXED | published |
+| t0 | e4 | **+22.7%** | +6.9% |
+| t1 | e6 | **+20.2%** | +6.9% |
+| t2 | e9 | **+24.9%** | +4.7% |
+| t3 | e2 | **+43.3%** | +3.7% |
+| t4 | e7 | **+117.3%** | +18.6% |
+| t5 | e0 | **+40.5%** | +4.9% |
+| t6 | e8 | +9.2% | +2.2% |
+| t7 | e1 | +4.5% | +1.2% |
+| t8 | e3 | +2.3% | +1.9% |
+| t9 | e5 | +0.0% | +0.0% |
+| MEAN | | **+28.5%** | +5.1% |
+E62 5-task (add-24): mean **+3.9%** vs published +1.2%.
+**CORRECTIONS TO STANDING CLAIMS.** (a) E63 add-3's "mean function drift +6.5%" becomes **+28.5%**; the honest
+sentence "drift grows with the number of subsequent tasks but stays an order of magnitude below the naive
+baseline's (+740-1567%)" SURVIVES (28.5% is still ~30x below naive) but the number must change. (b) The
+exposure ordering survives and sharpens: the four tasks with >=5 subsequent blocks (t0-t3, +20-43%) and t4
+(+117%) dominate; the last four (t6-t9, +0-9%) barely move. (c) t4/e7 at +117% is now by far the worst cell —
+it was already flagged as the worst at +18.6%, but the true magnitude is 6x that, and e7 is the basket-hub
+task whose rollout also lags. (d) E62 add-2's "indistinguishable from dedicated-tables interleave" stays void
+(add-24). (e) The 10x10 grid transcribed in add-4 is superseded by the one above.
+Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%, naive +2356%.
+Artifacts: outputs/analysis/e65_rematrix/mse_matrix_{e62_seq5,e63_seq10}_FIXED.jsonl on the VM.
