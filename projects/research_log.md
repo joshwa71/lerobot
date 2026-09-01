@@ -8788,3 +8788,54 @@ real if modest gap — merged6x2 IS slightly leakier than dedicated tables, cons
 worry was under-measured rather than absent; (c) the corefrac "flat matrix" framing still holds directionally (+3.9% mean
 vs naive's +740-1567%), but the number to quote is +3.9%, not +1.2%. E63's 10-task matrix is recomputing (push ~4.3h).
 Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%.
+
+---
+## Entry 66 - 1 Sep 26 (PARAMETER-MATCHED NAIVE SEQUENTIAL: the reviewer control for "you just added parameters" — QUEUED. The match forces r=1216, which is over-complete on 362/416 target matrices: a dense adapter of our size is only buildable by ~equalling full FT of everything it touches)
+
+**The ask (Josh's supervisor):** *"have you run a baseline where you take the same number of
+additional parameters and do sequential? A reviewer could plausibly ask 'your method just does
+better because you add loads of parameters, no?'"* Josh's read (agreed): not a fair critique given
+the CL literature, but many reviewers will share it, so run it and close it for good.
+
+**Design discussion (Josh).** Rejected: naive sequential FULL fine-tune. It has MORE trainable
+parameters (4.14B, 1.54x ours) and is the cleaner "capacity cannot save you" statement, but it does
+not ADD parameters — it frees existing ones, which is not the objection. The control must add.
+
+**The arithmetic (measured, not estimated).**
+- Our merged-6x2 memory adds **2.6837B** (from the checkpoint: 7 shared tables x 65,536 slots;
+  expert d=1024 -> 268.4M/table x4, VLM d=2048 -> 536.9M/table x3).
+- LoRA over the oracle target set (attn q/k/v/o + MLP gate/up/down both towers + action/state
+  projections, 254 matrices) costs 1.661M/rank -> match needs **r=1616**.
+- Adding the vision tower (27 encoder layers x {q,k,v,out_proj,fc1,fc2} = 162 matrices) gives 416
+  matrices at **2.2044M/rank** -> match at **r=1216 = 2.6806B, -0.12%**. Regex verified to select
+  exactly 416.
+**THE STRUCTURAL FINDING: those 416 matrices contain only 2.704B parameters IN TOTAL.** So a dense
+adapter matching our added-parameter count is ~99% the size of fully fine-tuning everything it
+targets, and is over-complete (LoRA bigger than the matrix it adapts) on **362/416** matrices — at
+r=1100, 1200, 1216 or 1250 alike. This is structural, not a rank choice; E58 anticipated it
+("r~2000 ~= full-rank = no longer LoRA"). Including the vision tower does NOT fix it (vision is only
+0.412B). Consequence for the paper: the critique's own premise — that an equal-size dense adapter is
+the fair control — is unbuildable without ~matching full FT, while our memory is a **rank-2 adapter
+per token** (~0.1% of slots active per forward). We run it anyway; that is the point of a control.
+
+**Queued** (`job_scripts/nebius/baselines/naive_seq_lora_r1216_paramatched_10task.sh`, unit `e66`
+via `scripts/ops/queue_e66_paramatched.sh`, gated on the E63 rematrix releasing the GPU or a 3h
+timeout, smoke-first): r=1216 / alpha=304 (alpha/r=0.25 held), libero_10, 10 tasks x 5,000 steps in
+train order. **Every other training parameter is identical to the oracle/naive cells** (Josh's
+requirement): stage-1 libero_90 base, bf16, no grad-ckpt, bs16 x accum2 (effective 32), per-task LR
+reset 1e-4 -> 1e-5 linear, optimizer reinit each task, no protection / memory / TF-IDF,
+save_after_each_task, `--eval.type=none` with the 4-seed campaign as the instrument. Deltas vs
+`naive_seq_lora_r512_10task.sh` are EXACTLY three: r, alpha, + vision targets. ~14h train + ~5h row.
+
+**Pre-registered read.** This becomes the 2.68B point on a capacity ladder that is already flat:
+naive seq-LoRA r32 (53M) / r256 (426M) / r512 (852M, 10-task 4-seed = **9.7**, nine of ten envs at
+exactly 0.0 with only the last-trained env alive at 97). Expect collapse in the same band; a result
+above ~20 would be the surprise and would need explaining. Comparators at the same instrument:
+ours 65.1 / specialists 63.7 / multitask-LoRA-10 53.2.
+**Existing evidence this COMPLETES rather than starts:** (a) the r32->r512 sweep is a 16x parameter
+range with no rescue (E58's "capacity-INSENSITIVE"); (b) E49 arm 3-old is a SAME-parameter-count
+control — identical architecture and count, differing only in addressing (near-constant vs
+state-conditional palette) -> 32.4 vs 40.0 — which already isolates mechanism from capacity.
+**Asymmetry worth stating in the paper (favours us):** matching TOTAL parameters hands the baseline
+MORE ACTIVE capacity per token — LoRA and full FT use every parameter on every token; we retrieve
+knn x heads slots. The matched control is generous to the baseline.
