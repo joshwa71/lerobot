@@ -193,9 +193,17 @@ class HashingMemoryLite(nn.Module):
     EVAL_MEMORY = True
 
     def __init__(self, input_dim: int, output_dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
-                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None):
+                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None,
+                 init_storage: bool = True):
         super().__init__()
         assert cfg.mem_k_dim % 2 == 0
+        # init_storage=False: allocate the product keys / slot tables (torch.empty — pages are
+        # only committed when written) but do NOT initialise them. Used by
+        # attach_memory_to_layer_list for share-group FOLLOWERS under offload_slots_to_cpu:
+        # their tables are dropped at aliasing, so initialising them would only commit
+        # (and with n=256 / lora r=2 tables, ~1-2 GB per site of) host RAM that is freed a
+        # moment later. Never used on training paths — the RNG stream there is unchanged.
+        self._init_storage = bool(init_storage)
 
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -378,14 +386,11 @@ class HashingMemoryLite(nn.Module):
         self._storage_shared_from = None
 
         self._slots_offloaded = bool(getattr(cfg, "offload_slots_to_cpu", False))
-        if self._slots_offloaded:
-            # Best-effort pin; falls back to plain CPU memory if pinning fails
-            # (e.g. host has no CUDA driver or already-pinned tensor).
-            for p in self._slot_params():
-                try:
-                    p.data = p.data.pin_memory()
-                except (RuntimeError, NotImplementedError):
-                    pass
+        # Pinning is deferred to pin_offloaded_slots(), which attach_memory_to_layer_list
+        # calls AFTER share-group aliasing: each shared table is then pinned exactly once
+        # (by its owner) and follower tables — dropped at aliasing — are never page-locked.
+        # Direct constructions that skip attach still work: the forward's offload branch
+        # keys on the slot tensor's device; pinning only speeds up the per-call transfer.
 
     def _slot_param_names(self) -> tuple[str, ...]:
         if self.value_type == "lora":
@@ -424,8 +429,18 @@ class HashingMemoryLite(nn.Module):
             raise ValueError("share_storage_from: a module cannot share storage with itself")
         if getattr(leader, "_storage_shared_from", None) is not None:
             raise ValueError("share_storage_from: leader is itself a follower — chained sharing unsupported")
-        if self._slots_offloaded or leader._slots_offloaded:
-            raise NotImplementedError("offload_slots_to_cpu is unsupported with share_groups")
+        # offload_slots_to_cpu composes with sharing: the leader owns the CPU-resident
+        # (pinned) tables, the follower reads them through the alias and takes the same
+        # per-call gather path in _forward_lora_values / _forward_vector_values, and
+        # `.to(device)` on the follower recurses into the leader (a registered child),
+        # whose _apply override keeps the tables on the host. The route-once VLM fast
+        # path is already bypassed under offload (its palette gather indexes the GPU
+        # table) in favour of the numerically equivalent broadcast path. The only
+        # requirement is that both members agree on the flag.
+        if bool(self._slots_offloaded) != bool(leader._slots_offloaded):
+            raise ValueError(
+                "share_storage_from: offload_slots_to_cpu must match between group members"
+            )
         for attr in ("n_keys", "heads", "k_dim", "v_dim", "input_dim", "value_type", "lora_rank", "size"):
             if getattr(self, attr) != getattr(leader, attr):
                 raise ValueError(
@@ -438,6 +453,26 @@ class HashingMemoryLite(nn.Module):
                 del self._parameters[name]
             object.__setattr__(self, name, getattr(leader, name))
         self._storage_shared_from = leader
+
+    @torch.no_grad()
+    def pin_offloaded_slots(self) -> int:
+        """Pin this module's CPU-resident slot tables (offload_slots_to_cpu) in page-locked
+        memory so the per-call subset transfer can be asynchronous. Owners only: a
+        share-group follower returns 0 (its tables are the leader's). Idempotent — already
+        pinned or non-CPU tensors are skipped. Best-effort: a host that cannot pin keeps
+        plain CPU memory (correct, just a slower transfer). Returns bytes pinned."""
+        if not self._slots_offloaded or self._storage_shared_from is not None:
+            return 0
+        pinned = 0
+        for p in self._slot_params():
+            if p.device.type != "cpu" or p.is_pinned():
+                continue
+            try:
+                p.data = p.data.pin_memory()
+                pinned += p.numel() * p.element_size()
+            except (RuntimeError, NotImplementedError):
+                pass
+        return pinned
 
     def _apply(self, fn, recurse=True):
         """Override to keep slot params on CPU when offload is enabled.
@@ -669,20 +704,21 @@ class HashingMemoryLite(nn.Module):
         return freed_bytes
 
     def reset_parameters(self):
-        bound = 1 / math.sqrt(self.k_dim)
-        nn.init.uniform_(self.keys, a=-bound, b=bound)
+        if getattr(self, "_init_storage", True):
+            bound = 1 / math.sqrt(self.k_dim)
+            nn.init.uniform_(self.keys, a=-bound, b=bound)
 
-        if self.value_type == "vector":
-            nn.init.normal_(self.values, mean=0, std=self.v_dim ** -0.5)
-        elif self.value_type == "lora":
-            # Initialize LoRA params similar to standard LoRA practice
-            # down projection: small random init
-            nn.init.normal_(self.slot_down, mean=0, std=0.02)
-            # up projection: zero init so LoRA starts as identity-ish
-            nn.init.zeros_(self.slot_up)
-            # affine bias: zero init so flag-on == flag-off until trained
-            if getattr(self, "lora_slot_bias", False):
-                nn.init.zeros_(self.slot_bias)
+            if self.value_type == "vector":
+                nn.init.normal_(self.values, mean=0, std=self.v_dim ** -0.5)
+            elif self.value_type == "lora":
+                # Initialize LoRA params similar to standard LoRA practice
+                # down projection: small random init
+                nn.init.normal_(self.slot_down, mean=0, std=0.02)
+                # up projection: zero init so LoRA starts as identity-ish
+                nn.init.zeros_(self.slot_up)
+                # affine bias: zero init so flag-on == flag-off until trained
+                if getattr(self, "lora_slot_bias", False):
+                    nn.init.zeros_(self.slot_bias)
 
         proj_linears = (
             [self.query_proj.proj] if isinstance(self.query_proj.proj, nn.Linear)
@@ -1694,11 +1730,13 @@ class HashingMemoryLite(nn.Module):
 
 class MLPPlusMemory(nn.Module):
     def __init__(self, base_mlp: nn.Module, dim: int, cfg: MemoryLayerConfig, lang_dim: int = 0,
-                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None):
+                 lora_rank_override: int | None = None, value_noise_sigma_override: float | None = None,
+                 init_storage: bool = True):
         super().__init__()
         self.mlp = base_mlp
         self.mem = HashingMemoryLite(dim, dim, cfg, lang_dim=lang_dim, lora_rank_override=lora_rank_override,
-                                     value_noise_sigma_override=value_noise_sigma_override)
+                                     value_noise_sigma_override=value_noise_sigma_override,
+                                     init_storage=init_storage)
         self.memory_only = getattr(cfg, "memory_only", False)
         self.lang_dim = lang_dim
         # Text-span attachment (E44, VLM-side memory): when > 0, memory applies ONLY to the
@@ -2283,6 +2321,12 @@ def attach_memory_to_layer_list(
         if isinstance(getattr(layer, "mlp", None), MLPPlusMemory) and li not in target_set:
             layer.mlp = layer.mlp.mlp
 
+    # Under offload_slots_to_cpu, share-group followers get uninitialised (never-committed)
+    # tables: they are aliased to the leader's below, so initialising them would only spend
+    # host RAM transiently. Inference-only flag => training attach is byte-identical.
+    _offload = bool(getattr(cfg, "offload_slots_to_cpu", False))
+    _followers = {int(li) for g in (getattr(cfg, "share_groups", []) or []) for li in list(g)[1:]}
+
     # Now, wrap exactly the requested target layers
     for li in target_layers:
         layer = layers[li]
@@ -2293,7 +2337,8 @@ def attach_memory_to_layer_list(
         base_device = next(layer.mlp.parameters()).device
         layer.mlp = MLPPlusMemory(layer.mlp, dim=dim, cfg=cfg, lang_dim=lang_dim,
                                   lora_rank_override=rank_by_layer.get(li),
-                                  value_noise_sigma_override=vnoise_by_layer.get(li))
+                                  value_noise_sigma_override=vnoise_by_layer.get(li),
+                                  init_storage=not (_offload and li in _followers))
         # Align non-value memory params to base dtype/device; keep value params in float32.
         # When CPU offload is requested, leave value (slot) params on CPU — moving them
         # to GPU here would defeat the whole point and OOM on small cards.
@@ -2327,6 +2372,13 @@ def attach_memory_to_layer_list(
             f"SHARED memory storage for {label}: groups {share_groups} — keys + slot tables "
             "aliased to each group's first layer; per-site query/gate/proj/stats retained."
         )
+
+    # ---- offload: pin the surviving (owner) tables once, after any aliasing. Idempotent,
+    # so the re-attach on the from_pretrained path (post_load_setup) is a no-op here.
+    if _offload:
+        pinned = sum(layers[li].mlp.mem.pin_offloaded_slots() for li in target_layers)
+        if pinned:
+            print(f"Offloaded {label} slot tables pinned in host memory: {pinned / 1e9:.2f} GB")
 
     return target_layers
 

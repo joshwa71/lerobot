@@ -324,6 +324,10 @@ class MemoryLayerConfig:
     # memory; the forward gathers only the retrieved slot indices and transfers that subset
     # to GPU per call. Numerically identical to the on-GPU path. Intended for inference on
     # memory-constrained GPUs — not for training.
+    # Composes with share_groups / vlm_share_groups: each shared table is pinned once by its
+    # owning (first) layer and read by every member through the alias; follower tables are
+    # never initialised. The VLM route-once fast path is bypassed under offload (its palette
+    # gather indexes the GPU table) in favour of the numerically equivalent broadcast path.
     offload_slots_to_cpu: bool = False
 
     # ---- E61: shared-pair memory tables (one storage serving multiple attach sites) ----
@@ -387,18 +391,6 @@ class MemoryLayerConfig:
 
         _check_share_groups(self.share_groups, exp, "expert")
         _check_share_groups(self.vlm_share_groups, vlm, "vlm")
-        # Inference-time CPU offload is per module (each module evicts its own slot tables
-        # in _apply and gathers per forward); shared-pair storage aliases one table across
-        # modules, and share_storage_from raises NotImplementedError for the combination.
-        # That raise must surface HERE: on the model-load path (from_pretrained ->
-        # attach_memory_to_expert inside a broad try/except) it is swallowed, and the
-        # policy comes back with the base weights NOT loaded and no VLM memory attached —
-        # a silently untrained model (reproduced on the lerobot-memory-record load path).
-        if self.offload_slots_to_cpu and (self.share_groups or self.vlm_share_groups):
-            raise ValueError(
-                "memory_layer.offload_slots_to_cpu is unsupported with share_groups / "
-                "vlm_share_groups (shared-pair tables): run this checkpoint with offload off."
-            )
         if self.share_groups and (self.layer_ranks or []):
             rank_by = {li: int(r) for li, r in zip(exp, list(self.layer_ranks))}
             for g in self.share_groups:

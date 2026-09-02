@@ -17,22 +17,25 @@ Usage
   # (default) build the E65 merged-6x2 real-world cell on top of local pi05_base weights
   # (memory random-init, tables shrunk via N_KEYS so it fits any card):
   python scripts/vla_analysis/smoke_memory_record_path.py
-  # full-size tables (n=256, ~19 GB on a 24 GB card):
-  N_KEYS=256 python scripts/vla_analysis/smoke_memory_record_path.py
-  # a real memory checkpoint (config read from its config.json, no overrides):
+  # full-size tables (n=256; ~19 GB on-GPU, ~9 GB with OFFLOAD=1) + chunk-latency benchmark:
+  N_KEYS=256 BENCH=5 python scripts/vla_analysis/smoke_memory_record_path.py
+  N_KEYS=256 BENCH=5 OFFLOAD=1 python scripts/vla_analysis/smoke_memory_record_path.py
+  # a real memory checkpoint (config read from its config.json; OFFLOAD=1 adds the override):
   CKPT=outputs/train/<run>/checkpoints/last/pretrained_model python scripts/vla_analysis/smoke_memory_record_path.py
-  # + save/reload round trip through a memory checkpoint, and the two negative tests
-  # (offload override on shared tables -> config-time ValueError; a shape-changing
-  # override -> the record script's post-load verification raises):
+  # + save/reload round trip through a memory checkpoint, the offload reload of that same
+  # checkpoint compared numerically against the on-GPU model, and the negative test (a
+  # shape-changing override -> the record script's post-load verification refuses):
   MODE=roundtrip python scripts/vla_analysis/smoke_memory_record_path.py
 
 Env: BASE (default outputs/pi05_base), CKPT, N_KEYS (default 64), MODE (main|roundtrip),
-DEVICE (default cuda).
+OFFLOAD (0|1), BENCH (chunks to time, 0 = off), DEVICE (default cuda).
 """
 
 import dataclasses
+import gc
 import io
 import os
+import resource
 import shutil
 import tempfile
 import time
@@ -53,6 +56,8 @@ BASE = os.environ.get("BASE", "outputs/pi05_base")
 CKPT = os.environ.get("CKPT")
 N_KEYS = int(os.environ.get("N_KEYS", "64"))
 DEVICE = os.environ.get("DEVICE", "cuda")
+OFFLOAD = os.environ.get("OFFLOAD", "0") == "1"
+BENCH = int(os.environ.get("BENCH", "0"))
 
 # E65 merged-6x2 real-world cell (rw_merged6x2_full_chain.sh + rw_rwarmup_common.sh, with the
 # A-phase/sequential-stage overrides) — the paper cell deployed on the WidowX AI.
@@ -98,12 +103,14 @@ RW_MEM = {
     "routing_intra_task_locality_weight": 0,
     "routing_inter_task_separation_weight": 8.0,
     "routing_query_queue": 512,
+    "offload_slots_to_cpu": OFFLOAD,
 }
 
 
 def build_policy_cfg():
     if CKPT:
-        cfg = PreTrainedConfig.from_pretrained(CKPT, cli_overrides=[])
+        overrides = ["--memory_layer.offload_slots_to_cpu=true"] if OFFLOAD else []
+        cfg = PreTrainedConfig.from_pretrained(CKPT, cli_overrides=overrides)
         cfg.pretrained_path = CKPT
         cfg.device = DEVICE
         return cfg
@@ -186,6 +193,43 @@ def make_batch(policy_cfg, dev):
     return batch
 
 
+def memory_modules(policy):
+    return [m for m in policy.modules() if isinstance(m, MLPPlusMemory)]
+
+
+def check_offload_state(policy, expect_offload: bool):
+    """Slot tables on the host (pinned) or on the compute device as expected; keys always on
+    the compute device; every follower reads the leader's tensors through the alias."""
+    compute = torch.device(DEVICE).type
+    mods = memory_modules(policy)
+    owners = [m.mem for m in mods if m.mem._storage_shared_from is None]
+    followers = [m.mem for m in mods if m.mem._storage_shared_from is not None]
+    for mem in owners + followers:
+        assert mem._slots_offloaded == expect_offload, mem._slots_offloaded
+        assert mem.keys.device.type == compute, mem.keys.device
+        for name in mem._slot_param_names():
+            t = getattr(mem, name)
+            if expect_offload:
+                assert t.device.type == "cpu", (name, t.device)
+                assert t.is_pinned(), f"{name} on host but not pinned"
+            else:
+                assert t.device.type == compute, (name, t.device)
+    for mem in followers:
+        lead = mem._storage_shared_from
+        assert mem.slot_up is lead.slot_up and mem.slot_down is lead.slot_down and mem.keys is lead.keys
+    host_bytes, seen = 0, set()
+    for mem in owners:
+        for name in mem._slot_param_names():
+            t = getattr(mem, name)
+            if id(t) not in seen:
+                seen.add(id(t))
+                host_bytes += t.numel() * t.element_size() if expect_offload else 0
+    print(
+        f"[smoke] offload={expect_offload}: {len(owners)} owner tables, {len(followers)} followers "
+        f"aliased, host-resident slot tables {host_bytes / 1e9:.2f} GB"
+    )
+
+
 def run_inference_checks(policy, policy_cfg):
     dev = torch.device(DEVICE)
     autocast_ctx = torch.autocast(device_type=dev.type) if policy.config.use_amp else nullcontext()
@@ -203,7 +247,7 @@ def run_inference_checks(policy, policy_cfg):
     with torch.inference_mode():
         policy.reset()
         ref = policy.select_action(make_batch(policy_cfg, dev)).float().cpu()
-        mods = [m for m in policy.modules() if isinstance(m, MLPPlusMemory)]
+        mods = memory_modules(policy)
         for m in mods:
             m._frozen_capture = True
         policy.reset()
@@ -215,6 +259,38 @@ def run_inference_checks(policy, policy_cfg):
     if dev.type == "cuda":
         print(f"[smoke] peak GPU: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
     return ref
+
+
+def bench_chunks(policy, policy_cfg, n_chunks: int):
+    """Latency of one full action chunk (prefix pass incl. pre-pass + 10 denoise steps with the
+    dual pass), the stall the arm sees between chunks. Each call starts from an empty queue."""
+    dev = torch.device(DEVICE)
+    with torch.inference_mode():
+        policy.reset()
+        policy.select_action(make_batch(policy_cfg, dev))  # warm-up
+        if dev.type == "cuda":
+            torch.cuda.synchronize()
+        times = []
+        for _ in range(n_chunks):
+            policy.reset()
+            t = time.perf_counter()
+            policy.select_action(make_batch(policy_cfg, dev))
+            if dev.type == "cuda":
+                torch.cuda.synchronize()
+            times.append(time.perf_counter() - t)
+    ms = [t * 1e3 for t in times]
+    print(
+        f"[bench] offload={OFFLOAD} n_keys={N_KEYS}: chunk latency over {n_chunks} chunks "
+        f"mean {sum(ms) / len(ms):.0f} ms, min {min(ms):.0f} ms, max {max(ms):.0f} ms; "
+        f"peak GPU {torch.cuda.max_memory_allocated() / 1e9:.2f} GB"
+    )
+
+
+def select_seeded(policy, policy_cfg, seed=123):
+    torch.manual_seed(seed)
+    with torch.inference_mode():
+        policy.reset()
+        return policy.select_action(make_batch(policy_cfg, torch.device(DEVICE))).float().cpu()
 
 
 def main():
@@ -234,32 +310,37 @@ def main():
         f"[smoke] expert memory layers {exp_mem} | vlm memory layers {vlm_mem} | "
         f"prepass={pwe._frozen_prepass_enabled()} frozen_routing={pwe._frozen_routing_enabled()}"
     )
+    check_offload_state(policy, OFFLOAD)
     if not CKPT:
         # fresh memory: give slot_up non-zero values so the value path is numerically live
         with torch.no_grad():
             seen = set()
-            for m in policy.modules():
-                if isinstance(m, MLPPlusMemory) and id(m.mem.slot_up) not in seen:
+            for m in memory_modules(policy):
+                if id(m.mem.slot_up) not in seen:
                     seen.add(id(m.mem.slot_up))
                     torch.nn.init.normal_(m.mem.slot_up, std=0.02)
         print(f"[smoke] randomised {len(seen)} distinct slot_up tables")
     if DEVICE == "cuda":
         print(f"[smoke] GPU after load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-    a_before = run_inference_checks(policy, policy_cfg)
+    run_inference_checks(policy, policy_cfg)
+    if BENCH > 0:
+        bench_chunks(policy, policy_cfg, BENCH)
+    print(f"[smoke] peak host RSS: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6:.1f} GB")
     print("[smoke] MAIN OK")
     if MODE != "roundtrip":
         return
+    assert not OFFLOAD, "MODE=roundtrip needs OFFLOAD=0: it reloads the checkpoint with offload itself"
 
     # ---------------- round trip through a memory checkpoint ----------------
     tmp = tempfile.mkdtemp(prefix="smoke_record_ckpt_")
     try:
-        torch.manual_seed(123)
-        with torch.inference_mode():
-            policy.reset()
-            a_before = policy.select_action(make_batch(policy_cfg, torch.device(DEVICE))).float().cpu()
+        a_before = select_seeded(policy, policy_cfg)
         policy.save_pretrained(tmp)
-        del policy
+        del policy, pwe  # pwe would keep the first model resident on the GPU
+        gc.collect()
         torch.cuda.empty_cache()
+
+        # 1) plain reload through the record loader: bit-identical
         cfg2 = PreTrainedConfig.from_pretrained(tmp, cli_overrides=[])
         cfg2.pretrained_path = tmp
         cfg2.device = DEVICE
@@ -274,49 +355,67 @@ def main():
         assert "shared-storage alias keys already loaded" in log2, "alias diagnostic missing"
         missing_lines = [line.strip() for line in log2.splitlines() if line.strip().startswith("- ")]
         assert all(line.endswith("lm_head.weight") for line in missing_lines), missing_lines
-        pwe = policy.model.paligemma_with_expert
-        exp_layers = pwe.gemma_expert.model.layers
-        vlm_layers = pwe.paligemma.model.language_model.layers
-        for a, b in cfg2.memory_layer.share_groups:
-            assert exp_layers[b].mlp.mem.slot_up is exp_layers[a].mlp.mem.slot_up
-            assert exp_layers[b].mlp.mem.keys is exp_layers[a].mlp.mem.keys
-        for a, b in cfg2.memory_layer.vlm_share_groups:
-            assert vlm_layers[b].mlp.mem.slot_up is vlm_layers[a].mlp.mem.slot_up
-        torch.manual_seed(123)
-        with torch.inference_mode():
-            policy.reset()
-            a_after = policy.select_action(make_batch(cfg2, torch.device(DEVICE))).float().cpu()
+        check_offload_state(policy, False)
+        a_after = select_seeded(policy, cfg2)
         diff = float((a_before - a_after).abs().max())
         print(f"[rt] action before save vs after reload: max|diff| = {diff:.3e}")
         assert diff == 0.0, "reloaded memory checkpoint is not numerically identical"
         del policy
+        gc.collect()
         torch.cuda.empty_cache()
 
-        # negative 1: offload override on a shared-table checkpoint must fail at CONFIG time
-        try:
-            PreTrainedConfig.from_pretrained(tmp, cli_overrides=["--memory_layer.offload_slots_to_cpu=true"])
-            raise AssertionError("offload + share_groups did not raise at config time")
-        except AssertionError:
-            raise
-        except Exception as e:  # draccus wraps the dataclass ValueError in a ParsingError
-            chain, cur = [], e
-            while cur is not None:
-                chain.append(str(cur))
-                cur = cur.__cause__ or cur.__context__
-            assert any("offload_slots_to_cpu is unsupported with share_groups" in m for m in chain), chain
-            print(f"[neg] offload+share_groups -> rejected at config time ({type(e).__name__}): ok")
-
-        # negative 2: a shape-changing override makes load_state_dict fail inside from_pretrained's
-        # try/except; the record script's verification must refuse the policy.
+        # 2) the SAME checkpoint with the offload CLI override (what the lab PC runs): slot
+        #    tables on the host, shared tables aliased, output matches the on-GPU model.
         cfg3 = PreTrainedConfig.from_pretrained(
-            tmp, cli_overrides=[f"--memory_layer.mem_n_keys={N_KEYS * 2}"]
+            tmp, cli_overrides=["--memory_layer.offload_slots_to_cpu=true"]
         )
         cfg3.pretrained_path = tmp
         cfg3.device = DEVICE
+        policy, log3 = load_via_record_script(cfg3)
+        assert "Could not load state dict" not in log3
+        assert "memory param keys initialized from scratch" not in log3, "memory tensors did not load"
+        check_offload_state(policy, True)
+        print(f"[rt-offload] GPU after load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+        a_off = select_seeded(policy, cfg3)
+        scale = float(a_after.abs().max())
+        diff_off = float((a_off - a_after).abs().max())
+        print(f"[rt-offload] action offload vs on-GPU: max|diff| = {diff_off:.3e} (|a| max {scale:.3f})")
+        assert diff_off <= 1e-3 + 0.02 * scale, "offloaded model diverges from the on-GPU model"
+        del policy
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # 2b) attribute the residual: offload bypasses the VLM route-once fast path, so the on-GPU
+        #     model with route_once OFF is the same numerical path and must match the offloaded
+        #     model to rounding; its own gap to the route-once model is the documented
+        #     route-once/broadcast bf16 parity band, independent of offload.
+        cfg3b = PreTrainedConfig.from_pretrained(tmp, cli_overrides=["--memory_layer.vlm_route_once=false"])
+        cfg3b.pretrained_path = tmp
+        cfg3b.device = DEVICE
+        policy, _ = load_via_record_script(cfg3b)
+        a_bcast = select_seeded(policy, cfg3b)
+        d_bo = float((a_bcast - a_off).abs().max())
+        d_br = float((a_bcast - a_after).abs().max())
+        print(
+            f"[rt-offload] on-GPU broadcast-path model: vs offloaded max|diff| = {d_bo:.3e}; "
+            f"vs on-GPU route-once model max|diff| = {d_br:.3e}"
+        )
+        assert d_bo <= 1e-4, "offload gather path diverges from the same routing path on-GPU"
+        del policy
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # 3) negative: a shape-changing override makes load_state_dict fail inside from_pretrained's
+        #    try/except; the record script's verification must refuse the policy.
+        cfg4 = PreTrainedConfig.from_pretrained(
+            tmp, cli_overrides=[f"--memory_layer.mem_n_keys={N_KEYS * 2}"]
+        )
+        cfg4.pretrained_path = tmp
+        cfg4.device = DEVICE
         try:
             buf = io.StringIO()
             with redirect_stdout(buf):
-                _load_policy(SimpleNamespace(policy=cfg3, device=DEVICE))
+                _load_policy(SimpleNamespace(policy=cfg4, device=DEVICE))
             raise AssertionError("record loader accepted a policy whose weights did not load")
         except RuntimeError as e:
             print(f"[neg] shape-changing override -> record loader refused: {str(e)[:110]}...")
