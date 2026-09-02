@@ -387,6 +387,18 @@ class MemoryLayerConfig:
 
         _check_share_groups(self.share_groups, exp, "expert")
         _check_share_groups(self.vlm_share_groups, vlm, "vlm")
+        # Inference-time CPU offload is per module (each module evicts its own slot tables
+        # in _apply and gathers per forward); shared-pair storage aliases one table across
+        # modules, and share_storage_from raises NotImplementedError for the combination.
+        # That raise must surface HERE: on the model-load path (from_pretrained ->
+        # attach_memory_to_expert inside a broad try/except) it is swallowed, and the
+        # policy comes back with the base weights NOT loaded and no VLM memory attached —
+        # a silently untrained model (reproduced on the lerobot-memory-record load path).
+        if self.offload_slots_to_cpu and (self.share_groups or self.vlm_share_groups):
+            raise ValueError(
+                "memory_layer.offload_slots_to_cpu is unsupported with share_groups / "
+                "vlm_share_groups (shared-pair tables): run this checkpoint with offload off."
+            )
         if self.share_groups and (self.layer_ranks or []):
             rank_by = {li: int(r) for li, r in zip(exp, list(self.layer_ranks))}
             for g in self.share_groups:

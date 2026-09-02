@@ -1909,6 +1909,26 @@ class PI05Policy(PreTrainedPolicy):
 
             # Filter out missing memory keys if memory is freshly attached
             if memory_enabled and missing_keys:
+                # E61 shared-pair tables: a follower's `_storage_shared_from` IS the leader
+                # module (registered as a child), so state_dict() lists every shared tensor
+                # twice (leader name + follower alias name) and safetensors keeps ONE name
+                # per storage — the lexicographically first, which for e.g. group (8,10) is
+                # the FOLLOWER alias `layers.10...._storage_shared_from.*`. load_state_dict
+                # fills the shared Parameter through whichever name is present and then
+                # reports the other as missing. Such a name is not missing at all: drop it
+                # before the "initialized from scratch" tally, which otherwise false-alarms
+                # on every shared-table checkpoint load.
+                params_by_name = dict(model.named_parameters(remove_duplicate=False))
+                loaded_ids = {id(params_by_name[k]) for k in remapped_state_dict if k in params_by_name}
+                aliased = [
+                    k for k in missing_keys if k in params_by_name and id(params_by_name[k]) in loaded_ids
+                ]
+                if aliased:
+                    missing_keys = [k for k in missing_keys if k not in aliased]
+                    print(
+                        f"  ✓ {len(aliased)} shared-storage alias keys already loaded under their "
+                        "other name (share_groups)"
+                    )
                 memory_missing = [k for k in missing_keys if ".mlp.mem." in k or ".mlp.mlp." in k]
                 missing_keys = [k for k in missing_keys if k not in memory_missing]
                 if memory_missing:

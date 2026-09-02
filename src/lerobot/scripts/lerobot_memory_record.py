@@ -254,6 +254,94 @@ def _optimize_pi05_for_inference(policy: PreTrainedPolicy) -> dict:
     return freed
 
 
+def _verify_policy_loaded(policy: PreTrainedPolicy, policy_cfg: PreTrainedConfig) -> None:
+    """Fail fast if the checkpoint did not actually land in the model.
+
+    ``PI05Policy.from_pretrained`` wraps memory attach + ``load_state_dict`` in a broad
+    try/except and only *prints* on failure — e.g. a memory-attach error, or a shape
+    mismatch caused by a ``--policy.memory_layer.*`` CLI override — and hands back a
+    policy with random base weights. A training run notices within a few steps; a robot
+    does not. Two independent checks, both cheap:
+
+    1. Structure (pi05 + memory): the attached memory layers equal the configured
+       expert ``layers`` and ``vlm_layers``.
+    2. Weights: a sample of tensors from ``model.safetensors`` (every memory key/slot
+       table plus a spread of base weights, read as slices) matches the live parameters.
+       Alias-stored shared tables (E61 ``_storage_shared_from`` names) are covered because
+       ``state_dict()`` lists them.
+    """
+    from pathlib import Path
+
+    mem_cfg = getattr(policy_cfg, "memory_layer", None)
+    memory_enabled = bool(getattr(policy_cfg, "memory_layers", False) or getattr(mem_cfg, "enabled", False))
+    pwe = getattr(getattr(policy, "model", None), "paligemma_with_expert", None)
+    if memory_enabled and pwe is not None:
+        from lerobot.policies.modules.memory_lite import MLPPlusMemory, _resolve_target_layers
+
+        exp_layers = pwe.gemma_expert.model.layers
+        vlm_layers = pwe.paligemma.model.language_model.layers
+        got_exp = [i for i, layer in enumerate(exp_layers) if isinstance(layer.mlp, MLPPlusMemory)]
+        got_vlm = [i for i, layer in enumerate(vlm_layers) if isinstance(layer.mlp, MLPPlusMemory)]
+        want_exp = sorted(_resolve_target_layers(len(exp_layers), mem_cfg.layers))
+        want_vlm_cfg = list(getattr(mem_cfg, "vlm_layers", []) or [])
+        want_vlm = sorted(_resolve_target_layers(len(vlm_layers), want_vlm_cfg)) if want_vlm_cfg else []
+        if got_exp != want_exp or got_vlm != want_vlm:
+            raise RuntimeError(
+                "Memory modules are NOT attached as configured (an attach error was swallowed "
+                f"on the load path): expert got {got_exp} want {want_exp}; "
+                f"vlm got {got_vlm} want {want_vlm}. Refusing to run the robot with this policy."
+            )
+
+    path = getattr(policy_cfg, "pretrained_path", None)
+    sf = Path(str(path)) / "model.safetensors" if path else None
+    if sf is None or not sf.is_file():
+        logger.warning("No local model.safetensors at %s — skipping weight verification", path)
+        return
+    from safetensors import safe_open
+
+    sd = policy.state_dict()
+
+    def model_name(k: str) -> str | None:
+        if k in sd:
+            return k
+        return f"model.{k}" if f"model.{k}" in sd else None
+
+    bad, checked = [], 0
+    with safe_open(str(sf), "pt") as fh:
+        file_keys = list(fh.keys())
+        mem_keys = [
+            k
+            for k in file_keys
+            if ".mlp.mem." in k and k.rsplit(".", 1)[-1] in ("keys", "slot_up", "slot_down", "values")
+        ]
+        base_keys = [k for k in file_keys if ".mlp.mem." not in k and "anchor_proj" not in k]
+        stride = max(1, len(base_keys) // 16)
+        for k in mem_keys + base_keys[::stride]:
+            mk = model_name(k)
+            if mk is None:
+                continue  # e.g. lm_head trimmed to Identity above
+            live = sd[mk]
+            sl = fh.get_slice(k)
+            shape = sl.get_shape()
+            if len(shape) == 0:
+                ref, lv = fh.get_tensor(k), live
+            else:
+                n = min(int(shape[0]), 64)
+                ref, lv = sl[:n], live[:n]
+            ref = ref.to(torch.float32)
+            lv = lv.detach().to(device="cpu", dtype=torch.float32)
+            checked += 1
+            if tuple(lv.shape) != tuple(ref.shape) or not torch.allclose(lv, ref, rtol=1e-2, atol=1e-3):
+                bad.append(k)
+    if checked == 0 or bad:
+        raise RuntimeError(
+            f"Loaded policy does NOT match {sf}: {len(bad)}/{checked} sampled tensors differ "
+            f"(first: {bad[:3]}). The load path swallowed an error — see the 'Could not load "
+            "state dict' / 'Unexpected keys' lines above. Refusing to run the robot with this policy."
+        )
+    logger.info("Verified %d checkpoint tensors match the loaded policy (%s)", checked, sf)
+
+
 def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
     """Instantiate the policy from disk, honouring the saved memory config.
 
@@ -291,6 +379,10 @@ def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
             )
     else:
         policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
+
+    # from_pretrained swallows attach/load errors (prints a warning, returns a policy with
+    # random weights). Never let that reach the robot.
+    _verify_policy_loaded(policy, policy_cfg)
 
     policy = policy.to(target_device)
     policy.eval()
