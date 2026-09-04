@@ -8886,3 +8886,28 @@ parameter-matched dense control is both degenerate in rank and ~4x the compute.
 **ETA CORRECTION:** 50,000 steps x 4.47 s = ~60h, not the ~14h first estimated (that assumed our own ~1 s/step
 at acc2). Lands ~08:00 UTC 4 Sep, then the 4-seed campaign (~5h). Pre-registration unchanged: expect collapse
 in the naive r512 band (10-task 4-seed 9.7); >~20 would be the surprise.
+
+### Entry 66 addendum 2 (4 Sep 26, 12:20 UTC) — RESULT: the parameter-matched dense baseline scores 8.6. Reviewer objection closed.
+**4-seed, 25 eps, all ten envs, same instrument as every comparator row.**
+| seed | e0 | e1 | e2 | e3 | e4 | e5 | e6 | e7 | e8 | e9 | mean |
+| 1000 | 0 | 0 | 0 | 0 | 0 | 88.0 | 0 | 0 | 0 | 0 | 8.8 |
+| 2000 | 0 | 0 | 0 | 0 | 0 | 92.0 | 0 | 0 | 0 | 0 | 9.2 |
+| 3000 | 0 | 0 | 0 | 0 | 0 | 84.0 | 0 | 0 | 0 | 0 | 8.4 |
+| 4000 | 0 | 0 | 0 | 0 | 0 | 80.0 | 0 | 0 | 0 | 0 | 8.0 |
+**mean 8.60, sd 0.52, range 8.0-9.2.** Only env 5 is non-zero in any seed; env 5 = the LAST task trained
+(ds task 9 -> env 5). Nine of ten prior tasks at EXACTLY 0.0 in all four seeds — erased, not degraded.
+**Comparator table (10-task, 4-seed, 25 eps):**
+| arm | added params | score |
+| ours merged6x2 | 2.684B | 65.1 |
+| oracle specialists | - | 63.7 |
+| multitask LoRA-10 | - | 53.2 |
+| naive seq-LoRA r512 | 0.852B | 9.7 |
+| naive seq-LoRA r1216 PARAM-MATCHED | 2.681B | **8.6** |
+Pre-registration HELD (predicted: r512 band; >~20 would have needed explaining). Nothing to explain away.
+**The claim this licenses:** matched to within 0.12% on added parameters, dense sequential scores 8.6 vs our
+65.1 — a 7.6x gap. Tripling the baseline's added parameters (0.852B -> 2.681B) did NOT help it; 9.7 -> 8.6 is
+flat within seed noise (sd 0.52). Retention is not bought with parameter count. Carry add-1 (3.8x wall-clock
+per sample, cannot fit bs16) and add-16 (over-complete on 362/416 matrices at any nearby rank) alongside it:
+the matched dense control is simultaneously degenerate in rank, ~4x the compute, and catastrophically forgetful.
+Artifacts: outputs/analysis/e60/seeds_naive10_paramatched_r1216.json; run
+outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k (10 ckpts, VM). Train 62h, campaign 4.2h.
