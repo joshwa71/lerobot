@@ -2,7 +2,7 @@
 # E67 (Josh, 7 Sep 26): O-LoRA baseline (Wang et al., EMNLP Findings 2023) under our continual
 # protocol — the r=64 specialist/naive LoRA recipe verbatim (same target set, alpha/r=0.25, lr
 # 1e-4 -> 1e-5 linear per task, bs16 x acc2, AdamW betas (0.9,0.999) wd 0, clip 1.0, 5,000
-# steps/task, optimizer reinit per task) + one NEW adapter per task with the earlier adapters
+# steps/task, optimizer reinit per task; micro-batch 8 x accum 4, see LADDER) + one NEW adapter per task with the earlier adapters
 # frozen-but-active + the orthogonality penalty lambda1 * sum_{i<t} |A_i A_t^T|_1 (official-code
 # form), lambda1 = 0.5, skipped on the two 32-input projections (state_proj, action_in_proj).
 # Every boundary is exported as ONE rank-concatenated PEFT adapter (padded to 640) so the
@@ -72,10 +72,10 @@ run_olora () {  # <bs> <accum> [extra args...]
     "$@"
 }
 if [ "$SMOKE" = "1" ]; then
-  run_olora 16 2 --stop_after_steps=25 | tee /tmp/olora_smoke_1.log
+  run_olora 8 4 --stop_after_steps=25 2>&1 | tee /tmp/olora_smoke_1.log
   grep -q "OLORA-STOP-AFTER-STEPS" /tmp/olora_smoke_1.log || { echo "E67-OLORA-SMOKE-FAIL (no stop marker)"; exit 1; }
   grep -q "OLORA-EXPORT-CHECK-OK" /tmp/olora_smoke_1.log || { echo "E67-OLORA-SMOKE-FAIL (boundary-1 export check)"; exit 1; }
-  run_olora 16 2 | tee /tmp/olora_smoke_2.log
+  run_olora 8 4 2>&1 | tee /tmp/olora_smoke_2.log
   grep -q "resume: in-progress task 1 at step 5" /tmp/olora_smoke_2.log || { echo "E67-OLORA-SMOKE-FAIL (did not resume at step 5)"; exit 1; }
   grep -q "OLORA-CHAIN-DONE" /tmp/olora_smoke_2.log || { echo "E67-OLORA-SMOKE-FAIL (no done marker)"; exit 1; }
   grep -q "OLORA-EXPORT-CHECK-OK" /tmp/olora_smoke_2.log || { echo "E67-OLORA-SMOKE-FAIL (boundary-2 export check)"; exit 1; }
@@ -99,7 +99,7 @@ fi
 if [ -f "$RUN_DIR/olora_state/progress.json" ] && [ "$(python3 -c "import json;print(json.load(open('$RUN_DIR/olora_state/progress.json'))['completed_tasks'])")" = "10" ]; then
   echo "[olora] all 10 boundaries exist - nothing to do."; echo "OLORA-CHAIN-DONE"; exit 0
 fi
-LADDER=${LADDER:-"16:2,16:2,8:4"}   # retry the rung once (transient contention) before demoting
+LADDER=${LADDER:-"8:4,8:4,4:8"}   # bs8 x acc4: the smoke peaked at 118G at bs16 x acc2, which would block the eval unit from overlapping; retry once before demoting
 ok=0
 for rung in ${LADDER//,/ }; do
   IFS=: read -r rb ra <<< "$rung"

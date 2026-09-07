@@ -6,8 +6,8 @@
 `merge_in_place` mixes a live model with a CPU copy of its pre-task parameters (fp32 math, cast
 back to the parameter dtype). `merge_safetensors` does the same between two saved
 `model.safetensors` files (audit / re-merge at another alpha). Statistics returned by both include
-an exactness witness: on the largest tensor, |merged - prev|_1 / |ft - prev|_1 computed in fp32
-must equal alpha.
+an exactness witness: on the largest tensor the fine-tune moved, |merged - prev|_1 / |ft - prev|_1
+computed in fp32 must equal alpha (tied/unused tensors such as lm_head never move and are skipped).
 """
 from __future__ import annotations
 
@@ -40,15 +40,16 @@ def merge_in_place(model, theta_prev: dict[str, torch.Tensor], alpha: float) -> 
         sum_ft_prev += d_ft
         sum_merged_prev += d_m
         n_el += p.numel()
-        if largest is None or p.numel() > largest[1]:
-            largest = (n, p.numel(), (d_m / d_ft) if d_ft > 0 else float("nan"))
+        if d_ft > 0 and (largest is None or p.numel() > largest[1]):
+            largest = (n, p.numel(), d_m / d_ft)
         p.data.copy_(merged32.to(p.dtype))
         del prev, ft, merged32
     return {
         "mean_abs_ft_minus_prev": sum_ft_prev / max(n_el, 1),
         "mean_abs_merged_minus_prev": sum_merged_prev / max(n_el, 1),
         "ratio_merged_over_ft": (sum_merged_prev / sum_ft_prev) if sum_ft_prev > 0 else float("nan"),
-        "largest_tensor": {"name": largest[0], "numel": largest[1], "ratio_fp32": largest[2]},
+        "largest_tensor": ({"name": largest[0], "numel": largest[1], "ratio_fp32": largest[2]} if largest
+                           else {"name": None, "numel": 0, "ratio_fp32": float("nan")}),
         "n_params": n_el,
     }
 
@@ -90,8 +91,8 @@ def merge_safetensors(prev_dir: Path, ft_dir: Path, out_dir: Path, alpha: float)
             stats["n_params"] += a.numel()
             stats["sum_ft_prev"] += d_ft
             stats["sum_merged_prev"] += d_m
-            if stats["largest"] is None or a.numel() > stats["largest"][1]:
-                stats["largest"] = (k, a.numel(), (d_m / d_ft) if d_ft > 0 else float("nan"))
+            if d_ft > 0 and (stats["largest"] is None or a.numel() > stats["largest"][1]):
+                stats["largest"] = (k, a.numel(), d_m / d_ft)
             merged[k] = m32.to(a.dtype)
     save_file(merged, str(tmp / "model.safetensors"), metadata={"format": "pt"})
     stats["ratio_merged_over_ft"] = stats["sum_merged_prev"] / stats["sum_ft_prev"] if stats["sum_ft_prev"] > 0 else float("nan")

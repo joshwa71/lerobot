@@ -253,7 +253,7 @@ def main(cfg: RetainConfig):
         logging.info(f"[boundary {task_pos+1}] merged alpha={alpha}: mean|ft-prev|={stats['mean_abs_ft_minus_prev']:.3e} "
                      f"mean|merged-prev|={stats['mean_abs_merged_minus_prev']:.3e} ratio={stats['ratio_merged_over_ft']:.4f} "
                      f"(largest tensor ratio {r:.4f}); saved in {t_b.s:.1f}s -> {bdir}")
-        if abs(r - alpha) > 1e-3:
+        if r != r or abs(r - alpha) > 1e-3:   # NaN (nothing moved) or off-alpha
             raise RuntimeError(f"merge exactness witness failed: ratio {r} != alpha {alpha}")
         print(f"RETAIN-BOUNDARY-{task_pos+1}", flush=True)
         del optimizer, lr_scheduler, dl, it

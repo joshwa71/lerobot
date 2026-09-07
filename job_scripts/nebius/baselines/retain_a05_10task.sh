@@ -69,10 +69,10 @@ run_retain () {  # <bs> <accum> [extra args...]
 }
 if [ "$SMOKE" = "1" ]; then
   # 1) forced stop after 25 global steps (task 1 done, task 2 at step 5) -> 2) resume to completion
-  run_retain 8 4 --stop_after_steps=25 | tee /tmp/retain_smoke_1.log
+  run_retain 8 4 --stop_after_steps=25 2>&1 | tee /tmp/retain_smoke_1.log
   grep -q "RETAIN-STOP-AFTER-STEPS" /tmp/retain_smoke_1.log || { echo "E67-RETAIN-SMOKE-FAIL (no stop marker)"; exit 1; }
   [ -f "$RUN_DIR/retain_state/current/meta.json" ] || { echo "E67-RETAIN-SMOKE-FAIL (no in-progress state)"; exit 1; }
-  run_retain 8 4 | tee /tmp/retain_smoke_2.log
+  run_retain 8 4 2>&1 | tee /tmp/retain_smoke_2.log
   grep -q "resume: in-progress task 1 at step 5" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (did not resume at step 5)"; exit 1; }
   grep -q "RETAIN-CHAIN-DONE" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (no done marker)"; exit 1; }
   for b in 000020 000040; do
