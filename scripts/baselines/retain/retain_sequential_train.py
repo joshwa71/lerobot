@@ -1,4 +1,3 @@
-import gc
 #!/usr/bin/env python3
 """RETAIN baseline (Yadav, Zhou, Wagenmaker, Pertsch, Levine; ICLR 2026, arXiv 2512.08333),
 run under OUR continual protocol (E67).
@@ -33,6 +32,7 @@ present, the in-progress state. `--fresh=true` wipes both. `--stop_after_steps=N
 preemption after N global steps (smoke test of the resume path).
 """
 
+import gc
 import logging
 import shutil
 import sys
