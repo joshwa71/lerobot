@@ -1,12 +1,13 @@
 #!/bin/bash
 # E67 EVAL queue (VM-side; unit e67-eval). Runs alongside e67-train: every 10 min it tries the
 # retention-triangle rows whose boundary checkpoints exist (skip-guarded per row) for RETAIN then
-# O-LoRA, gated on >= GATE_FREE_MIB of free VRAM so the training unit is never starved, and once a
+# O-LoRA, gated on >= GATE_FREE_MIB of free VRAM (22 GB: the trainer's caching allocator holds ~107 GB of the
+# 141 GB while RETAIN trains and never gives it back, so a 45 GB gate blocked every row), and once a
 # chain has all 10 boundaries it runs that chain's loss-drift matrix (dense / adapter-swap).
 # Exits with E67-EVAL-DONE when 20 rows + 2 matrices exist.
 set -uo pipefail
 ROOT=/home/josh/lerobot
-GATE_FREE_MIB=${GATE_FREE_MIB:-45000}
+GATE_FREE_MIB=${GATE_FREE_MIB:-22000}
 source /home/josh/miniforge3/etc/profile.d/conda.sh
 conda activate lerobot-memory-updated
 cd $ROOT
