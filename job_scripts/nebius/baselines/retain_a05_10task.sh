@@ -97,7 +97,7 @@ if [ -f "$RUN_DIR/retain_state/progress.json" ] && [ "$(python3 -c "import json;
   echo "[retain] all 10 boundaries exist - nothing to do."; echo "RETAIN-CHAIN-DONE"; exit 0
 fi
 # VRAM ladder (effective batch 32 held): the trainer resumes from its own state on each rung
-LADDER=${LADDER:-"8:4,4:8"}
+LADDER=${LADDER:-"8:4,8:4,4:8"}   # retry the rung once (transient contention) before demoting
 ok=0
 for rung in ${LADDER//,/ }; do
   IFS=: read -r rb ra <<< "$rung"

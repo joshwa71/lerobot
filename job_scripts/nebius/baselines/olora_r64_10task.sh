@@ -99,7 +99,7 @@ fi
 if [ -f "$RUN_DIR/olora_state/progress.json" ] && [ "$(python3 -c "import json;print(json.load(open('$RUN_DIR/olora_state/progress.json'))['completed_tasks'])")" = "10" ]; then
   echo "[olora] all 10 boundaries exist - nothing to do."; echo "OLORA-CHAIN-DONE"; exit 0
 fi
-LADDER=${LADDER:-"16:2,8:4"}
+LADDER=${LADDER:-"16:2,16:2,8:4"}   # retry the rung once (transient contention) before demoting
 ok=0
 for rung in ${LADDER//,/ }; do
   IFS=: read -r rb ra <<< "$rung"
