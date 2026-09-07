@@ -1,3 +1,4 @@
+import gc
 #!/usr/bin/env python3
 """RETAIN baseline (Yadav, Zhou, Wagenmaker, Pertsch, Levine; ICLR 2026, arXiv 2512.08333),
 run under OUR continual protocol (E67).
@@ -256,8 +257,18 @@ def main(cfg: RetainConfig):
         if r != r or abs(r - alpha) > 1e-3:   # NaN (nothing moved) or off-alpha
             raise RuntimeError(f"merge exactness witness failed: ratio {r} != alpha {alpha}")
         print(f"RETAIN-BOUNDARY-{task_pos+1}", flush=True)
+        # Free the task's optimizer state for real. `del optimizer` alone leaks it: accelerator.prepare() keeps
+        # its own reference (accelerator._optimizers / _schedulers), so every task left one AdamW state
+        # (~14.1 GiB) on the GPU - allocated 22.9 -> 37.0 GiB across boundaries 1 -> 2 in the E67 run,
+        # i.e. an OOM by task 4-5 and a permanently closed eval VRAM gate (E67 addendum 6).
+        optimizer.state.clear()
+        unwrapped.zero_grad(set_to_none=True)
+        for _reg in ("_optimizers", "_schedulers"):
+            getattr(accelerator, _reg, []).clear()
         del optimizer, lr_scheduler, dl, it
+        gc.collect()
         torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
         log_gpu_mem(f"boundary-{task_pos+1}")
     print("RETAIN-CHAIN-DONE", flush=True)
 

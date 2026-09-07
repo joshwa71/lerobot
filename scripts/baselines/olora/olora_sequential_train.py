@@ -22,6 +22,7 @@ Resume is the default; --fresh=true wipes; --stop_after_steps=N simulates a pree
 
 import copy
 import logging
+import gc
 import os
 import random
 import shutil
@@ -391,8 +392,15 @@ def main(cfg: OLoraConfig):
         logging.info(f"[boundary {task_pos+1}] exported rank {info['rank_concat']} (padded {info['export_rank']}) adapter, "
                      f"{info['n_export_params']/1e9:.3f}B params, in {t_b.s:.1f}s -> {bdir}")
         print(f"OLORA-BOUNDARY-{task_pos+1}", flush=True)
+        # see retain_sequential_train.py: accelerator.prepare() keeps optimizer/scheduler references, so clear
+        # the state and the registry explicitly (E67 addendum 6)
+        optimizer.state.clear()
+        for _reg in ("_optimizers", "_schedulers"):
+            getattr(accelerator, _reg, []).clear()
         del optimizer, sched, dl, it, penalty, extra
+        gc.collect()
         torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
         log_gpu_mem(f"boundary-{task_pos+1}")
     print("OLORA-CHAIN-DONE", flush=True)
 
