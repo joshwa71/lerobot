@@ -8911,3 +8911,98 @@ per sample, cannot fit bs16) and add-16 (over-complete on 362/416 matrices at an
 the matched dense control is simultaneously degenerate in rank, ~4x the compute, and catastrophically forgetful.
 Artifacts: outputs/analysis/e60/seeds_naive10_paramatched_r1216.json; run
 outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k (10 ckpts, VM). Train 62h, campaign 4.2h.
+
+## Entry 67 - 7 Sep 26 (EXTERNAL CONTINUAL BASELINES UNDER OUR PROTOCOL: RETAIN (weight merging, alpha 0.5) and O-LoRA (orthogonal per-task adapters, r=64) — code written, smoke-tested, chains queued)
+**Why (Josh, 7 Sep):** the ICRA related-work now names RETAIN and O-LoRA as the two closest methods (RETAIN meets all four
+of our constraints for two tasks; O-LoRA is the canonical task-ID-free, replay-free LoRA competitor). A reviewer will ask
+for both as rows. Run both under the same constraints as every other sequential row: stage-1 libero_90 base, the ten
+LIBERO-10 tasks in dataset order, 5,000 steps/task, effective batch 32, no replay, no task identity at inference,
+optimizer reinit + LR reset per task, the 4-seed x 25-episode instrument, and the full rollout retention triangle
+(after task k, evaluate the k tasks seen so far) plus the 10x10 paired-noise loss matrix.
+
+**What the papers specify (read from the PDFs, scratchpad/papers/):**
+- RETAIN (Yadav, Zhou, Wagenmaker, Pertsch, Levine; ICLR 2026, arXiv 2512.08333). Full fine-tune, then linear
+  interpolation over EVERY parameter, theta~ = (1-alpha) theta_pre + alpha theta_ft (Eq. 2). Continual setting (Sec. 5.3,
+  Eq. 4): theta~_n = (1-alpha) theta~_{n-1} + alpha theta_ft,n, i.e. the merged checkpoint replaces theta_pre at the next
+  boundary. alpha in their continual experiment (DROID, 2 tasks): **fixed at 0.5 at every boundary** (App. A.8.3: "the
+  merging weight is always fixed at 50% task-FT, 50% base model"). Single-task alphas were tuned on a held-out OOD
+  scene: 0.5-0.75 on DROID, 0.8-0.9 on LIBERO (pi0, batch 64, peak 2.5e-5 cosine to 2.5e-6, only 500-1,000 steps).
+  Their continual run used co-FT (50% pretraining-data replay) — forbidden by our no-replay constraint, so we run
+  their task-FT variant. The modality-specific variant (Eq. 3) was not used in their continual run; uniform alpha here.
+- O-LoRA (Wang et al.; Findings of EMNLP 2023, arXiv 2310.14152). One LoRA pair per task; earlier pairs frozen but
+  ACTIVE (forward = W x + s * sum_i B_i A_i x, s = alpha/r shared); objective L_task + lambda_1 * sum_{i<t} L_orth(A_i, A_t).
+  Paper Eq. 8 writes a squared Frobenius norm; the OFFICIAL CODE (src/uie_trainer_lora.py) uses
+  `orthogonal_loss += torch.abs(torch.mm(A_old, A_new.T)).sum()` — the L1 of the r x r Gram block — with lambda_1 = 0.5
+  (5 for a few tasks in two orders) and lambda_2 (L2 on the new pair) = 0. Their rank was 8 on q,v only, constant LR
+  1e-3, one epoch. Inference = sum of all adapters, no task id; parameters grow linearly. Their custom LoRA layer
+  (src/peft/tuners/lora.py) carries the earlier pairs as one frozen block of rank r*(t-1) plus the trainable rank-r
+  pair, i.e. rank concatenation — which is what our export format does (below).
+
+**Decisions (Josh, 7 Sep — "Yes. Go."):**
+1. RETAIN alpha = 0.5 (their continual setting). Per-task fine-tune = the paper's joint full-FT recipe (pi0.5 preset:
+   AdamW peak 2.5e-5, wd 0.01, betas (0.9,0.95), clip 1.0, cosine to 2.5e-6) compressed to 5k steps with a 500-step
+   warm-up; bs8 x acc4 no-grad-ckpt (E60 add-7 rung: 2.20 s/step, 92G). NOT the LoRA rows' 1e-4 (4x their peak for
+   full FT). A second chain at alpha 0.8 (their LIBERO single-task value) is possible later at ~31h train + ~28h eval;
+   it cannot be recovered from the 0.5 chain because every boundary depends on the previous merge.
+2. O-LoRA r=64, alpha/r = 0.25, the r64 specialist target set (attn+MLP both towers + action/state projections; 106M
+   params per adapter) and recipe verbatim (lr 1e-4 -> 1e-5 linear, bs16 x acc2, AdamW (0.9,0.999) wd 0, clip 1.0).
+   lambda_1 = 0.5 in the official L1 form. Penalty SKIPPED on the two 32-input projections (state_proj, action_in_proj):
+   640 mutually orthogonal rows cannot exist in 32 dimensions; they still get adapters. So the row is "the r64 library,
+   trained sequentially with the orthogonality constraint and summed at inference, without task identity".
+3. Order: RETAIN chain first, then O-LoRA; the triangle rows run in a second unit as boundaries land (VRAM-gated).
+
+**Code (commit 07e4f761 + b3ca629d; all under scripts/baselines/, importing our code and modifying none of it):**
+- `common.py`: the sequential trainer's setup mirror (make_dataset / make_policy / processors with dataset stats), its
+  per-task dataloader and paired-noise loss evaluator (imported), lerobot-train's update structure as `train_step`
+  (+ optional differentiable regulariser), SIGTERM flag, atomic directory replace with fsync, timed saves.
+- `retain/retain_sequential_train.py` (+ `retain_merge.py`, lerobot-free): per task, full FT from the running merged
+  model with the preset optimizer/scheduler, then in-memory fp32 merge theta <- (1-a) prev + a ft cast back to bf16
+  (exactness witness: on the largest tensor |merged-prev|_1/|ft-prev|_1 must equal alpha), saved as an ordinary dense
+  `checkpoints/<k*5000>/pretrained_model` (evaluates through the campaign script unchanged); the un-merged fine-tune
+  kept alongside (`ft_pretrained_model`, audit). In-progress state (model + optimizer + scheduler + RNG, 24G) rewritten
+  every 1,000 steps and on SIGTERM; resume by default.
+- `olora/olora_sequential_train.py` (+ `olora_common.py`): peft multi-adapter model, new adapter `olora_t<k>` per task,
+  earlier adapters frozen-but-active (checked: their L1 is unchanged at every boundary), penalty as above, adapter-level
+  state every 1,000 steps + SIGTERM. Every boundary exported as ONE rank-concatenated PEFT adapter zero-padded to
+  rank 640 (exact: shared scaling => sum of rank-64 adapters == one rank-64k adapter; padding contributes nothing), so
+  `eval_seeds_campaign.py --policy.use_peft=true` and `mse_matrix_peft.py` (adapter swap, same shapes at every
+  boundary) run unchanged. Two exactness checks at every boundary: (a) algebra on the weights (max rel err 1e-7 locally),
+  (b) the concatenated adapter loaded as a temporary peft adapter reproduces the multi-adapter forward loss on the last
+  batch at the same seed (bitwise tensor round-trip asserted; loss rel diff < 2e-2 required).
+- `mse_matrix_dense.py`: the loss-matrix instrument for dense boundaries (strict full reload; no-op-load guard).
+- `run_baseline_triangle.sh retain|olora`: the E64 triangle instrument on the new chains -> outputs/analysis/e67/
+  seeds_tri_{retain10_a05,olora10_r64}_b<k>.json. `tests/test_algebra.py`: local torch+peft test (passes).
+- Ops: `job_scripts/nebius/baselines/{retain_a05,olora_r64}_10task.sh` (SMOKE=1: 2 tasks x 20 steps, forced
+  stop/resume at global step 25, then the drift instrument on both boundaries), `scripts/ops/queue_e67_train.sh
+  smoke|full` (unit e67-train), `scripts/ops/queue_e67_eval.sh` (unit e67-eval: rows as boundaries land, gated on
+  45 GB free VRAM; drift matrices when a chain completes), `scripts/ops/heartbeat_e67.sh` (local watcher, relaunches
+  both units after a preemption; each resumes from its own on-disk state).
+
+**Cost / ETA (one H200):** RETAIN 10 x 5k x 2.20 s = ~31h; O-LoRA ~27h; two triangles 2 x ~27.5h (~200 eps/h) — run
+alongside training where VRAM allows; two loss matrices ~4h. Serial ~117h; with overlap ~3.5-4 days. Disk ~180G
+(RETAIN, both ft and merged weights at every boundary) + <50G (O-LoRA) against 532G free.
+
+**Pre-registered expectations (before any number lands):** RETAIN alpha=0.5 — a recency gradient: each boundary halves
+every earlier task's delta, so the final all-10 mean should sit well below ours; band 15-40, later tasks higher.
+O-LoRA r64 — above naive r512 (9.7), below ours (65.1); OrthoSkillVLA reported O-LoRA at 30.5 on their VLA/LIBERO
+setting; band 20-45. Either row above ~55 needs explaining before it goes in the paper. Both rows' loss-drift
+should exceed ours (+28.5% mean after ten tasks).
+
+**Smoke (unit e67-smoke, 12:48 UTC 7 Sep):** first launch failed in both trainers at argument parsing —
+`from __future__ import annotations` turns the `main(cfg: ...)` annotation into a string and draccus needs the class
+(a known lerobot/draccus trap; fixed in b3ca629d). Relaunched 12:48 UTC; results in addendum 1.
+
+### Entry 67 addendum 1 (7 Sep 26, 14:15 UK) — first smoke: both chains train, checkpoint, resume and export correctly; three fixes before launch
+**Measured on the smoke (2 tasks x 20 steps each, forced stop at global step 25, resume, then the drift instrument):**
+- RETAIN at bs8 x acc4: **2.19 s/step, peak 88.5 GiB** (the E60 add-7 rung reproduced). Merge witness at both boundaries: mean |merged-prev| / mean |ft-prev| = 0.5000 over all 4.143B parameters. Resume path verified: "loading merged boundary 1 weights" -> "in-progress task 1 at step 5" -> optimizer/scheduler/RNG restored -> chain completes with boundary 2. **In-progress state save = 82 s** (24 G: 8.8 model + 15 optimizer, fsynced). That is outside both the 45-s unit stop timeout and the 60-s preemption window, so per CLAUDE.md 9.4.7 the SIGTERM save is best-effort only and the periodic save (every 1,000 steps = 37 min, ~4% overhead) is the mechanism; a preemption costs at most ~40 min of RETAIN training. Boundary saves (merged 8.8 G + ft 8.8 G) take 14 s each.
+- O-LoRA at bs16 x acc2: 2.3-3.0 s/step but **peak 116.9-118.1 GiB** (the un-checkpointed activation graph at micro-batch 16, as E60 add-7 measured for full FT — LoRA still back-propagates through the frozen base). That would leave <26 G free and block the eval unit from overlapping, so the chain runs at **bs8 x acc4** (effective batch 32 unchanged; accumulation is numerically neutral up to rounding, the E60 add-7 methods note). 254 LoRA modules = 7 per layer x 18 layers x 2 towers + action_in_proj + action_out_proj (the regex of every LoRA row; state_proj / action_time_mlp are not matched in this pi0.5 port), 106.3M params per adapter, adapters fp32. Adapter-level state save 3.4 s. Export check at both boundaries: algebra max rel err 1.3e-6; the concatenated adapter loaded as a temporary peft adapter reproduces the multi-adapter loss to rel 1.6e-3 on the same batch/seed (bitwise tensor round-trip asserted); frozen adapter L1 unchanged across task 2. Penalty over 253 modules (action_in_proj excluded, 32 inputs; nothing unsatisfiable); initial L1 6.6e3 at task 2, falling to 4.3e3 over 20 steps; **grad norm ~295 before clipping, i.e. the penalty dominates the raw gradient** — under Adam the per-parameter normalisation means B_t still learns the task at lr scale while A_t is first pushed into the orthogonal complement, which is the method's intended dynamics; lambda_1 = 0.5 is the official value and was NOT re-tuned for our loss scale (carry as a caveat).
+**Fixes (commit 06195660):** (1) the wrappers' smoke checks read only stdout while the trainers log to stderr, so both smokes were mis-reported as "did not resume" although the log shows the resume — `2>&1` added; (2) O-LoRA micro-batch 16 -> 8 (above); (3) the merge witness picked the largest tensor, `lm_head.weight` (527M), which the fine-tune never moves (NaN ratio) — now the largest tensor that moved, and a NaN fails the check. Second smoke launched 14:12 UK (unit e67-smoke).
+
+### Entry 67 addendum 2 (7 Sep 26, 15:25 UK) — second smoke PASSED end to end; both chains LAUNCHED 15:21 UK
+**Smoke 2 (unit e67-smoke, 14:12-14:55 UK):** E67-RETAIN-SMOKE-OK and E67-OLORA-SMOKE-OK. RETAIN: 2 boundaries, merge ratio 0.5000, resume at task-2 step 5 verified, dense loss matrix on both boundaries through `mse_matrix_dense.py` (task-0/1 MSE 0.578/0.593 -> 0.569/0.566 — the fine-tune barely moved at warm-up LR, as expected for 20 steps). O-LoRA at **bs8 x acc4: peak 63.6-64.5 GiB** (vs 118 at bs16), 2.0-3.2 s/step in the smoke; task 1 is a plain rank-64 LoRA (orth 0, grad norm 0.16-0.21); at task 2 the penalty enters at L1 3.1e3 with grad norm ~295; export check rel diff 0.0 (one adapter) and 2.9e-3 (two), algebra 2e-7 / 1.6e-5; the adapter-swap matrix (`mse_matrix_peft.py`, factory use_peft path, L1(lora_B) swap guard) scored both boundaries.
+**One more instrument fix (46c2a4d0):** `mse_matrix_peft.py` hard-coded tasks [0..4]; it now reads `MSEMAT_TASKS` with the same default, so the O-LoRA 10-task matrix will score all ten (no behaviour change for existing callers).
+**Launched 14:21:42 UTC (15:21 UK), commit 06195660 (+46c2a4d0 pulled for the matrix stage):**
+- `e67-train`: `queue_e67_train.sh full` -> RETAIN chain (`libero_10_seq10_retain_a05_fullft_steps5k`, bs8 x acc4, ~31h => ~22:30 UK Tue 8 Sep) then the O-LoRA chain (`libero_10_seq10_olora_r64_a16_lam05_steps5k`, bs8 x acc4, ~27-30h => ~Thu 10 Sep early). Log outputs/e67/train.log.
+- `e67-eval`: `queue_e67_eval.sh` -> triangle rows as boundaries land, gated on 45 GB free VRAM (RETAIN training leaves ~55 GB; O-LoRA at bs8 ~79 GB), then the two drift matrices. Log outputs/e67/eval.log; rows -> outputs/analysis/e67/seeds_tri_{retain10_a05,olora10_r64}_b<k>.json.
+- Local: `scripts/ops/heartbeat_e67.sh` (poll 10 min, forced beat hourly, relaunches both units after a preemption) -> lerobot/outputs/e67_heartbeat_local.log; plus an hourly check by Claude at :07.
+**Watch items:** (i) whether the eval rows slow RETAIN training (the smoke's 2.19 s/step is the reference; CPU has 16 vCPUs for 8 dataloader workers + 13 env processes); (ii) RETAIN periodic saves at 82 s each (every 1,000 steps); (iii) O-LoRA penalty trajectory per task and the boundary JSON's `penalty_final` (max |A_i A_t^T| entry) — the paper text must say lambda_1 = 0.5 as in the official code, not re-tuned.
