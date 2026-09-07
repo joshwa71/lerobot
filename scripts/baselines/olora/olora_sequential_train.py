@@ -19,7 +19,6 @@ Outputs (`--output_dir`):
   olora_state/progress.json, olora_state/current/  (in-progress adapter + optimizer + sched + RNG)
 Resume is the default; --fresh=true wipes; --stop_after_steps=N simulates a preemption.
 """
-from __future__ import annotations
 
 import copy
 import logging

@@ -31,7 +31,6 @@ Resume is the default: an existing output_dir is continued from the last boundar
 present, the in-progress state. `--fresh=true` wipes both. `--stop_after_steps=N` exits like a
 preemption after N global steps (smoke test of the resume path).
 """
-from __future__ import annotations
 
 import logging
 import shutil
