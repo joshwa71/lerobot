@@ -103,7 +103,7 @@ LADDER=${LADDER:-"8:4,8:4,4:8"}   # bs8 x acc4: the smoke peaked at 118G at bs16
 ok=0
 for rung in ${LADDER//,/ }; do
   IFS=: read -r rb ra <<< "$rung"
-  if run_olora "$rb" "$ra" 2>&1 | tee /tmp/olora_last.log | grep -v "^$"; then ok=1; break; fi
+  if run_olora "$rb" "$ra" 2>&1 | tee /tmp/olora_last.log | grep --line-buffered -v "^$"; then ok=1; break; fi
   if grep -q "OutOfMemoryError" /tmp/olora_last.log; then echo "[olora] rung bs=$rb OOM - next rung"; continue; fi
   echo "[olora] rung bs=$rb failed for a non-VRAM reason - aborting (state on disk is resumable)"; exit 1
 done

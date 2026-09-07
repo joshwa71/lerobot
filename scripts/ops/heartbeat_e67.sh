@@ -27,10 +27,14 @@ ut=$(systemctl is-active e67-train 2>/dev/null); ue=$(systemctl is-active e67-ev
 RET=$R/outputs/train/libero_10_seq10_retain_a05_fullft_steps5k; OLO=$R/outputs/train/libero_10_seq10_olora_r64_a16_lam05_steps5k
 rt=$(python3 -c "import json;print(json.load(open('$RET/retain_state/progress.json'))['completed_tasks'])" 2>/dev/null); rt=${rt:-0}
 ot=$(python3 -c "import json;print(json.load(open('$OLO/olora_state/progress.json'))['completed_tasks'])" 2>/dev/null); ot=${ot:-0}
-step=$(grep -oE "task [0-9]+ step [0-9]+/[0-9]+" $L 2>/dev/null | tail -1 | sed 's/task //; s/ step /:/')
-sps=$(grep -oE "[0-9.]+s/step" $L 2>/dev/null | tail -1)
-orth=$(grep -oE "orth [0-9.e+-]+" $L 2>/dev/null | tail -1 | cut -d' ' -f2)
-ck=$(grep -oE "state written in [0-9.]+s" $L 2>/dev/null | tail -1 | grep -oE "[0-9.]+s")
+# progress lines: the wrappers tee the trainer to /tmp/<chain>_last.log unbuffered; the unit log only gets
+# them in 4K chunks (the wrapper's trailing grep block-buffers), so read the newest tee copy
+P=$(ls -t /tmp/retain_last.log /tmp/olora_last.log 2>/dev/null | head -1); [ -n "$P" ] || P=$L
+step=$(grep -oE "task [0-9]+ step [0-9]+/[0-9]+" $P 2>/dev/null | tail -1 | sed 's/task //; s/ step /:/')
+sps=$(grep -oE "[0-9.]+s/step" $P 2>/dev/null | tail -1)
+orth=$(grep -oE "orth [0-9.e+-]+" $P 2>/dev/null | tail -1 | cut -d' ' -f2)
+ck=$(grep -oE "state written in [0-9.]+s" $P 2>/dev/null | tail -1 | grep -oE "[0-9.]+s")
+loss=$(grep -oE "loss [0-9.]+" $P 2>/dev/null | tail -1 | cut -d' ' -f2)
 smk=$(ls $R/outputs/e67/smoke_retain_ok $R/outputs/e67/smoke_olora_ok 2>/dev/null | wc -l)
 tri_r=$(ls $R/outputs/analysis/e67/seeds_tri_retain10_a05_b*.json 2>/dev/null | wc -l)
 tri_o=$(ls $R/outputs/analysis/e67/seeds_tri_olora10_r64_b*.json 2>/dev/null | wc -l)
@@ -43,10 +47,10 @@ paused=$(grep -c "E67-TRAIN-PAUSED" $L 2>/dev/null); paused=${paused:-0}
 last=$(grep -oE "^\[e67-train\] [a-zA-Z0-9 ().-]+" $L 2>/dev/null | tail -1 | sed 's/^\[e67-train\] //' | cut -c1-28 | tr ' ' '_')
 dk=$(df --output=pcent /home/josh | tail -1 | tr -dc '0-9')
 gpu=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader 2>/dev/null | tr -d ' ')
-echo "train=$ut eval=$ue smoke=$smk/2 retain=$rt/10 olora=$ot/10 at=${step:-0} ${sps:-} orth=${orth:-} ck=${ck:-} tri=r${tri_r}/o${tri_o} mat=r${m_r}/o${m_o} last=${last:-none} disk=${dk}% err=$err paused=$paused fin=$fin/$efin gpu=${gpu:-NA}"
+echo "train=$ut eval=$ue smoke=$smk/2 retain=$rt/10 olora=$ot/10 at=${step:-0} ${sps:-} loss=${loss:-} orth=${orth:-} ck=${ck:-} tri=r${tri_r}/o${tri_o} mat=r${m_r}/o${m_o} last=${last:-none} disk=${dk}% err=$err paused=$paused fin=$fin/$efin gpu=${gpu:-NA}"
 REMOTE
 }
-key_of(){ sed -E 's/ at=[^ ]*//; s/ [0-9.]+s\/step//; s/ orth=[^ ]*//; s/ ck=[^ ]*//; s/ gpu=[^ ]*//' <<<"$1"; }
+key_of(){ sed -E 's/ at=[^ ]*//; s/ [0-9.]+s\/step//; s/ loss=[^ ]*//; s/ orth=[^ ]*//; s/ ck=[^ ]*//; s/ gpu=[^ ]*//' <<<"$1"; }
 field(){ sed -nE "s/.*(^| )$1=([^ ]+).*/\2/p" <<<"$2"; }
 launch_units(){
   ssh -o BatchMode=yes "$VM" "sudo systemctl reset-failed e67-train e67-eval 2>/dev/null; \
