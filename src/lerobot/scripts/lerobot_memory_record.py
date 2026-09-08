@@ -20,6 +20,11 @@ dataset; leader teleop drives the follower during reset windows so the
 operator can use the leader as a "home" pose), and works with
 memory-augmented SmolVLA / Pi0.5 checkpoints out of the box.
 
+PEFT (LoRA) checkpoints are supported too: point ``--policy.path`` at the
+*adapter* directory (``adapter_config.json`` + ``adapter_model.safetensors``);
+the backbone is read from the adapter config's ``base_model_name_or_path``,
+trimmed for inference, wrapped with the adapter, and verified tensor-by-tensor.
+
 Memory routing is automatic: the policy's ``select_action`` path
 decodes ``observation.language_tokens`` back to text, hands it to the
 ``TaskEmbeddingCache`` (sentence-transformers), and feeds the result
@@ -342,8 +347,49 @@ def _verify_policy_loaded(policy: PreTrainedPolicy, policy_cfg: PreTrainedConfig
     logger.info("Verified %d checkpoint tensors match the loaded policy (%s)", checked, sf)
 
 
+def _verify_adapter_loaded(policy: PreTrainedPolicy, adapter_dir: str) -> None:
+    """Fail fast if the PEFT adapter did not land in the wrapped model.
+
+    Every tensor in ``adapter_model.safetensors`` must be present in the live
+    adapter state dict (``get_peft_model_state_dict`` uses the same key layout
+    PEFT saved with) and match it. Cheap: the r64 adapters are ~0.1B params.
+    """
+    from pathlib import Path
+
+    from peft.utils import get_peft_model_state_dict
+    from safetensors.torch import load_file
+
+    sf = Path(adapter_dir) / "adapter_model.safetensors"
+    if not sf.is_file():
+        raise RuntimeError(f"No adapter_model.safetensors in {adapter_dir}; refusing to run the robot.")
+    ref = load_file(str(sf))
+    live = get_peft_model_state_dict(policy)
+    missing = [k for k in ref if k not in live]
+    bad = []
+    for k, v in ref.items():
+        if k not in live:
+            continue
+        lv = live[k].detach().to(device="cpu", dtype=torch.float32)
+        rv = v.to(torch.float32)
+        if tuple(lv.shape) != tuple(rv.shape) or not torch.allclose(lv, rv, rtol=1e-2, atol=1e-3):
+            bad.append(k)
+    if not ref or missing or bad:
+        raise RuntimeError(
+            f"Loaded adapter does NOT match {sf}: {len(missing)} keys missing from the live model "
+            f"(first: {missing[:3]}), {len(bad)}/{len(ref)} tensors differ (first: {bad[:3]}). "
+            "Refusing to run the robot with this policy."
+        )
+    logger.info("Verified %d adapter tensors match the loaded PEFT model (%s)", len(ref), sf)
+
+
 def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
     """Instantiate the policy from disk, honouring the saved memory config.
+
+    PEFT checkpoints (``use_peft=True`` in the adapter dir's ``config.json``, or
+    ``--policy.use_peft=true``): the backbone is loaded from the adapter config's
+    ``base_model_name_or_path`` through the same CPU-first path, trimmed, verified
+    against the backbone's ``model.safetensors``, then wrapped with
+    ``PeftModel.from_pretrained`` and verified against ``adapter_model.safetensors``.
 
     ``from_pretrained`` peeks at the safetensors keys for ``mlp.mem``
     entries and calls ``attach_memory_to_*`` *before* loading weights, so
@@ -360,6 +406,29 @@ def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
 
     target_device = cfg.device
     is_pi05 = policy_cfg.type in {"pi0", "pi05"}
+    use_peft = bool(getattr(policy_cfg, "use_peft", False))
+
+    # PEFT: --policy.path is the ADAPTER directory; the backbone lives wherever the
+    # adapter config says (relocated checkpoints must update base_model_name_or_path).
+    adapter_dir: str | None = None
+    peft_config = None
+    weights_path = policy_cfg.pretrained_path
+    if use_peft:
+        from pathlib import Path
+
+        from peft import PeftConfig
+
+        adapter_dir = str(policy_cfg.pretrained_path)
+        peft_config = PeftConfig.from_pretrained(adapter_dir)
+        weights_path = peft_config.base_model_name_or_path
+        if not weights_path:
+            raise ValueError(f"adapter_config.json in {adapter_dir} has no base_model_name_or_path")
+        if Path(weights_path).is_absolute() and not Path(weights_path).is_dir():
+            raise FileNotFoundError(
+                f"PEFT base model not found at {weights_path} (from {adapter_dir}/adapter_config.json). "
+                "Update base_model_name_or_path if the checkpoints were relocated."
+            )
+        logger.info("PEFT adapter %s on backbone %s", adapter_dir, weights_path)
 
     # For Pi05 we route the build through CPU to apply inference optimizations
     # before the GPU move. For other policies (smolvla, etc.) we let the
@@ -368,7 +437,7 @@ def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
         original_device = policy_cfg.device
         policy_cfg.device = "cpu"
         try:
-            policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
+            policy = policy_class.from_pretrained(weights_path, config=policy_cfg)
         finally:
             policy_cfg.device = original_device
         freed = _optimize_pi05_for_inference(policy)
@@ -378,11 +447,25 @@ def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
                 freed["lm_heads"] / 1e9,
             )
     else:
-        policy = policy_class.from_pretrained(policy_cfg.pretrained_path, config=policy_cfg)
+        policy = policy_class.from_pretrained(weights_path, config=policy_cfg)
 
     # from_pretrained swallows attach/load errors (prints a warning, returns a policy with
     # random weights). Never let that reach the robot.
-    _verify_policy_loaded(policy, policy_cfg)
+    if use_peft:
+        # Verify the backbone against ITS safetensors, then wrap and verify the adapter.
+        saved_path = policy_cfg.pretrained_path
+        policy_cfg.pretrained_path = weights_path
+        try:
+            _verify_policy_loaded(policy, policy_cfg)
+        finally:
+            policy_cfg.pretrained_path = saved_path
+
+        from peft import PeftModel
+
+        policy = PeftModel.from_pretrained(policy, adapter_dir, config=peft_config)
+        _verify_adapter_loaded(policy, adapter_dir)
+    else:
+        _verify_policy_loaded(policy, policy_cfg)
 
     policy = policy.to(target_device)
     policy.eval()
@@ -391,13 +474,14 @@ def _load_policy(cfg: MemoryRecordConfig) -> PreTrainedPolicy:
     mem_cfg = getattr(policy_cfg, "memory_layer", None)
     offload = bool(getattr(mem_cfg, "offload_slots_to_cpu", False))
     logger.info(
-        "Policy loaded: type=%s | memory_layers=%s | offload_slots_to_cpu=%s | device=%s",
+        "Policy loaded: type=%s | memory_layers=%s | offload_slots_to_cpu=%s | peft=%s | device=%s",
         policy_cfg.type,
         bool(
             getattr(policy_cfg, "memory_layers", False)
             or getattr(mem_cfg, "enabled", False)
         ),
         offload,
+        use_peft,
         target_device,
     )
     return policy
