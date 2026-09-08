@@ -9082,3 +9082,14 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | row means b1..b6 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3 |
 
 **Reading.** The one-back task (env 7) keeps 35 of 57 (~0.6, the now-familiar one-boundary memory); the two-back task (env 2) drops 65 -> 14 — the second merge is where RETAIN loses a task. Everything older sits in the 0-14 band, which is where naive sits at 0 — RETAIN's floor is a little above zero (env 4 back up to 14 on the strength of one seed at 28) but it is a floor. The diagonal on env 0 (a basket task, hard for every chain: naive 73, ours 40) is 46. Row 5's climb was the easy-task stretch; row 6 is back to the trend line: RETAIN's mean has now fallen to 8 points above naive and 37 below ours. Four rows remain (34 cells, ~15 h); with the chain ending ~01:00 UK Wed the RETAIN triangle completes ~10:00 UK Wed as projected.
+
+### Entry 67 addendum 12 (8 Sep 26, 18:05 UK) — RETAIN row 7: 8 / 5 / 0 / 25 / 34 / 63 / 34 — row mean 24.1 (ours 63.0, naive 10.9); boundary 8 landed
+**Row 7 (`seeds_tri_retain10_a05_b7.json`, block-7 merged model, envs 4/6/9/2/7/0/8, written 16:52:58 UTC; 195 min for 7 cells = 28 min/cell):** env 4 per-seed 16/4/4/8 = **8.0**; env 6 12/4/4/0 = **5.0**; env 9 0/0/0/0 = **0.0**; env 2 16/24/32/28 = **25.0**; env 7 44/28/28/36 = **34.0**; env 0 68/68/64/52 = **63.0**; env 8 (just trained, "put both moka pots on the stove", final training loss 0.021) 28/36/32/40 = **34.0**. Row mean 24.1.
+
+| after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
+|---|---|---|---|
+| b7 (e4, e6, e9, e2, e7, e0, e8) | 0, 0, 0, 2, 0, 7, 67 = 10.9 | 51, 64, 73, 89, 45, 48, 71 = 63.0 | **8, 5, 0, 25, 34, 63, 34 = 24.1** |
+| row means b1..b7 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2, 10.9 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7, 63.0 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3, 24.1 |
+
+**Reading.** Two features worth noting. (i) The diagonal is now *below* the one-back cell: env 8 (just trained) 34 vs env 0 (one back) 63. Env 0 went 46 -> 63 across a boundary — the merge moved it *up*, the second time we have seen this (env 6 21 -> 30 at b5). Both jumps are on basket/stove tasks that share structure with the task trained next, so the halved delta of a related task partly serves the older one; this is positive backward transfer via weight-space proximity, not retention as such. (ii) The old block (e4, e6, e9) is at 8 / 5 / 0 and stable — RETAIN's floor. Naive is at 0/0/0/2/0/7 with only its diagonal alive (67); ours holds 45-89 everywhere. RETAIN's mean is 13 above naive, 39 below ours.
+**Boundary 8 landed 17:52 UK** (global step 40,000, ratio 0.5000, task "put both the cream cheese box and the butter in the basket"). Row 8 (8 cells, ~3.7 h) starts on the next eval pass; disk 86% with 356 GB free.
