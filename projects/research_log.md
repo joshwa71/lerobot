@@ -9093,3 +9093,14 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 
 **Reading.** Two features worth noting. (i) The diagonal is now *below* the one-back cell: env 8 (just trained) 34 vs env 0 (one back) 63. Env 0 went 46 -> 63 across a boundary — the merge moved it *up*, the second time we have seen this (env 6 21 -> 30 at b5). Both jumps are on basket/stove tasks that share structure with the task trained next, so the halved delta of a related task partly serves the older one; this is positive backward transfer via weight-space proximity, not retention as such. (ii) The old block (e4, e6, e9) is at 8 / 5 / 0 and stable — RETAIN's floor. Naive is at 0/0/0/2/0/7 with only its diagonal alive (67); ours holds 45-89 everywhere. RETAIN's mean is 13 above naive, 39 below ours.
 **Boundary 8 landed 17:52 UK** (global step 40,000, ratio 0.5000, task "put both the cream cheese box and the butter in the basket"). Row 8 (8 cells, ~3.7 h) starts on the next eval pass; disk 86% with 356 GB free.
+
+### Entry 67 addendum 13 (8 Sep 26, 21:50 UK) — RETAIN row 8: everything but the diagonal collapses (mean 12.1); boundary 9 landed, chain ends ~00:50 UK
+**Row 8 (`seeds_tri_retain10_a05_b8.json`, block-8 merged model, envs 4/6/9/2/7/0/8/1, written 20:36:43 UTC; 214 min for 8 cells = 27 min/cell):** env 4 **2.0** (4/4/0/0); env 6 **0.0**; env 9 **0.0**; env 2 **10.0** (12/4/12/12); env 7 **5.0** (12/4/4/0); env 0 **3.0** (0/0/8/4); env 8 **7.0** (8/4/4/12); env 1 (just trained, "put both the cream cheese box and the butter in the basket", final training loss 0.030) **70.0** (68/72/72/68). Row mean 12.1.
+
+| after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
+|---|---|---|---|
+| b8 (e4,e6,e9,e2,e7,e0,e8,e1) | 0,0,0,0,0,0,0,38 = 4.8 | 47,67,60,88,46,46,76,41 = 58.9 | **2,0,0,10,5,3,7,70 = 12.1** |
+| row means b1..b8 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2, 10.9, 4.8 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7, 63.0, 58.9 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3, 24.1, 12.1 |
+
+**Reading.** The b7 backward-transfer bump was temporary: env 0 63 -> **3** and env 7 34 -> **5** in one boundary, i.e. the "recovered" tasks were riding on structure the block-8 task did not share, and the merge took it back. Every non-diagonal cell is now 0-10 — the same picture as naive (all zeros) with a few points of noise on top. Diagonal 70 is healthy (naive 38, ours 41 on this task). So at 8 tasks RETAIN retains nothing measurable in rollouts; its advantage over naive has shrunk to ~7 points of row mean, almost all of it in the one-back cell, while ours holds 58.9. Two rows left to confirm the endpoint.
+**Boundary 9 landed 21:26 UK** (global 45,000, ratio 0.5000, "put the black bowl in the bottom drawer of the cabinet and close it"). Row 9 (9 cells, ~4 h) started 21:36 UK. Final task 10 training now; chain ends ~00:50 UK, then the O-LoRA chain starts and the RETAIN b10 row + drift matrix follow.
