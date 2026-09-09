@@ -9315,7 +9315,7 @@ behind it; a full 45k chain).
 **Certificates (held-out audit, 10 tasks; expert / VLM):**
 | warm-up | famIoU | bgIoU | mean core50 | min effnum (exp / vlm) | omega e0, e1 vs e7 core | gate | ref |
 |---|---|---|---|---|---|---|---|
-| paper cell (merged 6x2, c0.05 sep8) — transcribe from `audit_heldout_jointwarm_merged6x2_..._10k` | | | | | | PASS (E62) | E62 |
+| paper cell (merged 6x2, c0.05 sep8) | exp 0.180-0.281 / vlm 0.082-0.145 | exp 0.031-0.091 / vlm 0.023-0.074 | exp 713-2019 / vlm 188-842 | 458 / 250 | (not in the audit summary) | PASS | E62, transcribed 9 Sep (add-3) |
 | C1 sep=0 | | | | | | | |
 | C2 c=0 | | | | | | | |
 | A3 joint @1e-4 (post-10k audit) | | | | | | | |
@@ -9391,3 +9391,25 @@ Ladders on 80 GB: "8:4:false,4:8:false,8:4:true,4:8:true" everywhere (E53: no-ck
 **Stage-A resume smoke (the REAL A1 A-phase command through joint_aphase_seq5_common.sh, A_ONLY=1, 40 steps, save every 20):** first attempt died at rc 2 with no message — `A_PARTIAL=$(ls -d ... | sort | tail -1)` under `set -eo pipefail` aborts the body with ls's rc 2 when no partial checkpoint exists (stderr was /dev/null'd). Fixed with `{ ls ... || true; }` (82706257; same construct fixed in A3's stage J), reproduced/verified locally (old form rc 2, new form rc 0). Rerun: bs8xacc4 no-ckpt OOMs at step 1 (79.10 GiB of 79.19), ladder wipes and steps down; **bs4xacc8 no-ckpt fits** and runs at **updt_s 0.390-0.392 per 4-sample micro-batch = ~3.1 s per 32-sample optimizer step (0.098 s/sample; the H200 control was 1.18 s/step, 0.037 s/sample)**; 000020 + 000040 written; after deleting 000040 the body took the resume path (`lerobot-train --resume=true --config_path=.../000020/pretrained_model/train_config.json`), logged only steps > 20 and recreated 000040. The periodic-save/resume contract therefore holds for the 10k stages (A1 A-phase, A3 stage J) with saves every 5k. Peak-VRAM poll (81,003 MiB) is contaminated by the bs8 attempt; the true bs4 peak will be read from the heartbeat's gpu field during A1.
 **Launched 07:01 UTC (08:01 UK):** unit `e68-train`, `queue_e68_train.sh full`, STAGES="a1 a2 c1 c2", PYTHONUNBUFFERED=1; local `heartbeat_e68.sh` armed (poll 10 min, forced beat hourly, nebius-API recovery for `computeinstance-e00h8htkzavxm81d24`); hourly Claude check. Expect one "NEW ERROR LINES" beat from the A-phase ladder's bs8 OOM (by design).
 **ETAs at ~3.1 s/opt-step:** A1 A-phase 10k ~9 h (-> ~17:00 UK Wed) then seq5 25k ~22 h (-> ~15:00 UK Thu); A2 20k ~17 h (-> ~08:00 UK Fri); C1 + C2 ~10 h (-> ~18:00 UK Fri). A3 (35k, ~30 h here) should take the H200 once E67's rows and matrices finish, or run here after C2 (-> ~Sun). Triangle rows (15 cells/arm, ~26 min/cell) on the H200 as arms land; the control's own 15 cells can start on the H200 as soon as its eval queue is free — to coordinate with the nebius-spot session.
+
+### Entry 68 addendum 3 (9 Sep 26, 11:45 UK) — paper-cell certificate transcribed (the C1/C2 reference row); the "famIoU 0.145 band" does NOT describe the paper cell, so the C1 pre-registration is restated
+A1's value fill is at 5.0K/10K (2.55 s/step, loss 0.106, GPU 69.8 GB, no incidents). While it runs, the reference row of the certificate table is filled from the transferred audit dir (`audit_heldout_jointwarm_merged6x2_..._10k`), per site:
+
+| site | famIoU | bgIoU | core50 mean (min-max) | min-task effnum |
+|---|---|---|---|---|
+| E4  | 0.205 | 0.038 | 735 (156-1547)   | 458 |
+| E6  | 0.180 | 0.031 | 713 (196-1524)   | 544 |
+| E8  | 0.214 | 0.037 | 806 (195-1485)   | 541 |
+| E10 | 0.258 | 0.058 | 1308 (261-2745)  | 710 |
+| E14 | 0.207 | 0.058 | 1274 (296-2491)  | 796 |
+| E16 | 0.281 | 0.091 | 2019 (379-4364)  | 1067 |
+| V5  | 0.082 | 0.023 | 226 (84-425)     | 250 |
+| V7  | 0.117 | 0.024 | 188 (96-278)     | 291 |
+| V9  | 0.134 | 0.037 | 328 (131-459)    | 361 |
+| V11 | 0.137 | 0.046 | 428 (154-746)    | 404 |
+| V13 | 0.136 | 0.052 | 499 (221-947)    | 497 |
+| V15 | 0.145 | 0.074 | 842 (381-1738)   | 750 |
+
+Gate re-verified from the raw numbers (E62 recorded "PASS" without transcribing them): expert bgIoU max 0.091 <= 0.10 (E16 is the tight one), expert mean core50 min 713 >= 400, expert min-task effnum min 458 >= 300, VLM min-task effnum min 250 >= 150 (V5, the tight one), VLM famIoU max 0.145 < 0.45. PASS on every clause, with E16's bgIoU and V5's effnum the two cells nearest their bands.
+**CORRECTION carried into E68's C1 pre-registration.** The entry wrote "famIoU up from the 0.145 band", inheriting a number that belongs to the E37/E44-era 4-site n=384 configuration (and, coincidentally, to V15 here). The paper cell's actual famIoU is **0.180-0.281 on the expert and 0.082-0.145 on the VLM** — i.e. the merged 6x2 sits well ABOVE the old 0.145 on every expert site, which is consistent with E56/E59's finding that famIoU stopped converting and bgIoU became the axis that pays (the layout was selected on bg-first bands, not famIoU). C1 is therefore scored against the per-site numbers above, not against 0.145: the read is whether sep=0 moves the expert band up from 0.18-0.28 and, more importantly for the mechanism claim, whether it moves **bgIoU** off 0.031-0.091 and the VLM famIoU off 0.08-0.145. Unchanged bg across the board would mean separation is decorative at this anchor weight (the standing kill line).
+Omega (writable read mass outside prior cores) is not part of the audit summary — it comes from the slot-analysis pass over `memory_by_task/`; it will be computed for all three warm-ups together when C1/C2 land, so the three are measured by one instrument.
