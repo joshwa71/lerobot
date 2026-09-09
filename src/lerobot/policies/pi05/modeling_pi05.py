@@ -704,17 +704,27 @@ class PaliGemmaWithExpertModel(
             exp_max = max(self._mem_layer_indices) if self._mem_layer_indices else -1
             if min(vlm_layers) <= exp_max:
                 if not getattr(cfg, "frozen_prepass", False):
-                    raise ValueError(
-                        f"vlm_layers {vlm_layers} must all sit ABOVE the highest expert memory layer "
-                        f"({exp_max}) to preserve expert routing stationarity (prefix KV <= {exp_max}). "
-                        "Set memory_layer.frozen_prepass=true to lift this constraint (routing inputs "
-                        "then come from a full memory-free pre-pass; ~+1 forward/step)."
+                    if getattr(cfg, "allow_nonstationary_routing", False):
+                        # E68 ablation A1: the guard is deliberately lifted WITHOUT the pre-pass.
+                        logging.warning(
+                            f"E68 LIVE ADDRESSING (allow_nonstationary_routing): interleaved placement "
+                            f"expert {self._mem_layer_indices} / VLM {vlm_layers} WITHOUT pre-pass or "
+                            "frozen-base routing — expert routing, gates and anchors read the LIVE "
+                            "stream. Non-stationary by design; ablation only."
+                        )
+                    else:
+                        raise ValueError(
+                            f"vlm_layers {vlm_layers} must all sit ABOVE the highest expert memory layer "
+                            f"({exp_max}) to preserve expert routing stationarity (prefix KV <= {exp_max}). "
+                            "Set memory_layer.frozen_prepass=true to lift this constraint (routing inputs "
+                            "then come from a full memory-free pre-pass; ~+1 forward/step)."
+                        )
+                else:
+                    logging.info(
+                        f"INTERLEAVED memory placement (frozen_prepass): expert layers "
+                        f"{self._mem_layer_indices} / VLM layers {vlm_layers} — expert routing, anchors, "
+                        "and the inference pass-A prefix KV are served by the memory-free pre-pass."
                     )
-                logging.info(
-                    f"INTERLEAVED memory placement (frozen_prepass): expert layers "
-                    f"{self._mem_layer_indices} / VLM layers {vlm_layers} — expert routing, anchors, "
-                    "and the inference pass-A prefix KV are served by the memory-free pre-pass."
-                )
             vlm_cfg = dataclasses.replace(
                 cfg,
                 layers=vlm_layers,

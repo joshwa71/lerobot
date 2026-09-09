@@ -99,6 +99,14 @@ class MemoryLayerConfig:
     # Default False = byte-identical to the lazy-fork implementation.
     frozen_prepass: bool = False
 
+    # E68 ablation A1 (LIVE addressing). Lifts the interleaved-placement guard WITHOUT the
+    # pre-pass and WITHOUT frozen-base routing, so routers, gates and anchors read the live
+    # (memory-perturbed) stream — exactly the non-stationarity the guard exists to prevent
+    # (E38's routing-drift channel). Ablation-only: never set on a production cell. Must be
+    # combined with use_frozen_base_input_features=false and frozen_prepass=false (enforced
+    # in __post_init__). Default False = byte-identical.
+    allow_nonstationary_routing: bool = False
+
     # Dropout probability applied to retrieved memory slots during training.
     # When > 0, randomly drops retrieved slots and renormalizes the remaining weights.
     dropout_prob: float = 0.0
@@ -357,7 +365,13 @@ class MemoryLayerConfig:
         # defense in depth for programmatic construction.
         exp = list(self.layers or [])
         vlm = list(self.vlm_layers or [])
-        if exp and vlm and min(vlm) <= max(exp) and not self.frozen_prepass:
+        if self.allow_nonstationary_routing and (self.frozen_prepass or self.use_frozen_base_input_features):
+            raise ValueError(
+                "memory_layer.allow_nonstationary_routing is the E68 LIVE-addressing ablation switch: "
+                "it requires use_frozen_base_input_features=false AND frozen_prepass=false (it must "
+                "not be combined with stationary addressing)."
+            )
+        if exp and vlm and min(vlm) <= max(exp) and not self.frozen_prepass and not self.allow_nonstationary_routing:
             raise ValueError(
                 f"memory_layer.vlm_layers {vlm} must all sit ABOVE the highest expert memory "
                 f"layer ({max(exp)}) to preserve expert routing stationarity. Set "

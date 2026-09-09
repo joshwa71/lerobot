@@ -37,6 +37,22 @@ SEQ_PROTECT_MODE=${SEQ_PROTECT_MODE:-rank}
 SEQ_PROTECT_UNORM=${SEQ_PROTECT_UNORM:-peak}
 SEQ_RUN=${SEQ_RUN:-libero_10_seq5_jw_${GRAD_TAG}_beta4_topt1536_steps5k}
 SEQ_OUT="$ROOT_DIR/outputs/train/$SEQ_RUN"
+# E68 hooks (BYTE-IDENTICAL defaults; set only by ablation wrappers):
+#   A_STEPS / A_SAVE_FREQ  - A-phase length and periodic-save cadence (save_freq < steps enables
+#                            preemption resume via lerobot-train --resume; CLAUDE.md 9.4)
+#   A_LADDER               - "bs:accum:ckpt,..." rungs for stage A (default = the E47/E52 ladder)
+#   A_FROZEN_ROUTE / SEQ_FROZEN_ROUTE - use_frozen_base_input_features for stage A / stage B
+#   A_EXTRA_ARGS           - extra CLI args appended verbatim to stage A (cf. SEQ_EXTRA_ARGS)
+#   SEQ_PROTECT            - protect_prior_slots for stage B (E68 A2: TF-IDF-only writes)
+A_STEPS=${A_STEPS:-10000}
+A_SAVE_FREQ=${A_SAVE_FREQ:-10000}
+A_LADDER=${A_LADDER:-32:1:false,16:2:false,16:2:true}
+A_FROZEN_ROUTE=${A_FROZEN_ROUTE:-true}
+SEQ_FROZEN_ROUTE=${SEQ_FROZEN_ROUTE:-true}
+SEQ_PROTECT=${SEQ_PROTECT:-true}
+A_LOG_FREQ=${A_LOG_FREQ:-200}
+A_ONLY=${A_ONLY:-0}          # 1 = stop after stage A (smokes / profiling)
+A_FINAL="$A_OUT/checkpoints/$(printf '%06d' "$A_STEPS")/pretrained_model"
 export MUJOCO_GL=osmesa; unset DISPLAY
 export TOKENIZERS_PARALLELISM=false
 export TORCH_NCCL_BLOCKING_WAIT=1 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 NCCL_P2P_DISABLE=1
@@ -46,7 +62,7 @@ conda activate lerobot-memory-updated
 cd "$ROOT_DIR"
 # The warm-up checkpoint is only needed when stage A actually runs (a seq-only reuse of
 # an existing A checkpoint on a box without the warm-up dir is legitimate — E48).
-if [ ! -d "$A_CKPT" ]; then
+if [ ! -d "$A_FINAL" ] && ! ls -d "$A_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json >/dev/null 2>&1; then
   [ -d "$WARM_CKPT" ] || { echo "ERROR: warm-up checkpoint missing: $WARM_CKPT (rsync it to this box first)"; exit 1; }
 fi
 
@@ -64,19 +80,19 @@ a_phase () {
     --env.type=libero \
     --env.task=libero_90 \
     --output_dir="$A_OUT" \
-    --save_freq=10000 \
-    --steps=10000 \
+    --save_freq=$A_SAVE_FREQ \
+    --steps=$A_STEPS \
     --batch_size=$1 \
     --gradient_accumulation_steps=$2 \
     --num_workers=8 \
     --eval.batch_size=1 \
     --eval.n_episodes=4 \
     --eval_freq=20000 \
-    --log_freq=200 \
+    --log_freq=$A_LOG_FREQ \
     --policy.train_router_only=false \
     --policy.train_memory_only=true \
     --policy.freeze_memory_router=true \
-    --policy.memory_layer.use_frozen_base_input_features=true \
+    --policy.memory_layer.use_frozen_base_input_features=$A_FROZEN_ROUTE \
     --policy.memory_layer.vlm_route_once=true \
     --policy.memory_layer.router_only_fast=false \
     --policy.optimizer_lr=2.5e-5 \
@@ -87,17 +103,44 @@ a_phase () {
     --wandb.enable=true \
     --wandb.project=vla-memory \
     --wandb.disable_artifact=true \
-    --policy.gradient_checkpointing=${3:-false}
+    --policy.gradient_checkpointing=${3:-false} \
+    $A_EXTRA_ARGS
 }
-if [ -d "$A_CKPT" ]; then
-  echo "[A-phase] checkpoint exists - skipping."
+# Preemption/crash resume for stage A (only reachable when A_SAVE_FREQ < A_STEPS): the standard
+# lerobot-train resume — everything (dataset, flags, output_dir, rung) comes from the saved
+# train_config.json; optimizer/scheduler/step from training_state/.
+a_phase_resume () {
+  lerobot-train --resume=true --config_path="$1"
+}
+if [ -d "$A_FINAL" ]; then
+  echo "[A-phase] final checkpoint exists - skipping."
 else
-  echo "[A-phase] launching at bs32 (fallback ladder: bs16xacc2 -> bs16xacc2+grad-ckpt)"
-  a_phase 32 1 \
-    || { echo "[A-phase] bs32 failed - retrying bs16 x accum2"; rm -rf "$A_OUT"; a_phase 16 2; } \
-    || { echo "[A-phase] bs16xacc2 failed - retrying bs16 x accum2 + gradient checkpointing (E52: at 5.37B values the card is full of FIXED cost — weights + Adam states + slot gather — so batch alone cannot save it)"; rm -rf "$A_OUT"; a_phase 16 2 true; }
+  A_PARTIAL=$(ls -d "$A_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json 2>/dev/null | sort | tail -1)
+  if [ -n "$A_PARTIAL" ]; then
+    echo "[A-phase] RESUMING from $A_PARTIAL (periodic save)"
+    a_phase_resume "$A_PARTIAL" || { echo "ERROR: A-phase resume failed - NOT wiping $A_OUT; inspect and relaunch"; exit 1; }
+  else
+    echo "[A-phase] ladder: $A_LADDER (rungs bs:accum:grad_ckpt; a rung that fails before any checkpoint is treated as VRAM)"
+    ok=0
+    for rung in ${A_LADDER//,/ }; do
+      IFS=: read -r rb ra rc <<< "$rung"
+      echo "[A-phase] rung: bs=$rb accum=$ra grad_ckpt=$rc"
+      if a_phase "$rb" "$ra" "$rc"; then ok=1; break; fi
+      if ls -d "$A_OUT"/checkpoints/[0-9]*/pretrained_model >/dev/null 2>&1; then
+        echo "[A-phase] rung failed AFTER a periodic checkpoint - not a VRAM failure; aborting (relaunch resumes)."
+        exit 1
+      fi
+      echo "[A-phase] rung failed before any checkpoint (treating as VRAM) - wiping and trying next rung"
+      rm -rf "$A_OUT"
+    done
+    [ "$ok" = 1 ] || { echo "ERROR: all A_LADDER rungs failed"; exit 1; }
+  fi
 fi
-[ -d "$A_CKPT" ] || { echo "ERROR: A-phase finished but checkpoint missing"; exit 1; }
+[ -d "$A_FINAL" ] || { echo "ERROR: A-phase finished but final checkpoint missing ($A_FINAL)"; exit 1; }
+if [ "$A_ONLY" = 1 ]; then
+  echo "[A-phase] A_ONLY=1 - stopping after stage A."
+  return 0 2>/dev/null || exit 0
+fi
 
 # ---------- stage B: 5-task sequential (C-config; t0 block == the e4 probe) ----------
 # train_memory_only + freeze_memory_router + frozen-route ride in the A-ckpt config
@@ -137,7 +180,7 @@ seq_stage () {
     --policy.memory_layer.vlm_route_once=true \
     --policy.memory_layer.router_only_fast=false \
     --policy.memory_layer.aggregate_usage=false \
-    --policy.memory_layer.use_frozen_base_input_features=true \
+    --policy.memory_layer.use_frozen_base_input_features=$SEQ_FROZEN_ROUTE \
     --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
     --save_after_each_task=true \
     --reinit_optimizer_each_task=true \
@@ -147,7 +190,7 @@ seq_stage () {
     --tfidf_top_p_cap=$SEQ_TOP_P_CAP \
     --use_online_idf_stats=true \
     --idf_exponent=1 \
-    --protect_prior_slots=true \
+    --protect_prior_slots=$SEQ_PROTECT \
     --protect_beta=4 \
     --protect_mode=$SEQ_PROTECT_MODE \
     --protect_u_norm=$SEQ_PROTECT_UNORM \
