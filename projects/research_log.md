@@ -9161,6 +9161,27 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 **Reading — this one is not about forgetting.** Task 1 trained with `orth 0.000e+00` throughout (nothing to be orthogonal against), so 43.0 is O-LoRA's *plasticity ceiling at r64*, uncontaminated by its own constraint: a 106M-parameter adapter is 8x smaller than naive r512's and simply fits the task less well. That matters for reading every later O-LoRA row — its diagonal starts 27 points below naive's, so a low row mean at b10 will be part capacity, part orthogonality, and the two need separating (the per-task oracle would be the clean control; not in the current protocol). The pre-registered expectation (add-2) was a band of 20-45 for the O-LoRA final row, citing OrthoSkillVLA's 30.5; a b1 diagonal of 43 is consistent with landing inside that band.
 **RETAIN dense drift matrix started 05:00:28 UTC** — this time verified by two real `mse_matrix_dense.py` processes (18.5 GB GPU alongside the trainer's 67.8 GB, 56.8 GB free) rather than a self-matching pgrep. Output file `mse_matrix_retain10_a05.jsonl` still 0 bytes/0 rows at 06:15 UK; it writes one row per task as it goes. O-LoRA training slowed 2.75 -> 3.66 s/step with the matrix sharing the GPU, as expected.
 
+### Entry 67 addendum 19 (9 Sep 26, 07:45 UK) — RETAIN DENSE DRIFT MATRIX COMPLETE: mean own-task loss drift **+476.6%**, vs ours +28.5% and naive +740-1567%
+**Matrix (`mse_matrix_retain10_a05.jsonl`, 10/10 rows, 05:00:28 -> 06:15:49 UTC, ~7.5 min/row).** Rows are the merged checkpoint after each block, columns the per-task action MSE on that task's own data (dataset task ids = train order):
+
+| ckpt | t0 | t1 | t2 | t3 | t4 | t5 | t6 | t7 | t8 | t9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 005000 | **0.109** | 0.822 | 2.260 | 1.108 | 1.268 | 1.115 | 0.996 | 1.186 | 1.245 | 0.777 |
+| 010000 | 0.330 | **0.144** | 2.951 | 1.464 | 1.637 | 1.323 | 1.290 | 1.602 | 1.664 | 1.035 |
+| 015000 | 0.493 | 0.273 | **0.613** | 1.819 | 1.686 | 1.348 | 1.355 | 1.681 | 1.680 | 1.131 |
+| 020000 | 0.709 | 0.491 | 1.140 | **0.276** | 1.847 | 1.467 | 1.586 | 1.780 | 1.847 | 1.352 |
+| 025000 | 0.849 | 0.713 | 1.542 | 0.463 | **0.418** | 1.485 | 1.793 | 1.790 | 2.003 | 1.619 |
+| 030000 | 1.037 | 0.974 | 2.131 | 0.816 | 0.776 | **0.275** | 2.018 | 2.075 | 2.234 | 1.858 |
+| 035000 | 1.231 | 1.182 | 2.166 | 1.141 | 1.053 | 0.470 | **0.370** | 2.264 | 2.091 | 1.744 |
+| 040000 | 1.253 | 1.313 | 2.439 | 1.279 | 1.085 | 0.750 | 0.653 | **0.566** | 2.207 | 2.020 |
+| 045000 | 1.450 | 1.516 | 2.843 | 1.705 | 1.381 | 0.998 | 0.906 | 0.928 | **0.447** | 2.208 |
+| 050000 | 1.690 | 1.753 | 3.169 | 2.114 | 1.771 | 1.209 | 1.101 | 1.467 | 0.841 | **0.267** |
+
+**Own-task drift (loss at its own boundary -> loss under the final model):** t0 0.109->1.690 **+1455%**; t1 0.144->1.753 **+1121%**; t2 0.613->3.169 **+417%**; t3 0.277->2.114 **+665%**; t4 0.418->1.771 **+324%**; t5 0.276->1.209 **+339%**; t6 0.370->1.101 **+198%**; t7 0.566->1.467 **+159%**; t8 0.448->0.841 **+88%**; t9 0.267->0.267 **+0%** (the final task, no subsequent merge). **MEAN +476.6%.**
+
+**Reading.** The function-space measurement agrees with the rollout triangle and is the cleaner statement of it, because it is continuous where success rate saturates at 0. Three things. (i) **RETAIN's drift is ~17x ours** (+476.6% vs +28.5% after ten tasks) and sits inside, though at the low end of, the naive band (+740-1567%): merging at alpha 0.5 slows the erasure of earlier tasks relative to unprotected sequential training, but does not stop it — consistent with the triangle, where RETAIN's only surplus over naive was the one-back cell. (ii) **The exposure ordering is monotone and clean**: drift is ordered almost exactly by how many merges a task subsequently endures (t0 +1455% with nine, down to t8 +88% with one, t9 +0% with none). Each boundary multiplies an earlier task's residual delta by 0.5, so its loss climbs geometrically back toward the pre-training function — the same 2^-k mechanism the triangle showed, now visible without a floor effect. (iii) **The diagonal is not free either**: own-task loss at its own boundary ranges 0.109-0.613, and the two hardest (t2 0.613, t7 0.566) are the same tasks whose rollout diagonals were weakest (e9 19.0, e0/e7 mid-30s to 40s) — half a fine-tune delta is a worse fit for a hard task, in loss as in rollouts.
+**Status at 07:45 UK.** RETAIN is now COMPLETE end to end: chain 10/10, triangle 10/10 rows, drift matrix 10/10. O-LoRA is on task 2/10 (step 3,900, 2.52 s/step now the matrix has freed the GPU, loss 0.114, orth penalty decayed 995 -> 9.97), triangle 1/10, matrix pending its chain. Disk 71%, GPU 67.8 GB, no errors.
+
 ## Entry 68 - 9 Sep 26 (ABLATIONS: isolating the three headline mechanisms on the FINAL architecture — live-vs-stationary addressing, TF-IDF-only writes, joint-vs-staged router preparation at matched LR — plus zero-separation / zero-contrastive warm-up certificates. Second VM (H100) provisioned. Pre-registered reads and result placeholders)
 
 **Why (Josh, 9 Sep).** Two fresh-context reviews of the ICRA draft (Codex, Fable) converge on one theme: the paper
