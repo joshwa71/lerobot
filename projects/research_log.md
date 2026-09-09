@@ -9160,3 +9160,177 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 
 **Reading — this one is not about forgetting.** Task 1 trained with `orth 0.000e+00` throughout (nothing to be orthogonal against), so 43.0 is O-LoRA's *plasticity ceiling at r64*, uncontaminated by its own constraint: a 106M-parameter adapter is 8x smaller than naive r512's and simply fits the task less well. That matters for reading every later O-LoRA row — its diagonal starts 27 points below naive's, so a low row mean at b10 will be part capacity, part orthogonality, and the two need separating (the per-task oracle would be the clean control; not in the current protocol). The pre-registered expectation (add-2) was a band of 20-45 for the O-LoRA final row, citing OrthoSkillVLA's 30.5; a b1 diagonal of 43 is consistent with landing inside that band.
 **RETAIN dense drift matrix started 05:00:28 UTC** — this time verified by two real `mse_matrix_dense.py` processes (18.5 GB GPU alongside the trainer's 67.8 GB, 56.8 GB free) rather than a self-matching pgrep. Output file `mse_matrix_retain10_a05.jsonl` still 0 bytes/0 rows at 06:15 UK; it writes one row per task as it goes. O-LoRA training slowed 2.75 -> 3.66 s/step with the matrix sharing the GPU, as expected.
+
+## Entry 68 - 9 Sep 26 (ABLATIONS: isolating the three headline mechanisms on the FINAL architecture — live-vs-stationary addressing, TF-IDF-only writes, joint-vs-staged router preparation at matched LR — plus zero-separation / zero-contrastive warm-up certificates. Second VM (H100) provisioned. Pre-registered reads and result placeholders)
+
+**Why (Josh, 9 Sep).** Two fresh-context reviews of the ICRA draft (Codex, Fable) converge on one theme: the paper
+weakly ablates its core knobs, so the contributions cannot be isolated. Checked against the draft, the complaint is
+fair. The three headline mechanisms — router warm-up ("geometry before content"), stationary addressing, protected
+writes — are each supported by routing diagnostics on old layouts and by none of them by a success comparison on the
+final 12-site / 7-table merged 6x2 architecture:
+- Table II A (joint vs staged preparation): IoU only, 4-site n=384 config (E35 vs E37), and confounded with router LR
+  (2.5e-5 vs 1e-4) — the paper says so itself. E36 attributed the E35 failure to "anchored optimisation" (values at
+  40x the router LR), so the confound may be the whole effect.
+- Table II B (stationary routing): self-IoU only, live arm = E38 rwarmupA (4 sites, 20-ep cells, killed at 7/10, e2
+  80->25) vs stationary = E39 stageB, which ALSO re-ran its A-phase; no matched-horizon success number exists.
+- Table II C (core-50 protection): peak-norm vs corefrac (E52/E53) — two protection variants, not protection vs none.
+  The only "no protection" number is joint-era (E27/E28: 34.0 -> 40.5 at n=384, 4 sites).
+- Table II D/E (separation, contrastive): joint-training probes (E25/E26), backbone co-adapting — the paper flags this.
+Placement, sharing, write budget, LR and the expert anchor already have success-level ablations (Sec. V.C) and are
+NOT repeated. Retrieval breadth, bank size, slot rank, heads, gating are closed axes (SR / summary §8) and are skipped.
+
+**Design principles (agreed).** (1) Every arm is a single delta from the paper cell (E62 recipe, §2 of the summary),
+on the FINAL layout, on the five development tasks (e4, e6, e9, e2, e7). Five tasks suffice for the three mechanism
+arms: drift accumulates with exposure and E38 showed it inside five blocks; unprotected writes collapsed the earliest
+task at five blocks (E51 P2); joint preparation acts on acquisition (E35 inits -18pp). (2) The control is NOT re-run:
+the TF-IDF mask is built from retrieval indices accumulated across micro-batches (`_compute_tfidf_top_indices_for_batch`
+takes `override_indices`, an optimizer-step quantity), and micro-batching is recorded neutral (E53 24 Jul, E60 add-7),
+so the H200 control at bs16xacc2 is valid against H100 arms at any ladder rung. (3) Full retention triangle per arm
+(15 cells), not acquisition+final: the paper's R_post and backward-transfer metrics are triangle quantities, and the
+intermediate rows are what distinguish gradual exposure-ordered decay (live routing) from boundary-specific loss
+(unprotected writes). Marginal cost 6 cells/arm (~2.5 h). (4) All four paired eval seeds (1000/2000/3000/4000, 25 eps,
+vec 13) — the E64 add-3 instrument — so every cell pairs with the control.
+
+**The run-to-run bar.** The 5-task and 10-task merged 6x2 runs share recipe and seed and differ at row 5 by up to 8
+points per cell (e7 43 vs 51, e4 56 vs 53), means 65.2 vs 66.0. That pair is the only replicate we have: **an ablation
+delta under ~3 points on the 5-task mean is noise; per-cell deltas under ~8 are noise.** Arms are chosen because their
+expected effects are large.
+
+### The arms
+
+| arm | single delta from the paper cell | steps | starts from | replaces |
+|---|---|---|---|---|
+| A1 live addressing | `use_frozen_base_input_features=false`, `frozen_prepass=false` from value fill onward (routers, gates and anchors read the live stream) | 10k fill + 25k seq5 = 35k | merged 6x2 warm-up ckpt (values zero at warm-up => live == memory-free there; arms share it) | Table II B |
+| A2 TF-IDF-only writes | `protect_prior_slots=false`; same `tfidf_top_t=3072`, online IDF, LR, optimizer reset, union masks on shared tables | 20k (tasks 2-5) | control's task-1 checkpoint (`checkpoints/005000` + `sequential_state.pt`): with an empty store score == tfidf (trainer docstring), so task 1 is identical by construction | the missing "no protection" row (= the Lin et al. recipe at our budget) |
+| A3 joint preparation, matched LR | keys + query proj + anchor maps + values + gates + out-proj trained TOGETHER for 10k on libero_90 (MSE + c0.05 + sep8), router LR 1e-4 (= warm-up LR, removes the E35/E36 confound), stationary routing ON; then routers frozen, seq5 C-config verbatim | 10k joint + 25k seq5 = 35k (+35 min audit) | stage-1 base (on nebius2 already) | Table II A |
+| C1 zero-separation certificate | warm-up with `sep=0` (c 0.05, anchor 0.40, pool (1,0.5), prepass; router-only fast path) + held-out audit | 10k router-only (~3-4 h) + 35 min | stage-1 base | Table II D |
+| C2 zero-contrastive certificate | warm-up with `c=0` (sep 8, otherwise as C1) + audit | same | stage-1 base | Table II E |
+
+**A1 code note.** `MemoryLayerConfig.__post_init__` raises for the final layout whenever `min(vlm_layers) <=
+max(layers)` without `frozen_prepass` — the guard protects exactly the property A1 gives up. Needs an explicit bypass
+flag (proposed `allow_nonstationary_routing=true`, default false, byte-identical otherwise) and a smoke: live mode
+attaches all 12 sites, the E52 anchor forward_pre_hook fires once per forward (no frozen pass A to overwrite it),
+routing is bitwise equal to prepass mode at zero values and diverges once values are non-zero. Inference in A1 is the
+plain single-pass path (prefix KV with memory, no pre-pass), which is what "live" means at deployment.
+
+**Why no downstream separation run.** Separation's channel is the same-scene family (E27/E28, Sec. V.B). In the
+development order the basket hub e7 is task 5 and its victims e0/e1 arrive at tasks 6 and 8, so a 5-task sep=0
+sequence has no victim and would likely read flat — that would undermine the geometry story rather than bolster it.
+A 10-task sep=0 arm is 60k steps and does not fit before the deadline. The held-out audit runs on all ten tasks'
+demos from the warm-up checkpoint alone, so C1 measures the family channel (famIoU, and writable mass omega for e0/e1
+against e7's core) without any downstream training; the paper's Sec. V.B overlap->deficit link carries it from there.
+C2's expected failure mode is capacity (sprawl/collapse: E25, E45), i.e. acquisition, which the certificate shows
+directly. Deferred, first to drop if time is short: expert-only memory (contribution (i) has only the LoRA compass
+behind it; a full 45k chain).
+
+### Pre-registered reads (written before any number lands)
+
+| arm | acquisition (diagonal) | retention | diagnostics | kill/demote line |
+|---|---|---|---|---|
+| A1 live | ~= control, possibly +1-3 (tasks chase their own routing within a block, E39) | exposure-ordered decay; final mean well below 65.2; prior-task rows fall block by block, not at one boundary | pre->post self-IoU << 1 at every site above E4/V5 (E38 band 0.2-0.3), == 1 at E4 and V5 | final within 3 of control => stationarity is not load-bearing at this layout; Sec. III.D becomes a property statement, not a design win |
+| A2 TF-IDF-only | >= control (no writer restriction) | loss concentrated on the earliest tasks; final mean below control; loss drift >> 3.9% (band: E53 peak-norm 22.6% on task 1) | prior-core write events > 0 at E14/E16 (control: 0); site-bleed unchanged | final within 3 of control => protection is not load-bearing on 5 unrelated tasks; the paper's write-rule claim then rests on 10-task e7 and the real robot only |
+| A3 joint prep @1e-4 | genuinely uncertain: E35 (2.5e-5) had inits -18pp and e7 init 0 | uncertain | audit after 10k: E35-like diffuse routing (effnum ~2x, core50 large) OR a passing certificate | audit passes AND seq5 within 3 of control => "geometry before content" reduces to a router-LR observation; Sec. III.E must say so |
+| C1 sep=0 | n/a | n/a | famIoU up from 0.145 band; bgIoU up (how much is the question — bg is the axis that pays, E56); omega for e0/e1 down | famIoU/bg unchanged => separation is decorative at this anchor weight; demote L_sep in Sec. III |
+| C2 c=0 | n/a | n/a | collapse before 1k (E45 signature, ~70% of reads on one slot) or sprawl (core50/effnum far outside the gate) | certificate passes cleanly => contrastive is not load-bearing with pooled VLM routing; demote |
+
+### Evaluation and reporting
+- Control cells: the 5-task merged 6x2 run's OWN per-task checkpoints (`libero_10_seq5_jw_merged6x2_..._steps5k`,
+  005000..025000, on nebius-spot), 15 cells — not rows 1-5 of the seq10 triangle (different run; see the bar above).
+  The seq10 rows 1-5 are kept as the replicate.
+- Per arm: 5-row triangle (4 seeds x 25 eps), paired-noise MSE matrix with the FIXED loader (E65 add-16), and the
+  arm's diagnostic (A1 self-IoU per site pre/post; A2 prior-core events + site-bleed; A3/C1/C2 the audit certificate).
+- Columns per arm, matching Table I: acquisition mean, final mean, R_post, Delta_final, mean loss drift, paired
+  delta vs control (SE over seed-wise differences).
+
+### Compute plan
+- **nebius2** = `josh-vm-spot-2`, `computeinstance-e00h8htkzavxm81d24`, **H100 80 GB** (not 141), preemptible, same
+  image (a 27 Jul clone of the spot disk: repo pulled 5b1a4551 -> 9e9e46e0 today, clean; linger enabled; stage-1
+  base + LIBERO HF cache present; 651 G free; 1.2 T of E44-E54 runs on it are all on the local backup drive and
+  deletable). Full delta between the two VMs recorded in this session (9 Sep): everything from E55 on lives only on
+  nebius-spot (1.04 T), incl. the merged 6x2 warm-up (19.7 G), A-phase (19.5 G) and the 5-task control (5 x 19.4 G);
+  real-world datasets live under `outputs/` on spot only.
+- **Transfers to nebius2** (VM-to-VM over the private subnet 10.0.0.x): warm-up ckpt (A1), control 005000 +
+  `sequential_state.pt` (A2). A3, C1, C2 need only the stage-1 base, already there — they can start first.
+- **Fit / profiling gate on 80 GB.** Static: backbone bf16 8.7 G + values fp32 10.7 G + value grads 10.7 G + Adam
+  21.4 G ~= 52 G before activations => expect bs8xacc4+ckpt or bs4xacc8; profile s/opt-step and peak on the real
+  command before committing (H200 references: control 1.18 s/opt-step at bs16xacc2; 13-module absmax 2.40 s at
+  bs8xacc4 no-ckpt, 125.6 G). Evals cannot overlap training at 80 G.
+- **Where the rows run.** All triangle rows on the H200 once E67 finishes (O-LoRA chain ends ~04-07 UK Thu 10 Sep;
+  its triangle rows + the two drift matrices run on past that; H200 free ~Fri 11 Sep). 26 min/cell interleaved =>
+  4 triangles ~= 26 h. Fallback if the schedule slips: acquisition+final (9 cells) for the arms, full triangle only
+  for the largest-effect arm.
+- **Order.** C1, C2 (today, no transfer needed) -> A1 (35k) -> A2 (20k) on the H100; A3 (35k) on the H200 from Friday
+  or on the H100 after A2, whichever is free first. Budget: 90k steps at an assumed 2-3 s/opt-step on the H100 =
+  50-75 h training. **Deadline 15 Sep 23:59 PT = 16 Sep 08:00 UK; results must land by ~14 Sep to reach the paper.**
+- Every long run under `systemd-run` with the SIGTERM/atomic-save/resume contract (CLAUDE.md §9.4-9.5); the
+  `ensure_vm.sh` recipe is hard-coded to the first instance id and needs a second-VM variant before anything
+  unattended runs on nebius2.
+
+### RESULTS (placeholders — fill as they land; keep the pre-registered table above untouched)
+
+**Profiling gate (H100, real command, ~300 opt-steps):**
+| stage | rung | s/opt-step | peak GB | verdict |
+|---|---|---|---|---|
+| value fill (A1 recipe) | | | | |
+| seq5 (C-config) | | | | |
+
+**Certificates (held-out audit, 10 tasks; expert / VLM):**
+| warm-up | famIoU | bgIoU | mean core50 | min effnum (exp / vlm) | omega e0, e1 vs e7 core | gate | ref |
+|---|---|---|---|---|---|---|---|
+| paper cell (merged 6x2, c0.05 sep8) — transcribe from `audit_heldout_jointwarm_merged6x2_..._10k` | | | | | | PASS (E62) | E62 |
+| C1 sep=0 | | | | | | | |
+| C2 c=0 | | | | | | | |
+| A3 joint @1e-4 (post-10k audit) | | | | | | | |
+
+**Five-task summary (4 seeds x 25 eps; paired delta vs control with SE):**
+| arm | e4 | e6 | e9 | e2 | e7 | acq. mean | final mean | R_post | Delta_final | loss drift (fixed loader) | delta vs control |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| control (5-task merged 6x2, own ckpts) | | | | | | | 65.2 (E62 add-3) | | | +3.9% (E65 add-24) | — |
+| A1 live addressing | | | | | | | | | | | |
+| A2 TF-IDF-only | | | | | | | | | | | |
+| A3 joint prep @1e-4 | | | | | | | | | | | |
+
+**Retention triangles (after block k, envs in train order e4 e6 e9 e2 e7; row mean last):**
+control (own ckpts):
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | | | | | | |
+| b2 | | | | | | |
+| b3 | | | | | | |
+| b4 | | | | | | |
+| b5 | | | | | | |
+A1 live:
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | | | | | | |
+| b2 | | | | | | |
+| b3 | | | | | | |
+| b4 | | | | | | |
+| b5 | | | | | | |
+A2 TF-IDF-only (b1 == control b1 by construction):
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | | | | | | |
+| b2 | | | | | | |
+| b3 | | | | | | |
+| b4 | | | | | | |
+| b5 | | | | | | |
+A3 joint prep:
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | | | | | | |
+| b2 | | | | | | |
+| b3 | | | | | | |
+| b4 | | | | | | |
+| b5 | | | | | | |
+
+**Diagnostics:**
+| arm | instrument | value | control reference |
+|---|---|---|---|
+| A1 | pre->post self-IoU per site (E4 E6 E8 E10 E14 E16 / V5..V15) | | 1.000 at every site (E62 add-2) |
+| A2 | prior-core write events at E14 / E16 / shallow E4 / VLM | | 0 / 0 / ~25k / 0 (E62 add-2) |
+| A2 | site-bleed on the five shared pairs | | 14-51% (E62 add-2) |
+| A3 | audit certificate (row above) + seq5 in-run block-min losses | | |
+
+**Scoring against the pre-registration:** (fill: which kill/demote lines fired, and the sentence each arm licenses
+for Sec. V.A.)
