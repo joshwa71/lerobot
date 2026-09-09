@@ -277,7 +277,26 @@ Own-task MSE relative to the r64 specialists (one adapter per task, task ID give
 
 Diagonal mean 73.1 (the naive adapter fits each task at specialist grade, then loses it after one block).
 
-### 4.5 LoRA specialist function anchors (chunk error on demo states, single model per task)
+### 4.5 RETAIN (weight merging, α=0.5) retention triangle, ten tasks, 4-seed (E67 add-17)
+
+**Setup.** RETAIN (Yadav et al., ICLR 2026) under our protocol, their continual setting: fine-tune *all* 4.143B weights on task k for 5,000 steps, then at the boundary merge θ ← 0.5·θ_prev + 0.5·θ_ft with α fixed at 0.5, and continue from the merged weights. Run `libero_10_seq10_retain_a05_fullft_steps5k` from the stage-1 base `libero_90_pi05_base_nomem_50k`, bs8 × acc4, optimizer reinitialised per task; merged checkpoint at each boundary is what gets evaluated. Merge witness (mean |merged−prev| / mean |ft−prev| over all parameters) read exactly 0.5000 at all ten boundaries. Same instrument as §3.3 and §4.4: after block k, the k envs seen so far, each cell 25 episodes × seeds 1000/2000/3000/4000 (100 episodes), vec batch 13. Envs in train order.
+
+| after block | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| b1 | 71 | | | | | | | | | | 71.0 |
+| b2 | 0 | 81 | | | | | | | | | 40.5 |
+| b3 | 5 | 52 | 19 | | | | | | | | 25.3 |
+| b4 | 5 | 21 | 3 | 86 | | | | | | | 28.8 |
+| b5 | 9 | 30 | 0 | 65 | 57 | | | | | | 32.2 |
+| b6 | 14 | 13 | 0 | 14 | 35 | 46 | | | | | 20.3 |
+| b7 | 8 | 5 | 0 | 25 | 34 | 63 | 34 | | | | 24.1 |
+| b8 | 2 | 0 | 0 | 10 | 5 | 3 | 7 | 70 | | | 12.1 |
+| b9 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 35 | 100 | | 15.1 |
+| b10 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 23 | 58 | 8.2 |
+
+Diagonal mean 62.2; prior-task mean at b10 is 2.7. Final row mean 8.2 sits below both naive baselines (r512 9.7 §4.4, param-matched r1216 8.6 §4.2) and against 65.1 for the paper cell (§3.3).
+
+### 4.6 LoRA specialist function anchors (chunk error on demo states, single model per task)
 
 r32 specialists: e4 58 / 0.0204, e6 44 / 0.020, e9 70 / 0.0675, e7 60 / 0.0330, e2 84 / 0.0308 (E43, E55 add, E56). The e7 arbiter: the specialist converts at the same on-demo function the memory model has (0.0330 vs 0.0321) and still rolls 60 vs 20, so e7's wall is off-trail conversion, not fit (E55 add). Compass cells on e4 (E44, E51 P5): expert-only LoRA 14 / 0.229, VLM-only 40 / 0.030, attention-only 26 / 0.106.
 
