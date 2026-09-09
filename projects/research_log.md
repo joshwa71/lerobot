@@ -9125,3 +9125,25 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 **Boundary 1 (04:00 UTC, global step 5,000, `checkpoints/005000/olora_boundary.json`):** 106,303,488 trainable params in the task-1 adapter (r64/alpha16 on the same 254 modules the LoRA baselines use); adapter export took 5.7 s; `l1_B_current` 2.328e+05. The export witness is the one that matters: **`loss_multi_adapter` = `loss_concat_adapter` = 0.0526979826, rel_diff 0.0 (exact)** — the stacked per-task adapters and the single concatenated adapter the checkpoint ships give bit-identical loss, so the drift matrix's adapter-swap path will score exactly what the chain trained. Checkpoint is 4.0 GB (adapters only, vs RETAIN's 18 GB dense boundary), and `olora_state/progress.json` reads completed_tasks 1.
 **The orthogonality constraint is live.** Task 1 ran at `orth 0.000e+00` throughout (correct — no earlier adapter to be orthogonal against). Task 2 opened at **`orth 9.950e+02`** with grad-norm 480.5 at step 100, i.e. the penalty is both non-zero and initially dominant, exactly as O-LoRA intends: the new adapter is being pushed out of the span of adapter 1 from the first steps. Loss 0.593 at step 100 against task 1's 0.0465 finish is the expected fresh-task reset. Step time 2.22 s/task-1 steady, 2.76 s/step early on task 2 (the penalty term plus the row-10 eval sharing the GPU).
 **Housekeeping (not E67):** VM disk cleanup this session freed 427 GB (spent E67 smokes; optimizer state from two completed real-world 5-task chains; then both of those chains in full — topt1536 verified byte-identical on the backup drive first, topt3072 deleted knowingly as a single copy, with both runs' ~255 MB memory_by_task routing artifacts pulled to the drive beforehand). Disk 88% -> 70%, 747 GB free. The naive parameter-matched r1216 run (295 GB) and the RETAIN run (175 GB) were left untouched.
+
+### Entry 67 addendum 17 (9 Sep 26, 05:40 UK) — RETAIN RETENTION TRIANGLE COMPLETE (10/10 rows). Final row mean 8.2, below naive's 9.7; ours 65.1
+**Row 10 (`seeds_tri_retain10_a05_b10.json`, final merged model 050000, written 04:34:49 UTC), envs in train order:** e4 **0.0**, e6 **0.0**, e9 **0.0**, e2 **0.0**, e7 **1.0** (0/0/0/4), e0 **0.0**, e8 **0.0**, e1 **0.0**, e3 **23.0** (32/20/16/24), e5 (just trained) **58.0** (56/56/48/72). Row mean **8.2**. Triangle declared COMPLETE 04:34:50 UTC.
+
+**THE FULL RETAIN TRIANGLE (alpha 0.5, full FT, 4-seed x 25-episode cells, envs in train order):**
+
+| after block | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| b1 | 71.0 | - | - | - | - | - | - | - | - | - | 71.0 |
+| b2 | 0.0 | 81.0 | - | - | - | - | - | - | - | - | 40.5 |
+| b3 | 5.0 | 52.0 | 19.0 | - | - | - | - | - | - | - | 25.3 |
+| b4 | 5.0 | 21.0 | 3.0 | 86.0 | - | - | - | - | - | - | 28.8 |
+| b5 | 9.0 | 30.0 | 0.0 | 65.0 | 57.0 | - | - | - | - | - | 32.2 |
+| b6 | 14.0 | 13.0 | 0.0 | 14.0 | 35.0 | 46.0 | - | - | - | - | 20.3 |
+| b7 | 8.0 | 5.0 | 0.0 | 25.0 | 34.0 | 63.0 | 34.0 | - | - | - | 24.1 |
+| b8 | 2.0 | 0.0 | 0.0 | 10.0 | 5.0 | 3.0 | 7.0 | 70.0 | - | - | 12.1 |
+| b9 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 1.0 | 35.0 | 100.0 | - | 15.1 |
+| b10 | 0.0 | 0.0 | 0.0 | 0.0 | 1.0 | 0.0 | 0.0 | 0.0 | 23.0 | 58.0 | **8.2** |
+
+**Headline.** Final-row means: **ours 65.1, naive LoRA r512 9.7, naive param-matched r1216 8.6 (E64 add-13), RETAIN alpha 0.5 8.2.** RETAIN finishes *below* both naive baselines — the paper's weight-merging recipe, run under our 10-task protocol, gives no measurable rollout retention at the end of the chain, and pays for the merge on the diagonal too (e5 58.0 vs naive's 97.0 and ours' 91.0: the half-merge cannot fit the final task either). The prior-task mean excluding the diagonal is **2.6** for RETAIN vs 0.0 naive vs 62.2 ours.
+**The mechanism, stated from the whole triangle.** RETAIN is a *one-boundary* memory that also costs plasticity. Read down each column: a task scores well on its own diagonal, retains roughly half to three-quarters one boundary later (e6 81->52, e2 86->65, e0 46->63, e1 70->35, e3 100->23), then collapses to 0-14 by the second boundary and to 0 by the third. Alpha 0.5 halves every earlier task's residual delta at each boundary, so after k further tasks an early task's contribution is down by ~2^-k — geometric erasure, with occasional small rebounds (e6 21->30 at b5, e0 46->63 at b7) where the next task's delta happens to share structure. Meanwhile the diagonal itself degrades once tasks are hard (e9 19.0, e5 58.0), because half of a fine-tune delta is not always enough to execute the task it was fit for.
+**Cost.** Triangle wall clock 18:36 UK Mon 7 Sep -> 04:34 UTC Wed 9 Sep, 55 cells, ~26 min/cell, fully interleaved with training (~8% slowdown while a row runs). Next: the RETAIN dense drift matrix has started (04:35 UTC, one process up); the O-LoRA chain is on task 2/10 with its own triangle rows to follow from boundary 1.
