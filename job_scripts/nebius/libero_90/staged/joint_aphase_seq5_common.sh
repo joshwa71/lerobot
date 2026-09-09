@@ -115,7 +115,7 @@ a_phase_resume () {
 if [ -d "$A_FINAL" ]; then
   echo "[A-phase] final checkpoint exists - skipping."
 else
-  A_PARTIAL=$(ls -d "$A_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json 2>/dev/null | sort | tail -1)
+  A_PARTIAL=$({ ls -d "$A_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json 2>/dev/null || true; } | sort | tail -1)   # `|| true`: under set -e/pipefail a no-match ls (rc 2) would silently abort
   if [ -n "$A_PARTIAL" ]; then
     echo "[A-phase] RESUMING from $A_PARTIAL (periodic save)"
     a_phase_resume "$A_PARTIAL" || { echo "ERROR: A-phase resume failed - NOT wiping $A_OUT; inspect and relaunch"; exit 1; }

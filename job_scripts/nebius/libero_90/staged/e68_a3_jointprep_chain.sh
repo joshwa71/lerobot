@@ -123,7 +123,7 @@ J_LADDER="${J_LADDER:-8:4:false,4:8:false,8:4:true,4:8:true}"
 if [ -d "$J_FINAL" ]; then
   echo "[J] final checkpoint exists - skipping."
 else
-  J_PARTIAL=$(ls -d "$J_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json 2>/dev/null | sort | tail -1)
+  J_PARTIAL=$({ ls -d "$J_OUT"/checkpoints/[0-9]*/pretrained_model/train_config.json 2>/dev/null || true; } | sort | tail -1)   # `|| true`: under set -e/pipefail a no-match ls (rc 2) would silently abort
   if [ -n "$J_PARTIAL" ]; then
     echo "[J] RESUMING from $J_PARTIAL"
     joint_phase_resume "$J_PARTIAL" || { echo "ERROR: J resume failed - NOT wiping $J_OUT"; exit 1; }
