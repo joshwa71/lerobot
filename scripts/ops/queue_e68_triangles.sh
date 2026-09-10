@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# E68 4-seed rollout retention triangles on nebius-spot, QUEUED BEHIND the E67 eval queue.
+# E68 A1 4-seed rollout retention triangle on nebius-spot, QUEUED BEHIND the E67 eval queue.
 #
 # Waits until E67 is finished end to end (both triangles 10/10 rows AND both drift matrices 10/10
 # rows — the same condition queue_e67_eval.sh uses to exit), then runs the A1 (live-addressing)
-# triangle followed by the paper-cell control. 15 cells each (blocks 1..5), ~6.5 h each.
+# 5-task triangle: blocks 1..5, 15 cells, 25 eps x 4 paired seeds per cell, ~6.5 h.
+# A1's checkpoints ONLY — no control arm (Josh, 10 Sep; the control is already measured).
 #
 # Resume-safe: run_e68_retention_triangle.sh is skip-guarded per row, so a preemption relaunch
 # picks up at the first missing row. Idempotent: exits immediately once both arms have 5 rows.
@@ -39,17 +40,17 @@ while true; do
   sleep "$POLL"
 done
 
-# ---- the two arms, A1 first --------------------------------------------------------------------
-for arm in a1 control; do
-  case $arm in a1) tag=e68_a1_live ;; control) tag=e68_control5 ;; esac
-  if [ "$(rows $tag)" -ge 5 ]; then say "$arm already 5/5 rows - skipping"; continue; fi
-  say "$arm triangle starting (tag $tag)"
-  bash scripts/vla_analysis/run_e68_retention_triangle.sh "$arm" 2>&1 \
+# ---- A1 only (Josh, 10 Sep: new checkpoints only, no control arm) ------------------------------
+tag=e68_a1_live
+if [ "$(rows $tag)" -ge 5 ]; then
+  say "a1 already 5/5 rows - nothing to do"
+else
+  say "a1 triangle starting (tag $tag, blocks 1-5, 15 cells)"
+  bash scripts/vla_analysis/run_e68_retention_triangle.sh a1 2>&1 \
     | grep --line-buffered -v "exists - skipping\|checkpoint .* missing - skipping"
-  say "$arm triangle returned: $(rows $tag)/5 rows"
-done
+fi
 
-na=$(rows e68_a1_live); nc=$(rows e68_control5)
-say "final: a1 $na/5 | control $nc/5"
-if [ "$na" -ge 5 ] && [ "$nc" -ge 5 ]; then echo "E68-TRIANGLES-DONE"; exit 0; fi
+na=$(rows $tag)
+say "final: a1 $na/5 rows"
+if [ "$na" -ge 5 ]; then echo "E68-TRIANGLES-DONE"; exit 0; fi
 echo "E68-TRIANGLES-INCOMPLETE"; exit 1
