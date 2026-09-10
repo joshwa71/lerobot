@@ -9510,3 +9510,23 @@ Block 3 (e9) opened at loss 0.508 -> 0.290 over its first ~500 steps, LR reset t
 **The pre-registered A1 signature is not appearing.** E68's table predicted "exposure-ordered decay; final mean well below 65.2; prior-task rows fall block by block". Through three blocks the aggregate is flat-to-rising and b3 sits slightly *above* the control's b3. Two honest caveats before anyone reads that as a result: (i) the in-run cell is 20 episodes at one seed, retired from decisions in E41 at +-11pp, and it aggregates the just-trained task with the retained ones, so a strong diagonal can mask a weak row; (ii) E38's own collapse was progressive — rwarmupA held up early and lost e2 80 -> 25 only by block 7 of 10 — and A1 has only two more blocks to run, so this arm may simply be too short to reach the regime where drift bites.
 **Consequence to prepare for.** If the 4-seed triangle confirms the shape, A1 fires its pre-registered kill line ("final within 3 of control => stationarity is not load-bearing at this layout"), and Sec. III.D of the paper must be restated: stationary addressing would then be an exactness property of the routing function that we can demonstrate and audit (self-IoU 1.000, E62 add-2), rather than a design choice carrying measurable retention. That is a weaker claim than the draft makes, and it is better to know it now than at submission. The alternative reading — that five tasks is below the horizon where the drift channel converts, given E38 needed seven — is testable only with a 10-task live arm (60k steps, ~52 h here), which does not fit before the deadline; if A1 lands null, the honest sentence names the horizon rather than claiming the mechanism is absent.
 No action taken; the arm runs to completion as designed and the triangle decides.
+
+### Entry 68 addendum 11 (10 Sep 26, 08:05 UK) — **CORRECTION to add-10**: the per-task cells DO show A1's e4 declining (75/60/55) — but the control's own e4 swings 80/65/75/45/58 on the same instrument, so neither reading survives; the 20-ep in-run triangle cannot resolve this arm
+Add-10 read A1's in-run *aggregates* (75.0 / 57.5 / 65.0) as "no exposure-ordered decay" while noting the masking risk. The per-task cells, pulled from `eval_bar_history` inside each run's `sequential_state.pt`, show the masking was real — and then show the comparison is unusable anyway.
+**A1 live (in-run, 20 eps x 1 seed):**
+| after block | e4 | e6 | e9 | row mean |
+|---|---|---|---|---|
+| b1 | 75 | | | 75.0 |
+| b2 | 60 | 55 | | 57.5 |
+| b3 | 55 | 65 | 75 | 65.0 |
+**Control, matched run / matched instrument** (`libero_10_seq5_jw_merged6x2_...`, read-only from nebius-spot; its b5 row is the 50-ep final = E62 add-1's 58/74/64/84/54):
+| after block | e4 | e6 | e9 | e2 | e7 | row mean |
+|---|---|---|---|---|---|---|
+| b1 | 80 | | | | | 80.0 |
+| b2 | 65 | 65 | | | | 65.0 |
+| b3 | 75 | 60 | 75 | | | 70.0 |
+| b4 | 45 | 70 | 80 | 80 | | 68.8 |
+| b5 | 58 | 74 | 64 | 84 | 54 | 66.8 |
+**Reading.** (i) A1's e4 column falls monotonically 75 -> 60 -> 55, which is the pre-registered live-routing signature, so add-10's headline sentence is withdrawn. (ii) But the CONTROL's e4 column reads 80 -> 65 -> 75 -> **45** -> 58 under stationary routing with protection on — a 30-point swing between adjacent blocks in the arm that is by construction stable, and its b3 (75) exceeds its b1 (80) only after dipping to 65. A column that volatile in the control cannot license reading a 20-point monotone drift in the arm. This is precisely the +-11pp binomial spread that retired the instrument in E41, compounded by aggregating over cells. (iii) What survives: A1's row means sit 5.0 / 7.5 / 5.0 points below the control's at b1/b2/b3 — consistent in sign across three rows, which is mildly suggestive and nothing more.
+**Standing position for A1 is therefore UNCHANGED and undecided**: no interim claim either way, and the arm is decided by the post-hoc 4-seed x 25-episode triangle (100 eps/cell, `run_e68_retention_triangle.sh a1`), which is the instrument every headline in the paper uses. Add-10's "prepare for a null" contingency stays on the table but is no longer supported by evidence; the horizon caveat (E38 needed 7 blocks) stays too.
+**Method note worth keeping:** per-task in-run cells are recoverable at any time from `sequential_state.pt`'s `eval_bar_history` without re-running anything — cheaper than the log's usual route of grepping the trainer's stdout, and it is the only place the per-task breakdown exists (the boundary log line prints the aggregate only).
