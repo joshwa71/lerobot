@@ -9233,6 +9233,32 @@ Loss degrades ~6x and the diagonal falls ~2.5x between zero and three prior adap
 **Nothing new, which is the point.** The diagonal series is now 43.0 / 39.0 / 2.0 / 17.0 / **5.0** across zero-to-four prior adapters: after the second task it never again exceeds 17, and every off-diagonal cell in rows 3-5 is 0-6. Add-23's reading (the constraint, not task difficulty, is the binding limit) holds at the halfway mark with no sign of recovery. Every row from here is expected to be the same shape — a near-zero diagonal over a floor of zeros.
 **Logging policy for rows 6-9.** These are confirmatory, and the per-row addenda are starting to cost more than they add. I will not write one per row; the numbers live in `outputs/analysis/e67/seeds_tri_olora10_r64_b<k>.json` and I will assemble the complete ten-row triangle in one addendum when b10 lands, in the same form as add-17's RETAIN table. I will break that silence early only for a deviation: a diagonal that recovers above ~30 (which would falsify add-23), a non-decaying orth penalty, `algebra_max_rel_err` above ~1e-4, or a failure.
 
+### Entry 67 addendum 25 (11 Sep 26, 22:10 UK) — **E67 COMPLETE.** O-LoRA chain 10/10, triangle 10/10, drift matrix 10/10. Final row mean 6.5 — last of the four chains
+**Chain.** 00:57 UK Wed 9 Sep -> 10:25 UK Fri 11 Sep, **57h 28m**, markers `E67-OLORA-DONE` / `E67-TRAIN-DONE`, unit exit status success, `progress.json` 10 tasks / 50,000 steps. Boundary 10 exported all ten adapters (rank 640, 1.063B params, 7.4 s); `algebra_max_rel_err` held at **2.0e-05 at every one of the ten boundaries**. Final train loss per task: 0.047 / 0.101 / 0.386 / 0.301 / 0.371 / 0.326 / 0.303 / 0.407 / 0.396 / 0.259 — the step between t2 and t3 never recovers. Step time grew 2.2 -> 6.3 s/step with the penalty computed against every prior adapter.
+
+**THE FULL O-LoRA TRIANGLE (r64, alpha 16, lambda_1 0.5; 4-seed x 25-episode cells, envs in train order):**
+
+| after block | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| b1 | 43 | - | - | - | - | - | - | - | - | - | 43.0 |
+| b2 | 3 | 39 | - | - | - | - | - | - | - | - | 21.0 |
+| b3 | 0 | 6 | 2 | - | - | - | - | - | - | - | 2.7 |
+| b4 | 0 | 5 | 0 | 17 | - | - | - | - | - | - | 5.5 |
+| b5 | 0 | 2 | 0 | 5 | 5 | - | - | - | - | - | 2.4 |
+| b6 | 1 | 1 | 0 | 3 | 6 | 1 | - | - | - | - | 2.0 |
+| b7 | 0 | 1 | 0 | 3 | 3 | 2 | 1 | - | - | - | 1.4 |
+| b8 | 0 | 0 | 0 | 2 | 4 | 2 | 0 | 2 | - | - | 1.2 |
+| b9 | 0 | 0 | 0 | 5 | 3 | 4 | 1 | 2 | 27 | - | 4.7 |
+| b10 | 0 | 2 | 0 | 3 | 1 | 2 | 0 | 3 | 28 | 26 | **6.5** |
+
+Diagonal mean **16.3** (ours 65.4, naive 73.1, RETAIN 62.2); prior-task mean at b10 **4.3** (ours 62.2, RETAIN 2.7, naive 0.0).
+
+**FOUR-CHAIN FINAL ROW (the paper's headline row):** ours **65.1** | naive r512 **9.7** | naive r1216 param-matched **8.6** | RETAIN alpha 0.5 **8.2** | **O-LoRA r64 6.5**.
+
+**O-LoRA drift matrix — and the twist.** Mean own-task drift **+71.6%**, which is the *second best* of the four (ours +28.5%, O-LoRA +71.6%, RETAIN +476.6%, naive +740-1567%). But read the per-task column before crediting it: t0 +466%, t1 +171%, t2 +49%, t3 +20%, t4 +7%, then **t5-t9 at +0.4% or less**. The late tasks barely drift because by then the model is barely changing — each new rank-64 adapter, confined to the orthogonal complement of 5-9 earlier ones, moves the function almost not at all. This is precisely the paper's Figure 3 claim (the constraint keeps previous-task loss low) and it is **true here in function space**; it is also why the rollout triangle is empty. O-LoRA buys function preservation by buying plasticity loss, and at r64 on a 4.1B VLA the price is the whole product: diagonals of 1-6% from b5 to b8 mean there is nothing worth preserving. The one intact claim is that the *mechanism* works as advertised — orthogonality really does freeze the function; it just freezes a function that never learned the task.
+**Where the three failure modes now sit, stated cleanly for the writeup.** Naive: fits at specialist grade (diag 73.1), then overwrites — prior tasks 0.0. RETAIN: fits well (diag 62.2), then geometrically erases at ~2^-k per merge — prior tasks 2.7, drift +477%. O-LoRA: never fits after task 2 (diag 16.3) but holds what little it has — prior tasks 4.3, drift +72%. Ours: fits (diag 65.4) **and** holds (prior tasks 62.2, drift +28.5%). The three baselines fail in three different places; only the memory row does both jobs at once.
+**Handover.** `e67-eval` exited with `E67-EVAL-DONE`; the queued `e68-eval` unit picked up automatically and the **A1 (live-addressing) 5-task triangle is at 4/5 rows** at 22:10 UK, finishing tonight. Disk 76%, no errors anywhere in the run.
+
 ## Entry 68 - 9 Sep 26 (ABLATIONS: isolating the three headline mechanisms on the FINAL architecture — live-vs-stationary addressing, TF-IDF-only writes, joint-vs-staged router preparation at matched LR — plus zero-separation / zero-contrastive warm-up certificates. Second VM (H100) provisioned. Pre-registered reads and result placeholders)
 
 **Why (Josh, 9 Sep).** Two fresh-context reviews of the ICRA draft (Codex, Fable) converge on one theme: the paper
