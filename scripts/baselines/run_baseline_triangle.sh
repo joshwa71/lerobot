@@ -28,6 +28,7 @@ case "$MODEL" in
   olora)  RUN=$ROOT/outputs/train/libero_10_seq10_olora_r64_a16_lam05_steps5k; TAG=olora10_r64; EXTRA="--policy.use_peft=true" ;;
   paramatched) RUN=$ROOT/outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k; TAG=naive10_paramatched_r1216; EXTRA="--policy.use_peft=true" ;;
   naive_fullft) RUN=$ROOT/outputs/train/libero_10_seq10_naive_fullft_steps5k; TAG=naive10_fullft; EXTRA="" ;;   # E69: RETAIN chain at alpha=1.0 (no merge) = naive sequential full FT
+  replay_fullft) RUN=$ROOT/outputs/train/libero_10_seq10_replay1ep_f025_fullft_steps5k; TAG=replay10_1ep_f025; EXTRA="" ;;   # E69: naive full FT + 1-episode/task replay buffer at 25 %
   *) echo "unknown model '$MODEL'"; exit 2 ;;
 esac
 OUTDIR=$ROOT/outputs/analysis/e67; mkdir -p $OUTDIR

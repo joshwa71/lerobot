@@ -65,6 +65,7 @@ run_retain () {  # <bs> <accum> [extra args...]
     --online_steps_per_task=$STEPS \
     --retain_alpha=$ALPHA \
     --ckpt_every=$CKPT_EVERY \
+    ${EXTRA_ARGS:-} \
     "$@"
 }
 if [ "$SMOKE" = "1" ]; then
@@ -75,6 +76,13 @@ if [ "$SMOKE" = "1" ]; then
   run_retain 8 4 2>&1 | tee /tmp/retain_smoke_2.log
   grep -q "resume: in-progress task 1 at step 5" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (did not resume at step 5)"; exit 1; }
   grep -q "RETAIN-CHAIN-DONE" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (no done marker)"; exit 1; }
+  if grep -q "replay_episodes_per_task=[1-9]" <<< "${EXTRA_ARGS:-}"; then   # E69: the replay path must have engaged on task 2
+    grep -q "replay buffer: 1 episode(s)" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (replay buffer not used on task 2)"; exit 1; }
+    grep -q "\[replay\] task 1: .* replay frames" /tmp/retain_smoke_2.log || { echo "E67-RETAIN-SMOKE-FAIL (replay sampler not built)"; exit 1; }
+    python3 -c "import json,sys; p=json.load(open('$RUN_DIR/retain_state/progress.json')); sys.exit(0 if len(p.get('replay_episodes',[]))==2 else 1)" \
+      || { echo "E67-RETAIN-SMOKE-FAIL (progress.json replay buffer != 2 episodes after 2 boundaries)"; exit 1; }
+    echo "E69-REPLAY-SMOKE-OK"
+  fi
   for b in 000020 000040; do
     [ -f "$RUN_DIR/checkpoints/$b/pretrained_model/model.safetensors" ] || { echo "E67-RETAIN-SMOKE-FAIL (boundary $b missing)"; exit 1; }
     [ -f "$RUN_DIR/checkpoints/$b/retain_boundary.json" ] || { echo "E67-RETAIN-SMOKE-FAIL (boundary json $b missing)"; exit 1; }

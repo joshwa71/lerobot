@@ -34,6 +34,7 @@ preemption after N global steps (smoke test of the resume path).
 
 import gc
 import logging
+import random
 import shutil
 import sys
 import time
@@ -47,6 +48,7 @@ from safetensors.torch import load_model
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from retain.retain_merge import cpu_copy as _cpu_copy, merge_in_place as _merge_in_place  # noqa: E402
 from common import (  # noqa: E402
+    task_episode_indices,
     RunningMeans,
     atomic_replace_dir,
     build_accelerator,
@@ -84,6 +86,13 @@ class RetainConfig(TrainPipelineConfig):
     keep_ft_weights: bool = True
     fresh: bool = False
     stop_after_steps: int = 0
+    # E69 replay variant (defaults OFF => the RETAIN / naive paths are byte-identical): at each
+    # boundary `replay_episodes_per_task` episodes of the finished task (seeded choice, recorded in
+    # progress.json + the boundary json) join a buffer; every later task's sampler draws each frame
+    # from the buffer with probability `replay_fraction` (uniform over buffered frames).
+    replay_episodes_per_task: int = 0
+    replay_fraction: float = 0.25
+    replay_seed: int = 0
     # TrainPipelineConfig.validate() refuses an existing output_dir unless resuming; this baseline
     # resumes by default (CLAUDE.md 9.4.5), so the flag the parent looks for is always on.
     resume_sequential: bool = True
@@ -94,6 +103,8 @@ class RetainConfig(TrainPipelineConfig):
             raise ValueError("retain_alpha must be in (0, 1]")
         if self.peft is not None:
             raise ValueError("RETAIN is a full fine-tune baseline; do not pass --peft")
+        if self.replay_episodes_per_task < 0 or not (0.0 <= self.replay_fraction < 1.0):
+            raise ValueError("replay_episodes_per_task must be >= 0 and replay_fraction in [0, 1)")
         # step ids zero-padded like the other 10-task runs (005000 ... 050000)
         self.steps = self.online_steps_per_task * len(self.online_task_ids)
 
@@ -156,6 +167,9 @@ def main(cfg: RetainConfig):
     progress = read_json(state_root / "progress.json") if (state_root / "progress.json").exists() \
         else {"completed_tasks": 0, "global_step": 0}
     k = int(progress["completed_tasks"])
+    replay_buffer = [int(e) for e in progress.get("replay_episodes", [])]   # E69: episodes banked at past boundaries
+    if replay_buffer:
+        logging.info(f"resume: replay buffer {replay_buffer}")
     if k > 0:
         bdir = get_step_checkpoint_dir(out, cfg.steps, k * S) / "pretrained_model"
         logging.info(f"resume: loading merged boundary {k} weights from {bdir}")
@@ -186,7 +200,12 @@ def main(cfg: RetainConfig):
         if task_pos < k:
             continue
         logging.info(f"=== RETAIN task {task_pos+1}/{n_tasks} | dataset_task_id={task_id} | {t2n.get(int(task_id), '')}")
-        dl, it = task_dataloader(dataset, t2n, task_id, cfg, device)
+        use_replay = cfg.replay_episodes_per_task > 0 and len(replay_buffer) > 0 and cfg.replay_fraction > 0.0
+        if use_replay:
+            logging.info(f"replay buffer: {len(replay_buffer)} episode(s) {replay_buffer} mixed at fraction {cfg.replay_fraction}")
+        dl, it = task_dataloader(dataset, t2n, task_id, cfg, device,
+                                 replay_episodes=replay_buffer if use_replay else None,
+                                 replay_fraction=cfg.replay_fraction)
         optimizer = cfg.optimizer.build(unwrapped.get_optim_params())
         lr_scheduler = cfg.scheduler.build(optimizer, S) if cfg.scheduler is not None else None
         optimizer, lr_scheduler = accelerator.prepare(optimizer, lr_scheduler)
@@ -236,16 +255,25 @@ def main(cfg: RetainConfig):
                 unwrapped.save_pretrained(tmp_b / "ft_pretrained_model")
         stats = _merge_in_place(unwrapped, theta_prev, alpha)
         theta_prev = _cpu_copy(unwrapped)
+        replay_added: list[int] = []
+        if cfg.replay_episodes_per_task > 0:   # E69: bank episodes of the task just finished
+            eps = task_episode_indices(dataset, t2n, int(task_id))
+            rng = random.Random(cfg.replay_seed * 1000 + task_pos)
+            replay_added = sorted(rng.sample(eps, min(cfg.replay_episodes_per_task, len(eps))))
+            replay_buffer = replay_buffer + replay_added
+            logging.info(f"[boundary {task_pos+1}] replay: banked episodes {replay_added} of task {int(task_id)}; buffer now {replay_buffer}")
         with timed() as t_b:
             save_checkpoint(checkpoint_dir=tmp_b, step=global_step, cfg=cfg, policy=unwrapped,
                             optimizer=None, scheduler=None, preprocessor=pre, postprocessor=post)
         stats.update({"alpha": alpha, "task_pos": task_pos, "dataset_task_id": int(task_id),
                       "task_name": t2n.get(int(task_id), ""), "global_step": global_step,
-                      "save_ft_s": t_ft.s, "save_merged_s": t_b.s})
+                      "save_ft_s": t_ft.s, "save_merged_s": t_b.s,
+                      "replay_added": replay_added, "replay_buffer": list(replay_buffer)})
         write_json_atomic(tmp_b / "retain_boundary.json", stats)
         atomic_replace_dir(tmp_b, bdir)
         update_last_checkpoint(bdir)
-        write_json_atomic(state_root / "progress.json", {"completed_tasks": task_pos + 1, "global_step": global_step})
+        write_json_atomic(state_root / "progress.json", {"completed_tasks": task_pos + 1, "global_step": global_step,
+                                                          "replay_episodes": list(replay_buffer)})
         for d in (state_root / "current", state_root / "current.old", state_root / "current.tmp"):
             if d.exists():
                 shutil.rmtree(d)

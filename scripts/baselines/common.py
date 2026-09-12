@@ -17,6 +17,7 @@ What lives here:
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 import logging
 import os
 import shutil
@@ -53,6 +54,8 @@ __all__ = [
     "eval_loss_matrix_row",
     "_build_dataloader_for_task",
     "_collect_task_index_to_name",
+    "task_episode_indices",
+    "MixedReplaySampler",
 ]
 
 
@@ -230,9 +233,68 @@ def build_dataset_policy_processors(cfg, device):
     return dataset, policy, preprocessor, postprocessor, task_index_to_name
 
 
-def task_dataloader(dataset, task_index_to_name, task_id: int, cfg, device):
-    """The sequential trainer's per-task loader (episode-aware sampler over that task's episodes)."""
+def task_episode_indices(dataset, task_index_to_name, dataset_task_id: int) -> list[int]:
+    """Episode indices belonging to one dataset task id (the same two-branch filter
+    _build_dataloader_for_task applies, exposed so a replay buffer can pick episodes)."""
+    if "tasks" in dataset.meta.episodes.column_names:
+        name = task_index_to_name[int(dataset_task_id)]
+        return [i for i, tl in enumerate(dataset.meta.episodes["tasks"]) if name in tl]
+    cache = getattr(dataset, "_episode_task_ids_cache", None)
+    if cache is None:
+        cache = defaultdict(set)
+        for ep_idx, task_idx in zip(dataset.hf_dataset["episode_index"], dataset.hf_dataset["task_index"], strict=True):
+            cache[int(ep_idx)].add(int(task_idx))
+        dataset._episode_task_ids_cache = cache
+    return sorted(ep for ep, tids in cache.items() if int(dataset_task_id) in tids)
+
+
+class MixedReplaySampler(torch.utils.data.Sampler[int]):
+    """E69 replay sampler: one pass = a shuffled permutation of the CURRENT task's frames (exactly
+    what EpisodeAwareSampler(shuffle=True) yields), except that each slot is replaced, with
+    probability `fraction`, by a frame drawn uniformly from the REPLAY frames. Uses torch's RNG
+    (seeded by set_seed); re-drawn on every pass because cycle() re-iterates the loader."""
+
+    def __init__(self, current_indices: list[int], replay_indices: list[int], fraction: float):
+        if not current_indices or not replay_indices:
+            raise ValueError("MixedReplaySampler needs non-empty current and replay index lists")
+        if not (0.0 < fraction < 1.0):
+            raise ValueError(f"replay fraction must be in (0, 1), got {fraction}")
+        self.current = torch.as_tensor(list(current_indices), dtype=torch.long)
+        self.replay = torch.as_tensor(list(replay_indices), dtype=torch.long)
+        self.fraction = float(fraction)
+
+    def __len__(self) -> int:
+        return len(self.current)
+
+    def __iter__(self):
+        n = len(self.current)
+        cur = self.current[torch.randperm(n)]
+        rep = self.replay[torch.randint(len(self.replay), (n,))]
+        use_rep = torch.rand(n) < self.fraction
+        yield from torch.where(use_rep, rep, cur).tolist()
+
+
+def task_dataloader(dataset, task_index_to_name, task_id: int, cfg, device,
+                    replay_episodes: list[int] | None = None, replay_fraction: float = 0.0):
+    """The sequential trainer's per-task loader (episode-aware sampler over that task's episodes).
+    E69: with a non-empty `replay_episodes` and replay_fraction > 0, the loader instead mixes those
+    episodes' frames in at that fraction (MixedReplaySampler); defaults leave the path untouched."""
     drop_n_last = getattr(cfg.policy, "drop_n_last_frames", 0)
+    if replay_episodes and replay_fraction > 0.0:
+        from lerobot.datasets.sampler import EpisodeAwareSampler
+        frm, to = dataset.meta.episodes["dataset_from_index"], dataset.meta.episodes["dataset_to_index"]
+        cur = EpisodeAwareSampler(frm, to, episode_indices_to_use=task_episode_indices(dataset, task_index_to_name, int(task_id)),
+                                  drop_n_last_frames=drop_n_last, shuffle=False).indices
+        rep = EpisodeAwareSampler(frm, to, episode_indices_to_use=[int(e) for e in replay_episodes],
+                                  drop_n_last_frames=drop_n_last, shuffle=False).indices
+        sampler = MixedReplaySampler(cur, rep, replay_fraction)
+        logging.info(f"[replay] task {int(task_id)}: {len(cur)} current frames + {len(rep)} replay frames "
+                     f"from episodes {list(replay_episodes)} at fraction {replay_fraction}")
+        dl = torch.utils.data.DataLoader(
+            dataset, num_workers=cfg.num_workers, batch_size=cfg.batch_size, shuffle=False, sampler=sampler,
+            pin_memory=device.type == "cuda", drop_last=False, prefetch_factor=4 if cfg.num_workers > 0 else None,
+        )
+        return dl, cycle(dl)
     dl = _build_dataloader_for_task(
         dataset,
         task_index_to_name,
