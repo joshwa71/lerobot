@@ -9,8 +9,11 @@
 # nine adapter checkpoints (pretrained_model only, 10.7 GB each) and the LoRA base
 # (libero_90_pi05_base_nomem_50k) are mirrored from nebius-spot beforehand.
 # Resume-safe: run_baseline_triangle.sh is skip-guarded per row, so a preemption relaunch picks
-# up at the first missing row. Idempotent: exits 0 once 9 rows exist.
+# up at the first missing row. Idempotent: exits 0 once every row in BLOCKS exists.
 # Env: GATE_FREE_MIB (default 22000), BLOCKS (default "1 .. 9"), POLL (default 120 s).
+# Two units with DISJOINT BLOCKS may run side by side on the same box (Josh, 12 Sep: "half that if
+# possible") - rollouts are env/CPU-bound, the H100 has VRAM for two eval processes, and the per-row
+# skip guard makes the shared output dir safe. Cell-balanced split: "1 2 3 4 5 6" (21) | "9 8 7" (24).
 set -uo pipefail
 ROOT=/home/josh/lerobot
 cd "$ROOT" || exit 1
@@ -28,7 +31,8 @@ if systemctl is-active e68-a3-audit >/dev/null 2>&1; then
 fi
 bash scripts/baselines/run_baseline_triangle.sh paramatched "$BLOCKS" 2>&1 \
   | grep --line-buffered -v "exists - skipping"
-n=$(rows)
-say "final: $n/9 rows (b10 = the E66 campaign row)"
-if [ "$n" -ge 9 ]; then echo "E68-PM-TRIANGLE-DONE"; exit 0; fi
-echo "E68-PM-TRIANGLE-INCOMPLETE"; exit 1
+n=0; want=0
+for K in $BLOCKS; do want=$((want+1)); [ -f "$ROOT/outputs/analysis/e67/seeds_tri_${TAG}_b${K}.json" ] && n=$((n+1)); done
+say "final: $n/$want rows for blocks [$BLOCKS]; $(rows)/9 rows on this box overall (b10 = the E66 campaign row)"
+if [ "$n" -ge "$want" ]; then echo "E68-PM-TRIANGLE-DONE blocks=[$BLOCKS]"; exit 0; fi
+echo "E68-PM-TRIANGLE-INCOMPLETE blocks=[$BLOCKS]"; exit 1
