@@ -27,6 +27,7 @@ case "$MODEL" in
   retain) RUN=$ROOT/outputs/train/libero_10_seq10_retain_a05_fullft_steps5k; TAG=retain10_a05; EXTRA="" ;;
   olora)  RUN=$ROOT/outputs/train/libero_10_seq10_olora_r64_a16_lam05_steps5k; TAG=olora10_r64; EXTRA="--policy.use_peft=true" ;;
   paramatched) RUN=$ROOT/outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k; TAG=naive10_paramatched_r1216; EXTRA="--policy.use_peft=true" ;;
+  naive_fullft) RUN=$ROOT/outputs/train/libero_10_seq10_naive_fullft_steps5k; TAG=naive10_fullft; EXTRA="" ;;   # E69: RETAIN chain at alpha=1.0 (no merge) = naive sequential full FT
   *) echo "unknown model '$MODEL'"; exit 2 ;;
 esac
 OUTDIR=$ROOT/outputs/analysis/e67; mkdir -p $OUTDIR

@@ -25,7 +25,7 @@ BASE_CKPT=$ROOT/outputs/train/libero_90_pi05_base_nomem_50k/checkpoints/last/pre
 RENAME='{"observation.images.image":"observation.images.base_0_rgb","observation.images.image2":"observation.images.left_wrist_0_rgb"}'
 [ -d "$BASE_CKPT" ] || { echo "ERROR: stage-1 base checkpoint missing: $BASE_CKPT"; exit 1; }
 ATAG=$(python3 -c "print(('%g' % $ALPHA).replace('0.','0').replace('.',''))")   # 0.5 -> a05
-RUN=libero_10_seq10_retain_a${ATAG}_fullft_steps5k
+RUN=${RUN_NAME:-libero_10_seq10_retain_a${ATAG}_fullft_steps5k}   # RUN_NAME: E69 reuses this chain with ALPHA=1.0 (= no merge = NAIVE sequential full FT)
 TASKS='[0,1,2,3,4,5,6,7,8,9]'; STEPS=5000; CKPT_EVERY=1000; WANDB=true; LOGF=100; EXTRA=()
 if [ "$SMOKE" = "1" ]; then
   RUN=smoke_retain_a${ATAG}; TASKS='[0,1]'; STEPS=20; CKPT_EVERY=10; WANDB=false; LOGF=5
