@@ -9750,3 +9750,34 @@ A2 per-seed: b1 e4 52/52/60/52; b2 e4 40/48/40/40, e6 64/68/64/68; b3 e4 48/52/4
 **e4 column across blocks:** A1 67/52/44/48/50; A2 54/42/45/39/32; control 54/54/50/51/53.
 **A2 b1 = 54.0 (per-seed 52/52/60/52) reproduces the comparator's b1 of 54.0 exactly.** A2's checkpoint 005000 is a byte copy of the control's task-1 boundary (add-20), so this cell is an instrument/fork check, not an ablation measurement; it is also the matched 5-task control's b1.
 **Ops:** A2 was queued behind A1 by `scripts/ops/queue_e68_a2.sh` (unit `e68-a2`, gated on A1 reaching 5 rows); A1 by `scripts/ops/queue_e68_triangles.sh` (unit `e68-eval`, gated on E67 completing end to end). Both rows skip-guarded. nebius-spot disk 80%, 514 G free, no errors.
+
+### Entry 68 addendum 23 (12 Sep 26, 06:30 UK) — **THE 4-SEED TRIANGLES FOR A1 AND A2 ARE IN** (both were run by the other session before it ended). Final means: control 66.0, A1 64.4 (−1.6), A2 59.8 (−6.2). But the final mean HIDES A1's retention: by the paper's own Δ_final metric the ranking is control +0.4, **A1 −4.0**, A2 −6.2
+Found at `outputs/analysis/e68/seeds_tri_e68_{a1_live,a2_tfidfonly}_b{1..5}.json` on nebius-spot, 10 rows, 25 eps × 4 paired seeds per cell. (I had earlier reported the directory empty — that check listed a path relative to `$HOME` instead of the repo. My error; the rows existed.)
+**A1 — live addressing**
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | 67 | | | | | 67.0 |
+| b2 | 52 | 77 | | | | 64.5 |
+| b3 | 44 | 66 | 68 | | | 59.3 |
+| b4 | 48 | 63 | 68 | 86 | | 66.3 |
+| b5 | 50 | 74 | 69 | 85 | 44 | **64.4** |
+**A2 — no protection**
+| after | e4 | e6 | e9 | e2 | e7 | mean |
+|---|---|---|---|---|---|---|
+| b1 | 54 | | | | | 54.0 |
+| b2 | 42 | 66 | | | | 54.0 |
+| b3 | 45 | 62 | 74 | | | 60.3 |
+| b4 | 39 | 65 | 75 | 82 | | 65.3 |
+| b5 | 32 | 69 | 61 | 83 | 54 | **59.8** |
+**Control** (merged 6×2, 10-task instance rows 1–5, E64 add-12): 54.0 / 59.5 / 62.3 / 64.2 / **66.0**.
+**Final-mean deltas: A1 −1.6, A2 −6.2.** Both agree closely with the 50-episode finals (A1 −2.8, A2 −7.6), so the two instruments corroborate. On the pre-registered line ("final within 3 of control ⇒ not load-bearing"), **A1 fires its null and A2 does not.**
+**But the final mean is the wrong statistic for A1, and the paper's own metric says so.** A1 *acquires* task 1 far better than the control (b1 diagonal **67 vs 54**) and then loses it: its e4 column runs 67 → 52 → 44 → 48 → 50, while the control's is flat at 54 → 54 → 50 → 51 → 53. Computing Δ_final = mean_k(R_K,k − R_k,k), the metric already defined in Sec. IV and reported in Table I:
+| arm | e4 | e6 | e9 | e2 | e7 | **Δ_final** | R_post |
+|---|---|---|---|---|---|---|---|
+| control | −1 | +7 | −6 | +2 | 0 | **+0.4** | 64.5 |
+| **A1 live** | **−17** | −3 | +1 | −1 | 0 | **−4.0** | 64.0 |
+| **A2 no-protect** | **−22** | +3 | −13 | +1 | 0 | **−6.2** | 62.9 |
+So **A1 does show retention loss — 4 points of Δ_final against the control's +0.4, concentrated entirely in the first task (−17)** — and it is masked in the final mean by a stronger diagonal. The honest statement is not "stationary addressing is not load-bearing" but "**stationary addressing costs ~4 points of retention, roughly two-thirds of what removing protection costs (−6.2), and the loss is concentrated in the oldest task in both arms**". A1's kill line was written against the wrong statistic; Δ_final is the one Table I already reports and is what should adjudicate.
+**Mechanistically this now reconciles with add-13.** Live routing moves ~half the read mass (cross-arm IoU 0.44–0.68) while preserving inter-task separation, so protection keeps acting on approximately-right regions — hence damage that is real but roughly half the size of removing protection outright. The two ablations degrade the *same* cell (e4, most exposure) by −17 and −22 respectively.
+**Consequence for the draft.** Sec. III.D can keep its claim, but quantified and honest: stationary addressing buys ~4 points of Δ_final at five tasks, not "no forgetting". Sec. III.E's write rule buys ~6. Both are real, neither is the whole story, and the E38 horizon caveat still applies (that collapse needed 7 of 10 blocks).
+**A2's b1 = 54.0 exactly matches the 10-task control's b1 = 54**, which is a free cross-instance validation: A2's b1 checkpoint is the 5-task control's task-1 boundary, measured independently here, and it lands on the 10-task instance's value to the decimal.
