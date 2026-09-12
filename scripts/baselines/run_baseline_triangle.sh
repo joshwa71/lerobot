@@ -3,7 +3,10 @@
 # instrument (scripts/vla_analysis/run_e64_retention_triangle.sh) applied to the RETAIN and O-LoRA
 # chains: after block k evaluate the k tasks seen so far, 25 eps x 4 paired seeds
 # (1000/2000/3000/4000), vec-batched bs=13 (ladder 13 -> 8 -> 4 on OOM before any output).
-# Usage: run_baseline_triangle.sh retain|olora [BLOCKS]        (BLOCKS default "1 .. 10")
+# Usage: run_baseline_triangle.sh retain|olora|paramatched [BLOCKS]   (BLOCKS default "1 .. 10")
+#   paramatched (E68 add-25): the E66 parameter-matched naive sequential LoRA r=1216/a=304. Its b10
+#   row already exists as the E66 campaign (outputs/analysis/e60/seeds_naive10_paramatched_r1216.json,
+#   same instrument: all 10 envs x 25 eps x 4 seeds), so run it with BLOCKS "1 .. 9".
 # Env:   GATE_FREE_MIB (default 0): wait until nvidia-smi reports at least this much free VRAM
 #        before each row, so rows can run alongside a training unit without starving it.
 # Outputs: outputs/analysis/e67/seeds_tri_<tag>_b<k>.json (campaign schema). Skip-guarded per row.
@@ -23,6 +26,7 @@ ENVS=(4 6 9 2 7 0 8 1 3 5)   # dataset task 0..9 -> env id, the training order
 case "$MODEL" in
   retain) RUN=$ROOT/outputs/train/libero_10_seq10_retain_a05_fullft_steps5k; TAG=retain10_a05; EXTRA="" ;;
   olora)  RUN=$ROOT/outputs/train/libero_10_seq10_olora_r64_a16_lam05_steps5k; TAG=olora10_r64; EXTRA="--policy.use_peft=true" ;;
+  paramatched) RUN=$ROOT/outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k; TAG=naive10_paramatched_r1216; EXTRA="--policy.use_peft=true" ;;
   *) echo "unknown model '$MODEL'"; exit 2 ;;
 esac
 OUTDIR=$ROOT/outputs/analysis/e67; mkdir -p $OUTDIR
