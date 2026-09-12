@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# E69 spot queue (nebius-spot, H200) — runs hands-free once A3's 5-task sequential (unit e68-a3) is
-# COMPLETE, in this order:
-#   1. replay SMOKE: retain_a05_10task.sh SMOKE=1 with ALPHA=1.0 + the replay flags (2 tasks x 20 steps,
-#      forced stop/resume, dense loss matrix) — must print E67-RETAIN-SMOKE-OK and E69-REPLAY-SMOKE-OK;
-#   2. A3's 4-seed retention triangle (run_e68_retention_triangle.sh a3; skip-guarded per row);
-#   3. the REPLAY chain: naive full FT (alpha=1.0) + 1 episode/task replay buffer at 25 %, 10 tasks;
-#   4. its final-row 4-seed campaign (run_baseline_triangle.sh replay_fullft 10).
-# A smoke failure still runs the A3 triangle (never blocked by a replay bug) and then stops with
-# E69-REPLAY-SMOKE-FAIL so the code can be fixed by hand. Every stage is resumable / skip-guarded.
+# E69 spot queue (nebius-spot, H200), v2 (Josh, 12 Sep 26 18:00 UK: replay baseline DROPPED in favour
+# of the paper cell under the REVERSED task order — Codex's order-robustness point). Hands-free once
+# A3's 5-task sequential (unit e68-a3) is COMPLETE:
+#   1. the reversed-order 10-task chain (e69_seq10_reversed_merged6x2.sh; resumable per boundary);
+#   2. its FINAL-ROW 4-seed campaign: all ten envs x 25 eps x seeds 1000/2000/3000/4000, bs13
+#      (= the control's seeds_merged6x2.json instrument) -> outputs/analysis/e60/seeds_merged6x2_rev10.json.
+# A3's triangle runs on nebius2 after the naive chain (queue there), NOT here.
 set -uo pipefail
 ROOT=/home/josh/lerobot
 cd "$ROOT" || exit 1
 A3_SEQ=$ROOT/outputs/train/libero_10_seq5_jw_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k
 A3_LOG=$ROOT/outputs/e68/a3_train.log
-REPLAY_ARGS="--replay_episodes_per_task=1 --replay_fraction=0.25 --replay_seed=0"
-REPLAY_RUN=libero_10_seq10_replay1ep_f025_fullft_steps5k
+REV_RUN=libero_10_seq10rev_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k
+OUT=$ROOT/outputs/analysis/e60/seeds_merged6x2_rev10.json
+RENAME='{"observation.images.image":"observation.images.base_0_rgb","observation.images.image2":"observation.images.left_wrist_0_rgb"}'
 POLL=${POLL:-300}
 say(){ echo "[e69-spot] $* $(date -u +%H:%M:%SZ)"; }
-echo "=== E69 SPOT QUEUE START $(date -u) ==="
-# ---- gate: A3 sequential complete (unit gone, final checkpoint, chain marker) ----
+echo "=== E69 SPOT QUEUE v2 START $(date -u) (reversed-order paper cell) ==="
 while true; do
   if ! systemctl is-active e68-a3 >/dev/null 2>&1 && [ -d "$A3_SEQ/checkpoints/025000/pretrained_model" ] \
      && grep -q "E68-A3 joint-preparation chain COMPLETE" "$A3_LOG" 2>/dev/null; then
@@ -26,32 +24,28 @@ while true; do
   fi
   sleep "$POLL"
 done
-# ---- 1. replay smoke ----
-if [ -f "$ROOT/outputs/e69/replay_smoke_ok" ]; then say "replay smoke already OK - skipping"; smoke_ok=1
-else
-  say "replay smoke"
-  if SMOKE=1 ALPHA=1.0 EXTRA_ARGS="$REPLAY_ARGS" bash job_scripts/nebius/baselines/retain_a05_10task.sh > "$ROOT/outputs/e69/replay_smoke.log" 2>&1 \
-     && grep -q "E67-RETAIN-SMOKE-OK" "$ROOT/outputs/e69/replay_smoke.log" && grep -q "E69-REPLAY-SMOKE-OK" "$ROOT/outputs/e69/replay_smoke.log"; then
-    touch "$ROOT/outputs/e69/replay_smoke_ok"; say "replay smoke OK"; smoke_ok=1
-  else
-    say "replay smoke FAILED (outputs/e69/replay_smoke.log)"; echo "E69-REPLAY-SMOKE-FAIL"; smoke_ok=0
-  fi
+FINAL=$ROOT/outputs/train/$REV_RUN/checkpoints/050000/pretrained_model
+if [ -d "$FINAL" ]; then say "reversed chain already complete"; else
+  say "reversed-order chain: $REV_RUN"
+  bash job_scripts/nebius/libero_90/staged/e69_seq10_reversed_merged6x2.sh >> "$ROOT/outputs/e69/rev10_train.log" 2>&1
+  [ -d "$FINAL" ] || { say "reversed chain ended without checkpoints/050000 (relaunch resumes)"; echo "E69-REV10-FAIL"; exit 1; }
 fi
-# ---- 2. A3 triangle ----
-say "A3 triangle"
-bash scripts/vla_analysis/run_e68_retention_triangle.sh a3 2>&1 | grep --line-buffered -v "exists - skipping\|checkpoint .* missing - skipping"
-na=$(ls $ROOT/outputs/analysis/e68/seeds_tri_e68_a3*_b*.json 2>/dev/null | wc -l)
-say "A3 triangle rows: $na/5"; [ "$na" -ge 5 ] && echo "E68-A3-TRIANGLE-DONE" || echo "E68-A3-TRIANGLE-INCOMPLETE"
-[ "$smoke_ok" = 1 ] || { say "stopping: replay smoke failed"; exit 1; }
-# ---- 3. replay chain (H200 ladder = the E67 RETAIN rung first) ----
-FINAL=$ROOT/outputs/train/$REPLAY_RUN/checkpoints/050000/pretrained_model/model.safetensors
-if [ -f "$FINAL" ]; then say "replay chain already complete"; else
-  say "replay chain: $REPLAY_RUN"
-  ALPHA=1.0 RUN_NAME=$REPLAY_RUN EXTRA_ARGS="$REPLAY_ARGS" LADDER="8:4,8:4,4:8" bash job_scripts/nebius/baselines/retain_a05_10task.sh
-  [ -f "$FINAL" ] || { say "replay chain ended without the final boundary"; echo "E69-REPLAY-FAIL"; exit 1; }
+echo "E69-REV10-CHAIN-DONE"
+if [ -f "$OUT" ]; then say "final row exists"; else
+  say "final-row 4-seed campaign (10 envs x 25 eps x 4 seeds)"
+  source /home/josh/miniforge3/etc/profile.d/conda.sh; conda activate lerobot-memory-updated
+  export MUJOCO_GL=osmesa; unset DISPLAY; export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 PYTORCH_ALLOC_CONF=expandable_segments:True
+  ok=0
+  for bs in 13 8 4; do
+    CAMP_SEEDS="1000,2000,3000,4000" CAMP_TAG=merged6x2_rev10 CAMP_OUT=$OUT \
+    python scripts/vla_analysis/eval_seeds_campaign.py \
+      --policy.path="$FINAL" --policy.dtype=bfloat16 \
+      --env.type=libero --env.task=libero_10 --env.task_ids="[4,6,9,2,7,0,8,1,3,5]" \
+      --rename_map="$RENAME" --eval.batch_size=$bs --eval.n_episodes=25 --seed=1000 \
+      --output_dir=/tmp/camp_merged6x2_rev10 >> "$ROOT/outputs/e69/rev10_campaign.log" 2>&1 && { ok=1; break; }
+    [ -f "$OUT" ] && { say "campaign failed AFTER writing output - not VRAM; aborting"; break; }
+    say "campaign bs=$bs failed before any output (treating as VRAM) - next rung"
+  done
 fi
-# ---- 4. final row ----
-say "replay final-row campaign (b10)"
-bash scripts/baselines/run_baseline_triangle.sh replay_fullft 10
-if [ -f "$ROOT/outputs/analysis/e67/seeds_tri_replay10_1ep_f025_b10.json" ]; then echo "E69-REPLAY-DONE"; exit 0; fi
-say "final row missing"; echo "E69-REPLAY-FAIL"; exit 1
+if [ -f "$OUT" ]; then echo "E69-REV10-DONE"; exit 0; fi
+say "final row missing"; echo "E69-REV10-FAIL"; exit 1
