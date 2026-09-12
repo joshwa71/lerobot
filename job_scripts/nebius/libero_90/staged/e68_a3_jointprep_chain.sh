@@ -146,13 +146,20 @@ fi
 [ -e "$J_OUT/checkpoints/last" ] || ln -sfn "$(printf '%06d' "$J_STEPS")" "$J_OUT/checkpoints/last"
 
 # ---- stage J-audit: held-out routing audit on the JOINT checkpoint (informational, part of the result) ----
-if [ "$(ls $ROOT_DIR/outputs/train/$AUDIT_RUN/memory_by_task/*.json 2>/dev/null | wc -l)" -ge 10 ]; then
-  echo "[J-audit] already complete - skipping."
+# SKIP_AUDIT=1 (E68 add-24): the audit is being run on the OTHER box against a byte-identical copy of
+# the same joint checkpoint, so this box goes straight to the sequential. Legitimate only because the
+# audit is informational here - it is NOT a gate on stage B (unlike the C1/C2 certificates).
+if [ "${SKIP_AUDIT:-0}" = 1 ]; then
+  echo "[J-audit] SKIP_AUDIT=1 - audit running on the other box against the same checkpoint; skipping here."
 else
-  AUDIT_BS=8 AUDIT_STEPS=400 bash "$AUDIT_SH" "$J_FINAL" "$AUDIT_RUN" || echo "[J-audit] AUDIT FAILED (non-fatal; rerun manually)"
+  if [ "$(ls $ROOT_DIR/outputs/train/$AUDIT_RUN/memory_by_task/*.json 2>/dev/null | wc -l)" -ge 10 ]; then
+    echo "[J-audit] already complete - skipping."
+  else
+    AUDIT_BS=8 AUDIT_STEPS=400 bash "$AUDIT_SH" "$J_FINAL" "$AUDIT_RUN" || echo "[J-audit] AUDIT FAILED (non-fatal; rerun manually)"
+  fi
+  python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 5,7,9,11,13,15 65536 vlm || true
+  python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 4,6,8,10,14,16 65536 expert || true
 fi
-python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 5,7,9,11,13,15 65536 vlm || true
-python scripts/vla_analysis/vlm_audit_analysis.py "$AUDIT_RUN" 4,6,8,10,14,16 65536 expert || true
 
 # ---- stage B: 5-task sequential, routers frozen, C-config verbatim ----
 export WARM_RUN=libero_90_pi05_jointwarm10k_merged6x2_e468101416_v579111315_anchor040_sep8_prepass  # unused: stage A is skipped

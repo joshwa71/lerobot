@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# E68 heartbeat — local watcher for unit e68-train on nebius2 (josh-vm-spot-2, H100, preemptible).
+# E68 heartbeat — local watcher for an E68 training unit on either box (both preemptible).
+# Defaults: unit e68-train on nebius2 (josh-vm-spot-2, H100). Override VM/VM_ID/UNIT/TLOG/LAUNCH_CMD
+# to watch the other box, e.g. the E68 add-24 A3 hand-off:
+#   VM=nebius-spot VM_ID=computeinstance-e00hks7a4fq3atcpsm UNIT=e68-a3 \
+#   TLOG=/home/josh/lerobot/outputs/e68/a3_train.log LAUNCH_CMD='...' bash heartbeat_e68.sh
 # Same rules as heartbeat_e67.sh: artifact state (not the last log line), one multiplexed SSH
 # connection per poll (CLAUDE.md 9.5.1), preemption cross-checked against github:22 before recovery,
 # relaunch the unit (every stage resumes from on-disk state). ONESHOT=1 prints one line and exits.
 set -uo pipefail
-VM=nebius2
+VM=${VM:-nebius2}
 NEBIUS="$HOME/.nebius/bin/nebius"
-VM_ID=computeinstance-e00h8htkzavxm81d24
-TLOG=/home/josh/lerobot/outputs/e68/train.log
+VM_ID=${VM_ID:-computeinstance-e00h8htkzavxm81d24}
+UNIT=${UNIT:-e68-train}
+TLOG=${TLOG:-/home/josh/lerobot/outputs/e68/train.log}
 POLL=${POLL:-600}
 HEARTBEAT_EVERY=${HEARTBEAT_EVERY:-6}
 DISK_TRIPWIRE=${DISK_TRIPWIRE:-90}
@@ -16,11 +21,11 @@ STAGES=${STAGES:-"a1 a2 c1 c2"}
 ts(){ date -u +%H:%MZ; }
 emit(){ echo "[$(ts)] $*"; }
 remote_state(){
-  ssh -o ConnectTimeout=10 -o BatchMode=yes "$VM" 'bash -s' <<'REMOTE'
-R=/home/josh/lerobot; T=$R/outputs/train; TLOG=$R/outputs/e68/train.log
+  ssh -o ConnectTimeout=10 -o BatchMode=yes "$VM" "UNIT='$UNIT' TLOG='$TLOG' bash -s" <<'REMOTE'
+R=/home/josh/lerobot; T=$R/outputs/train; TLOG=${TLOG:-$R/outputs/e68/train.log}
 L=/tmp/e68_train_slice.log
 awk '/^=== E68 TRAIN QUEUE START/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$TLOG" > "$L" 2>/dev/null || cp "$TLOG" "$L" 2>/dev/null
-u=$(systemctl is-active e68-train 2>/dev/null); true
+u=$(systemctl is-active "${UNIT:-e68-train}" 2>/dev/null); true
 A1A=$T/libero_90_pi05_jointA10k_e68a1_live_merged6x2_e468101416_v579111315_anchor040_sep8
 A1S=$T/libero_10_seq5_jw_e68a1_live_merged6x2_e468101416_v579111315_beta4corefrac_topt3072_lr2x_steps5k
 A2S=$T/libero_10_seq5_jw_e68a2_tfidfonly_merged6x2_e468101416_v579111315_prepass_noprotect_topt3072_lr2x_steps5k
@@ -49,9 +54,12 @@ REMOTE
 }
 key_of(){ sed -E 's/ at=[^ ]*//; s/ updt_s:[^ ]*//; s/ loss:[^ ]*//; s/ gpu=[^ ]*//' <<<"$1"; }
 field(){ sed -nE "s/.*(^| )$1=([^ ]+).*/\2/p" <<<"$2"; }
+# LAUNCH_CMD: the /bin/bash -c payload for the unit. Default = the E68 train queue on nebius2.
+# Every stage it can run is skip-guarded and resumable, so a relaunch continues from on-disk state.
+LAUNCH_CMD=${LAUNCH_CMD:-"bash scripts/ops/queue_e68_train.sh full >> $TLOG 2>&1"}
 launch_unit(){
-  ssh -o BatchMode=yes "$VM" "sudo systemctl reset-failed e68-train 2>/dev/null; \
-    systemctl is-active e68-train >/dev/null 2>&1 || sudo systemd-run --unit=e68-train --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=PYTHONUNBUFFERED=1 --setenv=STAGES='$STAGES' /bin/bash -c 'bash scripts/ops/queue_e68_train.sh full >> $TLOG 2>&1'" >/dev/null 2>&1
+  ssh -o BatchMode=yes "$VM" "sudo systemctl reset-failed $UNIT 2>/dev/null; \
+    systemctl is-active $UNIT >/dev/null 2>&1 || sudo systemd-run --unit=$UNIT --property=User=josh --property=KillSignal=SIGTERM --property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot --setenv=PYTHONUNBUFFERED=1 --setenv=STAGES='$STAGES' /bin/bash -c '$LAUNCH_CMD'" >/dev/null 2>&1
 }
 recover(){
   emit "RECOVERY: probing VM via nebius API"
@@ -67,8 +75,8 @@ recover(){
       [ "$st" = "RUNNING" ] && break; sleep 10
     done
     ip=$("$NEBIUS" compute instance get --id "$VM_ID" --format json 2>/dev/null | jq -r '.status.network_interfaces[0].public_ip_address.address' 2>/dev/null | cut -d/ -f1)
-    cfg_ip=$(awk '/^Host nebius2$/{f=1} f&&/HostName/{print $2; exit}' ~/.ssh/config)
-    [ -n "$ip" ] && [ "$ip" != "$cfg_ip" ] && emit "RECOVERY: PUBLIC IP CHANGED $cfg_ip -> $ip (update ~/.ssh/config Host nebius2)"
+    cfg_ip=$(awk -v h="$VM" '$1=="Host" && $2==h {f=1; next} f&&/HostName/{print $2; exit}' ~/.ssh/config)
+    [ -n "$ip" ] && [ "$ip" != "$cfg_ip" ] && emit "RECOVERY: PUBLIC IP CHANGED $cfg_ip -> $ip (update ~/.ssh/config Host $VM)"
   fi
   for _ in $(seq 1 30); do ssh -o ConnectTimeout=5 -o BatchMode=yes "$VM" true 2>/dev/null && break; sleep 10; done
   ssh -o ConnectTimeout=5 -o BatchMode=yes "$VM" true 2>/dev/null || { emit "RECOVERY FAILED: sshd never came up"; return 1; }
@@ -79,7 +87,7 @@ if [ "$ONESHOT" = "1" ]; then
   if s=$(remote_state 2>/dev/null) && [ -n "$s" ]; then emit "$s"; else emit "VM UNREACHABLE"; fi; exit 0
 fi
 prev_key=""; prev_err=0; i=0; unreach=0
-emit "heartbeat-E68 armed: unit e68-train on $VM; poll ${POLL}s, forced beat every $((POLL*HEARTBEAT_EVERY/60))min"
+emit "heartbeat-E68 armed: unit $UNIT on $VM; poll ${POLL}s, forced beat every $((POLL*HEARTBEAT_EVERY/60))min"
 while true; do
   if s=$(remote_state 2>/dev/null) && [ -n "$s" ]; then
     [ "$unreach" -gt 0 ] && { emit "VM reachable again after $unreach failed poll(s) | $s"; unreach=0; prev_key=""; }
