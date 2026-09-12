@@ -109,7 +109,9 @@ LADDER=${LADDER:-"8:4,8:4,4:8"}   # retry the rung once (transient contention) b
 ok=0
 for rung in ${LADDER//,/ }; do
   IFS=: read -r rb ra <<< "$rung"
-  if run_retain "$rb" "$ra" 2>&1 | tee /tmp/retain_last.log | grep -v "^$"; then ok=1; break; fi
+  # --line-buffered (E69 add-2): without it grep block-buffers ~4 KB when stdout is the unit log, so the
+  # first training lines reached the log hours late; /tmp/retain_last.log (tee) was always live.
+  if run_retain "$rb" "$ra" 2>&1 | tee /tmp/retain_last.log | grep --line-buffered -v "^$"; then ok=1; break; fi
   if grep -q "OutOfMemoryError" /tmp/retain_last.log; then echo "[retain] rung bs=$rb OOM - next rung"; continue; fi
   echo "[retain] rung bs=$rb failed for a non-VRAM reason - aborting (state on disk is resumable)"; exit 1
 done
