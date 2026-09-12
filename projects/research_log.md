@@ -9720,3 +9720,33 @@ Launched 01:17 UTC on nebius2 (unit `e68-train`, `STAGES="a3"`), box idle and cl
 Config (single delta from the paper chain): `train_router_only=false train_memory_only=true freeze_memory_router=false router_only_fast=false optimizer_lr=1e-4 vlm_route_once=false`, prepass ON, save every 5k with `lerobot-train --resume` recovery; then the held-out audit (informational, part of the result) and the seq5 stage with `--policy.freeze_memory_router=true`. Note W_a is outside the `.mlp.mem.` filter in BOTH arms (add-1), so the anchor is an identical fixed random projection either way — no confound there.
 Pre-registered read is unchanged from the entry: genuinely uncertain on acquisition; the audit after 10k either shows E35-like diffuse routing (effnum ~2x, large cores) or a passing certificate; **kill line — audit passes AND seq5 lands within 3 of the control ⇒ the staged protocol reduces to router LR, and Sec. III.E must say so.** ~35k steps at ~3.1 s/step ≈ 30 h plus a 35-min audit, so the chain lands ~08:00 UK Sat 13 Sep.
 **Ops:** the local `heartbeat_e68.sh` had died with Josh's PC overnight — the hourly ONESHOT checks kept working (fresh invocations) so the loss was invisible until pgrep returned nothing at 01:17. Restarted (PID 554368) and confirmed armed against the a3 stage. Pairs with add-20's ssh-agent finding: **a local restart silently takes out both the forwarded agent key and any nohup'd watcher, and neither failure announces itself** — check both after any PC outage.
+
+### Entry 68 addendum 23 (12 Sep 26, 06:20 UK) — A1 and A2 4-seed retention triangles COMPLETE on nebius-spot
+Both ran on the E67 box behind the E67 eval queue, 25 episodes x 4 paired seeds (1000/2000/3000/4000) per cell, vec batch 13, envs in train order 4/6/9/2/7. Comparator throughout is the merged 6x2 chain's b1-b5 (E64 add-12): 54.0 / 59.5 / 62.3 / 64.2 / 66.0.
+
+**A1 (live addressing) — `seeds_tri_e68_a1_live_b{1..5}.json`**, unit `e68-eval`, marker `E68-TRIANGLES-DONE`, 16:13 UTC 11 Sep -> 21:30 UTC 11 Sep.
+
+| after block | e4 | e6 | e9 | e2 | e7 | row mean | control | delta |
+|---|---|---|---|---|---|---|---|---|
+| b1 | 67 | | | | | 67.0 | 54.0 | +13.0 |
+| b2 | 52 | 77 | | | | 64.5 | 59.5 | +5.0 |
+| b3 | 44 | 66 | 68 | | | 59.3 | 62.3 | -3.0 |
+| b4 | 48 | 63 | 68 | 86 | | 66.3 | 64.2 | +2.1 |
+| b5 | 50 | 74 | 69 | 85 | 44 | 64.4 | 66.0 | -1.6 |
+
+**A2 (TF-IDF-only writes, `protect_prior_slots=false`) — `seeds_tri_e68_a2_tfidfonly_b{1..5}.json`**, unit `e68-a2`, marker `E68-A2-DONE`, 22:02 UTC 11 Sep -> 04:52 UTC 12 Sep.
+
+| after block | e4 | e6 | e9 | e2 | e7 | row mean | control | delta |
+|---|---|---|---|---|---|---|---|---|
+| b1 | 54 | | | | | 54.0 | 54.0 | +0.0 |
+| b2 | 42 | 66 | | | | 54.0 | 59.5 | -5.5 |
+| b3 | 45 | 62 | 74 | | | 60.3 | 62.3 | -2.0 |
+| b4 | 39 | 65 | 75 | 82 | | 65.3 | 64.2 | +1.1 |
+| b5 | 32 | 69 | 61 | 83 | 54 | 59.8 | 66.0 | -6.2 |
+
+A2 per-seed: b1 e4 52/52/60/52; b2 e4 40/48/40/40, e6 64/68/64/68; b3 e4 48/52/44/36, e6 80/52/52/64, e9 68/68/76/84; b4 e4 40/40/40/36, e6 60/60/76/64, e9 72/76/72/80, e2 84/76/80/88; b5 e4 32/32/28/36, e6 68/76/68/64, e9 76/64/60/44, e2 80/80/80/92, e7 52/52/64/48.
+
+**Final rows:** A1 64.4, A2 59.8, control 66.0. **Prior-task mean at b5** (row excluding the diagonal): A1 69.5, A2 61.2, control 62.2 (E64 add-12 b5 e4/e6/e9/e2 = 53/72/65/89, diagonal e7 51). **Diagonal cells:** A1 67/77/68/86/44, A2 54/66/74/82/54.
+**e4 column across blocks:** A1 67/52/44/48/50; A2 54/42/45/39/32; control 54/54/50/51/53.
+**A2 b1 = 54.0 (per-seed 52/52/60/52) reproduces the comparator's b1 of 54.0 exactly.** A2's checkpoint 005000 is a byte copy of the control's task-1 boundary (add-20), so this cell is an instrument/fork check, not an ablation measurement; it is also the matched 5-task control's b1.
+**Ops:** A2 was queued behind A1 by `scripts/ops/queue_e68_a2.sh` (unit `e68-a2`, gated on A1 reaching 5 rows); A1 by `scripts/ops/queue_e68_triangles.sh` (unit `e68-eval`, gated on E67 completing end to end). Both rows skip-guarded. nebius-spot disk 80%, 514 G free, no errors.
