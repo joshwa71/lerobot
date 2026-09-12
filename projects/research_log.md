@@ -9815,3 +9815,36 @@ So **A1 does show retention loss — 4 points of Δ_final against the control's 
 **Watchers.** Two-box Monitor rebuilt to include the audit and both triangle halves (unit states, rows landed, `[FAIL]`/marker/Traceback counts, GPU, disk); hourly cron re-pointed; spot's detached heartbeat unchanged. nebius2 has no auto-relaunch: after a preemption the three units are relaunched by hand (all skip-guarded).
 
 **add-25 correction (14:25 UK).** Josh: "Pretty sure the rollouts use GPU mounted vec envs which are actually quite costly." Checked rather than argued: robosuite's `binding_utils.py` sets `MUJOCO_GL=egl` (GPU rendering) by default, **but every eval script here exports `MUJOCO_GL=osmesa` first and robosuite honours it** (`if macros.MUJOCO_GPU_RENDERING and os.environ.get("MUJOCO_GL") not in ["osmesa","glx"]`), so our rollouts are CPU software-rendered — and 13 async osmesa workers may already saturate 16 vCPUs, in which case a second process buys nothing. The E67 triangles are no evidence either way (retain and O-LoRA ran back to back, not concurrently). So the "two halves" claim above was asserted, not measured. **Unit `e68-pm-tri-b` stopped before it evaluated anything** (it was still waiting on the audit); `-a` runs b1 alone first. Controlled test scheduled: 14:47 UK measure the solo episode rate + CPU/GPU util, then start `-b`; 15:27 UK compare the aggregate; keep both only if aggregate ≥ 1.2× solo, else `-b`'s blocks run after `-a` (skip-guarded relaunch). Not switching the renderer to EGL for speed: it would change the instrument (a different GL backend can shift pixels) relative to every comparator row.
+
+### Entry 68 addendum 26 (12 Sep 26, 14:35 UK) — **A3 HELD-OUT AUDIT (joint-prep checkpoint): fails ONE gate clause — expert bgIoU at E16 (0.132 > 0.10), E14 at the edge (0.099); everything else passes with broader cores**
+
+Audit `audit_heldout_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_anchor040_sep8_prepass_10k` on nebius2 (unit `e68-a3-audit`, relaunched alone per add-24), same instrument as every certificate (10 held-out libero_10 tasks × 400 steps at bs8, value LR 1e-12, prepass routing), `E68-A3-AUDIT-DONE` 14:18 UK. Recorded as **informational** (pre-registered in add-0: the audit is part of A3's result, not a gate on its sequential).
+
+| site | famIoU | **bgIoU** | core50 mean (min–max over tasks) | min effnum |
+|---|---|---|---|---|
+| E4 | 0.219 | 0.045 | 868 (175–1761) | 513 |
+| E6 | 0.193 | 0.040 | 924 (332–1789) | 893 |
+| E8 | 0.248 | 0.053 | 1116 (330–1858) | 843 |
+| E10 | 0.277 | 0.078 | 1731 (483–3185) | 1215 |
+| E14 | 0.260 | **0.099** | 2275 (922–3193) | 2317 |
+| E16 | **0.322** | **0.132** | 3032 (808–5015) | 2180 |
+| V5 | 0.109 | 0.033 | 287 (160–523) | 392 |
+| V7 | 0.115 | 0.035 | 282 (192–418) | 494 |
+| V9 | 0.152 | 0.044 | 405 (269–564) | 617 |
+| V11 | 0.151 | 0.054 | 501 (316–801) | 708 |
+| V13 | 0.159 | 0.062 | 634 (298–879) | 649 |
+| V15 | 0.148 | 0.080 | 949 (510–1626) | 951 |
+
+**Against the bands and the comparators (paper cell add-3; C1 add-19; C2 add-21):**
+| | expert famIoU | expert bgIoU | expert core50 (mean) | VLM famIoU | VLM min-effnum |
+|---|---|---|---|---|---|
+| paper cell (warm-up → fill) | 0.180–0.281 | 0.031–0.091 | 713–2019 | 0.082–0.145 | 250–750 |
+| C1 sep=0 | 0.380–0.455 | 0.196–0.267 | 387–1016 | 0.181–0.385 | 210–356 |
+| C2 c=0 | 0.155–0.269 | 0.012–0.048 | 432–1446 | 0.109–0.152 | 158–276 |
+| **A3 joint-prep** | 0.193–**0.322** | 0.040–**0.132** | **868–3032** | 0.109–0.159 | 392–951 |
+
+Gate clauses: expert bgIoU ≤ 0.10 — **FAILS at E16 (0.132)**, E14 passes by 0.001; expert mean core50 ≥ 400 — pass everywhere (min 868 at E4); expert min-effnum ≥ 300 — pass (min 513); VLM min-effnum ≥ 150 — pass with room (min 392, better than the paper cell's 250); VLM famIoU < 0.45 — pass (max 0.159). So A3's routers are certificate-grade at ten of twelve sites and miss at the deepest expert site only, on the same clause the paper cell itself finds tightest (E16 = 0.091 there).
+
+**Reading.** Training routers and values together at matched LR (1e-4 routers / 1e-3 values, MSE + the same aux losses) gives routing that is *more diffuse and more overlapping at depth* than warm-up-then-fill: cores are 1.2–1.5× broader at every expert site (E16 mean core50 3032 vs the paper cell's ≤ 2019), family IoU is higher at E16 (0.322 vs ≤ 0.281), and background overlap climbs monotonically with depth (0.045 → 0.132, the E38 gradient again) to cross the band at E16. Mechanistically consistent with the E35/E36 story minus the LR confound: once values carry loss the deep sites are pulled toward footprints that *share* slots across tasks, and the separation loss at weight 8 holds that in check at shallow sites but not fully at E16. It is a mild, one-site version of what C1 shows everywhere (0.196–0.267). Whether it costs retention is now the sequential's question (spot, ~08:00 UK 13 Sep); the pre-registered expectations in add-0 stand. Note: this audit is on a checkpoint whose values are non-zero, unlike the warm-up certificates — irrelevant to the routing measurement because the prepass routes on memory-free features, which is the point of stationary addressing.
+
+**Ops.** The H100 went straight from the audit into the param-matched triangle's b1 (`e68-pm-tri-a`, 14:21 UK).
