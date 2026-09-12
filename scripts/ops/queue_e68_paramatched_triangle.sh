@@ -10,7 +10,10 @@
 # (libero_90_pi05_base_nomem_50k) are mirrored from nebius-spot beforehand.
 # Resume-safe: run_baseline_triangle.sh is skip-guarded per row, so a preemption relaunch picks
 # up at the first missing row. Idempotent: exits 0 once every row in BLOCKS exists.
-# Env: GATE_FREE_MIB (default 22000), BLOCKS (default "1 .. 9"), POLL (default 120 s).
+# Env: GATE_FREE_MIB (default 22000), BLOCKS (default "1 .. 9"), POLL (default 120 s),
+#      WAIT_UNIT (default e68-a3-audit): the systemd unit to wait for before starting — set it to
+#      e68-pm-tri-a to chain the second half behind the first (add-27: two halves side by side were
+#      SLOWER in aggregate, 3.4 vs 4.9 env-steps/s — 16 vCPUs saturate on osmesa rendering).
 # Two units with DISJOINT BLOCKS may run side by side on the same box (Josh, 12 Sep: "half that if
 # possible") - rollouts are env/CPU-bound, the H100 has VRAM for two eval processes, and the per-row
 # skip guard makes the shared output dir safe. Cell-balanced split: "1 2 3 4 5 6" (21) | "9 8 7" (24).
@@ -24,10 +27,11 @@ TAG=naive10_paramatched_r1216
 say(){ echo "[e68-pm-tri] $* $(date -u +%H:%M:%SZ)"; }
 rows(){ ls "$ROOT"/outputs/analysis/e67/seeds_tri_${TAG}_b*.json 2>/dev/null | wc -l; }
 echo "=== E68 PARAM-MATCHED TRIANGLE QUEUE START $(date -u) (blocks: $BLOCKS; gate ${GATE_FREE_MIB} MiB) ==="
-if systemctl is-active e68-a3-audit >/dev/null 2>&1; then
-  say "waiting for unit e68-a3-audit to finish"
-  while systemctl is-active e68-a3-audit >/dev/null 2>&1; do sleep "$POLL"; done
-  say "e68-a3-audit finished - GPU released"
+WAIT_UNIT=${WAIT_UNIT:-e68-a3-audit}
+if systemctl is-active "$WAIT_UNIT" >/dev/null 2>&1; then
+  say "waiting for unit $WAIT_UNIT to finish"
+  while systemctl is-active "$WAIT_UNIT" >/dev/null 2>&1; do sleep "$POLL"; done
+  say "$WAIT_UNIT finished - GPU released"
 fi
 bash scripts/baselines/run_baseline_triangle.sh paramatched "$BLOCKS" 2>&1 \
   | grep --line-buffered -v "exists - skipping"
