@@ -9920,3 +9920,20 @@ Disk: 18 GB per boundary (merged + `ft_pretrained_model` + training_state), 10 b
 **A3 (spot), boundary 2** `checkpoints/010000` written 20:01 UK; its in-run eval was still running at the read, so the block-2 cells land with the next check. Block 2 end loss 0.032.
 
 **add-4 ops note (20:20 UK): spot disk headroom secured before the reversed run.** Spot was at 84 % (417 GB free) with A3 still owing 3 boundaries (~57 GB) and the reversed 10-task chain needing ~190 GB — that path ends at ~94 %, past the heartbeat's 90 % tripwire and close enough to full to lose the run. Freed 192 GB by deleting the **A1 and A2 five-task run MIRRORS on spot** (`libero_10_seq5_jw_e68a1_live_…`, `…e68a2_tfidfonly_…`), now **76 %, 607 GB free**. Safe because those directories were copies made solely to run the two triangles there: both triangles are complete (5 + 5 rows in `outputs/analysis/e68/`, add-23), no process held them, and the **authoritative copies are on nebius2 with all five checkpoints AND the optimizer state** (116 GB / 176 GB vs the mirrors' 96 GB each — the mirrors never carried `training_state`), which is exactly what Josh asked to keep for a possible 10-task extension. Re-mirroring either one costs ~10 min if ever needed. Nothing else was touched: the param-matched r1216 run (295 GB) stays on spot, and its nine intermediate adapters also sit on nebius2 in case that triangle is revived.
+
+### Entry 68 addendum 30 (13 Sep 26, 10:25 UK) — **A3 SEQUENTIAL COMPLETE.** In-run final row (50 ep/task) **57.6 mean**: 58 / 50 / 72 / 64 / 42 — no collapse, oldest task the SECOND best cell; checkpoints mirrored to nebius2, reversed-order chain started on spot
+
+`E68-A3 joint-preparation chain COMPLETE` 10:14 UK (5 blocks × 5,000 steps at bs16×acc2 from 13:26 UK 12 Sep ≈ 17 h train + 3 h final eval). Block end losses **0.042 / 0.033 / 0.076 / 0.046 / 0.061** — no drift across blocks, i.e. the jointly-prepared routers keep the value writes as learnable at block 5 as at block 1.
+
+**In-run retention triangle (20 ep/cell for k < 5, 50 ep for the final row):**
+| after block | e4 | e6 | e9 | e2 | e7 |
+|---|---|---|---|---|---|
+| 1 | 50 | | | | |
+| 2 | 40 | 70 | | | |
+| 3 | 55 | 45 | 65 | | |
+| 4 | 50 | 65 | 80 | 90 | |
+| **5 (50 ep)** | **58** | **50** | **72** | **64** | **42** |
+
+**Final row mean 57.2** (58+50+72+64+42)/5. Comparators at the same in-run instrument: the control's 5-task in-run final row was 58/74/64/84/54 = 66.8 (E62), A1 and A2 were not read at 50 ep. **Read with the add-18 moratorium in force**: this is the in-run instrument, one 50-episode cell per task at seed 1000, and the 4-seed triangle (now queued on nebius2 behind the naive chain) is what adjudicates A3 against the control's 66.0. What can be said without the triangle: **no collapse** — the pre-registered failure mode for joint preparation (E35/E36's dead routers, or a late-task starvation) did not occur; the oldest task (e4, five blocks of exposure) is the second-best cell at 58, above its own block-1 acquisition of 50; the weakest cell is the NEWEST task (e7, 42), which is an acquisition story, not a forgetting one. That pattern — flat across age, weak on the last task — is the opposite of the control's (strong recent, decaying old), and is the thing the 4-seed rows must confirm or kill.
+
+**Ops.** Five checkpoints (~20 GB each) mirroring spot→nebius2 now for unit `e69-n2` (waits for the naive chain, then runs the 4-seed triangle). Spot released the GPU at 10:16 UK and `e69-spot` started the **reversed-order paper cell** at 10:18 UK (`libero_10_seq10rev_jw_merged6x2_…`, tasks [9,8,…,0], in-run evals capped at 1 episode). Revised ETA, corrected for the 50-ep final eval costing ~3 h at `eval.batch_size=1` (every arm paid this; my earlier 07:00 estimate ignored it): reversed chain ~34 h → **~20:30 UK 14 Sep**, its 4-seed final row (1,000 episodes at bs13) → **~01:30 UK 15 Sep**, ~30 h before the deadline.
