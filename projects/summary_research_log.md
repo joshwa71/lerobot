@@ -475,7 +475,13 @@ _Pending:_ the paired-noise loss matrix with the fixed loader (E65 add-16), prio
 | Runs | stage J `libero_90_pi05_jointA10k_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_anchor040_sep8_prepass` (save every 5k, `lerobot-train --resume`) → `audit_heldout_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_anchor040_sep8_prepass_10k` → `libero_10_seq5_jw_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k` | wrapper |
 | Status | launched 01:17 UTC 12 Sep on nebius2 (unit `e68-train`, `STAGES="a3"`, repo 50c4b05c); bs8 × acc4 rung OOM'd before any checkpoint, running at bs4 × acc8; step 342/10,000 at 3.91 s/step at 01:44 UTC 12 Sep; chain ETA ~08:00 UK 13 Sep | E68 add-22; VM log |
 
-_Placeholder — audit certificate (famIoU / bgIoU / core50 / effnum per site vs the paper cell, §5.2 table format), retention triangle (5 rows), 50-ep final, loss matrix: to be filled when the chain lands._
+| after block | e4 | e6 | e9 | e2 | e7 | row mean |
+|---|---|---|---|---|---|---|
+| b1 | 52 | | | | | 52.0 |
+| b2 | 49 | 61 | | | | 55.0 |
+| b3 | 49 | 64 | 65 | | | 59.3 |
+| b4 | 50 | 71 | 75 | 84 | | 70.0 |
+| b5 | 50 | 60 | 63 | 85 | 37 | 59.0 |
 
 ### 5.2 Routing certificates (warm-up with one auxiliary loss zeroed, held-out audit, no downstream training)
 
