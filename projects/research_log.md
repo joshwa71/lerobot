@@ -9984,3 +9984,31 @@ Every block converges to the same 0.02–0.06 band, and the last block is the *l
 **What this row buys the paper.** Table I's row (a) "Naive seq. full FT" can now be stated with its own 4-seed number instead of being implied by the LoRA proxies. The reviewer's objection — *you never show what happens with all parameters free* — is answered directly: 7.7%, nine tasks at exactly zero. It also strengthens the framing: the LoRA naive rows (9.7 / 8.6) were never a softer version of full FT, they are the same catastrophe.
 
 **Ops.** Unit `e69-n2` picked up at 11:41 UK and is loading A3's 4-seed triangle on the freed H100 (15 cells, ~6.3 h → **~18:00 UK**). Spot's reversed chain is on task 9 of 10, 8 boundaries, disk 83 %.
+
+### Entry 68 addendum 31 (14 Sep 26, 18:20 UK) — **A3 4-SEED TRIANGLE COMPLETE: final mean 59.0 vs control 66.0 (−7.0).** A3 fires its kill line, but for a reason the pre-registration did not anticipate: the loss is ACQUISITION of the newest task, not forgetting of the old
+
+All five rows on nebius2 (unit `e69-n2`, 11:41→18:10 UK, 15 cells × 25 eps × 4 paired seeds, no errors). Same instrument as the control and A1/A2.
+
+**A3 vs control, per row (4-seed means, training order e4 e6 e9 e2 e7):**
+| block | A3 | control |
+|---|---|---|
+| b1 | **52.0** | 54.0 |
+| b2 | 49 / 61 → **55.0** | 54 / 65 → 59.5 |
+| b3 | 49 / 64 / 65 → **59.3** | 50 / 66 / 71 → 62.3 |
+| b4 | 50 / 71 / 75 / 84 → **70.0** | 51 / 54 / 65 / 87 → 64.2 |
+| **b5** | **50 / 60 / 63 / 85 / 37** → **59.0** | 53 / 72 / 65 / 89 / 51 → **66.0** |
+
+Final row per-seed: e4 [52,44,56,48]; e6 [64,48,56,72]; e9 [60,64,64,64]; e2 [92,80,80,88]; **e7 [40,32,40,36]**.
+
+**The kill line fires: −7.0 on the final mean, well outside the ±3 replicate band.** Joint router preparation at matched LR is *worse* than warm-up-then-fill, so the staged protocol is load-bearing and Table II's row stands (with its LR confound now removed rather than merely asserted).
+
+**But the mechanism is the opposite of the pre-registered one.** E35/E36 predicted dead routers → progressive collapse of old tasks. That did not happen:
+- **e4, the oldest task, does not decay at all**: 52 → 49 → 49 → 50 → **50** across five blocks. The control's e4 wanders 54 → 54 → 50 → 51 → 53. Both are flat; A3 sits ~2 points lower throughout, which is a *b1 acquisition* difference, not forgetting.
+- **Every cell A3 loses is a recent-task cell.** At b5 it matches or beats the control on e2 (85 vs 89, within noise) and e9 (63 vs 65), and loses decisively on **e7, the newest task: 37 vs 51 (−14)**, with tight per-seed spread [40,32,40,36] — not noise.
+- b4 A3 *leads* the control 70.0 vs 64.2, because the control had a bad e6 cell (54) at that block.
+
+**Reading.** Jointly-prepared routers retain what they wrote as well as staged ones — the retention story is untouched — but they are **worse at acquiring new tasks late in the sequence**. That is consistent with the audit (add-26): A3's routers are more diffuse and more overlapping at depth (E16 bgIoU 0.132 > 0.10 gate, cores 1.2–1.5× broader), so a late task's writes land on slots already committed and the TF-IDF × (1−u)^β rule protects them *against the new task*. Protection working as designed, on a geometry that is too entangled to leave room. This is a cleaner and more interesting claim than "joint training collapses": **the warm-up's job is not to prevent forgetting, it is to carve disjoint capacity so later tasks still have somewhere to write.**
+
+**For the paper.** Table II's A row can now be stated as a 4-seed number with a mechanism: joint preparation at matched LR costs 7.0 points at five tasks, concentrated entirely in the newest task (−14 on e7), with zero cost to the oldest. The E35/E36 LR confound is eliminated — this is not a learning-rate artefact.
+
+**Standing E68 picture** (5-task, 4-seed final means): control **66.0** | A1 live addressing 64.4 (Δ_final −4.0) | **A3 joint prep 59.0 (−7.0)** | A2 no protection 59.8 (−6.2).
