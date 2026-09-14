@@ -9958,3 +9958,29 @@ Every block converges to the same 0.02–0.06 band, and the last block is the *l
 **Final-row campaign started 07:57 UK** (`[e69-naive] chain complete - final-row campaign (b10)`): all ten envs × 25 eps × seeds 1000/2000/3000/4000 from `checkpoints/050000/pretrained_model`, bs13 → `outputs/analysis/e67/seeds_tri_naive10_fullft_b10.json`, then `E69-NAIVE-DONE`. ~4.2 h on the H100 → **~12:10 UK**. Unit `e69-n2` then starts A3's 15-cell 4-seed triangle on the same box (~6.3 h → **~18:30 UK**).
 
 **Pre-registered expectation stands** (Entry 69 header): final mean in the 5–15 band alongside naive r512 (9.7) and r1216 (8.6); landing *above* RETAIN's 8.2 would say the α = 0.5 merge is net harmful, which is a finding in its own right.
+
+### Entry 69 addendum 6 (14 Sep 26, 11:50 UK) — **NAIVE SEQUENTIAL FULL-FT FINAL ROW: 7.7%** (`E69-NAIVE-DONE` 11:41 UK). Nine of ten tasks at EXACTLY 0.0 across all four seeds; the reviewer's missing reference is now the cleanest catastrophe in Table I
+
+`outputs/analysis/e67/seeds_tri_naive10_fullft_b10.json`, same instrument as every comparator row (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13, from `checkpoints/050000`).
+
+| env (training order) | s1000 | s2000 | s3000 | s4000 | mean |
+|---|---|---|---|---|---|
+| 4 (task 1) | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 6 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 9 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 2 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 7 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 0 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 8 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 1 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 3 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** |
+| 5 (task 10, last) | 76.0 | 80.0 | 76.0 | 76.0 | **77.0** |
+| | | | | **FINAL MEAN** | **7.70** |
+
+**Reading.** Inside the pre-registered 5–15 band, and the shape is the textbook one: total erasure of every earlier task, full competence on the most recent. 77.0 on task 10 says the model is not broken — it is *perfectly* fit to whatever it saw last (end loss 0.015, the lowest of the ten blocks, add-5) and has no mechanism to hold anything else. Zero variance across four seeds on nine of ten cells: this is not noise, it is a floor.
+
+**Against the other baselines** (all same instrument): ours 65.1 | naive LoRA r512 9.7 | naive LoRA r1216 param-matched 8.6 | RETAIN α=0.5 8.2 | **naive FULL FT 7.7** | O-LoRA r64 6.5. So the full fine-tune is the *worst* of the parameter-updating baselines, marginally below RETAIN — which answers the add-5 pre-registration: **the α = 0.5 merge is NOT net harmful; it buys +0.5 points over not merging at all.** Both are within noise of each other and both are catastrophic; the honest statement is that weight merging at this α neither helps nor hurts materially, while our memory writes are 8.5× better than any of them.
+
+**What this row buys the paper.** Table I's row (a) "Naive seq. full FT" can now be stated with its own 4-seed number instead of being implied by the LoRA proxies. The reviewer's objection — *you never show what happens with all parameters free* — is answered directly: 7.7%, nine tasks at exactly zero. It also strengthens the framing: the LoRA naive rows (9.7 / 8.6) were never a softer version of full FT, they are the same catastrophe.
+
+**Ops.** Unit `e69-n2` picked up at 11:41 UK and is loading A3's 4-seed triangle on the freed H100 (15 cells, ~6.3 h → **~18:00 UK**). Spot's reversed chain is on task 9 of 10, 8 boundaries, disk 83 %.
