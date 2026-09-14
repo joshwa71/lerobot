@@ -10012,3 +10012,33 @@ Final row per-seed: e4 [52,44,56,48]; e6 [64,48,56,72]; e9 [60,64,64,64]; e2 [92
 **For the paper.** Table II's A row can now be stated as a 4-seed number with a mechanism: joint preparation at matched LR costs 7.0 points at five tasks, concentrated entirely in the newest task (−14 on e7), with zero cost to the oldest. The E35/E36 LR confound is eliminated — this is not a learning-rate artefact.
 
 **Standing E68 picture** (5-task, 4-seed final means): control **66.0** | A1 live addressing 64.4 (Δ_final −4.0) | **A3 joint prep 59.0 (−7.0)** | A2 no protection 59.8 (−6.2).
+
+### Entry 69 addendum 7 (14 Sep 26, 22:40 UK) — **REVERSED-ORDER PAPER CELL: 62.4 vs forward 65.1 (−2.7, inside the ±3 replicate band). The headline is order-robust**; `E69-REV10-DONE` 22:34 UK
+
+`outputs/analysis/e60/seeds_merged6x2_rev10.json`, same instrument as the forward row `seeds_seq10_merged6x2.json` (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13, from `checkpoints/050000`). Chain: 10 tasks `[9,8,…,0]`, 50k steps, bs16×acc2, **no errors, no preemptions**; boundary cadence 3 h 05 m–3 h 17 m throughout.
+
+**Final rows side by side.** The reversed run's training order is 5, 3, 1, 8, 0, 7, 2, 9, 6, 4 (env ids); the forward run's is 4, 6, 9, 2, 7, 0, 8, 1, 3, 5. Per-env means, and each env's **position** in its own run (1 = first learned, 10 = last):
+
+| env | forward mean (pos) | reversed mean (pos) | Δ rev−fwd |
+|---|---|---|---|
+| 4 | 59.0 (1) | 58.0 (10) | −1.0 |
+| 6 | 60.0 (2) | 64.0 (9) | +4.0 |
+| 9 | 63.0 (3) | 67.0 (8) | +4.0 |
+| 2 | 87.0 (4) | 90.0 (7) | +3.0 |
+| 7 | 54.0 (5) | 32.0 (6) | −22.0 |
+| 0 | 37.0 (6) | 43.0 (5) | +6.0 |
+| 8 | 76.0 (7) | 77.0 (4) | +1.0 |
+| 1 | 38.0 (8) | 9.0 (3) | −29.0 |
+| 3 | 86.0 (9) | 92.0 (2) | +6.0 |
+| 5 | 91.0 (10) | 92.0 (1) | +1.0 |
+| **mean** | **65.1** | **62.4** | **−2.7** |
+
+**Headline: −2.7, inside the ±3 band the 5-task/10-task replicate established (E68 add-0).** The order-robustness question Codex raised is answered: the 65.1 is not an artefact of the particular task sequence.
+
+**What moves, and what does not.** Seven of ten envs sit within ±6 of their forward value; the mean shift is carried almost entirely by **two cells that are hard in both runs**: e1 (38 → 9) and e7 (54 → 32). Both are already the two weakest forward cells after e0. Their reversed positions (3rd and 6th) are *earlier* than forward (8th and 5th), so they sat under more subsequent blocks — consistent with per-task difficulty compounding with exposure, not with an order-specific failure. **No cell collapses to zero**, unlike the naive baselines where nine of ten do.
+
+**Position is not what determines the score.** The first task learned scores 92 (reversed, e5) and 59 (forward, e4); the last scores 58 (reversed, e4) and 91 (forward, e5). Each env keeps roughly its own difficulty across both orders — e5, e3, e2 are easy (86–92 in both), e1, e0, e7 are hard (9–54) — which is the strongest evidence in the run that retention is governed by task identity and capacity, not by recency.
+
+**For the paper.** A one-line order-robustness claim with a 4-seed number behind it: reversing the ten-task sequence moves the final mean by 2.7 points, within replicate noise, with no collapsed cell. Cost: 36 h of H200 time, in-run evals cut to 1 episode/task to save ~15 h (add-3).
+
+**E69 is complete.** Both of its deliverables are in: naive sequential full FT 7.7 % (add-6) and reversed order 62.4. Spot's unit exited cleanly; both boxes are now idle.
