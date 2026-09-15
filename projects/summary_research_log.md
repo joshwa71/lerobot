@@ -380,6 +380,24 @@ Function-space drift for the same tasks is in §4.3.
 
 r32 specialists: e4 58 / 0.0204, e6 44 / 0.020, e9 70 / 0.0675, e7 60 / 0.0330, e2 84 / 0.0308 (E43, E55 add, E56). The e7 arbiter: the specialist converts at the same on-demo function the memory model has (0.0330 vs 0.0321) and still rolls 60 vs 20, so e7's wall is off-trail conversion, not fit (E55 add). Compass cells on e4 (E44, E51 P5): expert-only LoRA 14 / 0.229, VLM-only 40 / 0.030, attention-only 26 / 0.106.
 
+### 4.9 Paper cell reversed
+
+We reversed the original task order and ran sequential with all hyper-parameters unchanged.
+
+| env | forward mean | rev mean |
+|---|---|---|
+| 4 | 59.0 | 58.0 |
+| 6 | 60.0 | 64.0 |
+| 9 | 63.0 | 67.0 |
+| 2 | 87.0 | 90.0 |
+| 7 | 54.0 | 32.0 |
+| 0 | 37.0 | 43.0 |
+| 8 | 76.0 | 77.0 |
+| 1 | 38.0 | 9.0 |
+| 3 | 86.0 | 92.0 |
+| 5 | 91.0 | 92.0 |
+| **mean** | **65.1** | **62.4** |
+
 ---
 
 ## 5. Ablations on the paper cell (E68)
@@ -888,18 +906,7 @@ Evaluation: 25 episodes × 4 paired seeds per task for every headline number; re
 
 ---
 
-## 13. Status and open items (7 September 2026)
-
-- **Paper configuration:** merged 6×2, no noise, corefrac β=4, top_t 3072, 2× LR (§2). Five-task 65.2 and ten-task 65.1 at the 4-seed instrument (§3). Target venue ICRA (E54).
-- **Running (launched 15:21 UK, 7 September, E67):** RETAIN and O-LoRA under our protocol; RETAIN lands ~22:30 UK 8 September, O-LoRA ~10 September; each gets the rollout triangle and the 10×10 loss matrix. Pre-registered bands: RETAIN 15–40, O-LoRA 20–45. Watch items: eval rows slowing RETAIN training, RETAIN's 82-second periodic saves, the O-LoRA penalty trajectory (λ₁ = 0.5 as in the official code, not re-tuned).
-- **Corrections to carry into the writeup:** function-drift numbers for shared-table runs are +3.9% (5 tasks) and +28.5% (10 tasks) (E65 add-24/25); the 5-task multitask-LoRA row (r32, 1k steps/task) is under-provisioned and needs a rank-512 twin or a footnote (E64); every LoRA and memory row trains from the libero_90 stage-1, the raw-pi05 row is FT-fresh only (E64); the table caption must state data budgets (E60 add-7).
-- **The named residual:** the basket family (e7 soup+cheese, e0 soup+sauce, e1 cheese+butter). Routing cannot separate it (scene-genuine, E28), protection cannot fully shield the hub (E27–E28), it is the entire deficit against specialists at ten tasks (E63 add-2), and e7 is the worst drift cell at +117% (E65 add-25). Two mechanisms in one family: e7 is forgetting-damaged, e1 is fit/conversion-limited (E63 add-3).
-- **Real robot:** every real-world number is function-space; drift-to-success conversion is uncalibrated without rollouts (E65 add-23). The real-world chain otherwise reproduced the simulation recipe end to end, including the write-mask saturation fix at top_t 1536.
-- **Deferred:** lesion map on the 12-site layout (E60, E61 add-5); training-seed replicates; protection-off ablation on the paper cell; zero-shot and B 4-seed rows; a rank-512 twin of the 5-task multitask row; RETAIN at alpha 0.8 (their LIBERO single-task value, ~31h train + ~28h eval, E67); fresh sharepairs-e7 harvest (E61 add-4).
-
----
-
-## 14. Where things live
+## 13. Where things live
 
 - **Log and summary:** `lerobot/projects/research_log.md`, `lerobot/projects/summary_research_log.md`.
 - **Code:** `src/lerobot/policies/modules/{memory_config.py, memory_lite.py}`, `src/lerobot/policies/pi05/modeling_pi05.py`, `src/lerobot/scripts/lerobot_sequential_train.py`; external baselines under `scripts/baselines/` (E67); instruments and smokes under `scripts/vla_analysis/` (real-world under `scripts/vla_analysis/realworld/`); ops watchers under `scripts/ops/`; job scripts under `job_scripts/nebius/{libero_90/staged, baselines, realworld}/` (gitignored, `git add -f`).
