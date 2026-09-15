@@ -228,6 +228,7 @@ Single-seed 50-episode anchors that predate the 4-seed instrument (keep as histo
 | Naive sequential LoRA r512/a128 | 9.7 | 0.0 | 19.4 | E64 add-10 |
 | Naive sequential LoRA r1216/a304 (parameter-matched, 2.681B, + vision tower) | 8.6 ± 0.5 | 0.0 | — | E66 add-2 |
 | RETAIN α=0.5 (full FT per task + 0.5/0.5 weight interpolation at every boundary) | 8.2 | 0.2 | 16.2 | E67 add-17 (§4.5) |
+| Naive sequential full FT (all 4.143B free per task, no adapter, no merge, no replay) | 7.7 | 0.0 | 15.4 | E69 add-6 |
 | O-LoRA r64/a16 (one adapter per task, earlier adapters frozen but active, L1 orthogonality λ₁=0.5) | 6.5 | 1.2 | 11.8 | E67 add-25 (§4.6) |
 
 Per-env, train order e4/e6/e9/e2/e7/e0/e8/e1/e3/e5:
@@ -245,6 +246,7 @@ Per-env, train order e4/e6/e9/e2/e7/e0/e8/e1/e3/e5:
 | Multitask r32 | 35 | 47 | 49 | 62 | 46 | 47 | 46 | 52 | 81 | 67 |
 | Naive r512 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 97 |
 | Naive r1216 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 86 |
+| Naive full FT | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 77 |
 | RETAIN α0.5 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 23 | 58 |
 | O-LoRA r64 | 0 | 2 | 0 | 3 | 1 | 2 | 0 | 3 | 28 | 26 |
 
