@@ -28,6 +28,8 @@ x = torch.randn(2048, 2048, device="cuda", dtype=torch.bfloat16)
 print("bf16 matmul ok:", float((x @ x).float().abs().mean()))
 EOF
 
+# LIBERO calls its cameras image/image2; smolvla_base expects camera1..3 (camera3 is padded)
+RENAME='{"observation.images.image": "observation.images.camera1", "observation.images.image2": "observation.images.camera2"}'
 TRAIN_ARGS=(
     --policy.path=lerobot/smolvla_base
     --dataset.repo_id=HuggingFaceVLA/libero
@@ -35,6 +37,7 @@ TRAIN_ARGS=(
     # mirror and tries to re-fetch it from the hub, which fails offline
     --dataset.root="$HF_LEROBOT_HOME/HuggingFaceVLA/libero"
     --dataset.episodes="[0,1,2,3,4,5,6,7]"
+    --rename_map="$RENAME"
     --batch_size=8 --num_workers=2
     --log_freq=20 --save_freq=100 --eval_freq=0
     --policy.push_to_hub=false --wandb.enable=false
@@ -51,5 +54,5 @@ ls "$RUN/checkpoints"
 echo "== 4/4 LIBERO rollout (1 episode per libero_10 task, EGL)"
 ctr lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
     --env.type=libero --env.task=libero_10 \
-    --eval.n_episodes=1 --eval.batch_size=1 --output_dir="$RUN/eval"
+    --eval.n_episodes=1 --eval.batch_size=1 --rename_map="$RENAME" --output_dir="$RUN/eval"
 echo "== done $(date)"
