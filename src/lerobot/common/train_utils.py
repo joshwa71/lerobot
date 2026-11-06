@@ -13,6 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+import shutil
 from pathlib import Path
 
 from torch.optim import Optimizer
@@ -58,15 +60,58 @@ def load_training_step(save_dir: Path) -> int:
     return training_step["step"]
 
 
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(str(path), os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def update_last_checkpoint(checkpoint_dir: Path) -> Path:
+    """Atomically point `last` at checkpoint_dir (new link under a temp name, then rename over)."""
     last_checkpoint_dir = checkpoint_dir.parent / LAST_CHECKPOINT_LINK
-    if last_checkpoint_dir.is_symlink():
-        last_checkpoint_dir.unlink()
-    relative_target = checkpoint_dir.relative_to(checkpoint_dir.parent)
-    last_checkpoint_dir.symlink_to(relative_target)
+    tmp_link = checkpoint_dir.parent / f".{LAST_CHECKPOINT_LINK}.tmp"
+    if tmp_link.is_symlink() or tmp_link.exists():
+        tmp_link.unlink()
+    tmp_link.symlink_to(checkpoint_dir.relative_to(checkpoint_dir.parent))
+    os.replace(tmp_link, last_checkpoint_dir)
+    _fsync_dir(checkpoint_dir.parent)
 
 
 def save_checkpoint(
+    checkpoint_dir: Path,
+    step: int,
+    cfg: TrainPipelineConfig,
+    policy: PreTrainedPolicy,
+    optimizer: Optimizer,
+    scheduler: LRScheduler | None = None,
+    preprocessor: PolicyProcessorPipeline | None = None,
+    postprocessor: PolicyProcessorPipeline | None = None,
+) -> None:
+    """Write the checkpoint atomically (CLAUDE.md 9.4): into a hidden temp directory beside
+    `checkpoint_dir`, fsynced, then renamed onto it. A kill mid-save leaves only the temp dir, never
+    a partial checkpoint under a real step name. See _write_checkpoint for the layout."""
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = checkpoint_dir.parent / f".{checkpoint_dir.name}.tmp"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    _write_checkpoint(tmp_dir, step, cfg, policy, optimizer, scheduler, preprocessor, postprocessor)
+    for dirpath, _, filenames in os.walk(tmp_dir):
+        for name in filenames:
+            fd = os.open(os.path.join(dirpath, name), os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    if checkpoint_dir.exists():  # re-saving a step (e.g. after resuming from an earlier one)
+        shutil.rmtree(checkpoint_dir)
+    os.replace(tmp_dir, checkpoint_dir)
+    _fsync_dir(checkpoint_dir.parent)
+
+
+def _write_checkpoint(
     checkpoint_dir: Path,
     step: int,
     cfg: TrainPipelineConfig,

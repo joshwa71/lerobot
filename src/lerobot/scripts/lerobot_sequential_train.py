@@ -2671,7 +2671,8 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                 preprocessor=preprocessor,
                 postprocessor=postprocessor,
             )
-            update_last_checkpoint(checkpoint_dir)
+            # `last` advances below, once the boundary eval and the cross-task state are written:
+            # a kill during the eval must leave `last` on the previous complete boundary.
         # Flush per-task memory usage for this task and clear accumulators (main only)
         if is_main:
             try:
@@ -2862,8 +2863,9 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                     f"Saved cross-task state -> {_state_dir}/{SEQUENTIAL_STATE_FILENAME} in {_dt:.2f}s "
                     f"(resume with --policy.path={_state_dir}/pretrained_model --resume_sequential=true)"
                 )
+                update_last_checkpoint(_state_dir)
             except Exception as e:
-                logging.warning(f"Failed to save cross-task sequential state: {e}")
+                logging.warning(f"Failed to save cross-task sequential state (`last` not advanced): {e}")
 
     # Cleanup
     if eval_envs_all:

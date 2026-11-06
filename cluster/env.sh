@@ -33,7 +33,7 @@ UV_HTTP_TIMEOUT HF_HOME HF_LEROBOT_HOME HF_HUB_OFFLINE HF_DATASETS_OFFLINE LIBER
 WANDB_DIR WANDB_MODE MUJOCO_GL MUJOCO_EGL_DEVICE_ID PYOPENGL_PLATFORM TOKENIZERS_PARALLELISM
 CUDA_VISIBLE_DEVICES JOB_ID SGE_TASK_ID NSLOTS OMP_NUM_THREADS TMPDIR PYTHONFAULTHANDLER
 SCRATCH HF_DATASETS_CACHE HF_HUB_CACHE WANDB_CACHE_DIR WANDB_DATA_DIR TORCH_HOME
-TORCH_NCCL_BLOCKING_WAIT TORCH_NCCL_ASYNC_ERROR_HANDLING NCCL_P2P_DISABLE"
+TORCH_NCCL_BLOCKING_WAIT TORCH_NCCL_ASYNC_ERROR_HANDLING NCCL_P2P_DISABLE CAMP_SEEDS CAMP_TAG CAMP_OUT"
 
 # Render LIBERO on the GPU SGE assigned. robosuite indexes EGL devices by this id; NVIDIA EGL devices
 # come first and in nvidia-smi order (Mesa's follow), which is the numbering SGE uses.
@@ -92,7 +92,7 @@ scratch_outputs() {
     _OUT_DEST=$1
     _OUT=$SCRATCH/outputs/$(basename "$1")
     if [ -d "$_OUT_DEST" ]; then
-        timeout 60m rsync -a "$_OUT_DEST/" "$_OUT/" >&2 || { echo "scratch_outputs: copy-in of $_OUT_DEST failed" >&2; return 1; }
+        timeout 60m rsync -a --exclude '.*.tmp' "$_OUT_DEST/" "$_OUT/" >&2 || { echo "scratch_outputs: copy-in of $_OUT_DEST failed" >&2; return 1; }
     fi
     # don't create $_OUT for a new run: lerobot-train refuses to start fresh in an existing dir
     mkdir -p "$_OUT_DEST" "$(dirname "$_OUT")"
@@ -101,11 +101,24 @@ scratch_outputs() {
         while sleep "${SYNC_EVERY:-1800}"; do
             [ -d "$_OUT" ] || continue
             echo "[$(date '+%F %T')] syncing $_OUT -> $_OUT_DEST" >&2
-            timeout 30m rsync -a "$_OUT/" "$_OUT_DEST/" >&2 || echo "outputs sync failed or stalled" >&2
+            _sync_out >&2 || echo "outputs sync failed or stalled" >&2
         done
     ) >&2 &
     _OUT_SYNC_PID=$!
     export SCRATCH_OUT=$_OUT
+}
+
+# Outputs -> /SAN, with checkpoints/last moved only after its target has arrived in full: note where
+# `last` points, copy everything else, then set `last` on /SAN by an atomic rename. An rsync cut off
+# part-way (job killed) can leave a half-copied checkpoint directory on /SAN, but never a `last`
+# pointing at one. Hidden temp dirs of a checkpoint save in progress (.<step>.tmp) are skipped.
+_sync_out() {
+    local tgt=""
+    [ -L "$_OUT/checkpoints/last" ] && tgt=$(readlink "$_OUT/checkpoints/last")
+    timeout 30m rsync -a --exclude '/checkpoints/last' --exclude '.*.tmp' "$_OUT/" "$_OUT_DEST/" || return 1
+    if [ -n "$tgt" ]; then
+        ln -sfn "$tgt" "$_OUT_DEST/checkpoints/.last.tmp" && mv -T "$_OUT_DEST/checkpoints/.last.tmp" "$_OUT_DEST/checkpoints/last"
+    fi
 }
 
 _scratch_finish() {
@@ -115,17 +128,19 @@ _scratch_finish() {
     if [ -n "${_OUT:-}" ] && [ -d "$_OUT" ]; then
         echo "[$(date '+%F %T')] final sync $_OUT -> $_OUT_DEST"
         local try
-        for try in 1 2 3; do timeout 30m rsync -a "$_OUT/" "$_OUT_DEST/" && break; done
+        for try in 1 2 3; do _sync_out && break; done
     fi
     rm -rf "$SCRATCH"
     exit "$rc"
 }
 
-# Copy a directory to scratch, retrying a copy that stalls; prints the scratch path.
+# Copy a directory to scratch ($SCRATCH/data/<name>, default its basename), retrying a copy that
+# stalls; prints the scratch path. A stall is no data for 10 min (rsync --timeout), not a wall-clock
+# cap: libero_90 (65 GB) alone takes ~75 min at /SAN's ~15 MB/s. Retries continue where they stopped.
 scratch_copy() {
-    local src=$1 dst=$SCRATCH/data/$(basename "$1") try
+    local src=$1 dst=$SCRATCH/data/${2:-$(basename "$1")} try
     for try in 1 2 3; do
-        timeout 30m rsync -a "$src/" "$dst/" && { echo "$dst"; return 0; }
+        timeout 4h rsync -a --timeout=600 "$src/" "$dst/" && { echo "$dst"; return 0; }
         echo "scratch_copy: attempt $try of $src failed or stalled" >&2
     done
     return 1
@@ -139,6 +154,22 @@ scratch_hub_models() {
         for try in 1 2 3; do
             timeout 20m rsync -a "$HF_HOME/hub/$d/" "$SCRATCH/hub/$d/" && break
             echo "scratch_hub_models: attempt $try of $repo failed or stalled" >&2
+            [ "$try" = 3 ] && return 1
+        done
+    done
+    export HF_HUB_CACHE=$SCRATCH/hub
+}
+
+# Like scratch_hub_models but configs/tokenizers only (no weights): for the VLM backbone when the
+# weights come from a checkpoint (--policy.load_vlm_weights=false).
+scratch_hub_configs() {
+    local repo d try
+    for repo in "$@"; do
+        d=models--${repo//\//--}
+        for try in 1 2 3; do
+            timeout 10m rsync -aL --exclude onnx --exclude '*.safetensors' --exclude '*.bin' \
+                "$HF_HOME/hub/$d/snapshots" "$HF_HOME/hub/$d/refs" "$SCRATCH/hub/$d/" && break
+            echo "scratch_hub_configs: attempt $try of $repo failed or stalled" >&2
             [ "$try" = 3 ] && return 1
         done
     done

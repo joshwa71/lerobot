@@ -20,9 +20,12 @@ import sys
 import numpy as np
 
 BASE = "/home/josh/lerobot/outputs/train"
+# Module-name prefixes per tower: pi05 first, then SmolVLA.
 PREFIXES = {
-    "vlm": "model.paligemma_with_expert.paligemma.model.language_model.layers.",
-    "expert": "model.paligemma_with_expert.gemma_expert.model.layers.",
+    "vlm": ("model.paligemma_with_expert.paligemma.model.language_model.layers.",
+            "model.vlm_with_expert.vlm.model.text_model.layers."),
+    "expert": ("model.paligemma_with_expert.gemma_expert.model.layers.",
+               "model.vlm_with_expert.lm_expert.layers."),
 }
 PREFIX = PREFIXES["vlm"]
 FAMILY = [(4, 5), (4, 7), (5, 7)]
@@ -30,7 +33,10 @@ FAMILY = [(4, 5), (4, 7), (5, 7)]
 
 def profile(run_dir, t, L, n_slots):
     d = json.load(open(os.path.join(run_dir, "memory_by_task", f"memory_usage_task_{t}.json")))
-    node = d["per_module"][PREFIX + str(L)]
+    keys = [p + str(L) for p in PREFIX if p + str(L) in d["per_module"]]
+    if not keys:
+        raise KeyError(f"no memory module for layer {L} under {PREFIX}")
+    node = d["per_module"][keys[0]]
     slots = node[next(iter(node))]
     a = np.zeros(n_slots)
     for sk, st in slots.items():
@@ -47,7 +53,7 @@ def main():
     n_slots = int(sys.argv[3]) if len(sys.argv) > 3 else 256 * 256
     tower = sys.argv[4] if len(sys.argv) > 4 else "vlm"
     PREFIX = PREFIXES[tower]
-    rd = os.path.join(BASE, run)
+    rd = os.path.join(BASE, run)  # an absolute run path is used as is
     tasks = sorted(
         int(f.rsplit("_", 1)[1][:-5])
         for f in os.listdir(os.path.join(rd, "memory_by_task"))
