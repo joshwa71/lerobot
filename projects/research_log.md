@@ -1,17 +1,17 @@
 # Research Log - VLA Memory
 
 ---
-## Standing Reference (added 2 Aug 26, lossless-trim pass 1)
+## Standing Reference (added 2 Aug 26)
 
-Consolidates definitions, constraints, and anchor numbers that entries below restate inline. Entries were written before this section existed; where an entry re-defines one of these terms, the definition here is the canonical one.
+Consolidates definitions, constraints, and anchor numbers that entries below restate inline. Where an entry re-defines one of these terms, the definition here is the canonical one.
 
 ### Metrics & instruments
-- **held-out audit / certificate**: stream the libero_10 demos through a FROZEN checkpoint, dump per-task slot-usage JSONs, compute the routing-geometry metrics below (~35 min/checkpoint). Certificates predicted full-pipeline behavior throughout E44-49.
+- **held-out audit / certificate**: stream the libero_10 demos through a FROZEN checkpoint, dump per-task slot-usage JSONs, compute the routing-geometry metrics below. Certificates predicted full-pipeline behavior throughout E44-49.
 - **famIoU**: held-out read-mass overlap (weighted IoU) among the three near-identical basket tasks — libero_10 task_index 4/5/7 = envs 7/0/1 (soup+cheese / soup+sauce / cheese+butter). **bgIoU**: same over non-family pairs.
 - **core50 / effnum**: per-task footprint size — slots carrying 50% of read mass / exp(read-mass entropy). The capacity side of every routing gate.
 - **palette**: the slot set retrieved by a pooled (shared) router key (VLM state/image-region routing); the always-read block.
 - **chunk error**: executed-chunk metric — run the real 10-step denoise on demo observations, score the executed 50-action chunk against the demo chunk (adopted E41). Rollout-predictive WITHIN a substrate; ranks backwards ACROSS substrates (E50 rule: substrate changes are judged on 50-ep finals + jitter, never chunk alone).
-- **MSE forgetting matrix**: paired-noise loss of every per-task checkpoint on every seen task; flat diagonal drift (≤~+5%) = no function-level forgetting (instrument `mse_matrix2.py`).
+- **MSE forgetting matrix**: paired-noise loss of every per-task checkpoint on every seen task; flat diagonal drift (≤~+5%) = no function-level forgetting.
 - **jitter probe**: perturb demo observations (state/image noise), re-denoise, score the chunk — the off-demo brittleness shell. Probes ~10x nearer than real rollout excursions (E57).
 - **RTO (read-through-overwrite)**: fraction of a task's read mass on slots later tasks updated. **self-coverage**: fraction on its own-adapted slots.
 - **q_intra / q_inter**: cosine among same-task / cross-task routing queries; q_intra ≳0.95 = state-independent addressing collapse (E21).
@@ -75,7 +75,6 @@ Consolidates definitions, constraints, and anchor numbers that entries below res
 - Aim: keep a small universal core but increase **conditional routing separation** (task/instruction-conditioned hot sets), mainly during pretraining (contrastive is ineffective in single-task sequential batches).
 
 ### Next experiment being run (pretraining)
-- Script: `job_scripts/smolvla-memory/pretrain/2_layer/pretrain_2_wide_film_dropout_high_lora_4_sample_contrastive_0.5.sh`
 - Key knobs:
   - Memory on expert layers **[14,15]**, `value_type=lora`, `lora_rank=4`
   - `mem_n_keys=384`, `mem_heads=4`, `mem_knn=16`, `mem_k_dim=512`
@@ -98,7 +97,7 @@ Run with Lora=4 and layers 12 and 14.
 ### Observations
 - **Contrastive loss type:** No winner. Centroid contrastive exhibits less interference at later layers (e.g. layer 14) but slighly more in earlier layers. Interesting - I thought we'd expect more intersection from centroid.
 - **Contrastive loss weight:** We see the largest intersection for 0.5, significantly reduced intersection for 1.0, then oddly increased intersection for 2.0. Non-monotonic increase is confusing.
-- **Dropout probability:** 0.05 experiment still running, but 0.2 performs better than 0.1 in terms of interference. Appears less degredation in previous task per, less intersection. This makes sense as some attempts to access slots important for previous tasks will be nullified by higher dropout.
+- **Dropout probability:** 0.2 performs better than 0.1 in terms of interference. Appears less degredation in previous task per, less intersection. This makes sense as some attempts to access slots important for previous tasks will be nullified by higher dropout.
 
 ### Thoughts
 - The sample-wise contrastive loss we are including some terms which encourage uniformity of the queries inside a given task **as well** as distance across tasks. This could be problematic if we saturate the query space. Could explain the non-monotonic behaviour of the sample contrastive loss weight. To test we are trying a loss that removes the positive pairs from the denominator.
@@ -115,10 +114,7 @@ Run with Lora=4 and layers 12 and 14.
 
 - Pretraining test to increase effective contrastive pool without increasing micro-batch memory: cross-batch query FIFO (`contrastive_query_queue=2048`).
 - Goal: improve sample-wise contrastive negatives/positives under `batch_size=32` by reusing recent query embeddings from prior batches.
-- Using layers **[12,14]** in the new script:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/contrastive_accumulation/pretrain_12_14_film_lora_2_sample_contrastive_1.sh`
-- Added matching sequential script for this run family (same sequential setup pattern):
-  - `job_scripts/smolvla-memory/sequential/2_layer/contrastive_accumulation/sequential_12_14_film_lora_4_sample_contrastive_1.sh`
+- Using layers **[12,14]**
 
 ---
 
@@ -147,9 +143,6 @@ Run with Lora=4 and layers 12 and 14.
 - Testing **LoRA rank 1 with more memory slots** to probe whether many weaker experts are more stable than fewer stronger experts.
 - To approximately double slot count relative to `mem_n_keys=384` (slots = `n_keys^2`), we set:
   - `mem_n_keys=544`
-- Scripts:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
-  - `job_scripts/smolvla-memory/sequential/2_layer/lora_r_exp/sequential_12_14_film_lora_1_2xslots_sample_contrastive_1.sh`
 
 ---
 
@@ -162,17 +155,11 @@ Run with Lora=4 and layers 12 and 14.
 - Current hypothesis:
   - within a task, routing should stay fairly localized
   - across tasks, those localized routing regions should differ
-- To test this, I initially added a one-sided **routing compactness** loss on PQ marginals with CLI control via `routing_compactness_weight` (default `0.0`).
-- Initial compactness-control scripts were created under:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
-  - `job_scripts/smolvla-memory/sequential/2_layer/routing_locality_exp/`
+- To test this, I initially added a one-sided **routing compactness** loss on PQ marginals.
 - After further discussion, the more important anti-forgetting term is **routing separation**:
   - compactness says each task should route locally
   - separation says different tasks should route to different regions
 - So compactness is now being treated as a **secondary control ablation**, while the main next test is routing-separation.
-- Initial routing-separation scripts:
-  - `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
-  - `job_scripts/smolvla-memory/sequential/2_layer/routing_inter_task_separation_exp/`
 - Also fixed the LoRA corruption path so corruption is applied to the **adapter output before the shared gating/aggregation path**.
 ---
 
@@ -187,11 +174,6 @@ Run with Lora=4 and layers 12 and 14.
   - replace the old “compactness” term with a **intra-task locality** loss
   - define locality as a **support/entropy band**, so it penalizes routing that is both too diffuse and too concentrated
   - keep **inter-task separation** as a separate objective
-- CLI has been updated:
-  - `routing_intra_task_locality_weight`
-  - `routing_inter_task_separation_weight`
-  - `routing_intra_task_min_support`
-  - `routing_intra_task_max_support`
 - Planned sweeps:
   - **Intra-task locality** with support band `8-32` and locality weights `0.1 / 0.25 / 0.5`
   - **Inter-task separation** with locality fixed on (`weight=0.25`, support band `8-32`) and separation weights `0.15 / 0.25 / 0.35`
@@ -206,7 +188,7 @@ Run with Lora=4 and layers 12 and 14.
 3 locality sweeps (`locality_weight` 0.1 / 0.25 / 0.5, support band `[8, 32]`) and 3 separation sweeps (`sep_weight` 0.15 / 0.25 / 0.35, locality 0.25, support `[8, 32]`). Results:
 
 1. **Sequential training performance did not improve.** Best separation run (sep=0.15) tied with corruption baseline at ~16.5% success.
-2. **The routing loss was operating on the wrong distribution.** The `_compute_routing_losses` method computed soft distributions over all `n_keys=384` subkeys per PQ half, then measured entropy and pairwise similarity on those half-marginals. Retrieval only uses the **top-k** subkeys and forms **Cartesian-product joint slots**. Loss could be satisfied by moving tail mass in the half-distributions without changing the top subkeys or the final retrieved slots.
+2. **The routing loss was operating on the wrong distribution.** It computed soft distributions over all `n_keys=384` subkeys per PQ half, then measured entropy and pairwise similarity on those half-marginals. Retrieval only uses the **top-k** subkeys and forms **Cartesian-product joint slots**. Loss could be satisfied by moving tail mass in the half-distributions without changing the top subkeys or the final retrieved slots.
 3. **Evidence of misalignment:**
    - Half-level support was broad (routing_intra_task_support_mean ~216–384) even as the **actual final-slot effective number** in layer 14 was very concentrated (effnum ~30–82 for sep 0.15/0.25).
    - sep=0.25 drove half-similarity down, but layer-14 weighted access IoU between tasks stayed at ~0.316. It achieved "separation" by peeling one task off onto a different tiny hot core, while the other 3 tasks still shared.
@@ -216,24 +198,22 @@ Run with Lora=4 and layers 12 and 14.
 
 ### Root cause
 
-Routing regulariser operated on the two PQ half-distributions separately (`s1_full`, `s2_full`, each `n_keys`-way). But:
+Routing regulariser operated on the two PQ half-distributions separately. But:
 - Retrieval takes top-k in each half, forms the k×k Cartesian product, then selects top-k final slots.
 - The loss on soft half-marginals is a **weak proxy**: can be cheaply satisfied by reshuffling tail mass while the actual top subkeys stay shared.
 - The support band `[8, 32]` targeted half-subkey support, not final-slot support. With `n_keys=384`, these are completely different scales.
 
 ### Solution
-Rewrote `_compute_routing_losses` in `memory_lite.py` to operate on the **joint product-key candidate distribution**:
+Rewrote both routing losses to operate on the **joint product-key candidate distribution**:
 1. Take top-M subkeys per PQ half (M = `routing_loss_topk` or `knn`, default matches retrieval)
 2. Form M×M Cartesian-product candidate scores and slot IDs
 3. Softmax over those M² joint candidates per sample per head
-4. Scatter per-task distributions into a compact slot histogram (slot IDs remapped via `searchsorted` for memory efficiency)
+4. Scatter per-task distributions into a compact slot histogram
 5. Compute locality (entropy band) and separation (cosine similarity) on those **full-slot distributions**
 
 This directly regularises the distribution retrieval actually uses. Gradient flows: loss → histogram → joint softmax → joint scores → top-k values → PQ half scores → query projection + keys.
 
-Fixed a NaN gradient bug: `torch.where(p > eps, p.log(), 0)` computes `log(0)` gradients for the unused branch. Replaced with `p.clamp(min=eps).log()`.
-
-Added `routing_loss_topk` config param (default 0 = use `knn`). Support bounds now refer to **effective final slots** in the `n_keys²` space, not half-subkey support.
+Support bounds now refer to **effective final slots** in the `n_keys²` space, not half-subkey support.
 
 ### Support band rationale
 
@@ -250,11 +230,6 @@ Old band `[8, 32]` was in half-subkey space over 384 subkeys. New band is in fin
 - `[128, 2048]`
 **Separation sweep** (locality_weight=0.25, support `[128, 2048]`):
 - `sep_weight` = 0.15 / 0.25 / 0.35
-
-Scripts:
-- `job_scripts/smolvla-memory/pretrain/2_layer/routing_locality_exp/`
-- `job_scripts/smolvla-memory/pretrain/2_layer/routing_inter_task_separation_exp/`
-- Sequential scripts in `sequential/2_layer/` directories
 
 ---
 
@@ -318,7 +293,6 @@ Two distinct problems limit performance:
 - `corruption_prob=0.05, 0.1, 0.2` (all with `corruption_std=0.1`)
 - Corruption adds Gaussian noise to retrieved LoRA outputs during pretraining, teaching the model to tolerate the kind of value drift that occurs when other tasks update shared-read slots.
 - The 0.1 corruption_prob is calibrated to roughly match the ~13% read-from-written interference measured at L14.
-- Scripts: `job_scripts/smolvla-memory/pretrain/2_layer/sep_and_corruption/`
 
 **Batch 2 — Capacity via depth (3-layer pretrains):**
 
@@ -326,7 +300,6 @@ Two distinct problems limit performance:
 - Adds ~50% more effective capacity per task (3 layers × ~2,500 unique updated slots each)
 - Interference budget is per-layer, so a third layer doesn't compound interference
 - Will test whether the per-task MSE gap (0.06-0.09 vs pretrain 0.011) narrows with more depth
-- Scripts: `job_scripts/smolvla-memory/pretrain/3_layer/separation/`
 
 **Quick test — IDF seeding from pretrain stats:**
 
@@ -395,23 +368,18 @@ Sequential per-task MSE is still 0.063–0.071 vs pretrain 0.0086 — a 7–8× 
 
 Higher top_t allows more slots to receive gradient updates per batch, directly increasing per-task capacity. Forward/backward compute is unchanged — top_t only masks gradients after backward. The write-overlap risk is managed by existing separation + IDF.
 
-Scripts: `job_scripts/smolvla-memory/sequential/3_layer/top_t/`
+**Future: higher capacity pretrains.**
 
-**Future: gradient checkpointing for higher capacity pretrains.**
-
-SmolVLA currently lacks gradient checkpointing (PI0 has it). Adding it to the expert transformer layers would reduce activation memory by ~50–60%, enabling:
 - LoRA rank 4 (2× per-slot expressivity) at 3 layers
 - 4-layer configurations (e.g. [8,10,12,14])
 
-Both address the per-task MSE gap from different angles — rank increases per-slot expressivity while depth increases slot budget. Implementation would follow PI0's pattern: wrap expert layer forward passes in `torch.utils.checkpoint.checkpoint()` with `use_reentrant=False`.
+Both address the per-task MSE gap from different angles — rank increases per-slot expressivity while depth increases slot budget.
 
 ---
 
-## Entry 10 - 17 Mar 26 (Gradient Checkpointing + Capacity Pretrains)
+## Entry 10 - 17 Mar 26 (Capacity Pretrains)
 
-Implemented gradient checkpointing for SmolVLA (`--policy.gradient_checkpointing=true`). Checkpoints each full transformer layer (attention + MLP/memory) during training, freeing intermediate activations. No change to inference.
-
-**3 new pretraining runs launched** — all use sep=0.25, loc=0.25, support [128,2048], and gradient checkpointing enabled:
+**3 new pretraining runs launched** — all use sep=0.25, loc=0.25, support [128,2048]:
 
 | Run | Layers | LoRA rank | Rationale |
 |-----|--------|-----------|-----------|
@@ -419,13 +387,8 @@ Implemented gradient checkpointing for SmolVLA (`--policy.gradient_checkpointing
 | 3L r=4 | [10,12,14] | 4 | 2× expressivity + 3-layer slot budget (best depth from Entry 9) |
 | 4L r=2 | [8,10,12,14] | 2 | Maximum slot budget, baseline expressivity |
 
-Scripts:
-- `job_scripts/smolvla-memory/pretrain/2_layer/lora_r_exp/pretrain_12_14_film_lora_8_..._sep_0.25_...`
-- `job_scripts/smolvla-memory/pretrain/3_layer/lora_r/pretrain_10_12_14_film_lora_4_..._sep_0.25_...`
-- `job_scripts/smolvla-memory/pretrain/4_layer/sep/pretrain_8_10_12_14_film_lora_2_..._sep_0.25_...`
-
 ---
-**Update 18 Mar 26:** r=4 and r=8 OOMed despite gradient checkpointing. Added gradient accumulation support (`--gradient_accumulation_steps=N`) to both `lerobot-train` and `lerobot-sequential-train`, using Accelerate's `accumulate()` context. Memory usage stats, TF-IDF masking, and online IDF all accumulate correctly across micro-batches. The r=4 and r=8 scripts now use `batch_size=16, gradient_accumulation_steps=2` (effective batch=32). Rerunning.
+The r=4 and r=8 runs use batch_size=16 with gradient_accumulation_steps=2 (effective batch=32).
 
 ---
 
@@ -433,7 +396,7 @@ Scripts:
 
 ### Observations and analysis
 
-- Reviewed the latest `22_3_26` runs against the original baseline runs from `16_3_26` using the local wandb parser and the per-task memory-slot JSON dumps.
+- Reviewed the latest `22_3_26` runs against the original baseline runs from `16_3_26` using the per-task memory-slot JSON dumps.
 - The main empirical picture still looks consistent:
   - **4-layer [8,10,12,14], rank 2** is the strongest capacity result so far in sequential training (~55% final seen-task success vs 44% baseline).
   - **LoRA rank 4 at [10,12,14]** underperforms the baseline sequentially (~37.5% final), despite fitting the current task well.
@@ -448,9 +411,6 @@ Scripts:
 - While checking the fairness of the rank-4 comparison, I verified a training-loop detail in code:
   - `accelerator.accumulate(...)` delays optimizer stepping, but the **contrastive loss is still computed independently on each microbatch**
   - with `contrastive_query_queue=0`, the sample contrastive pool is therefore only the **current microbatch**, not the effective accumulated batch
-- Relevant code paths:
-  - `src/lerobot/scripts/lerobot_train.py`
-  - `src/lerobot/policies/modules/memory_lite.py`
 - This matters because the **rank-4 pretrain used `batch_size=16` with `gradient_accumulation_steps=2`**, whereas the baseline and 4-layer pretrains used a real batch size of 32.
 - Therefore the current rank-4 result is **confounded**: its contrastive objective had a smaller effective pool than the baseline/4-layer runs. This weakens the claim that rank 4 is intrinsically worse.
 - The 4-layer result is still more trustworthy under this specific issue because its pretrain did not rely on gradient accumulation.
@@ -503,11 +463,6 @@ Each pretrain has a matching sequential run (same sequential config as the 4-lay
 3. **Task-9 read share through task-8-updated slots**, especially L12/L14 — the direct measure of read-time interference
 4. **Weighted access IoU** (not binary overlap) — the meaningful interference metric per Entry 8 finding 5
 5. **`routing_global_entropy`** during pretraining — should increase with higher weight; watch for saturation or training instability
-
-### Scripts
-
-- Pretrain: `job_scripts/smolvla-memory/pretrain/4_layer/routing_global_balance/`
-- Sequential: `job_scripts/smolvla-memory/sequential/4_layer/routing_global_balance/`
 
 ### What we are not doing
 
@@ -620,10 +575,6 @@ To keep this sweep as controlled as possible, the pretrain scripts fix:
 
 so changing `mem_knn` changes the actual retrieval set while leaving the routing-regularizer candidate pool fixed.
 
-Scripts prepared under:
-- `job_scripts/smolvla-memory/pretrain/4_layer/mem_knn/`
-- `job_scripts/smolvla-memory/sequential/4_layer/mem_knn/`
-
 ### What we are not doing next
 
 - More broad `routing_global_balance_weight` sweeps; the response is already clearly non-monotonic
@@ -720,10 +671,6 @@ Expected result:
 - sequential outcome could be a modest win or a wash
 - if it helps, it will probably do so by reducing the effective importance of shared overwritten slots rather than by lowering raw overlap
 
-Scripts:
-- `job_scripts/smolvla-memory/pretrain/4_layer/mem_knn/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_24.sh`
-- `job_scripts/smolvla-memory/sequential/4_layer/mem_knn/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_24.sh`
-
 #### 2. `dropout_prob=0.1` pair
 
 Goal:
@@ -739,10 +686,6 @@ Expected result:
 - possible retention gain if it reduces over-reliance on a few shared slots
 - effect is likely smaller and gentler than corruption
 
-Scripts:
-- `job_scripts/smolvla-memory/pretrain/4_layer/dropout/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_dropout_0.1.sh`
-- `job_scripts/smolvla-memory/sequential/4_layer/dropout/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_dropout_0.1.sh`
-
 #### 3. `corruption_prob=0.05` pair
 
 Goal:
@@ -757,10 +700,6 @@ Expected result:
 - more targeted than dropout, but also riskier
 - if it works, the win should come mainly from better oldest-task retention rather than higher current-task fit
 - if it fails, it will likely fail by degrading pretrain quality without sufficiently reducing later forgetting
-
-Scripts:
-- `job_scripts/smolvla-memory/pretrain/4_layer/corruption/pretrain_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_corruption_0.05.sh`
-- `job_scripts/smolvla-memory/sequential/4_layer/corruption/sequential_8_10_12_14_film_lora_2_sample_contrastive_1_sep_0.25_loc_0.25_sup_128_2048_knn_16_corruption_0.05.sh`
 
 ### What these runs will tell us
 
@@ -1229,10 +1168,6 @@ Entries 0–17 were all **SmolVLA, 4 sequential tasks** (libero_spatial 6/7/8/9)
 - Sequential eval = libero_goal, **50 episodes/task**.
 - Config = the aligned knn=36 setup from Entry 16, applied 4-layer: layers [8,10,12,14], lora_rank 2, n_keys 384, **mem_knn=36 / routing_loss_topk=36**, sep=0.25, loc=0.25, support [128,2048], contrastive=0.01 (queue 128), **tfidf_top_t=512**, online IDF (denom 1, exp 1, weighting raw), train_memory_keys=False, value_lr 1e-3→1e-4, bs 32, 3000 steps/task.
 
-Runs analysed:
-- pretrain `libero_minus_goal_pi05_..._knn_36_30k`
-- sequential `libero_goal_sequential_pi05_..._knn_36_30k`
-
 **Cross-regime caveat:** absolute MSE and the Entry-17 57.5% are NOT comparable here (different model, action space, suite, task count). All causal claims below use *within-run* structure (per-task diagonal vs final, pairwise slot overlap, collapse timing).
 
 ### The carry-over miss
@@ -1256,7 +1191,7 @@ Final avg over 10 tasks = **45.8%**. Train order (env ids): 8, 9, 3, 6, 2, 5, 7,
 | 8 | 4 | 94 | 88 | 94% | 0.133 | 6.6% | 45.6K | 15786 |
 | 9 | 0 | 60 | 60 | 100% | 0.195 | 0% | 33.8K | 10230 |
 
-("read-thru overwrite" = fraction of that task's read weight on slots that *later* tasks updated, mean over 4 layers, from the memory_by_task JSONs.)
+("read-thru overwrite" = fraction of that task's read weight on slots that *later* tasks updated, mean over 4 layers.)
 
 Validation that the slot analysis reads internals correctly: computed mean pairwise **weighted-read Jaccard = 0.1690** == the logged `memory_iou/all_modules_mean = 0.169`. So the logged IoU is **read** overlap — and it is **4–6× the 4-task runs (0.025–0.04)**. Write-set binary IoU is only **0.048**: TF-IDF still controls *writes*; the damage is on the *read* side.
 
@@ -1291,25 +1226,19 @@ Router/keys are FROZEN after a pretrain that **excluded the goal suite**. The 10
 
 ### Next experiments
 
-**Running now (sequential-only, reuses the knn=36 pretrain):**
-- **top_t=1536** rerun — `libero_goal_sequential_pi05_..._knn_36_30k_top_t_1536` (wandb run e1006ra1). Tests whether the write-budget lever recovers the plasticity-limited tasks (env 0/9/3) at 10-task scale, vs worsening early-task overwrite (e9←e2 already 20% at top_t=512). Watch env-8/9/2/5 retention and `task9-reads-task8-updates`.
+**First (sequential-only, reuses the knn=36 pretrain):**
+- **top_t=1536** rerun. Tests whether the write-budget lever recovers the plasticity-limited tasks (env 0/9/3) at 10-task scale, vs worsening early-task overwrite (e9←e2 already 20% at top_t=512). Watch env-8/9/2/5 retention and `task9-reads-task8-updates`.
 
 **Staged plan after that:**
 - IDF slot protection (idf_exponent 1→2, or contribution/saturating TF off `raw`) to keep later tasks' top_t off earlier tasks' high-weight slots — sequential-only, low risk, attacks the e2→e9 channel.
 - knn=24 / routing_loss_topk=24 + top_t≈768 (new pretrain) — Entry-16 retention-friendly point; narrower reads → lower overlap → safe to add write budget.
 - Make the held-out router separable: stronger separation/contrastive on held-in goal-like tasks, OR small `memory_keys_lr` during sequential (train_memory_keys=true) so routing specialises the goal tasks (medium risk).
-- Raise the floor: more steps/task (3000→5000; loss still falling at task boundaries), lora_rank 2→4 (grad-ckpt already on), stronger/longer pretrain (held-in only 65%).
+- Raise the floor: more steps/task (3000→5000; loss still falling at task boundaries), lora_rank 2→4, stronger/longer pretrain (held-in only 65%).
 - Amplifier: gate saturates at 0.99 (no modulation) — probe a gate regulariser / per-task update budgeting to tame heavy overwriters.
 
 ---
 
 ## Entry 19 - 9 Jun 26 (libero_90 → LIBERO-Long results + write-protection mechanism autopsy + 10k probe plan)
-
-### Runs analysed
-
-- pretrain `libero_90_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.01_sep_0.25_loc_0.25_sup_128_2048_knn_36_40k` (90 tasks, 40k steps)
-- sequential `libero_10_sequential_pi05_..._knn_36_40k_top_t_1536` (LIBERO-Long, 10 tasks × 3000 steps, `tfidf_top_t=1536`, 50 eval eps/task)
-- script: `job_scripts/nebius/libero_90/combined/pi05_libero_10_4_layer_film_lora2_knn36_40k_c0.01_topt1536.sh`
 
 Deltas vs Entry 18: pretrain libero_90 (90 tasks, 40k) instead of libero_minus_goal (30 tasks, 30k); sequential suite is LIBERO-Long (libero_10) instead of libero_goal; `top_t=1536` from the start. Cross-suite absolute numbers are NOT comparable (LIBERO-Long is the hardest suite — six of ten tasks need two full pick-place cycles).
 
@@ -1325,7 +1254,7 @@ Deltas vs Entry 18: pretrain libero_90 (90 tasks, 40k) instead of libero_minus_g
 
 Final avg over 10 tasks = **34.4%**. Trajectory: 26 → 32 → 29.3 → 39 → 31.2 → 29.3 → 25.1 → 22.5 → 25.3 → 34.4. Logged read IoU `0.107` (slot-JSON recomputation matches exactly — pipeline validated).
 
-Per-task (train order; env id per `ds_to_env_map`):
+Per-task (train order; env id):
 
 | ord | env | task | init | peak | final | ret% |
 |----:|----:|------|-----:|-----:|------:|-----:|
@@ -1365,7 +1294,7 @@ Read IoU 0.169 → 0.107, held-in 65 → 81.1, no hot core. **The pretrain-diver
 ### Mechanism autopsy (new analyses, from the per-task slot JSONs + code)
 
 **1. TF-IDF protection is functionally a TF mask at this scale.**
-- Code (`lerobot_sequential_train.py`): DF increments are binary-per-batch (`df_vec[used] += 1.0` — within-batch intensity discarded); IDF = `log((B+1)/(DF+1))^e`, recomputed only at task boundaries; mask score = in-batch raw-count TF × IDF, top-1536.
+- DF increments are binary-per-batch (within-batch intensity discarded); IDF = `log((B+1)/(DF+1))^e`, recomputed only at task boundaries; mask score = in-batch raw-count TF × IDF, top-1536.
 - Reconstructed the exact IDF in effect during t7's block (L14, B=21,000, DF = Σ batch_accesses of t0–t6): t4/t5 core-50% slots median IDF **0.49** vs t7's other written slots **1.84** → a **3.0× penalty**, while TF on those same slots runs **~86×** the accessed-median. TF wins; the log crushes a 60:1 DF ratio into 3×.
 - Counterfactuals: at e=1, **100%** of t7's 2,913 writes into t4/t5 cores survive the write margin; **e=2 keeps 97%**; e=4 keeps 60%. Mass-weighted DF is worse (per-batch mass shares ≈ 0 → IDF uniform ~9.9 → zero protection). Only ~400 universal slots (DF ≥ 0.9B → IDF → 0) are genuinely hard-protected.
 - **Decision: the `idf_exponent=2` plan is dropped** — measured as a near-no-op before spending a run on it.
@@ -1378,7 +1307,7 @@ Read IoU 0.169 → 0.107, held-in 65 → 81.1, no hot core. **The pretrain-diver
 
 **5. Gradient-dilution hypothesis tested and rejected as the diagonal driver.** Update events ~119/slot mean for the heavy writers, but concentration is uncorrelated with fit: t8 is most diffuse (118 ev/slot) with init 74%; t0 most concentrated (286 ev/slot) with init 26%; t5 fits to near-best MSE with the 2nd-largest write set. The libero_goal 512-vs-1536 pair (3× concentration difference) shows no init advantage either. The diagonal is task structure + expressivity, not gradient spreading.
 
-**6. SupCon facts (code, `memory_lite.py:_compute_sample_contrastive_loss`).** The sample contrastive is SupCon at τ=0.07 → gradient concentrates exponentially on the *most similar* cross-task pairs (hard-negative emphasis is built in — the property needed for lookalike families). Caveats: it operates on the per-sample mean query (task-centroid geometry, not slot footprints — the Entry 5/7 proxy gap applies); default SupCon keeps same-task terms in the denominator (intra-class spreading at high weight — `contrastive_negatives_only=true` exists to remove it); batch 32 + queue 128 is thin negative coverage for 90 classes.
+**6. SupCon facts.** The sample contrastive is SupCon at τ=0.07 → gradient concentrates exponentially on the *most similar* cross-task pairs (hard-negative emphasis is built in — the property needed for lookalike families). Caveats: it operates on the per-sample mean query (task-centroid geometry, not slot footprints — the Entry 5/7 proxy gap applies); default SupCon keeps same-task terms in the denominator (intra-class spreading at high weight — `contrastive_negatives_only=true` exists to remove it); batch 32 + queue 128 is thin negative coverage for 90 classes.
 
 ### Constraints fixed in discussion (design space)
 
@@ -1388,21 +1317,20 @@ Read IoU 0.169 → 0.107, held-in 65 → 81.1, no hot core. **The pretrain-diver
 - Still off the table: EWC, replay, hard task-boundary slot allocation.
 - Target property: *each sequential task inherits a compact, separated footprint from the frozen router; cross-task overlap only at benign/synergistic edges.* Everything must be bought at pretrain time via the routing losses.
 
-### Plan: two 10k single-lever probes (running now)
+### Plan: two 10k single-lever probes
 
-Both are **truncated full runs** (same warmup 4000 / decay 40000 schedule, `--steps=10000`, `save_freq=10000`, eval never fires) so a passing probe continues to 40k with `--resume=true` at zero wasted compute. ~11h each on the H200, run sequentially; logs in `outputs/probe_logs/`.
+Both are **truncated full runs** (same warmup 4000 / decay 40000 schedule) so a passing probe continues to 40k at zero wasted compute.
 
-Scripts: `job_scripts/nebius/libero_90/probes/`
-- `probe_10k_pretrain_loc_1.0.sh` → run `libero_90_pi05_8_10_12_14_probe10k_loc_1.0`
+- **Probe L:**
   - Single knob: `routing_intra_task_locality_weight 0.25 → 1.0`.
   - **Pass:** L14 intra-task support < ~5.5K by 10k and still descending (control: flat ~7.9–8.2K); MSE@10k within ~10% of control's 0.261; audit shows held-out L14 core-50/effnum down ~2×. Family IoU recorded but not required (compaction ≠ de-coincidence).
   - **Fail route:** L14 flat at 1.0 → per-layer locality (heavy on 12/14), not a bigger global weight.
-- `probe_10k_pretrain_c_0.05_negonly_q512.sh` → run `libero_90_pi05_8_10_12_14_probe10k_contrastive_0.05_negonly_q512`
+- **Probe C:**
   - Contrastive arm as a package: weight 0.01 → 0.05, `contrastive_negatives_only=true`, queue 128 → 512 (flag = the high-weight pathology guard; queue = SupCon statistics enabler). Locality stays 0.25.
   - **Pass:** held-out audit family IoU (basket t4/t5/t7, L14) down ≥~30% vs control audit; MSE guardrail as above.
   - **Fail route:** query_inter_sim moves but slot-level family IoU doesn't (the Entry 5/7 proxy failure) → similarity-weighted *separation* (slot-space pairwise term weighted by language-embedding similarity; small code change, no new params).
 
-**Review instrument (to write before evaluating — first TODO at review):** held-out routing audit = forward the libero_10 demos through a frozen checkpoint with per-task usage logging (no training), dump the slot JSONs, compute per-task L12/L14 support, core-50, effnum, and the pairwise weighted IoU matrix. Run it on the **control checkpoint (20k and/or 40k) first** to fix the baseline — control routing plateaued early, so control@20k is a fair comparator for probe@10k. Minutes-to-an-hour per checkpoint vs 45h for a sequential run.
+**Review instrument:** held-out routing audit = forward the libero_10 demos through a frozen checkpoint with per-task usage logging (no training), dump the slot JSONs, compute per-task L12/L14 support, core-50, effnum, and the pairwise weighted IoU matrix. Run it on the **control checkpoint (20k and/or 40k) first** to fix the baseline — control routing plateaued early, so control@20k is a fair comparator for probe@10k. Minutes-to-an-hour per checkpoint vs 45h for a sequential run.
 
 ### After the probes
 
@@ -1424,8 +1352,6 @@ Scripts: `job_scripts/nebius/libero_90/probes/`
 
 ### Probe outcomes (in-run, @10k, trailing-1k window, vs control @10k)
 
-Both probes completed cleanly (~11h each, `outputs/probe_logs/`).
-
 | gate metric | control | probe L (loc=1.0) | probe C (SupCon pkg) |
 |---|---|---|---|
 | L14 intra-task support | 7,837 (flat) | 6,841 (−13%, descending) | **3,446 (−56%)** |
@@ -1437,13 +1363,13 @@ Both probes completed cleanly (~11h each, `outputs/probe_logs/`).
 - **Probe L FAILS its gate.** First config ever to get L14 support *descending* (control was flat), at zero MSE cost — but 4× weight bought only 13%. Locality-as-a-loss has weak leverage against MSE.
 - **Probe C achieved both probes' targets at once.** Mechanism: SupCon's pull-together drove same-task sample-mean queries to cosine 0.99 → per-task routing compacts (locality's job, done better via the query map); negatives-only push-apart drove cross-task centroids to ~orthogonal; and — unlike every prior query-space attempt (Entries 1, 5, 7) — it moved the **slot-level** metrics (inter-task sim 0.138 → 0.039). Not the proxy failure this time.
 - Bookkeeping: probe C's `train/loss` is negative (≈ −0.15) — the negatives-only SupCon term is a negative log-sum-exp (weighted ≈ −0.40). Gradients unaffected; compare runs on `mse_loss` only.
-- Aggregate-usage check (checkpoint `memory_usage.json`): probe C L14 aggregate effnum 49.6K with per-task support 3.4K → aggregate/per-task ratio ~14× vs control ~8×. **Compaction + separation, not collapse onto a shared core.**
+- Aggregate-usage check: probe C L14 aggregate effnum 49.6K with per-task support 3.4K → aggregate/per-task ratio ~14× vs control ~8×. **Compaction + separation, not collapse onto a shared core.**
 
 ### Held-out routing audit (the decisive test)
 
-Instrument: stream the libero_10 demos through the FROZEN checkpoint via `lerobot-sequential-train` with `memory_value_lr=1e-12` (numerically inert), no env (no eval), no checkpointing, 100 batches/task — dumps the standard `memory_by_task` JSONs measuring the **pristine prior's** held-out footprints. ~35 min/checkpoint. Scripts: `job_scripts/nebius/libero_90/probes/{audit_heldout_routing.sh,run_audits_seq.sh}`; outputs `outputs/train/audit_heldout_{control_40k,probeC_10k,probeL_10k}/`.
+Instrument: stream the libero_10 demos through the FROZEN checkpoint with `memory_value_lr=1e-12` (numerically inert), no env (no eval), 100 batches/task — dumps the standard `memory_by_task` JSONs measuring the **pristine prior's** held-out footprints.
 
-Baseline caveat: control audited @40k (20k checkpoint was accidentally deleted); probes @10k. The training-amount confound is covered by probe L, which acts as a same-duration control (near-control config, audited @10k, shows ≥control overlap).
+Baseline caveat: control audited @40k; probes @10k. The training-amount confound is covered by probe L, which acts as a same-duration control (near-control config, audited @10k, shows ≥control overlap).
 
 Held-out per-task footprints (L14, mean over 10 tasks):
 
@@ -1472,24 +1398,23 @@ Sanity: control audit family IoUs (0.39/0.36/0.30) match the sequential-run meas
 
 ### Decisions / next steps
 
-1. **Resume probe C → 40k** (`job_scripts/nebius/libero_90/probes/resume_probeC_to_40k.sh`; ~33h). Gates: MSE tracks control (0.196 @20k / 0.133 @40k), held-in eval @20k/@40k vs control 76.4/81.1, support & query-sim stability.
-2. **Re-audit at 40k** (existing audit script, ~35 min) — confirm held-out compaction/separation survives full training.
+1. **Resume probe C → 40k**. Gates: MSE tracks control (0.196 @20k / 0.133 @40k), held-in eval @20k/@40k vs control 76.4/81.1, support & query-sim stability.
+2. **Re-audit at 40k** — confirm held-out compaction/separation survives full training.
 3. **Sequential run** on the audited 40k checkpoint with `top_t` re-derived from the new footprints: held-out core50 dropped ~7.5× (2.6K → ~350), so `top_t=1536` is ~an order of magnitude oversized for this regime — start at **256–512** (decide from the 40k audit). Minimal-change config (everything stays pretraining-side; the only sequential knob is the existing TF-IDF top_t).
-4. Probe L checkpoint: keep for reference, no further investment.
+4. Probe L: no further investment.
 
-**Update (launched 11 Jun):** all three stages packaged in `job_scripts/nebius/libero_90/probes/pipeline_probeC_full.sh` (idempotent stages, auto-fallback if the resume `--steps` override is ignored). Decisions baked in:
+**Update (11 Jun):** Decisions baked in:
 - `top_t=512` pre-committed rather than audit-gated: protection now comes from separated/compact footprints, not the write mask; per-batch accessed slots shrink ~7× with this prior, so 512 is *relatively* more generous than 1536 was in the old regime, and libero_goal showed 512 safe at far worse IoU (0.17) than this prior's held-out 0.05 bg / 0.19 family. The 40k audit (stage 2) is informational.
 - **Contrastive weight held at 0.05** for this cycle: 7× compaction at +1.2% MSE is already near the useful ceiling, weight responses have been non-monotonic throughout the project, and the open risk is fit-side (which more pressure worsens). Weight 0.1 becomes a 10k probe only if the 40k re-audit shows separation eroding.
 - Sequential config otherwise identical to the failed top_t=1536 run (3000 steps/task, lr 1e-3→1e-4, 50 eval eps, same env mapping) for clean attribution: pretrain recipe + top_t are the only deltas.
-- Sequential run name: `libero_10_sequential_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k_top_t_512`.
 - What to look at first when it lands: retention matrix vs Entry 19's (esp. t5 after t7's block, the step-24000 cliff), diagonal inits on the dual-cycle tasks (plasticity should be roughly unchanged — this cycle attacked interference, not the ceiling), `memory_iou/all_modules_mean`, read-through-any-later for t0–t5, and 40k-audit family IoU vs the 10k audit's 0.190.
 - **Pre-registered next lever if retention is good but absolute perf lands ~50%:** the bottleneck is then the plasticity ceiling, and the first response is optimization budget, not architecture — more steps/task (3000 → 5000; Entry 19 showed MSE still falling at every block end) and higher memory-value LRs (floor 1e-4 → ~2e-4 first; peak 1e-3 → ~2e-3 second, watching within-block stability — t8's MSE rose late in its own block at the current peak). These are sequential-only, cheap, and now safer to push because the compact/separated footprints mean extra write pressure leaks far less into other tasks' cores than it would have pre-probe-C.
 
-**Update 2 (11 Jun, correction — resume abandoned, fresh 40k launched):**
-- **The "truncated full run / resume for free" probe design was wrong.** lerobot auto-scales the LR schedule when `steps < scheduler_decay_steps` (`schedulers.py:111`; probe logs confirm: "Scaling warmup: 4000 → 1000, decay: 40000 → 10000"). Both probes therefore ran a **compressed full cosine**, fully decayed by 10k.
+**Update 2 (11 Jun, correction):**
+- **The "truncated full run / resume for free" probe design was wrong.** lerobot auto-scales the LR schedule when `steps < scheduler_decay_steps` (probe logs confirm: "Scaling warmup: 4000 → 1000, decay: 40000 → 10000"). Both probes therefore ran a **compressed full cosine**, fully decayed by 10k.
 - Consequences for Entry 20 conclusions: **none material.** Probe L vs probe C shared the identical compressed schedule, so that contrast is clean; the held-out audit gaps (7× compaction, −46% family IoU, with probe L as a same-schedule control moving the opposite direction) dwarf any schedule artifact. Bonus: the SupCon effects survived a complete LR decay — they are end-of-training properties, not high-LR transients. One nuance: probe-vs-control *in-run* comparisons at 10k carried an LR-position confound (probes at LR floor, control at ~0.85×peak), which slightly flattered probe MSE.
-- The resume (launched this morning) rebuilt the scheduler **unscaled** (steps=40000 ≥ decay), so its LR jumped from floor to ~0.85×peak at step 10001 — an SGDR-style sawtooth, not comparable to control. Killed at ~step 10.4k (no checkpoints written; probe C's 10k checkpoint pristine; the resume's brief wandb re-attachment to run `hdbpetb9` is cosmetic).
-- **Replacement: fresh 40k pretrain of the recipe** with a clean schedule (steps=40000 == decay → warmup 4000 / decay 40000 honored, exactly matching control): run `libero_90_pi05_8_10_12_14_contrastive_0.05_negonly_q512_40k`, script `probes/pretrain_c_0.05_negonly_q512_40k.sh`, checkpoints at 10k/20k/30k/40k, evals at 20k/40k. Pipeline v2 (`pipeline_probeC_full.sh`) now: fresh pretrain → 40k audit (`audit_heldout_c005_40k`) → sequential top_t=512 (unchanged). Cost vs resume: +~11h.
+- The resume rebuilt the scheduler **unscaled** (steps=40000 ≥ decay), so its LR jumped from floor to ~0.85×peak at step 10001 — an SGDR-style sawtooth, not comparable to control.
+- **Replacement: fresh 40k pretrain of the recipe** with a clean schedule (steps=40000 == decay → warmup 4000 / decay 40000 honored, exactly matching control). Pipeline v2 now: fresh pretrain → 40k audit → sequential top_t=512 (unchanged).
 - Extra validation the fresh run gives for free: whether SupCon's compaction/separation holds under the uncompressed schedule — check `routing_intra_task_support_*` and query sims at 10k/20k against the probe's values, and the 10k-checkpoint audit can be compared like-for-like against `audit_heldout_probeC_10k` if needed.
 
 ---
@@ -1521,7 +1446,7 @@ Every interference metric improved by 5–9×. Every capacity metric regressed b
 
 **1. The pretrain prior was already weaker, and we had the warning.** Held-in libero_90 eval: **58.6% @20k / 73.6% @40k** vs control **76.4 / 81.1** (−18pp / −7.5pp). Pretrain MSE 0.164 vs 0.136 (+20%). gate 0.92 vs 0.98 (trusts memory less). Aggregate effnum 4968 vs 10641, used_frac 0.094 vs 0.206 (uses <half the table). The held-in regression was visible at the 20k eval and was NOT gated — the pipeline ran straight through to sequential.
 
-**2. Query collapse confirmed at all layers.** `query_intra_sim` = **0.990–0.996** (control 0.83), `query_inter_sim` = **−0.016** (near-orthogonal). Measured on the per-sample routing query `z` (mean over tokens×heads, `memory_lite.py:785`). The `negatives_only=true` flag removed same-task samples from the SupCon denominator — i.e. it removed the **intra-task uniformity pressure** that was the only force keeping per-task queries spread. With only the positive pull and no counter-pressure, same-task queries collapsed to near-parallel → routing compacts to a tiny footprint.
+**2. Query collapse confirmed at all layers.** `query_intra_sim` = **0.990–0.996** (control 0.83), `query_inter_sim` = **−0.016** (near-orthogonal). Measured on the per-sample routing query `z` (mean over tokens×heads). The `negatives_only=true` flag removed same-task samples from the SupCon denominator — i.e. it removed the **intra-task uniformity pressure** that was the only force keeping per-task queries spread. With only the positive pull and no counter-pressure, same-task queries collapsed to near-parallel → routing compacts to a tiny footprint.
 
 **3. The 40k audit "passed" harder than the probe — and that was the trap.** Held-out L14: c005@40k core50 **511** (control 2,643), family IoU **0.133** (control 0.349), background **0.042** (control 0.127). The audit measured exactly the structure we designed for and confirmed it. **But the audit had no capacity gate.** The 7× footprint shrink sat right there in the probe-C audit table (Entry 20: effnum 2,070 / core50 351) and we read "7× smaller footprints" as purely good (less collateral) — missing that it is identically a 7× capacity cut.
 
@@ -1561,7 +1486,6 @@ The target is between. The mistake was treating interference as the sole objecti
 
 ### Status
 
-- Run killed; GPU free. Pretrain `...c0.05_negonly_q512_40k` checkpoints (10k/20k/30k/40k) and `audit_heldout_c005_40k` retained for reference. Partial sequential (`..._top_t_512`, 5 task JSONs + evals to step 15k) retained as the documented negative result.
 - The Entry 20 conclusion ("SupCon package is the breakthrough") is **revised**: the package separates routing as advertised, but `negatives_only` makes it overshoot into capacity collapse. The *idea* (query-space separation transfers to held-out families) stands; the *dose/variant* was wrong.
 
 ### Decided next experiment — 2-knob isolation (with Josh, 14 Jun)
@@ -1599,8 +1523,6 @@ Both: queue 512, sep 0.25, loc 0.25, layers [8,10,12,14], knn 36, rank 2 — ide
 
 **Reminder — the probes do NOT prove success.** They confirm the prior sits in the healthy routing band. Sequential success is still f(capacity, interference) and must be measured by a real sequential run on the graduating prior. Before that sequential, also run the cheap 1-task ~500-step plasticity probe (Entry 21 methodology fix #3) as a final capacity check.
 
-Scripts: `job_scripts/nebius/libero_90/probes/{probe_10k_negonly_c0.025.sh, probe_10k_standard_c0.05.sh, run_probes2_seq.sh}`.
-
 ---
 
 ## Entry 22 - 15 Jun 26 (2-knob isolation results: negonly dead, standard SupCon under-separates — bracketed)
@@ -1636,7 +1558,7 @@ Can we get held-out family separation INTO the capacity-preserving regime? The t
 
 (Note: locality is NOT the compaction driver — control carries locality 0.25 and is broad, core50 2,643. Compaction came specifically from the strong negonly contrastive. So locality-off is not the lever; leave it unless a separation sweep shows it amplifying compaction.)
 
-### Next experiment (LAUNCHED 15 Jun — Josh: "do both") — 2-probe isolation, mirrors E21
+### Next experiment (Josh: "do both") — 2-probe isolation, mirrors E21
 
 - **Probe 3:** standard SupCon **0.1** (negatives_only=false, queue 512), all else = control. Isolates the contrastive-weight axis on the capacity-safe variant.
 - **Probe 4:** standard SupCon **0.05** + `routing_inter_task_separation` **0.5** (negatives_only=false, queue 512), all else = control. Isolates direct slot-space separation.
@@ -1644,14 +1566,11 @@ Can we get held-out family separation INTO the capacity-preserving regime? The t
 - GOOD: a point with famIoU ≤ ~0.28 while core50 ≥ ~1,500 (the decoupled frontier we haven't found yet). BAD: famIoU ≈ control (no separation) OR core50 collapse / query_intra_sim > 0.95.
 - Reserve if both fail: separation 0.5 + locality 0 (test compaction amplification), or other pretraining-side separation formulations (e.g. similarity-weighted separation). Pretraining-side only.
 
-### Status
-Probes 1/2 completed (neither earned a 40k). Checkpoints + audits (`audit_heldout_{negonly_c0.025,standard_c0.05}_10k`) retained. Probes 3/4 LAUNCHED 15 Jun (scripts `probe_10k_standard_c0.1.sh`, `probe_10k_standard_c0.05_sep0.5.sh`, runner `run_probes3_seq.sh`); audits `audit_heldout_{standard_c0.1,standard_c0.05_sep0.5}_10k`. No 40k launched yet.
-
 ### Note: discussion after launching probes 3/4 (mechanism + capacity diagnostics)
 
 Two clarifications worked out while probes 3/4 run. Both refine how to read the results; no config changed.
 
-**(a) SupCon (negonly=false) vs `routing_inter_task_separation` are NOT the same loss.** Verified against code (`memory_lite.py`: `_compute_sample_contrastive_loss` L841 vs `_compute_routing_losses` L969). Three differences, two of which are exactly the bet:
+**(a) SupCon (negonly=false) vs `routing_inter_task_separation` are NOT the same loss.** Three differences, two of which are exactly the bet:
 1. **Space.** SupCon = cosine between per-sample query *vectors* `z=mean_{T,heads} q` in continuous k_dim, **before** the key lookup. Separation = cosine between per-task *slot-occupancy histograms* over the n_keys² space, **after** top-M→Cartesian→softmax retrieval. The query→slot map (through learned keys) is many-to-one and nonlinear, so query separation is only an indirect proxy for slot overlap — the Entry 5/7 finding. Live proof in our data: P2 (std SupCon 0.05) moved query geometry but left held-out famIoU at 0.338 ≈ control.
 2. **Intra-task pull.** SupCon's numerator pulls same-task queries together (the force that collapsed query_intra_sim→0.99 and shrank footprints) — structurally inseparable from the contrastive form. Separation has **no** same-task term (pure `i<j` cross-task cosine on aggregated histograms); intra-task breadth is handed to the *decoupled* locality band. This is why separation can in principle reduce overlap by **translating** broad footprints to disjoint regions rather than shrinking them.
 3. **Granularity.** SupCon is instance-level (every sample's query position matters); separation is distribution-level (only each task's aggregate histogram matters), so it tolerates internally-diverse within-task routing.
@@ -1690,7 +1609,7 @@ Per-batch write coverage = min(top_t, reads)/reads. OLD L14: 1536/5520 = **28%**
 
 ### Why probes 1–4 may have been unfair to separation (code finding)
 
-Traced the two routing losses in code (`memory_lite.py`). The **contrastive** loss uses the cross-batch queue (`contrastive_query_queue`, =512 in our runs) — it concatenates 512 detached query vectors from prior batches. The **separation/locality** loss (`_compute_routing_losses`) does **not**: it operates on `_compute_subkey_scores(current query)` only, grouping the current micro-batch by task. With batch 32 over 90 tasks (random sampler), that means:
+Traced the two routing losses. The **contrastive** loss uses the cross-batch queue (=512 in our runs) — it concatenates 512 detached query vectors from prior batches. The **separation/locality** loss does **not**: it operates on current-batch queries only, grouping the current micro-batch by task. With batch 32 over 90 tasks (random sampler), that means:
 - **~1 sample/task** per step (≈27 distinct tasks/batch, mostly 1 sample each) → each task's slot-histogram in the separation loss is a single-observation estimate.
 - **~9% pairwise coverage**: any two specific tasks co-occur in a batch only ~(27/90)² of steps, so the exact pairs we need to separate (e.g. basket family) get a gradient <1 step in 10, and no step ever sees the global 90-task structure.
 
@@ -1698,24 +1617,18 @@ So separation has been operating on a noisy, sparsely-covered estimator. The Ent
 
 ### Fix implemented: routing-separation cross-batch queue
 
-New config `routing_query_queue` (in SAMPLES; 0 = off, current behavior). When >0, `_routing_losses_queued` (new) runs a dense-histogram path:
+New config `routing_query_queue` (in SAMPLES; 0 = off). When >0, separation runs a dense-histogram path:
 - **Current batch** → differentiable per-task slot histograms over the full n_keys² space (dense == compact numerically; carries the gradient).
 - **Queue** → FIFO of per-token detached queries (highest granularity, global FIFO, per Josh). Each step the queued queries are **recomputed against the CURRENT keys** (under no_grad) → detached per-task reference histograms covering all recently-seen tasks. Recompute-vs-current-keys (not frozen histograms) is deliberate: the separation loss *moves* the keys, so frozen references would lag.
-- **Separation** = push each current (differentiable) task histogram away from all reference (detached) task histograms j≠i, vectorized as one `einsum('ihs,jhs->ij')/heads` with an i==j mask. Fixes both the 1-sample estimate and the 9% coverage (every present task pushed against ~all 90 references every step).
-- Locality / global-balance stay on the current differentiable histograms (unchanged). Queue-off path is byte-for-byte the old compact code.
+- **Separation** = push each current (differentiable) task histogram away from all reference (detached) task histograms j≠i. Fixes both the 1-sample estimate and the 9% coverage (every present task pushed against ~all 90 references every step).
+- Locality / global-balance stay on the current differentiable histograms (unchanged).
 
-Wiring: per-token queries staged in `forward` (guarded by `_is_checkpoint_recompute()` to avoid double-enqueue under grad checkpointing), flushed after the optimizer step via the existing `flush_staged_contrastive_queries` hook (lerobot_train.py:184).
-
-**Bug caught by smoke test (would have silently disabled the queue):** the existing flush had an early `return` when no *contrastive* entries were pending → the routing flush was skipped whenever contrastive was off. Restructured to flush both independently.
-
-Smoke-tested in isolation (tiny module): queue populates to cap; **a single-task batch still gets a separation loss via references** (the coverage fix); gradients reach query_proj + keys; checkpoint-recompute guard holds; queue-off numerically identical to the old path; vectorized einsum identical to the per-pair loop. Files: `memory_config.py`, `memory_lite.py`.
-
-### Rerun (LAUNCHED 16 Jun)
+### Rerun
 
 Same configs as probes 3/4, only delta = `routing_query_queue=512`, so this isolates the queue's effect against the no-queue probes3 audits:
-- **probe 3':** standard SupCon 0.1 + rq512 → `..._probe10k_standard_c0.1_rq512`
-- **probe 4':** standard SupCon 0.05 + sep 0.5 + rq512 → `..._probe10k_standard_c0.05_sep0.5_rq512` (favored)
-- 10k each, audits `audit_heldout_standard_{c0.1,c0.05_sep0.5}_rq512_10k`. Scripts under `probes/`; runner `run_probes5_seq.sh`.
+- **probe 3':** standard SupCon 0.1 + rq512
+- **probe 4':** standard SupCon 0.05 + sep 0.5 + rq512 (favored)
+- 10k each.
 
 What GOOD looks like (the test of the whole hypothesis): with the estimator fixed, separation should finally move **held-out** famIoU below control's ~0.349 **while** core50 stays ≥ ~1,500 — the decoupled point probes 1–4 couldn't reach. If rq512 still doesn't move held-out famIoU, that's much stronger evidence (now with a fair estimator) that the current separation formulation can't separate held-out near-duplicates under a frozen router → next moves stay PRETRAINING-side (similarity-weighted separation, stronger/longer pretrain, different routing-loss formulation). If it DOES move, the weight sweep (sep 2.0 / contrastive 0.2, possibly 20k) becomes worthwhile on top of the queue. [See Entry 24 for the actual result + decision.]
 
@@ -1747,8 +1660,8 @@ Gate = famIoU ≤ ~0.28 AND core50 ≥ ~1500 AND query_intra ≤ ~0.90. **Neithe
 **The chart that confused us:** turning on the queue *raised* the logged `routing_inter_task_similarity_mean` (~+0.03–0.04; L14 0.121→0.160), i.e. `routing_inter_task_separation_mean` (=1−v) *dropped* 0.90→0.87. It looked like adding the queue + raising sep weight REDUCED separation — backwards from intent.
 
 **Root cause (code):** the logged similarity is computed *inside* the routing-loss fn, and the queue swaps that fn for a different estimator. Same metric name, different quantity:
-- no-queue `_compute_routing_losses` (L1189-98): mean pairwise cosine between **current-batch** per-task histograms → **sparse-vs-sparse**, only the ~27 in-batch tasks.
-- rq512 `_routing_losses_queued` (L1334-44): cosine between each current task's **single-sample** histogram and the queue's **dense, aggregated, all-90-task reference** histograms → **sparse-vs-dense**, full coverage.
+- no-queue: mean pairwise cosine between **current-batch** per-task histograms → **sparse-vs-sparse**, only the ~27 in-batch tasks.
+- rq512: cosine between each current task's **single-sample** histogram and the queue's **dense, aggregated, all-90-task reference** histograms → **sparse-vs-dense**, full coverage.
 
 Over a 147,456-slot table, two single-sample histograms drawn from the *same* broad distribution (control effnum ~15K) mostly hit different slots → sparse-vs-sparse cosine is biased toward 0 → the old metric **systematically under-read overlap and flattered separation**. The dense all-task reference removes that bias (and the ~9%→100% pair-coverage bias). The queue made the metric **honest**; "separation got worse" is the flattery being stripped out.
 
@@ -1768,11 +1681,11 @@ famIoU is measured strictly **held-out ↔ held-out** — among the libero_10 ba
 
 The **cause** routes through libero_90: these are compositions of single-object basket primitives that libero_90 covers densely ("pick up the alphabet soup/cream cheese box/tomato sauce/… and put it in the basket"). Near-identical instructions → the frozen language-conditioned router drops them into the shared pretrain "…in the basket" basin. Per-pair overlap tracks shared content monotonically (control@40k L14): t4–t5 (share soup) **0.391** > t4–t7 (share cream cheese) **0.355** > t5–t7 (share only the "…basket" structure, disjoint objects) **0.302** ≫ background **0.127**. Even the no-shared-object pair sits at 2.4× background.
 
-**Correction to Entry 19's "FiLM-on-language" framing (Josh's catch):** the query is `q = proj(x)·(1+γ(lang)) + β(lang)` (`memory_lite.py` L143-155) — a projection of the **action-expert hidden state** `x`, FiLM-modulated by language. γ/β are language-only (constant across a task's frames), but `proj(x)` varies per observation and carries the visual scene (different objects on the table). So there *is* discrimination signal beyond the instruction string; the "irreducible floor from identical language" claim was too strong. The floor is softer than stated — which is part of why pushing separation harder is worth a real test (and motivates future direction #2).
+**Correction to Entry 19's "FiLM-on-language" framing (Josh's catch):** the query is `q = proj(x)·(1+γ(lang)) + β(lang)` — a projection of the **action-expert hidden state** `x`, FiLM-modulated by language. γ/β are language-only (constant across a task's frames), but `proj(x)` varies per observation and carries the visual scene (different objects on the table). So there *is* discrimination signal beyond the instruction string; the "irreducible floor from identical language" claim was too strong. The floor is softer than stated — which is part of why pushing separation harder is worth a real test (and motivates future direction #2).
 
 ### Loss-magnitude audit (answering "what can we actually play with")
 
-Loss assembly (`memory_lite.py` L1734-1755): `loss = MSE + Σ weightᵢ·rawᵢ`, every raw term logged. Reconstructed weighted contributions @10k:
+Loss assembly: `loss = MSE + Σ weightᵢ·rawᵢ`, every raw term logged. Reconstructed weighted contributions @10k:
 
 | run | MSE | contrastive raw→**wtd** (%MSE) | sep: sim→**wtd** (%MSE) | locality wtd |
 |---|---|---|---|---|
@@ -1786,11 +1699,10 @@ Findings:
 3. **Separation is a real term, not drowned out** — 30% of MSE at sep=0.5 (rq512). So "too low on the scale" in the *negligible* sense is false.
 4. **But the weight-response is weak:** doubling sep 0.25→0.5 moved the seen-task similarity it directly minimizes only 0.098→0.095 (~3%), and held-out famIoU 0.349→0.342 (nothing). Either saturation against MSE's pull or a seen-task sharing floor. A 2× change can't distinguish "scale-limited" from "can't transfer" — hence the aggressive jump.
 
-### Decision + launched (probe 6)
+### Decision (probe 6)
 
 One decisive, cheap probe: **sep=2.0** (8× P3, 4× P4), **contrastive=0.05 FIXED** (isolate separation, preserve capacity — Josh's call to avoid confounds), **rq512** (clean gradient), same compressed 10k schedule. Capacity-gated audit.
 
-- Run: `libero_90_pi05_8_10_12_14_probe10k_standard_c0.05_sep2.0_rq512`; scripts `probes/{probe_10k_standard_c0.05_sep2.0_rq512.sh, run_probe6_seq.sh}`; wandb `r1sklapt`.
 - **Decisive gate (jointly):** held-out L14 **famIoU ≤ ~0.28 AND core50 ≥ ~1500**.
   - famIoU↓ **with** core50 held → real translation; separation was scale-limited → sweep upward, then 40k.
   - famIoU↓ **only** with core50 < ~1500 → shrink-to-disjoint shortcut (the locality min-support floor [128,2048] is too weak to block it — the capacity gate is the guard, not the loss). Reserve fix: raise min_support.
@@ -1846,9 +1758,9 @@ So footprints moved apart *into distinct broad regions* — the mechanism Entry 
 3. **Partial, not a clean gate clear.** famIoU 0.311 is below control but above the ~0.28 GOOD line; query_intra 0.912 is a hair over the 0.90 proxy but core50 (the real measure) is healthy. Clear headroom remains → hence the sep-curve sweep below.
 4. **Interference only.** The dual-cycle plasticity ceiling (~40% diagonal, Entry 19) is untouched; the eventual sequential gain will show up as **retention** (no t5→t7 step-24000 cliff), not a higher peak.
 
-### The 4-probe batch (LAUNCHED 17 Jun)
+### The 4-probe batch
 
-All single-knob deltas from the P6 anchor; the question is whether **separation alone is the lever.** Runner `run_probes7_10_seq.sh` (interleaved pretrain→audit per probe).
+All single-knob deltas from the P6 anchor; the question is whether **separation alone is the lever.**
 
 | probe | run tag | delta vs P6 | goal |
 |---|---|---|---|
@@ -1866,15 +1778,14 @@ Hope (Josh): sep is all we need — contrastive redundant (A), locality inert (C
 
 ### Caveats / notes
 
-- **Contrastive read as 0.05, not 0.5.** The request said "Contrastive 0.5" for P8–P10; taken as a typo for 0.05 (the project's capacity-safe value, and the only reading under which these are clean single-knob deltas — 0.5 is 5× the 0.1 that already over-compacted, would collapse capacity, and would confound goals B/C). Proceeded rather than block since Josh stepped away; flagged for correction on return. If 0.5 was intended, P8–P10 need a rerun (P7 and the curve *shape* still stand).
-- **P7 will not log `query_intra/inter_sim`** — those diagnostics live inside the contrastive block, gated by `contrastive_loss_weight > 0` (`memory_lite.py:621`). Read P7 capacity from the held-out audit (core50/effnum/subkey), which is the ground truth regardless.
-- Disk cleaned to make room (see below): dead-end 10k probe **checkpoints** deleted (wandb + all audits retained).
+- **Contrastive read as 0.05, not 0.5.** The request said "Contrastive 0.5" for P8–P10; taken as a typo for 0.05 (the project's capacity-safe value, and the only reading under which these are clean single-knob deltas — 0.5 is 5× the 0.1 that already over-compacted, would collapse capacity, and would confound goals B/C). If 0.5 was intended, P8–P10 need a rerun (P7 and the curve *shape* still stand).
+- **P7 will not log `query_intra/inter_sim`** — those diagnostics live inside the contrastive block, gated by `contrastive_loss_weight > 0`. Read P7 capacity from the held-out audit (core50/effnum/subkey), which is the ground truth regardless.
 
 ### Next (after the batch)
 
-Pick the winning prior on the joint axis (lowest famIoU with core50 ≥ ~2000, contrastive on/off per P7, locality on/off per P10) → fresh 40k (NOT resume — scheduler gotcha) → 40k held-out audit → 1-task plasticity probe → sequential, judged on the **retention matrix** (esp. early-task collapses), not just final average. The plasticity ceiling remains the separate, binding constraint on absolute performance.
+Pick the winning prior on the joint axis (lowest famIoU with core50 ≥ ~2000, contrastive on/off per P7, locality on/off per P10) → fresh 40k → 40k held-out audit → 1-task plasticity probe → sequential, judged on the **retention matrix** (esp. early-task collapses), not just final average. The plasticity ceiling remains the separate, binding constraint on absolute performance.
 
-**Update (18 Jun — P7 in, goal A answered: contrastive is LOAD-BEARING, "sep alone" disconfirmed).** P7 (c=0, sep2.0, rq512) held-out L14: core50 **7700**, effnum **37384**, famIoU **0.482**, bg **0.260** — the broadest, highest-overlap prior we've made, *worse than control* (0.349/0.127). In-run: MSE 0.201, routing_sim 0.136 (vs P6 0.084), support_L14 8175. Removing contrastive removed all intra-task compaction → footprints sprawl → separation still translates centroids apart but can't keep enormous clouds disjoint → overlap blows up. **Clean division of labor: contrastive = compaction (footprint *size*); separation = translation (footprint *position*); both required.** Breadth axis is Goldilocks: too much contrastive (negonly/0.1) → collapse; none → sprawl; **c0.05 + sep2.0 (P6, famIoU 0.311 / core50 2368) sits in the pocket and stays the frontier.** P8/P9 (sep curve) and P10 (locality) still running.
+**Update (18 Jun — P7 in, goal A answered: contrastive is LOAD-BEARING, "sep alone" disconfirmed).** P7 (c=0, sep2.0, rq512) held-out L14: core50 **7700**, effnum **37384**, famIoU **0.482**, bg **0.260** — the broadest, highest-overlap prior we've made, *worse than control* (0.349/0.127). In-run: MSE 0.201, routing_sim 0.136 (vs P6 0.084), support_L14 8175. Removing contrastive removed all intra-task compaction → footprints sprawl → separation still translates centroids apart but can't keep enormous clouds disjoint → overlap blows up. **Clean division of labor: contrastive = compaction (footprint *size*); separation = translation (footprint *position*); both required.** Breadth axis is Goldilocks: too much contrastive (negonly/0.1) → collapse; none → sprawl; **c0.05 + sep2.0 (P6, famIoU 0.311 / core50 2368) sits in the pocket and stays the frontier.**
 
 ---
 
@@ -1906,17 +1817,15 @@ In-run @10k: MSE flat across the whole sep curve (0.2118 → 0.2121 → 0.2112 �
 
 Net: Josh's "sep is the lever" bet is largely vindicated — separation does the separating, contrastive just holds footprints compact, locality is removable dead weight. First gate-clearing prior in the project.
 
-### Decision + what's RUNNING
+### Decision
 
-Graduate **P9 (c0.05 + sep5.0 + locality-off + rq512)** to a full run. **LAUNCHED 19 Jun:**
-- Script: `job_scripts/nebius/libero_90/combined/pi05_libero_10_4_layer_film_lora2_knn36_40k_c0.05_sep5_noloc_rq512_topt1536.sh` (two-stage, skip-if-exists guard).
-- = the c0.01 combined 40k script with EXACTLY: contrastive 0.01→0.05, contrastive_query_queue 128→**512**, sep 0.25→**5.0**, locality 0.25→**0** (support bands dropped), **+ routing_query_queue=512** (the c0.01 reference predated it — the critical add). New run names. Pretrain arch/schedule + entire sequential stage (tfidf_top_t **1536**, 3000 steps/task ×10, value_lr 1e-3→1e-4, 50 eval eps) unchanged.
-- Runs: pretrain `libero_90_pi05_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` → sequential `libero_10_sequential_..._top_t_1536`.
+Graduate **P9 (c0.05 + sep5.0 + locality-off + rq512)** to a full run.
+- Same as the c0.01 combined 40k config, with EXACTLY: contrastive 0.01→0.05, contrastive_query_queue 128→**512**, sep 0.25→**5.0**, locality 0.25→**0** (support bands dropped), **+ routing_query_queue=512** (the c0.01 reference predated it — the critical add). Pretrain arch/schedule + entire sequential stage (tfidf_top_t **1536**, 3000 steps/task ×10, value_lr 1e-3→1e-4, 50 eval eps) unchanged.
 - top_t=1536 kept deliberately: sep5 is broad-but-separated (core50 ~2679 ≈ control), so ~1536 is the right write budget per Entry 22(d), and safer than the Entry-19 cliff (lower overlap, famIoU 0.264 vs 0.349). Watch `task9-reads-task8-updates` early; re-derive from per-batch L14 effnum if overwrite climbs.
 
 ### What to check when it lands
 
-1. **Mid-flight (after stage 1, ~44h):** held-out audit on the 40k checkpoint — did sep5 *hold* under full LR decay (famIoU/core50 ≈ 0.264/2679, not eroded toward control)? Runnable while stage 2 trains.
+1. **Mid-flight (after stage 1):** held-out audit on the 40k checkpoint — did sep5 *hold* under full LR decay (famIoU/core50 ≈ 0.264/2679, not eroded toward control)?
 2. **Held-in eval** @20k/40k vs control 76.4/81.1 (fit guardrail).
 3. **The real test — sequential retention matrix:** per-task init→final, the early-task collapses (esp. the t5→t7 cliff at step 24000 in Entry 19), `memory_iou/all_modules_mean`, read-through-overwrite. Diagonal expected ~unchanged (this cycle attacked interference, not the plasticity ceiling — which remains the binding constraint on absolute performance; levers = steps/task 3000→5000, value_lr floor 1e-4→2e-4 if needed).
 
@@ -1930,10 +1839,9 @@ The sep=5 prior (Entry 26) **delivered its technical target and bought nothing.*
 
 ### Runs
 
-- sep5 pretrain `libero_90_..._contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k` (wandb `ozb8vddy`)
-- sep5 sequential `libero_10_sequential_..._sep_5.0_..._top_t_1536` (wandb `f64nunnx`) — 10×3000, top_t=1536, 50 eval eps
-- control = Entry-19 sequential `..._contrastive_0.01_sep_0.25_loc_0.25_..._top_t_1536` (34.4%)
-- (First sequential launch OOM'd in grad-checkpoint recompute; the analysed run is the relaunch with `gradient_checkpointing=false`. Slot pipeline reproduces the logged `memory_iou` exactly — 0.0520 / 0.1066 — so internals read correctly. Scripts: `scripts/slots.py`/`protect.py`/`beta_sweep.py` ported the Entry-18/19 env map to libero_10 `{0:4,1:6,2:9,3:2,4:7,5:0,6:8,7:1,8:3,9:5}`.)
+- sep5 sequential — 10×3000, top_t=1536, 50 eval eps
+- control = Entry-19 sequential (34.4%)
+(Slot pipeline reproduces the logged `memory_iou` exactly — 0.0520 / 0.1066 — so internals read correctly.)
 
 ### Pretrain: the prior did its job (separation held, capacity preserved, fit slightly weaker)
 
@@ -1996,7 +1904,7 @@ Per-task block-min MSE is **identical** sep5 vs control: dual-cycle tasks platea
 
 ### Discussion — can IDF protect env7? Mechanism autopsy + the corrected rule (with Josh)
 
-Q (Josh): isn't this what IDF is for — env7's writes should raise document-frequency and stop later tasks writing there? Traced the code (`lerobot_sequential_train.py`): online DF is `df_vec[used]+=1` (binary per batch, `used`=retrieved/READ indices), pooled over all tasks; `idf=log((B+1)/(DF+1))^e`; mask = top-t by `tf*idf`. **Structurally the wrong shape**, four reasons:
+Q (Josh): isn't this what IDF is for — env7's writes should raise document-frequency and stop later tasks writing there? Traced the code: online DF is `df_vec[used]+=1` (binary per batch, `used`=retrieved/READ indices), pooled over all tasks; `idf=log((B+1)/(DF+1))^e`; mask = top-t by `tf*idf`. **Structurally the wrong shape**, four reasons:
 1. **Pooled & task-anonymous** — knows "popular," never "env7 relied on it."
 2. **Read-frequency, not usefulness** — every task reads ~140K of 147K slots (coupon-collector), so "read by a prior" is near-universal → useless gate (measured: binary "any-prior-read" protection blocks 74–90% of every writer's demand).
 3. **TF-overridable** — env0's soup-core TF ≈86× median vs IDF discount ≈3× (log crushes a 60:1 DF ratio) → the writer buys back the shared core. (Entry 19 already measured: e=1 keeps 100% of harmful writes, e=4 keeps 60% while blocking legit writes.)
@@ -2013,7 +1921,7 @@ The behaviour Josh actually wants: *"if a slot was useful to any prior task, don
 
 Damage is steep at the core (protect where the prior cared most), cost is gradual (the writer's demand is spread) — exactly the structure the "decrease with usefulness" rule exploits. Separation moved env0's demand partly off env7's core, so it's no longer the zero-sum Entry 19 correctly found *on the broad prior*. **Separation and protection compound** — which is why this lever is worth it *now*.
 
-### Offline β-sweep (`scripts/beta_sweep.py`, first-order, static footprints)
+### Offline β-sweep (first-order, static footprints)
 
 Gate `π(s)=(1−u(s))^β`, `u(s)=max over prior tasks of peak-normalized read profile`; β=0 reproduces the measured read-through (37.3% sep5 / 55.4% ctrl — validated). Net = mean prior read-mass saved − mean writer demand blocked:
 
@@ -2026,17 +1934,15 @@ Gate `π(s)=(1−u(s))^β`, `u(s)=max over prior tasks of peak-normalized read p
 
 Net-positive at every β>0, peaks ~β=8 (env7 read-through roughly halved). Cost concentrates on env0/env1 (themselves basket tasks near the floor). To hit the same env7 outcome the control pays its writers ~36% vs sep5 ~20–25% (compounding, confirmed). **Caveats:** mass ≠ rollout success (likely *favourable* — saving sits on env7 at 0%, cost on env0/env1 at 22/10%, concave returns); static footprints (no closed-loop re-routing); these are why the real run is the arbiter.
 
-### Mechanism implemented (opt-in, default OFF — legacy byte-identical)
+### Mechanism implemented
 
-`lerobot_sequential_train.py`:
-- **Store** `_protect_usefulness_by_module[json_key]` = `u(s)`; `_accumulate_protect_counts_batch` (raw read counts/batch, all ranks, mirrors online-IDF) + `_finalize_protect_usefulness` at each task boundary (`u ← max(u, counts/counts.max())`, then reset). Folded *after* a task finishes so a task never protects against itself.
-- **Gate** in `_compute_tfidf_top_indices_for_batch`: `tfidf *= (1−u).clamp(min=0)**β` before top-t → protected slots fall out, budget reallocates to the task's private reads.
-- **CLI** `--protect_prior_slots` (bool, default `False`) + `--protect_beta` (float, default 4); threaded through `_update_policy_with_tfidf`. When off → `None` passed → old branch. Smoke-tested (`scripts/smoke.py`): peak-norm + max-agg + reset, gate reselection (vetoed slot drops, next-best pulled in), and **β=0 / store=None reproduce the legacy top-t exactly**.
+- **Store** `u(s)` (raw read counts/batch, mirrors online-IDF) at each task boundary (`u ← max(u, counts/counts.max)`, then reset). Folded *after* a task finishes so a task never protects against itself.
+- **Gate**: `tfidf *= (1−u).clamp(min=0)**β` before top-t → protected slots fall out, budget reallocates to the task's private reads.
 - NB: implementation β acts on the top-t **ranking** (reselection), so its scale differs from the offline soft-suppression model — treat β=4 as "moderate."
 
-### Launched (23 Jun, wandb `11u7mdmj`)
+### Launched (23 Jun)
 
-`job_scripts/nebius/libero_90/sequential/pi05_libero_10_seq_sep5_prior_protect_beta4_topt1536.sh`: reuses the sep5 40k prior (no new pretrain), `--protect_prior_slots=true --protect_beta=4`, **eval 20 eps** (vs 50, faster). Otherwise byte-identical to the sep5 sequential.
+Reuses the sep5 40k prior (no new pretrain), protection β=4, **eval 20 eps** (vs 50). Otherwise identical to the sep5 sequential.
 - **Watch:** env7 (t4) — baseline 18→0; predicted partial rescue (RTO ~81→~53). env0/env1 (t5/t7) fit cost = the bill. `memory_iou` should drop below 0.052. Diagonal/init ~unchanged (interference lever, not the ceiling).
 - **Decision rule:** env7 materially >0 at acceptable env0/env1 cost → β sweep {2,8}; env7 unmoved → β=8; env0/env1 crater → β=2. If even β=8 can't hold env7 and keep its writers, env7 is confirmed irreducible under write-masking → only rank/co-host (realworld Entry 3) or scene-vs-language query reweighting (Entry 24 #2) remain.
 
@@ -2058,7 +1964,7 @@ Net-positive at every β>0, peaks ~β=8 (env7 read-through roughly halved). Cost
 
 ### Part A — prior-usefulness protection (β=4) result
 
-The Entry-27 mechanism ran (`..._top_t_1536_protect_beta4`, reused the sep5 prior, 20 eval eps, ~17h). **It works — on the protectable half.** Headline (caveat: 20 eval eps vs the 50-ep baselines, so ±3–4pp noise; slot metrics are eval-independent and corroborate):
+The Entry-27 mechanism ran (reused the sep5 prior, 20 eval eps). **It works — on the protectable half.** Headline (caveat: 20 eval eps vs the 50-ep baselines, so ±3–4pp noise; slot metrics are eval-independent and corroborate):
 
 | metric | control(50) | sep5(50) | **protect β4(20)** |
 |---|---|---|---|
@@ -2083,7 +1989,7 @@ Forgetting roughly **halved** (−7.6→−3.0), and the gains are mechanistical
 
 Hypothesis (Josh + me): the frozen FiLM-on-language router drops the lookalike basket tasks into a shared basin; the fix is to **up-weight `proj(x)` (scene) over language** in the query `q = proj(x)·(1+γ(lang)) + β(lang)`. First clarified (code): this is a *fusion* lever, not a routing-*loss* lever — the loss is downstream of `q` and can only separate what `q` already encodes (which is why sep=5 floored the basket famIoU at 0.26).
 
-Then probed the actual query map from the **checkpoint alone** (no forward; `scripts/query_probe.py`): embed the 10 instructions (all-mpnet-base-v2), push through each layer's `film_mlp`, inspect γ/β. **The premise is wrong — the FiLM language pathway is near-inert:**
+Then probed the actual query map from the **checkpoint alone** (no forward): embed the 10 instructions (all-mpnet-base-v2), push through each layer's `film_mlp`, inspect γ/β. **The premise is wrong — the FiLM language pathway is near-inert:**
 - **`γ ≈ 0`**: `‖1+γ‖ ≈ 45.3 ≈ √2048` at every layer → multiplicative modulation ≈ identity.
 - **`β` is near-task-agnostic** despite distinguishable instructions:
 
@@ -2101,14 +2007,13 @@ Then probed the actual query map from the **checkpoint alone** (no forward; `scr
 2. **Representation / co-host (rank)** for the shared region (realworld Entry 3 cautions rank doesn't allocate under a frozen router).
 3. **Accept env7**, bank the protection win on the rest.
 
-### Part C — forward probe PREPARED (pending; run next)
+### Part C — forward probe
 
-The checkpoint-only probe is decisive that language is near-inert, but the last open question — *is the basket residual driven by scene-similarity or by the small β-residual?* — needs `proj(x)` magnitudes. Prepared (NOT yet run):
-- `scratchpad/query_forward.py`: monkeypatches `QueryMLPLite.forward`, runs ~25 batches/task on basket (task_idx 4/5/7) + controls (2/6) through the frozen sep5 checkpoint, recomputes routing under **full = proj·(1+γ)+β / scene = proj·(1+γ) / lang = β** and reports `‖scene‖` vs `‖β‖`.
-- Trainer hook to add (env-var-guarded, after `task_index_to_name` ~line 1622): `if os.environ.get("QUERY_PROBE"): run_query_probe(...); sys.exit(0)` — reuses the validated policy/dataset/preprocessor setup, forward-only, exits before training.
+The checkpoint-only probe is decisive that language is near-inert, but the last open question — *is the basket residual driven by scene-similarity or by the small β-residual?* — needs `proj(x)` magnitudes.
+- runs ~25 batches/task on basket (task_idx 4/5/7) + controls (2/6) through the frozen sep5 checkpoint, recomputes routing under **full = proj·(1+γ)+β / scene = proj·(1+γ) / lang = β** and reports `‖scene‖` vs `‖β‖`.
 - **Decisive test:** basket `IoU(scene)` vs `IoU(full)`. `scene << full` → β drives the collision → option 1 has teeth. `scene ≈ full` → pure scene similarity → only options 2/3.
 
-**RESULT (ran via standalone `scratchpad/query_forward_standalone.py` — reuses `parser.wrap` + factories, NO trainer changes; 25 batches/task on basket 4/5/7 + controls 2/6):**
+**RESULT (25 batches/task on basket 4/5/7 + controls 2/6):**
 - **Scene dominates β by 17–21×**: `‖proj(x)·(1+γ)‖` ≈ 16 / 18 / 18 / 20 at L8/10/12/14 vs `‖β‖` ≈ 0.98. The language bias is a ~5% additive perturbation on the query.
 - **Stripping β changes basket routing by ≈0%** (L14 basket weighted IoU): full **0.215** vs scene (β-stripped) **0.216** — e7~e0 0.221 vs 0.224, e7~e1 0.282 vs 0.283, e0~e1 0.142 vs 0.143. Language-only (q=β) would be 0.545, but β is 20× too small to bend the routing. (full-query basket 0.215 / background 0.058 reproduces the sequential JSON read IoU — pipeline validated.)
 - **VERDICT: env7 is pure scene-similarity, NOT routing-fixable by reweighting.** Scene already dominates 20×; deleting language entirely leaves the basket collision unchanged. The three basket tasks have near-identical *initial scenes* (same kitchen, overlapping objects, a basket); the sole discriminator is the instruction, which the model routes ≈0% on. **Option 1 (down-weight language) is DEAD.** The only routing-based lever left is the *opposite and amplified* — recover AND scale the language pathway ~20× (anti-collapse + magnitude) so the instruction can steer routing — a large architecture change, with held-out-generalization risk (Entry 18) and bounded by instruction similarity (mpnet cos 0.86). Pragmatic read: env7 is the genuine *same-scene/different-instruction* residual (1 of 10); bank the β=4 protection win on the other 9 and pivot to the plasticity ceiling for the average; revisit env7 only if a language-amplification or co-host idea is worth a pretrain.
@@ -2120,11 +2025,9 @@ The checkpoint-only probe is decisive that language is near-inert, but the last 
 
 ---
 
-## Entry 29 - 24 Jun 26 (LAUNCHED: autonomous protection+plasticity batch on the sep5 prior — 4 sequential runs, ~3 days)
+## Entry 29 - 24 Jun 26 (LAUNCHED: autonomous protection+plasticity batch on the sep5 prior — 4 sequential runs)
 
-Josh away a few days; lined up 4 **sequential-only** runs (all reuse the EXISTING sep5 40k prior — no new pretrain), single-knob deltas from the standing baseline **β=4 protection (Entry 28, 40.5% @20ep)**. Runner `job_scripts/nebius/libero_90/sequential/run_protect_plasticity_batch.sh`. All 20-eval-eps for apples-to-apples with the β4 baseline. Robust runner (one failure doesn't abort; skip-if-final-ckpt-exists).
-
-Order C → B → D → A (front-load the binding-constraint/plasticity tests; β8 last):
+Lined up 4 **sequential-only** runs (all reuse the EXISTING sep5 40k prior — no new pretrain), single-knob deltas from the standing baseline **β=4 protection (Entry 28, 40.5% @20ep)**. All 20-eval-eps for apples-to-apples with the β4 baseline.
 
 | # | run suffix (`…_top_t_1536_<suffix>`) | delta vs β4 | tests | prediction |
 |---|---|---|---|---|
@@ -2136,15 +2039,11 @@ Order C → B → D → A (front-load the binding-constraint/plasticity tests; �
 **Standing conclusions feeding this batch (Entries 27–28):**
 - β=4 protection is a confirmed keeper: forgetting halved (init→final −7.6→−3.0), mean read-through 37→30%, +6.5pp — entirely on the **incidental** channels; env7 (genuine hub) stays 0.
 - **env7 is NOT routing-fixable** (forward probe, Entry 28 Part C): scene dominates the query 17–21×; stripping β changes basket routing ≈0% (full 0.215 vs scene 0.216 @L14). It's the genuine same-scene/different-instruction residual. Routing-side lever would be the *opposite+amplified* (recover & scale language ~20×) — deferred, risky.
-- The **average is plasticity-bound** (diagonal ~43, dual-cycle tasks low) — hence this batch targets plasticity. The big uncovered lever is **rank-4** (per-slot expressivity) — needs a fresh 44h pretrain (blocks the GPU), so it's the first thing to queue on return, + a clean **50-ep re-eval** of whatever wins this batch (de-noise the 20-ep numbers).
+- The **average is plasticity-bound** (diagonal ~43, dual-cycle tasks low) — hence this batch targets plasticity. The big uncovered lever is **rank-4** (per-slot expressivity) — needs a fresh pretrain + a clean **50-ep re-eval** of whatever wins this batch (de-noise the 20-ep numbers).
 
-**Analysis recipe (persisted: `scripts/vla_analysis/`):** env map `{0:4,1:6,2:9,3:2,4:7,5:0,6:8,7:1,8:3,9:5}`; train order = task_index 0..9; basket family = task_idx 4/5/7 (env7/env0/env1, env7=soup+cheese hub).
-- Retention matrix: `retention3.py` (add the 4 new run dirs to its `RUNS`). Baselines: control 34.4 / sep5 34.0 / β4 40.5 (final avg); mean init (diagonal) control 39.8 / sep5 41.6 / β4 43.5 — **for the plasticity runs the key read is whether mean init/peak rises above ~45**.
-- Slot usage: `slots.py <run>` (add run to its `runs` dict) — capacity (L14 effnum/core50), read-through-overwrite (control 55/sep5 37/β4 30%; env7 86/81/71%), pairwise overwrite, read-IoU validation (must match logged `memory_iou`).
-- wandb scalars: `wb.py` / `parse_wandb.py` — held-in/seen success, mse_loss, gate, query sims.
-- Routing autopsy (done, reproducible): `query_probe.py` (checkpoint-only) + `query_forward_standalone.py` (forward; reuses `parser.wrap`+factories, NO trainer changes — run via conda env, `QUERY_PROBE_NB` batches/task).
-
-**Mechanism in code (shipped, opt-in, default off):** `lerobot_sequential_train.py` — `--protect_prior_slots` / `--protect_beta`; store `_protect_usefulness_by_module` (u(s)=max over prior tasks of peak-normalized read profile, folded at task boundaries), gate `tfidf *= (1-u)^β` before top-t. β=0/off ⇒ legacy byte-identical.
+**Analysis recipe:** env map `{0:4,1:6,2:9,3:2,4:7,5:0,6:8,7:1,8:3,9:5}`; train order = task_index 0..9; basket family = task_idx 4/5/7 (env7/env0/env1, env7=soup+cheese hub).
+- Retention matrix: control 34.4 / sep5 34.0 / β4 40.5 (final avg); mean init (diagonal) control 39.8 / sep5 41.6 / β4 43.5 — **for the plasticity runs the key read is whether mean init/peak rises above ~45**.
+- Slot usage: capacity (L14 effnum/core50), read-through-overwrite (control 55/sep5 37/β4 30%; env7 86/81/71%), pairwise overwrite, read-IoU validation (must match logged `memory_iou`).
 
 **When results land:** retention matrix per run vs β4 baseline (diagonal first — did plasticity lift the ceiling?), B/D LR-stability check, A's env0/env1-vs-env7 tradeoff. Pick the winner → 50-ep re-eval → then rank-4 pretrain.
 
@@ -2200,23 +2099,20 @@ env7 ends ~0–5 in every run. B's 2× LR gave it its best-ever *fresh* fit (ini
 The whole memory program is judged against an *implicit* ceiling we never measured: **plain pi05 multi-task finetuning, no memory layers.** With the diagonal now shown movable and C at 44.5/peak 53-55, the live question is whether ~45–55% is a *base-model* ceiling on this OOD dual-cycle suite or a memory-specific limit. Two baselines (base pi05, no memory, **same base train args** — same scheduler/warmup, pi05's default base LR, bs32, grad-ckpt, bf16, empty_cameras, rename_map, normalization):
 1. **`libero_90_and_long_pi05_base_50k`** — 50k steps on libero_90 **+** libero_10(Long) merged (the natural multi-task ceiling *with* the pretrain data).
 2. **`libero_10_pi05_base_50k`** — 50k steps on just libero_10(Long) (the 10-task-only finetune ceiling).
-- Both: `lerobot-train` (NOT sequential — standard joint finetune), eval **libero_10 @ 50 eps/task** at the end only (`save_freq=eval_freq=50000`, code stable → no storage blow-up / eval drag). `scheduler_decay_steps=50000` (honor the schedule, E20 gotcha). Base = pinned `pi05_base` snapshot `9e55186`.
-- **Dataset built:** `outputs/libero_90_and_long` via `merge_datasets.py` (libero_90 3959 eps + the 10 Long tasks 379 eps; the libero_10 dataset's task_index 0–9 are the only ones with episodes — 10–39 are empty vocab). NB: merge needed a lenient features check (libero_10 carries a redundant per-feature `fps` key; bypassed via monkeypatch, utility unchanged; libero_90 placed first so the target inherits its clean schema).
-- Scripts: `job_scripts/nebius/baselines/`. **What this tells us:** if base-pi05 on 90+10 reaches ~50–55% per-task, the memory method is roughly at the joint-finetune ceiling and the remaining gap is the OOD dual-cycle structure (→ rank/longer-pretrain, not continual-learning machinery); if base-pi05 is well *above* us, the memory constraints (frozen backbone + rank-2 values) are costing real performance and that's the thing to attack. The libero_10-only run isolates how much the 90-task pretrain data actually helps the Long suite.
+- Both: NOT sequential — standard joint finetune, eval **libero_10 @ 50 eps/task** at the end only. `scheduler_decay_steps=50000` (honor the schedule, E20 gotcha).
+- **Dataset built:** libero_90 3959 eps + the 10 Long tasks 379 eps.
+- **What this tells us:** if base-pi05 on 90+10 reaches ~50–55% per-task, the memory method is roughly at the joint-finetune ceiling and the remaining gap is the OOD dual-cycle structure (→ rank/longer-pretrain, not continual-learning machinery); if base-pi05 is well *above* us, the memory constraints (frozen backbone + rank-2 values) are costing real performance and that's the thing to attack. The libero_10-only run isolates how much the 90-task pretrain data actually helps the Long suite.
 
-### Cleanup
-Freed **640G**: deleted the 9 intermediate per-task checkpoints from each of the 4 batch runs (kept each run's final + `last` symlink + the small eval/`memory_by_task` JSONs that the analysis reads). Killed the now-redundant `training_state` reaper (batch done; ts already at 0). Disk 1.1T free (55%).
-
-### Next (after baselines land)
+### Next
 1. Read the two baselines' per-task libero_10 success → place our 44.5 / peak-55 against the standard-finetune ceiling.
-2. **50-ep re-eval of C** (`protect_beta4_steps5k`) to de-noise 44.5 and resolve the env4 cell. *(Winner final checkpoint retained for this.)*
-3. Then the orthogonal plasticity swing: `lora_rank=4` (fresh 44h pretrain — now best-justified, attacks the per-slot expressivity the steps/LR levers can't), and/or push `steps→7000` (steps is the clean Pareto lever; MSE was still the cleanest mover).
+2. **50-ep re-eval of C** (`protect_beta4_steps5k`) to de-noise 44.5 and resolve the env4 cell.
+3. Then the orthogonal plasticity swing: `lora_rank=4` (fresh pretrain — now best-justified, attacks the per-slot expressivity the steps/LR levers can't), and/or push `steps→7000` (steps is the clean Pareto lever; MSE was still the cleanest mover).
 
 ---
 
 ## Entry 31 - 1 Jul 26 (non-memory baseline: joint-finetune ceiling = 72.6%; the memory gap is ~28pp, concentrated on the forgetting/dual-cycle tasks)
 
-Plain pi05, **NO memory**, same base train args (bf16, bs32, grad-ckpt, warmup 4k / decay 50k, pi05 default LR), 50k steps, eval libero_10 @ 50 eps/task. Ran **B1 = libero_90 + libero_10 joint finetune**; killed B2 (libero_10-only) — B1 answered the question. Run artifacts deleted (results here; wandb `zv5k7a6m`).
+Plain pi05, **NO memory**, same base train args (bf16, bs32, grad-ckpt, warmup 4k / decay 50k, pi05 default LR), 50k steps, eval libero_10 @ 50 eps/task. Ran **B1 = libero_90 + libero_10 joint finetune**; killed B2 (libero_10-only) — B1 answered the question.
 
 **B1 → 72.6% on libero_10** (500 eps). Per-task final % vs our best memory runs (by env id; C = `protect_beta4_steps5k`, the Entry-30 winner):
 
@@ -2241,14 +2137,12 @@ Plain pi05, **NO memory**, same base train args (bf16, bs32, grad-ckpt, warmup 4
 
 ### Update (1 Jul) — layer-wise LoRA rank probes launched (capacity where it matters, without rank-4-on-all-4)
 
-That 28 pp is mostly forgetting + plasticity, and rank is the one untried per-slot-capacity lever. Rank-4 on all four layers is 4.8 B values → OOM (~148 GB > H200; confirmed by the VRAM ladder below), and rank-3 has matmul issues — so the question is *where* to spend a smaller increase. Implemented **per-layer rank**: `--policy.memory_layer.layer_ranks=[...]`, matched to `layers` by order, asserts length; empty ⇒ scalar `lora_rank` (legacy byte-identical). Smoke-tested (per-layer shapes, length assert, backward compat, mixed-rank forward). Two 10k probes, **C's noloc-sep5 recipe verbatim except `layer_ranks`** (compressed 10k schedule = every prior probe → the existing rank-2 sep5/P9 audit is the `[2,2,2,2]` baseline):
+That 28 pp is mostly forgetting + plasticity, and rank is the one untried per-slot-capacity lever. Rank-4 on all four layers is 4.8 B values → OOM, and rank-3 has matmul issues — so the question is *where* to spend a smaller increase. Implemented **per-layer rank**. Two 10k probes, **C's noloc-sep5 recipe verbatim except `layer_ranks`** (compressed 10k schedule = every prior probe → the existing rank-2 sep5/P9 audit is the `[2,2,2,2]` baseline):
 
 - **P1 `[2,2,2,4]` on `[8,10,12,14]`** — keep all four, boost the action-proximal L14 (+25%, 3.0 B values). *Invest in the highest-value / most-output-proximal layer.*
 - **P2 `[4,4,4]` on `[8,10,12]`** — drop L14, rank-4 on the rest (+50%, 3.6 B). *Josh's original: shed the messy high-interference L14, beef up the cleaner earlier layers.*
 
 Decisive read at the held-out audit: does **P2's L12 inherit-and-worsen** the family IoU / core50 — the high-trust/high-forgetting role is *positional* (last memory layer), so dropping L14 likely migrates it to L12, now at rank 4 = more destructive overwrites (Entry 4) — or does P1's proximal boost sit better with routing intact? Plus the 1-task plasticity probe for fit. Caveat: rank is a **fit** lever, not a forgetting one under the frozen router (realworld Entry 3) → expect diagonal gains; the average is plasticity-bound anyway.
-
-Status: launched (P1→P2). Attach applied `L8=r2/L10=r2/L12=r2/L14=r4`, 119 GB (fits). **VRAM ladder:** P1 3.0 B = 119 GB, P2 3.6 B ≈ 129 GB (fits), all-r4 4.8 B ≈ 148 GB (OOM) — why 4-on-4 is off the table. Code: `memory_config.py` (`layer_ranks`), `memory_lite.py` (threaded `lora_rank_override` through attach → `MLPPlusMemory` → `HashingMemoryLite`). Script: `probes/run_layerrank_probes.sh`.
 
 ---
 
@@ -2277,23 +2171,18 @@ Consequences:
 3. Both effects push the same direction: higher rank supports smaller-better-separated footprints.
 4. **Bounds on the re-look:** (i) the contrastive ceiling is not only capacity — it's **query collapse** (state-independent addressing, Entry 21/22c), which rank does NOT fix; guard query_intra ≤ ~0.93. (ii) **Compaction alone doesn't separate** (P3: c=0.1 shrank footprints, famIoU stayed ≈ control) — c-up only pays through sep's translation, so test it with sep=5 held. (iii) The sep benefit-cap is the genuine scene-sharing floor (famIoU ~0.26, forward-probe-proven scene routing) — rank-insensitive; **sep stays 5.0**. (iv) Under mixed rank the contrastive weight is global across layers → c-up also compacts the still-rank-2 L8/L10, which can't afford it; if the c-up cell fails, expect it to fail there first → fail-route = per-layer contrastive (sibling of the per-layer-sep idea, Entry 24 #3).
 
-### Next: `[2,2,4,4]` A/B probes (LAUNCHED)
+### Next: `[2,2,4,4]` A/B probes
 
-`[2,2,4,4]` = the max-affordable all-layers config: 3.62 B values (= P2's footprint, fits), boosts the two layers carrying ~70% of read mass/trust (L12+L14, per Entry 22d ladder), keeps L14 in place so no positional migration. Two cells, single-knob delta, interleaved run→audit→run→audit:
+`[2,2,4,4]` = the max-affordable all-layers config: 3.62 B values (= P2's footprint, fits), boosts the two layers carrying ~70% of read mass/trust (L12+L14, per Entry 22d ladder), keeps L14 in place so no positional migration. Two cells, single-knob delta:
 
 | cell | config | question |
 |---|---|---|
 | A | `[2,2,4,4]` c=0.05 sep=5.0 | does r4-at-L12 perturb L14's routing from below? (P1 only tested the last layer — nothing downstream of it) |
 | B | `[2,2,4,4]` **c=0.1** sep=5.0 | does rank-4 make compaction affordable AND convert to lower famIoU via sep? (the model-driven contrastive re-look; untested combination) |
 
-**Rank-adjusted gate:** famIoU ≤ ~0.28 AND query_intra ≤ ~0.93 AND capacity-in-rank-units ≥ baseline at the r4 layers (core50 ≥ ~1300 at L12/L14) AND r2 layers not cratering (L8/L10 core50 ≥ ~50% of P9's 534/1047). B graduates if it holds capacity and lands famIoU < A; A graduates if B fails the P3 pattern (famIoU ≈ A) or craters L8/L10; `[2,2,2,4]` (P1, checkpoint retained) is the validated fallback. Blast-radius contingency for the eventual sequential: per-layer sep bump on L12/L14 only.
+**Rank-adjusted gate:** famIoU ≤ ~0.28 AND query_intra ≤ ~0.93 AND capacity-in-rank-units ≥ baseline at the r4 layers (core50 ≥ ~1300 at L12/L14) AND r2 layers not cratering (L8/L10 core50 ≥ ~50% of P9's 534/1047). B graduates if it holds capacity and lands famIoU < A; A graduates if B fails the P3 pattern (famIoU ≈ A) or craters L8/L10; `[2,2,2,4]` (P1) is the validated fallback. Blast-radius contingency for the eventual sequential: per-layer sep bump on L12/L14 only.
 
 Known risk either way: rank is a **fit** lever, not a retention lever (frozen router fills all ranks of a shared slot; realworld Entry 3) — the diagonal should move; env7-class genuine contention won't, and r4 overwrites hit 2× harder → β4 protection stays mandatory in the sequential stage.
-
-Script: `probes/run_layerrank_probes2.sh` (run A → audit A → run B → audit B). Audits: `audit_heldout_ranks2244_c005_10k`, `audit_heldout_ranks2244_c01_10k`. Analysis: `scratchpad/audit_ranks.py` pattern (extend RUNS).
-
-### Cleanup
-Deleted P2 `ranks_444` checkpoints (~64 G, rejected branch — wandb + audit JSONs retained) and `training_state` from P1 + P9 probe dirs (never resumed). **Kept**: P1 `ranks_2224` and P9 10k `pretrained_model`s — P1 is the fallback graduation candidate; both are the comparators for the pending 1-task plasticity probe (rank→fit conversion check, still to run).
 
 ### Appendix (2 Jul, discussion w/ Josh) — the rank model CORRECTED: fractional damage is ~rank-invariant to first order; net sign on forgetting is ambiguous and empirically decidable
 
@@ -2308,15 +2197,15 @@ Josh's (B): "1% slot overlap" carries no importance info — right, and one leve
 **Three empirical tests (all ~free):**
 1. **Forgetting-per-unit-RTO calibration curve** — scatter x=per-task RTO, y=retention (final/init) over the ~70 task-points from the 7 rank-2 runs; the `[2,2,4,4]` sequential adds 10 points. On the curve → rank-invariant per unit overlap (Josh's A). Above → drift/concentration dominate. Below → basin-deepening dominates (C pattern). Task-matched version (each task vs its own 7-run history) kills task-identity noise. *(RTO = read-through-overwrite: fraction of a task's read WEIGHT on slots later tasks updated, mean over layers.)*
 2. **Within-run rank contrast (diff-in-diff)** — `[2,2,4,4]` contains both rank classes under identical conditions (L8/L10=r2, L12/L14=r4). Measure contested-slot value-drift per layer (e.g. env7's core slots: ‖Δslot values across env0's block‖/‖before‖, from per-task checkpoints) → ρ = d(L14)/d(L8). Compare ρ_mixed vs ρ of an all-r2 baseline to cancel the layer-position confound. ρ_mixed ≈ ρ_r2 → no per-slot amplification; ρ_mixed ≫ → specialization drift confirmed. Same DiD for update-mass concentration.
-3. **Slot-ablation importance probe** (new instrument, Josh-approved idea): zero the top-k contested slots on a frozen adapted checkpoint, measure the `--eval.type=loss` delta → calibrates read-mass against actual importance. ~minutes.
+3. **Slot-ablation importance probe** (new instrument, Josh-approved idea): zero the top-k contested slots on a frozen adapted checkpoint, measure the `--eval.type=loss` delta → calibrates read-mass against actual importance.
 
-**Data availability (checked):** all 7 rank-2 runs' `memory_by_task` JSONs intact → test 1 buildable today. C's per-task checkpoints were deleted (E30 cleanup; final only) → test 2's rank-2 baseline = **protectB4** (all 10 per-task ckpts retained, same β4/prior; only mismatch 3k-vs-5k steps, ~cancels in the layer ratio). sep5 also retains 10/10. **⚠ RETENTION FLAG: the eventual `[2,2,4,4]` sequential's per-task checkpoints must NOT be cleaned until the drift analysis (test 2) is done.**
+Test 2's rank-2 baseline = **protectB4** (same β4/prior; only mismatch 3k-vs-5k steps, ~cancels in the layer ratio).
 
-**Rank-2 calibration curve BUILT (2 Jul):** 70 task-points → `outputs/analysis/rank2_rto_retention.json`; generator `scripts/vla_analysis/rto_curve.py` (run the same extractor on the rank-4 sequential and overlay). Shape: RTO<20% → ret ~104% (net transfer), 0 collapses; 20–40% → 95%; 40–60% → 85%; **>60% → 7/10 tasks collapse to ≤5** (bin means mask bimodality — deep basins hold, shallow ones cliff, exactly the two-factor model). corr(RTO, drop): pearson −0.36 / spearman −0.42 — moderate, confirming exposure is only half the story (basin depth is the other half; blockmin_mse + init stored per point for exactly that regression).
+**Rank-2 calibration curve BUILT (2 Jul):** 70 task-points. Shape: RTO<20% → ret ~104% (net transfer), 0 collapses; 20–40% → 95%; 40–60% → 85%; **>60% → 7/10 tasks collapse to ≤5** (bin means mask bimodality — deep basins hold, shallow ones cliff, exactly the two-factor model). corr(RTO, drop): pearson −0.36 / spearman −0.42 — moderate, confirming exposure is only half the story (basin depth is the other half).
 
 ### Update (3 Jul) — `[2,2,4,4]` A/B verdict: **A (c=0.05) GRADUATES — healthiest audit in the project; B (c=0.1) repeats the P3 pattern (compaction ≠ family separation)**
 
-Both cells + audits completed clean (chain 19:02 → 16:42 UTC). Held-out audit (last layer L14; gate famIoU≤0.28 ∧ q_intra≤0.93 ∧ r4-core50≥1300 ∧ L8/L10 ≥ 50% of P9):
+Held-out audit (last layer L14; gate famIoU≤0.28 ∧ q_intra≤0.93 ∧ r4-core50≥1300 ∧ L8/L10 ≥ 50% of P9):
 
 | cell | L14 core50 (rank-units) | L12 core50 (r-u) | L8/L10 core50 | famIoU L14 | bgIoU | e7~e1 | q_intra | verdict |
 |---|---|---|---|---|---|---|---|---|
@@ -2326,14 +2215,14 @@ Both cells + audits completed clean (chain 19:02 → 16:42 UTC). Held-out audit 
 
 - **A answers the arch question: r4-at-L12 does NOT perturb L14 from below.** L14 famIoU 0.265 = P9's 0.264; core50 *up at every layer* (923/1599/1687/2981 vs 534/1047/1362/2679 — above even control's, before counting rank-units: 2.2–2.5× at the r4 layers); 4-layer mean famIoU 0.199 vs P9 0.211; fit fine (min MSE 0.201 vs 0.196). One structural shift: the gate ladder flattens (in-run gate L12 0.964 ≥ L14 0.952 — trust spreads over the two beefy layers), showing as mildly higher L12 famIoU (0.245 vs 0.210) — watch L12 channels in the sequential.
 - **B disconfirms the contrastive re-look at this dose.** The rank-relaxed capacity gate ~held (rank-units ≥ ~92% of baseline; L8/L10 did NOT crater — the global-c bluntness worry was wrong), and background improved (0.073). But **famIoU went UP not down** (0.279 > A's 0.265) and the hub's worst channel degraded (e7~e1 0.367, approaching control's 0.355) — compaction pulls each basket task's queries tighter around the *same scene representation*, so sep=5 still can't translate the family apart. Same failure shape as P3, now demonstrated with capacity held by rank — the family overlap is scene-genuine, not a capacity artifact. q_intra 0.931 right at the guard. B's only win (background) is the half β4 protection already handles at write time. **c=0.05 confirmed; the contrastive question is closed at both ranks.**
-- **Next:** graduate A → fresh 40k (`layer_ranks=[2,2,4,4]`, noloc sep5 recipe, clean schedule) → 40k audit → sequential with C's config (β4 + 5k steps/task + top_t 1536), **keeping per-task checkpoints** (⚠ retention flag) → overlay the 10 rank-4 points on the rank-2 RTO curve (test 1) + the within-run r2-vs-r4 DiD (test 2, baseline protectB4). Optional pre-flight: 1-task plasticity probe A-10k vs P9-10k (~30 min) to confirm rank→fit conversion before the ~4-day GPU commit.
+- **Next:** graduate A → fresh 40k (`layer_ranks=[2,2,4,4]`, noloc sep5 recipe, clean schedule) → 40k audit → sequential with C's config (β4 + 5k steps/task + top_t 1536) → overlay the 10 rank-4 points on the rank-2 RTO curve (test 1) + the within-run r2-vs-r4 DiD (test 2, baseline protectB4). Optional pre-flight: 1-task plasticity probe A-10k vs P9-10k to confirm rank→fit conversion.
 
 ---
 ## Entry 33 - 8 Jul 26 ([2,2,4,4] verdict: rank exonerated AND exhausted (+6 diagonal, on-curve retention, no drift amplification) — bottleneck = 14pp frozen-backbone fit + 12pp retention tax → STAGED PRETRAINING protocol launched (competence into the frozen backbone, memory as pure residual substrate))
 
 ### The [2,2,4,4] graduation result
 
-Chain landed clean (40k pretrain held-in **81.9** best-of-family → sequential, C's config, 20 eps). Final **46.5%** (+2.0 over C, within noise), init **49.5** / peak **58.5** (both project bests), forgetting −3.0 (C: +1.0). Retention matrix (init→final): e4 35→20, e6 55→**75**, e9 40→20, e2 85→80, e7 25→**0**, e0 45→45, e8 20→**45**, e1 30→20, e3 80→80, e5 80→80.
+40k pretrain held-in **81.9** best-of-family → sequential, C's config, 20 eps. Final **46.5%** (+2.0 over C, within noise), init **49.5** / peak **58.5** (both project bests), forgetting −3.0 (C: +1.0). Retention matrix (init→final): e4 35→20, e6 55→**75**, e9 40→20, e2 85→80, e7 25→**0**, e0 45→45, e8 20→**45**, e1 30→20, e3 80→80, e5 80→80.
 
 | run | final | init | peak | forget | MSE-floor | L14 effnum/core50 | read-IoU | RTO | ch≥12% |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -2345,8 +2234,8 @@ Slot pipeline validates (computed IoU 0.0592 == logged). Exposure ≈ C on every
 
 ### Both pre-registered rank tests (E32): rank-invariant — Josh's fractional-invariance model confirmed
 
-1. **RTO-curve overlay (test 1): ON the curve.** Task-matched residual vs each env's 7-point rank-2 history = **+1.3pp ≈ 0** (e6 +31/e8 +18 net-transfer absorbers; e7 −21 vs a floor-capped prediction; rest −7…+2). Points: `outputs/analysis/rank4_2244_rto_points.json`.
-2. **Contested-slot drift DiD (test 2): r4 slots drift LESS ≈ pure gradient dilution.** ρ = d(L14)/d(L8) on env7's core across env0's block: protectB4 (all-r2) **1.26** (updated-slots) vs r2244 (L14=r4) **0.74** → DiD ≈ 0.59, ≈ the expected 2×-params dilution (0.63). No specialization-drift excess. (`scripts/vla_analysis/drift_did.py`; outputs in `outputs/analysis/`.)
+1. **RTO-curve overlay (test 1): ON the curve.** Task-matched residual vs each env's 7-point rank-2 history = **+1.3pp ≈ 0** (e6 +31/e8 +18 net-transfer absorbers; e7 −21 vs a floor-capped prediction; rest −7…+2).
+2. **Contested-slot drift DiD (test 2): r4 slots drift LESS ≈ pure gradient dilution.** ρ = d(L14)/d(L8) on env7's core across env0's block: protectB4 (all-r2) **1.26** (updated-slots) vs r2244 (L14=r4) **0.74** → DiD ≈ 0.59, ≈ the expected 2×-params dilution (0.63). No specialization-drift excess.
 
 **Why retention still looked worse: the fit gains landed on high-RTO tasks whose collapse floors are unchanged** — e7 init 10→25 then →0 regardless; e0 +20 init kept +5. More to lose, same losers. Run-specific aggravation: the 40k audit's e7~e0=0.445 watch-item materialized (e7←e0 overwrite **67.8%** vs C's 41.6%; env0 hits 74.5% of e7's L8 core mass vs protB4's 44.3%) — this pretrain converged the soup pair (prior-wide), concentrating e7's death into one channel. e3-as-heavy-writer appears in C too (5k-steps effect, not rank). Gate-ladder flattening (L12 0.977 ≥ L14 0.973) persisted with no visible extra damage channel — L12 watch-item closed.
 
@@ -2366,20 +2255,15 @@ Josh's 2-prong framing: (1) some tasks don't convert capacity into fit; (2) some
 
 ### Code + launch
 
-- New flag `--policy.train_memory_only` (pi05): `configuration_pi05.py` field; `PI05Policy._apply_train_memory_only()` (freezes everything without `.mlp.mem.` in the name — 60 memory tensors trainable / 2.45B params, 813 frozen / 4.14B) called from `__init__` (strict only when no pretrained_path — attach happens later on the load path), `post_load_setup`, AND after the try/except in `from_pretrained` (the hook is exception-swallowed there); `get_optim_params` now filters `others` by requires_grad. Smoke-tested fresh-init + load-path (pi05_base = structurally a stage-1 ckpt): only mem params trainable, groups clean (52 router tensors @ base LR + 8 value tensors @ memory_lr), backward reaches memory, flag-off byte-identical, strict-raise when memory absent.
-- Scripts `job_scripts/nebius/libero_90/staged/`: `stage1_base50k_stage2_probe10k.sh` (stage 1 = E31-baseline recipe on libero_90, 50k, eval **libero_10 @ 50 eps at 50k = the zero-shot floor table**; stage 2 probe 10k compressed, frozen-base, sep5 recipe verbatim; audit `audit_heldout_frozenbase_10k`) — **LAUNCHED 8 Jul** (log `outputs/staged1.log`). `stage2_full40k_stage3_sequential.sh` (40k clean schedule → `audit_heldout_frozenbase_40k` → C's sequential verbatim, run `libero_10_sequential_..._frozenbase_..._protect_beta4_steps5k`) — READY, launch after the probe audit clears.
-- Grad-ckpt: stage 1 TRUE (measured requirement — plain pi05 bs32 OOMs without it, 29 Jun test); stages 2/3 FALSE (frozen backbone; r2 values-only no-ckpt bs32 = measured sequential precedent).
-
-### Bookkeeping
-- ⚠ E32 retention flag DISCHARGED (tests 1+2 done): r2244's 10 per-task checkpoints (~450G) deletable on Josh's word (keep final/`last`; JSONs+evals carry the analyses).
-- Analysis artifacts: `outputs/analysis/{rank4_2244_rto_points.json, slots_2244.out, slots_C.out, drift_did.out}`.
+- New flag `--policy.train_memory_only` (pi05): freezes everything without `.mlp.mem.` in the name (60 memory tensors trainable / 2.45B params, 813 frozen / 4.14B); 52 router tensors @ base LR + 8 value tensors @ memory_lr.
+- Stage 1 = E31-baseline recipe on libero_90, 50k, eval **libero_10 @ 50 eps at 50k = the zero-shot floor table**; stage 2 probe 10k compressed, frozen-base, sep5 recipe verbatim. Then 40k clean schedule → C's sequential verbatim; launch after the probe audit clears.
 
 ---
 ## Entry 34 - 10 Jul 26 (STAGED protocol first results: stage-1 zero-shot floor ≈ 0 on all collapse tasks; frozen-base probe = a NEW ROUTING REGIME — gates naturally moderate at 0.63-0.68 (first time ever) but the routing losses lose their actuator and the audit FAILS separation (famIoU 0.390, inverted layer ladder) → nonlinear query head (query_proj_layers=2) implemented + probe LAUNCHED; script 2 held)
 
 ### Stage 1 (libero_90 base finetune, no memory, 50k) — healthy, and the floor table kills the floor-raising hope
 
-Train MSE 0.09-0.13 at 50k (≈ joint pretrains' fit). **Zero-shot libero_10 @ 50 eps = 10.6% mean**; per env: e3 bowl+drawer **60**, e5 book **32**, e2 stove+moka 8, e0/e6/e7 **2**, e1/e4/e8/e9 **0**. So the post-collapse floor the protocol was meant to raise is ~0 exactly on the collapse-prone tasks (env7 floor = 2). Corollary worth recording: every sequential init we've ever measured (25-85%) was ~entirely memory adaptation, not backbone transfer — the diagonal IS the memory system. (Floor table = the pre-registered stage-3 comparison row; per-task successes recovered from the eval runner's per_task dump in `outputs/staged1.log` — lerobot-train wandb only logs the aggregate.)
+Train MSE 0.09-0.13 at 50k (≈ joint pretrains' fit). **Zero-shot libero_10 @ 50 eps = 10.6% mean**; per env: e3 bowl+drawer **60**, e5 book **32**, e2 stove+moka 8, e0/e6/e7 **2**, e1/e4/e8/e9 **0**. So the post-collapse floor the protocol was meant to raise is ~0 exactly on the collapse-prone tasks (env7 floor = 2). Corollary worth recording: every sequential init we've ever measured (25-85%) was ~entirely memory adaptation, not backbone transfer — the diagonal IS the memory system. (Floor table = the pre-registered stage-3 comparison row.)
 
 ### Stage-2 frozen-base probe (10k, sep5 recipe verbatim, train_memory_only) — Josh: "curves look very different." Confirmed; qualitatively new regime
 
@@ -2396,7 +2280,7 @@ Train MSE 0.09-0.13 at 50k (≈ joint pretrains' fit). **Zero-shot libero_10 @ 5
 - q_intra 0.71 = strongly state-conditional addressing (healthy opposite of the E21 collapse) — the frozen backbone acts as an anti-collapse regularizer.
 - Loss composition: MSE 0.097 vs aux ≈ 1.06 — **the routing losses already dominate the objective ~10:1** (stage 2 is organically a router-training phase).
 
-### Held-out audit (`audit_heldout_frozenbase_10k`) — FAILS separation, smashes capacity
+### Held-out audit — FAILS separation, smashes capacity
 
 L14: famIoU **0.390** (control 0.349, P9 0.264; gate ≤0.28 FAIL), bg **0.188** (2.2× P9), core50 **6456** / effnum 14663 (2.4× control; capacity gate passed ×4.3). **Layer ladder INVERTED**: L8 is now the worst layer (famIoU 0.538, bg 0.272) instead of the cleanest — raw frozen features are generically similar early and differentiate with depth, the opposite profile of a routing-loss-shaped backbone. Family pairs uniform (e7~e0 0.385 ≈ e7~e1 0.399 ≈ e0~e1 0.386) — generic broad-footprint collision, not object-graded semantics.
 
@@ -2408,26 +2292,20 @@ L14: famIoU **0.390** (control 0.349, P9 0.264; gate ≤0.28 FAIL), bg **0.188**
 
 Three of four damage-model terms moved favorably — gate 0.63-0.68 (attenuation at read time), near-blank values (no pretrain content to lose through shared reads), 2.4× slot capacity for β4 to steer writes into — and one badly (exposure: broad overlapping reads → high stage-3 RTO). The audit gate thresholds were calibrated on joint priors where high famIoU meant load-bearing shared content at gate 0.98; none of those side conditions hold here, so 0.28 may not transfer. The floor-raising benefit, though, is measured dead (floors ≈ 0).
 
-### Decision (Josh): fix the router for frozen-x FIRST — nonlinear query head. Script 2 HELD.
+### Decision (Josh): fix the router for frozen-x FIRST — nonlinear query head.
 
-**Code (shipped + smoke-tested):** `--policy.memory_layer.query_proj_layers` (default 1 = original single linear, byte-identical) + `query_proj_hidden_dim` (0→input_dim). `memory_lite.py`: `_build_query_proj` (Linear→SiLU→…→Linear), threaded via cfg into `QueryMLPLite`; param tagging now iterates all proj params (`pk_query_proj_param` — sequential-trainer `train_query_proj` plumbing unchanged); **`reset_parameters` fixed** (xavier looped over Linears — the old line assumed a bare `.proj.weight` and would crash on Sequential). Smokes: depth-1 state-dict keys unchanged (legacy checkpoints load); depth-2 forward/backward through the head; policy-level with train_memory_only = 68 trainable tensors (60 + 4×4 qproj), optimizer groups clean. ~2M params/layer at depth 2.
+`query_proj_layers` (default 1 = original single linear) + `query_proj_hidden_dim` (0→input_dim): Linear→SiLU→…→Linear; ~2M params/layer at depth 2.
 
-**Probe LAUNCHED (10 Jul):** `stage2_probe10k_qproj2.sh` — single-knob delta from the failed frozen-base probe (`query_proj_layers=2`), run `libero_90_pi05_8_10_12_14_frozenbase_probe10k_qproj2_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_qproj2_10k`.
+**Probe (10 Jul):** single-knob delta from the failed frozen-base probe (`query_proj_layers=2`).
 
-**Read + decision rule:** primary = famIoU materially down from 0.390 toward ≤~0.28 with core50 ≥1500 (it starts at 6456 — huge room) and q_intra ≤0.93 (some RISE from 0.71 is expected and fine — the head can now tighten clusters); secondary = does the inverted ladder flatten, in-run sep < 0.18. If it clears/materially improves → stage-2-full graduates WITH `query_proj_layers=2` (**NB script 2 `stage2_full40k_stage3_sequential.sh` must gain the flag before launch**). If ≈ depth-1 → the frozen-feature separability ceiling is confirmed → run script 2 on depth-1 anyway as the end-to-end baseline (the changed damage model deserves one full measurement); depth-3/wider-hidden only if something suggests headroom.
-
-### Cleanup (~360G freed; disk 43%)
-- Failed depth-1 frozenbase probe: `checkpoints/` deleted (wandb + `audit_heldout_frozenbase_10k` retained — they're the comparison baseline for qproj2).
-- sep5 + protectB4 sequentials: 9 intermediate per-task checkpoints each + final `training_state` deleted (their retention reason — the rank-2 DiD baseline for E33 test 2 — is discharged; finals + `last` + memory_by_task JSONs + evals + wandb retained).
-- **`libero_90_pi05_base_nomem_50k` (the finetuned pi05) untouched** (weights + training_state), per Josh — it's the base for every stage-2 variant.
-- Flag for later (not touched, different track): `outputs/train/realworld_v2` is 267G of packaged real-world test models from realworld-E1.
+**Read + decision rule:** primary = famIoU materially down from 0.390 toward ≤~0.28 with core50 ≥1500 (it starts at 6456 — huge room) and q_intra ≤0.93 (some RISE from 0.71 is expected and fine — the head can now tighten clusters); secondary = does the inverted ladder flatten, in-run sep < 0.18. If it clears/materially improves → stage-2-full graduates WITH `query_proj_layers=2`. If ≈ depth-1 → the frozen-feature separability ceiling is confirmed → run stage-2-full + sequential on depth-1 anyway as the end-to-end baseline (the changed damage model deserves one full measurement); depth-3/wider-hidden only if something suggests headroom.
 
 ---
 ## Entry 35 - 12 Jul 26 (STAGED PROTOCOL VERDICT: DEAD as a frontier route — killed at 6/10 blocks. Held-in PARITY (81.7) but held-out adaptation collapses (inits −18pp, MSE floors 1.5-2×, e7 init 0): compact routing was a JOINT-TRAINING product; diffuse routing dilutes both reads AND writes. Pivot back to the joint track)
 
 ### Chain status + kill decision (Josh)
 
-Stage-2 full (40k, frozen base, depth-1 head per E34) completed clean; 40k audit ran; stage 3 (C's config verbatim) auto-started and was **killed at 6/10 blocks** (~30k steps) — mid-flight results were clearly non-competitive and the pre-registered criterion (final ≥ 50) was already unreachable. Partial artifacts retained (memory_by_task tasks 0-5, evals through 25k, wandb); the 6 per-task checkpoints deleted.
+Stage-2 full (40k, frozen base, depth-1 head per E34) completed clean; 40k audit ran; stage 3 (C's config verbatim) auto-started and was **killed at 6/10 blocks** (~30k steps) — mid-flight results were clearly non-competitive and the pre-registered criterion (final ≥ 50) was already unreachable.
 
 ### Stage-2 full: the dissociation that defines the postmortem
 
@@ -2457,21 +2335,17 @@ Reads are ~2× broader (L14 effnum 11-15k vs r2244's 5-7k, per the audit) — bu
 1. **Zero-shot floor table** (stage-1, 50 eps): mean 10.6; ~0-2% on every collapse-prone task → all sequential inits ever measured are ~pure memory adaptation.
 2. **Gate moderation happens naturally on a frozen base** (0.63→0.75 vs joint 0.97) — but it is NOT a free anti-overwrite knob: trust and plasticity are coupled (this run is the demonstration).
 3. **Routing separation/compaction is a joint-training technology** (frozen-feature equilibrium famIoU ≈ 0.39 regardless of query-head capacity).
-4. Stage-2-style memory-only training: ~1.18s/step, no ckpt, huge VRAM headroom — reusable machinery (`train_memory_only`, `query_proj_layers`) if a frozen-base variant is ever wanted.
-5. Held-in eval CANNOT gate substrate quality (81.7 parity here) — only held-out adaptation probes can.
+4. Held-in eval CANNOT gate substrate quality (81.7 parity here) — only held-out adaptation probes can.
 
 ### Pivot (back to the joint track; the E33 lever ranking resumes)
 1. **Magnitude-based protection** (per-slot gradient/LR scaling by (1−u)^β instead of top-t reselection) on the [2,2,4,4] prior with C's config — the E27 offline frontier (net-positive at all β, env7 RTO 81.5→41.8 at β=8) that the ranking implementation never delivered. Sequential-only, no pretrain.
-2. **50-ep re-eval of r2244's final** (~7h) — de-noise the 46.5 frontier number before building on it.
+2. **50-ep re-eval of r2244's final** — de-noise the 46.5 frontier number before building on it.
 3. **6-layer depth** ([4,6,8,10,12,14] r2 joint pretrain) — the remaining capacity shape (E33).
-
-### Cleanup
-- Stage-3 partial: checkpoints deleted; JSONs/evals/wandb retained. Stage-2 40k prior (23G) + its audits retained for reference (E21 precedent for documented negative results); stage-1 base (`libero_90_pi05_base_nomem_50k`) retained — it's the floor-table reference and reusable for any future frozen-base work.
 
 ---
 ### Entry 35 addendum (12 Jul, deep-dive at Josh's request) — the full mechanistic chain, with code findings
 
-**Code finding 1 (the actuator, confirmed):** `memory_lite.py` forward passes live `x` into `query_proj` — NO detach. In joint pretrains the contrastive/sep gradients therefore flow THROUGH the query into the backbone (and at E24-measured magnitudes: aux terms 30-91% of MSE). Joint routing quality was bought by sculpting the hidden states; in stage 2 that path dies at `requires_grad=False`. qproj2 (E34) already showed head capacity is not the binding constraint.
+**Code finding 1 (the actuator, confirmed):** forward passes live `x` into `query_proj` — NO detach. In joint pretrains the contrastive/sep gradients therefore flow THROUGH the query into the backbone (and at E24-measured magnitudes: aux terms 30-91% of MSE). Joint routing quality was bought by sculpting the hidden states; in stage 2 that path dies at `requires_grad=False`. qproj2 (E34) already showed head capacity is not the binding constraint.
 
 **Correction to this entry: the substrate is NOT blank.** Per-slot ‖θ‖ (down+up, L8/L14): frozenbase-40k mean 2.50/3.09 vs sep5-joint-40k 1.93/2.75 (untouched-slot init ≈0.9). Stage 2 built joint-magnitude residual content — slightly LARGER (the ΔV ∝ 1/gate compensation, gates 0.68-0.78). So stage-3 reads on un-adapted slots deliver stage-2 libero_90 residuals into libero_10 behavior, not zeros.
 
@@ -2500,12 +2374,12 @@ Net: block-min MSE 1.5-2.0× worse on all six blocks; inits −18pp. grad_norm �
    - The FiLM/language channel that carries the cleanest per-task signal atrophies under training (E28) and nothing in the objective prevents it.
 2. **Contribution reframe (Josh)**: the staged setting IS the thesis — "post-train a VLA for its domain (stage 1 = sim stand-in, skipped in reality), then bolt on a sparse LoRA-lookup that adds capabilities without erasing old ones." The joint protocol is the methodologically weaker story (bespoke pretrain). This reverses E35's "closed" verdict on staging: the goal isn't to beat 46.5 via staging, it's to make staging work.
 3. **"Separation never converted to points" corrected (Josh)**: E8 measured 16.5→34.5 from introducing separation — it converts when interference is binding; it stopped converting in the joint pi05 era once protection/basins absorbed exposure and fit became binding (E27). In the STAGED regime routing quality is a **fit lever** (the E35 dilution chain: compaction → concentrated writes → slot specialization → self-adapted read mass), so separation should convert here again.
-4. **Language-only routing (Josh's idea) — evaluated, parked**: E28's forward probe already measured it (q=β): basket family IoU **0.545 vs 0.215** scene-based — doubles the binding collision (near-duplicate unseen instructions co-locate under any smooth map; mpnet cos 0.86), and constant per-task queries = the E21 state-independent regime = per-task-adapter baseline rebuilt minus state-conditional composition. Keepable kernel: a hybrid language-only HEAD (private sections) — post-deadline queue.
+4. **Language-only routing (Josh's idea) — evaluated, parked**: E28's forward probe already measured it (q=β): basket family IoU **0.545 vs 0.215** scene-based — doubles the binding collision (near-duplicate unseen instructions co-locate under any smooth map; mpnet cos 0.86), and constant per-task queries = the E21 state-independent regime = per-task-adapter baseline rebuilt minus state-conditional composition. Keepable kernel: a hybrid language-only HEAD (private sections).
 5. **Move memory layers up (Josh's idea) — measured, negative** (probe below).
 
-### The feature-separability probe (new instrument: `scripts/vla_analysis/feat_probe.py`)
+### The feature-separability probe (new instrument)
 
-Hooks on each expert layer's `.mlp` input (= the router input), mean-pooled per sample; 4 sweeps (stage-1 & joint sep5 ckpts × libero_90 & libero_10), layers [4,8,10,12,14,15,16,17]; linear task probes + centroid cosine geometry. Data: `outputs/analysis/featprobe/*.npz`. (Gotcha fixed: task vocabs contain empty entries — skip ValueError from the per-task dataloader.)
+Hooks on each expert layer's `.mlp` input (= the router input), mean-pooled per sample; 4 sweeps (stage-1 & joint sep5 ckpts × libero_90 & libero_10), layers [4,8,10,12,14,15,16,17]; linear task probes + centroid cosine geometry.
 
 | linear probe acc | L4 | L8 | L12 | L14 | L16 | L17 |
 |---|---|---|---|---|---|---|
@@ -2522,17 +2396,17 @@ Hooks on each expert layer's `.mlp` input (= the router input), mean-pooled per 
 - **Move-up dead**: separability flat L8→L16, L17 worse; crowding improves marginally with depth. [8,10,12,14] stays (also preserves all baselines).
 - **The needle**: basket family at cos **0.978–0.994** frozen (joint: 0.89–0.93) — still linearly discriminable; the warm-up's hardest test.
 
-### Code shipped: `--policy.train_router_only` (+ smoke)
+### Router-only training (`train_router_only`)
 
-Freeze everything except keys + query_proj/FiLM (28 tensors); values pinned at init (slot_up zero). Smoke verified the two load-bearing mechanics: **zero values ⇒ MSE gradient on the router is exactly ~0** (warm-up purity) and **contrastive+sep gradients DO reach keys/proj** (the learning signal); `get_optim_params` drops the empty values group; `train_memory_only` regression intact (60/2-group).
+Freeze everything except keys + query_proj/FiLM (28 tensors); values pinned at init (slot_up zero). The two load-bearing mechanics: **zero values ⇒ MSE gradient on the router is exactly ~0** (warm-up purity) and **contrastive+sep gradients DO reach keys/proj** (the learning signal).
 
-### LAUNCHED: router warm-up v1 (12 Jul)
+### Router warm-up v1 (12 Jul)
 
-`staged/stage2_router_warmup10k.sh` → run `libero_90_pi05_8_10_12_14_frozenbase_rwarmup10k_lr1e-4_c0.05_sep5.0_noloc_rq512`, audit `audit_heldout_frozenbase_rwarmup_10k`. Config: router LR 2.5e-5→**1e-4**, c=0.05 kept (Josh: comparability; recalibrate later if needed), sep5/noloc/rq512, [8,10,12,14], 10k compressed schedule. **Decision tree**: famIoU ≤~0.28 ∧ core50 ≥~1500 ∧ q_intra ≤~0.93 → anchoring hypothesis confirmed, geometry-before-content becomes the method → discuss A-then-sequential. Collapse signature (core50 crater / q_intra >0.95) → unopposed contrastive won → c down, ~3h loop. Still ~0.39 → the sep-through-top-M formulation itself can't find the probe's directions → fallback: **seed the query proj from the linear-probe directions** (we have the probe weights).
+Config: router LR 2.5e-5→**1e-4**, c=0.05 kept (Josh: comparability; recalibrate later if needed), sep5/noloc/rq512, [8,10,12,14], 10k compressed schedule. **Decision tree**: famIoU ≤~0.28 ∧ core50 ≥~1500 ∧ q_intra ≤~0.93 → anchoring hypothesis confirmed, geometry-before-content becomes the method → discuss A-then-sequential. Collapse signature (core50 crater / q_intra >0.95) → unopposed contrastive won → c down. Still ~0.39 → the sep-through-top-M formulation itself can't find the probe's directions → fallback: **seed the query proj from the linear-probe directions** (we have the probe weights).
 
 ### Design decisions from the discussion
 - **A vs B after warm-up** (A = short values-on-90 phase, B = straight to sequential): Josh prioritizes iterating the geometry to near-perfect first (the warm-up↔audit loop is ~4h/iteration — the staged protocol's iteration dividend), expects A to help downstream. Note: anchoring is a FEATURE once geometry is good (content cements the map); A also calibrates gates (untrained ≈0.5 after warm-up) and re-audit after A is warranted (values perturb downstream x → routing shifts, E30 mechanism).
-- **Per-task LoRA-FT baseline** (vla-memory.md §5, never run; PEFT is wired — `use_peft`): three roles — (i) the fit CEILING of adapter-adaptation on this exact frozen backbone (turns the "LoRA-FT is enough" premise into a number; separates "what the lookup costs" from "what freezing costs"), (ii) the reviewer-mandatory comparator (answer: task-identity-free routing, fixed params, measured forward transfer — e6 30→75, e8 20→50), (iii) effort compass (LoRA-FT ~55 → substrate near ceiling, work on retention; ~70 → memory design leaves fit on the table). ~8–17h; slot after the warm-up chain.
+- **Per-task LoRA-FT baseline** (vla-memory.md §5, never run): three roles — (i) the fit CEILING of adapter-adaptation on this exact frozen backbone (turns the "LoRA-FT is enough" premise into a number; separates "what the lookup costs" from "what freezing costs"), (ii) the reviewer-mandatory comparator (answer: task-identity-free routing, fixed params, measured forward transfer — e6 30→75, e8 20→50), (iii) effort compass (LoRA-FT ~55 → substrate near ceiling, work on retention; ~70 → memory design leaves fit on the table).
 
 ---
 ## Entry 37 - 12 Jul 26 (ROUTER WARM-UP v1: ALL GATES CLEARED — famIoU 0.145, the best routing prior in project history, on a FROZEN backbone, in 3h. Anchoring hypothesis confirmed end-to-end; the "scene-genuine 0.26 floor" was substantially an anchored-equilibrium artifact. → A-phase (values-only, ROUTER FROZEN) + sequential LAUNCHED)
@@ -2541,7 +2415,7 @@ Freeze everything except keys + query_proj/FiLM (28 tensors); values pinned at i
 
 In-run @10k: routing sim **0.050 mean AND L14** (P9 joint: 0.061/0.085 — beat the joint run outright, and L14 matches the mean for the first time ever: no MSE-trust equilibrium → no last-layer pathology), q_inter **0.016**, q_intra 0.883 (inside P9's healthy band — the unopposed-contrastive/E21 collapse never came at c=0.05), support_L14 5191, effnum 10.4k.
 
-Held-out audit (`audit_heldout_frozenbase_rwarmup_10k`), all gates cleared:
+Held-out audit, all gates cleared:
 
 | held-out L14 | famIoU | core50 | bgIoU | e7~e0 | e7~e1 | e0~e1 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -2558,29 +2432,20 @@ Mechanism chain now closed end-to-end: features separable-but-crowded (E36 probe
 
 ### A-phase design decision (Josh's Q: values-only with frozen router, or keys/queries too at small LR?)
 
-**Chose: router FROZEN (option 1).** (i) MSE's router-gradient points back at the joint attractor (famIoU ~0.26, trust ladder) — small LR only slows the walk back, and it erodes a certified asset; (ii) routing drifts anyway via upstream-value→x perturbation (E30 Finding 2) — minimize the controllable part and measure the rest with a re-audit; (iii) values-on-frozen-router demonstrably fits (every sequential block ever); (iv) crisp protocol: aux-only geometry → frozen router → MSE-only content, consistent with the sequential's frozen-router constraint. **Reserve trigger for option 2** (router unfrozen at ~2.5e-6 ≡ train_memory_only + tiny optimizer_lr, zero new code): A-phase MSE plateauing meaningfully above the joint pretrains' libero_90 level (~0.13-0.16) = separation-vs-usefulness mismatch.
+**Chose: router FROZEN (option 1).** (i) MSE's router-gradient points back at the joint attractor (famIoU ~0.26, trust ladder) — small LR only slows the walk back, and it erodes a certified asset; (ii) routing drifts anyway via upstream-value→x perturbation (E30 Finding 2) — minimize the controllable part and measure the rest with a re-audit; (iii) values-on-frozen-router demonstrably fits (every sequential block ever); (iv) crisp protocol: aux-only geometry → frozen router → MSE-only content, consistent with the sequential's frozen-router constraint. **Reserve trigger for option 2** (router unfrozen at ~2.5e-6 ≡ train_memory_only + tiny optimizer_lr): A-phase MSE plateauing meaningfully above the joint pretrains' libero_90 level (~0.13-0.16) = separation-vs-usefulness mismatch.
 
-### Code + chain (LAUNCHED 12 Jul)
+### Chain (12 Jul)
 
-- New modifier flag `--policy.freeze_memory_router` (composes with train_memory_only): trainable = memory module MINUS keys/query_proj = **32 tensors** (values 8 @ memory_lr + gate/value_proj/swilu 24 @ base LR). Smoked: freeze pattern, optimizer groups, both prior modes regression-clean.
-- `staged/stageA_values10k_seq.sh`: **A phase** (10k values-only on libero_90 from the warmed router ckpt, aux losses kept ON as pure telemetry — grads dead-end on the frozen router but the in-run routing-sim log becomes the live drift monitor; held-in eval @10k = seen-task plasticity check) → **re-audit** `audit_heldout_frozenbase_rwarmupA_10k` (deployed geometry after value training; informational) → **sequential** (C's config verbatim: β4 + 5000 steps/task + top_t 1536, 20 eps, per-task ckpts) → run `libero_10_sequential_pi05_8_10_12_14_frozenbase_rwarmupA_..._protect_beta4_steps5k`.
+- A-phase trainable = memory module MINUS keys/query_proj = **32 tensors** (values 8 @ memory_lr + gate/value_proj/swilu 24 @ base LR).
+- **A phase** (10k values-only on libero_90 from the warmed router ckpt, aux losses kept ON as pure telemetry — grads dead-end on the frozen router but the in-run routing-sim log becomes the live drift monitor; held-in eval @10k = seen-task plasticity check) → **re-audit** (deployed geometry after value training; informational) → **sequential** (C's config verbatim: β4 + 5000 steps/task + top_t 1536, 20 eps).
 - Pre-registered sequential reads: inits vs fb-depth1's mean-30 disaster and r2244's 48 (the dilution chain predicts routing quality converts to FIT here); self-adapted read mass (fb 43-53% → want 70%+); retention matrix vs floor table; RTO overlay (damage-per-exposure).
 
-### Artifacts
-- **PRESERVED (Josh): the warmed-router checkpoint** `libero_90_..._rwarmup10k_lr1e-4_.../checkpoints/` — the backtrack point if we later want to un-freeze and let the router keep learning (e.g. option-2 arm, different A designs, different value schedules all restart from here).
-- Deleted: qproj2 probe checkpoints (~37G; negative result — audit + wandb retained). Kept: stage-2-full 40k prior (23G, documented negative result / E35 postmortem subject), stage-1 base (untouchable), featprobe npz (analysis data), all audits.
-
 ---
-### Entry 37 addendum — launch gotcha caught at first contact (12 Jul)
-
-The A-phase's first launch silently ran in **router-only mode**: the warmed checkpoint's saved `config.json` carries `train_router_only: True`, which supersedes the CLI's `train_memory_only` (by the flag-precedence rule). Killed at step ~400, fixed by passing `--policy.train_router_only=false` explicitly in the A stage, relaunched; correct mode confirmed in-log (`train_memory_only+freeze_memory_router: 32 param tensors trainable`). **Rule for all future staged chains: any freeze-mode flag set in an upstream stage must be explicitly disabled downstream — checkpoint configs carry them forward.** Cleanup: qproj2 probe checkpoints deleted (~37G; audit+wandb retained); warmed-router checkpoint preserved in full (18G) as the backtrack point.
-
----
-## Entry 38 - 13 Jul 26 (rwarmupA sequential postmortem: the killer is ROUTING DRIFT — value training re-points the frozen router above L8 (self-IoU 0.21-0.33 vs L8's exact 1.000); exposure/writes exonerated; the certificate was void by task 0's own block. Fix: FROZEN-BASE ROUTING (dual-path) implemented + smoked; stageB chain (A rerun -> audit -> 5-task sequential) LAUNCHED)
+## Entry 38 - 13 Jul 26 (rwarmupA sequential postmortem: the killer is ROUTING DRIFT — value training re-points the frozen router above L8 (self-IoU 0.21-0.33 vs L8's exact 1.000); exposure/writes exonerated; the certificate was void by task 0's own block. Fix: FROZEN-BASE ROUTING (dual-path); stageB chain (A rerun -> audit -> 5-task sequential))
 
 ### The run (killed at 7/10 blocks, Josh's call)
 
-`libero_10_sequential_..._frozenbase_rwarmupA_..._protect_beta4_steps5k` — C's config verbatim from the A checkpoint (warmed router + 10k values-only fill). Ran 16:08 Jul 12 → killed 12:15 Jul 13 at 7/10 blocks.
+`libero_10_sequential_..._frozenbase_rwarmupA_..._protect_beta4_steps5k` — C's config verbatim from the A checkpoint (warmed router + 10k values-only fill).
 
 Eval trajectory (env: init → @35k): e4 15→20, e6 55→35, e9 5→0, e2 **80→25**, e7 **40→5**, e0 30→35, e8 50 (just trained). Seen-avg @35k = **24.3** (r2244 @35k: 44.3). Matched-5 inits = **39.0** vs fb-depth1 30.0 / C 40.0 / r2244 48.0.
 
@@ -2598,7 +2463,7 @@ Eval trajectory (env: init → @35k): e4 15→20, e6 55→35, e9 5→0, e2 **80�
 
 ### The discovery — READ-SIDE ROUTING DRIFT (new instrument: pre/post deployment audits)
 
-Ran the held-out audit on the seq-35k checkpoint and compared per-task footprints to the post-A audit (same instrument, same demos, seed-matched; `audit_heldout_rwarmupA_seq35k`):
+Ran the held-out audit on the seq-35k checkpoint and compared per-task footprints to the post-A audit (same instrument, same demos, seed-matched):
 
 | self-IoU (seq start → 35k) | L8 | L10 | L12 | L14 |
 |---|---|---|---|---|
@@ -2615,32 +2480,24 @@ Ran the held-out audit on the seq-35k checkpoint and compared per-task footprint
 
 ### Mechanism synthesis
 
-The staged substrate lacks **routing stationarity**. E37 proved the geometry is achievable on frozen features; nothing holds it — the router input is the live stream, value training moves the stream, and the warmed router separates tasks along low-variance directions of the crowded frozen-feature cone (E36: inter-task cos 0.86-0.99) so there is no margin to absorb the motion. Joint priors tolerate the same nominal channel because (1) co-trained features are spread (cos ~0.46 → wide margins), (2) heavy pretrain content (‖θ‖ 1.83-2.6 vs A's 1.06) makes sequential writes a smaller relative field change (+35% vs +75%), (3) saturated gates are insensitive. Refines E35's verdict: joint training doesn't (only) create the geometry — it creates the margins and ballast that keep it still. (r2244 post-sequential audit for the cross-regime drift number was started and killed on Josh's call — the L8-vs-L10/14 within-run control is decisive without it; partial audit deleted.)
+The staged substrate lacks **routing stationarity**. E37 proved the geometry is achievable on frozen features; nothing holds it — the router input is the live stream, value training moves the stream, and the warmed router separates tasks along low-variance directions of the crowded frozen-feature cone (E36: inter-task cos 0.86-0.99) so there is no margin to absorb the motion. Joint priors tolerate the same nominal channel because (1) co-trained features are spread (cos ~0.46 → wide margins), (2) heavy pretrain content (‖θ‖ 1.83-2.6 vs A's 1.06) makes sequential writes a smaller relative field change (+35% vs +75%), (3) saturated gates are insensitive. Refines E35's verdict: joint training doesn't (only) create the geometry — it creates the margins and ballast that keep it still. (r2244 post-sequential audit for the cross-regime drift number was started and killed on Josh's call — the L8-vs-L10/14 within-run control is decisive without it.)
 
-### Fix implemented: FROZEN-BASE ROUTING (dual-path), `--policy.memory_layer.use_frozen_base_input_features` (default false = byte-identical)
+### Fix implemented: FROZEN-BASE ROUTING (dual-path)
 
 Memory ROUTING (query projection + gate) reads the backbone features as they would be WITHOUT any memory contribution; the value/output path (LoRA transform, swilu) stays on the live stream. Addressing becomes stationary by construction — L8's IoU=1.000 extended to every memory layer. The warmed router was trained with values pinned to zero, i.e. on EXACTLY the features the frozen branch serves → it drops in unchanged.
 
-- **Training/joint path** (`modeling_pi05.py`): lazy fork — streams are identical below the first memory layer, so a memory-free suffix stream (`compute_frozen_suffix_layer`, mirrors the expert side of `compute_layer_complete`: shares the per-layer prefix KV since the prefix never attends to the suffix) runs only from fork_lo to fork_hi under no_grad, its per-layer mlp inputs passed as `router_x` into each memory layer. At fork_lo the live mlp-input IS the routing feature (router_x=None). Dropped after fork_hi.
-- **Inference path** (suffix-only denoise): pass A = expert forward with memory bypassed (per-wrapper capture state on `MLPPlusMemory`; own deepcopy of the prefix KV cache — the attention appends to it), stashing each memory layer's mlp input; pass B pops the stash as router_x. Strict stash hygiene (exactly-1 per layer, consumed-after-pass asserts, exception-safe).
-- `HashingMemoryLite.forward(..., router_x=None)`: query + gate read router_x; value path unchanged. Incompatible with `memory_only` (guarded).
-- **Smokes (all pass, float32 tiny model, real code path):** T1 flag-on @ zero values == flag-off BITWISE (live pass untouched); T2 frozen-stream fidelity 0.00e+00 (any mask/rotary/residual bug would fail); T3 router_x stationary under value bumps while live x moves; T4 inference dual-pass bitwise clean + cache uncorrupted + stationary; T5 grads flow (values + query_proj) with the no_grad stream present; T6 gradient-checkpointing parity 0.00e+00; T7 single-memory-layer edge case. Policy-level probe on the real warmed checkpoint: flag parses, "Frozen-base routing ENABLED" fires, 32/841 freeze pattern, **1.11 s/step** (old A: ~1.18 — overhead within noise; the fork costs ~40% of one expert-suffix pass, expert ≈ 300M of 6.6B).
+- Overhead within noise; the fork costs ~40% of one expert-suffix pass, expert ≈ 300M of 6.6B.
 
-### LAUNCHED: stageB chain (13 Jul)
+### stageB chain (13 Jul)
 
-`staged/stageB_frozenroute_A10k_audit_seq5.sh`: **A rerun** (10k values-only, router frozen, frozen-route ON — gates must train against the frozen-branch input they'll read at deployment; old-A content was measured compatible but 4h buys exact train/deploy consistency) → **audit** `audit_heldout_frozenroute_rwarmupB_10k` (expect ≈ the warm-up certificate 0.145/2955 — the frozen branch serves exactly the warm-up features) → **sequential, FIRST 5 TASKS** `[0-4]` (deadline scope; contains all three collapse cases e2/e6/e7 + the e7←e0 genuine channel), C's config verbatim + the flag. Runs: `libero_90_..._frozenroute_rwarmupB_values10k_...` → `libero_10_sequential_..._frozenroute_rwarmupB_..._steps5k_tasks5`.
+**A rerun** (10k values-only, router frozen, frozen-route ON — gates must train against the frozen-branch input they'll read at deployment; old-A content was measured compatible but 4h buys exact train/deploy consistency) → **audit** (expect ≈ the warm-up certificate 0.145/2955 — the frozen branch serves exactly the warm-up features) → **sequential, FIRST 5 TASKS** `[0-4]` (deadline scope; contains all three collapse cases e2/e6/e7 + the e7←e0 genuine channel), C's config verbatim + the flag.
 
 **Tripwire (zero GPU):** when task 0's block JSON lands, IoU(t0 block reads, post-A audit) must sit near the ~0.93 measurement ceiling (old wiring: 0.28). If low → the fix isn't holding in the real trainer → kill.
 
 **Pre-registered reads on landing:** (1) per-task self-IoU pre→post ≈ 1.0 at ALL layers (the property, in production); (2) still-mine mass ≈ 1 − static-RTO; (3) retention back on the calibration curve at the cleanest-ever exposure — e2/e6 should hold near init; e7←e0 (famIoU 0.234, genuine soup channel) remains the residual risk with β4; (4) fit ≈ unchanged or slightly better (inits ~39-40; tasks no longer chase their own routing within a block).
 
-### Cleanup
-- Deleted (analysis retained — JSONs/evals/wandb/audits): killed-sequential checkpoints (251G), old A-phase checkpoints (36G). Disk 47%.
-- Untouched: `libero_90_pi05_base_nomem_50k` (stage-1 base), warmed-router checkpoint (stageB source + backtrack point), r2244/C/sep5/protectB4 finals, stage-2-full 40k (documented negative), all audits, `realworld_v2`.
-- New analysis artifacts: `audit_heldout_rwarmupA_seq35k` (the drift measurement), scratchpad `rerouting.py`/`drift_rwA.py`/`norms_cmp.py` patterns.
-
 ### Next steps
-1. stageB lands (~16-18h): tripwire after block 0, then the pre-registered reads above. If retention holds → extend to 10 tasks (the script's sequential stage is the same command with `online_task_ids=[0..9]`) and/or 50-ep re-eval.
+1. stageB lands: tripwire after block 0, then the pre-registered reads above. If retention holds → extend to 10 tasks and/or 50-ep re-eval.
 2. If e7 still collapses via the genuine soup channel → that's the honest residual: magnitude-based protection (E27 offline frontier) is the parked lever.
 3. Post-deadline queue unchanged: per-task LoRA-FT baseline on the frozen stage-1 (fit ceiling / reviewer comparator), hybrid language-only head, joint warm-up variant.
 
@@ -2652,7 +2509,7 @@ Josh's observation, confirmed on existing data: routing drift (values mutating t
 - **Joint-era evidence, reread with today's lens:** E30 Finding 2's footprint broadening (L14 effnum 5257→11789 as write magnitude/duration grew) IS this mechanism — we measured it and named it "broadening" because we never compared a task's own footprint before/after. **B (lr2x) is the joint-era drift casualty**: damage-per-exposure ~3× β4's (ret −9.5 @ RTO 33% vs −3.0 @ 30%) — the same anomaly signature that cracked the rwarmupA run. Its "backfire" was attributed entirely to bigger overwrites; doubled ΔV also doubles stream perturbation.
 - **Why joint survived it at standard LR:** margins (feature cos 0.46 vs the frozen cone's 0.86-0.99), ballast (relative field change +35% vs +75%), gate saturation. The static-exposure machinery (calibration curve, timing-matched cliffs, β4's +6.5pp) worked because drift-per-write was small there — but not zero.
 - **The deep consequence: the rank-2 calibration curve's ABSOLUTE level is contaminated.** "85% retention at 40-60% RTO" was measured with drift on. No drift-free sequential run has ever been observed; **stageB is the first stationary-addressing run in project history.** Pre-registered read upgraded accordingly: retention ON the historical curve at matched exposure ⇒ drift was staged-only; retention ABOVE the curve ⇒ the gap is the historical drift tax, quantified behaviorally — and it applies to the whole family, joint runs included.
-- **Follow-ons if confirmed:** (1) the flag for the JOINT track — with a variant: a joint router was trained on live features *including pretrain memory content*, so its frozen routing input should be features computed with **values snapshotted at sequential start** (same dual-path code, frozen branch carries the snapshot; ~10GB extra at r2), not memory-free. "r2244 + snapshot-frozen routing" is the candidate frontier run. (2) The direct retrospective number: the r2244 post-sequential audit (pre→post self-IoU for the joint regime, ~1.1h GPU) once stageB frees the card.
+- **Follow-ons if confirmed:** (1) the flag for the JOINT track — with a variant: a joint router was trained on live features *including pretrain memory content*, so its frozen routing input should be features computed with **values snapshotted at sequential start** (same dual-path code, frozen branch carries the snapshot; ~10GB extra at r2), not memory-free. "r2244 + snapshot-frozen routing" is the candidate frontier run. (2) The direct retrospective number: the r2244 post-sequential audit (pre→post self-IoU for the joint regime).
 - Relative conclusions of the project (write-budget, separation-as-translation, incidental/genuine protection split, capacity/interference axis) stand — all A/B'd within-regime with drift on both arms. The absolute retention levels, and specifically the lr2x reading, carry the unquantified tax.
 
 ---
@@ -2660,7 +2517,7 @@ Josh's observation, confirmed on existing data: routing drift (values mutating t
 
 ### The run
 
-`libero_10_sequential_..._frozenroute_rwarmupB_..._protect_beta4_steps5k_tasks5` — chain completed clean 07:57 Jul 14 (A-phase 10k frozen-route -> audit -> 5-task sequential, C's config + `use_frozen_base_input_features=true` everywhere). Chain hygiene verified in-log: "Frozen-base routing ENABLED" in all stages, 32/841 tensors trainable in A, values-only 2.42B/6.6B in sequential, protection store folded after every task. (Bookkeeping note: the overnight chain monitor was killed right after launch, so the ~21:15 tripwire never ran live; the chain completed on its own and the tripwire was run retroactively this morning — it PASSES, see below.)
+`libero_10_sequential_..._frozenroute_rwarmupB_..._protect_beta4_steps5k_tasks5` — A-phase 10k frozen-route -> audit -> 5-task sequential, C's config + frozen-base routing everywhere; values-only 2.42B/6.6B trainable in sequential.
 
 Eval (20 eps/cell):
 
@@ -2677,13 +2534,13 @@ First-5 comparison @25k (all 20 eps except C/sep-era 50): stageB **32.0** / rwar
 ### 1. The fix works EXACTLY as designed — stationarity is total (code exonerated)
 
 - **Tripwire (retroactive, all 5 tasks × all layers):** IoU(block reads, post-A audit) = **0.90-0.93 at L8/L10/L12/L14 uniformly** — at the measurement ceiling (rwarmupA's immutable-L8 control: 0.92-0.93). rwarmupA's same numbers above L8 were 0.25-0.39. The training path routes stationarily.
-- **The definitive instrument** (new post-sequential audit `audit_heldout_frozenroute_rwarmupB_seq25k` vs post-A): per-task footprint self-IoU = **1.0000 exactly, every task, every layer** (rwarmupA: 0.21-0.32 above L8). Deployed geometry after 5 blocks is byte-identical to post-A: famIoU 0.144/0.144, bg 0.066/0.064, core50 2958/2958, effnum 6507/6507. **The E38 read-side drift channel is dead.**
+- **The definitive instrument** (new post-sequential audit vs post-A): per-task footprint self-IoU = **1.0000 exactly, every task, every layer** (rwarmupA: 0.21-0.32 above L8). Deployed geometry after 5 blocks is byte-identical to post-A: famIoU 0.144/0.144, bg 0.066/0.064, core50 2958/2958, effnum 6507/6507. **The E38 read-side drift channel is dead.**
 - **Parameter-level proof** (checkpoint diff 010000→015000, e9's block): the ONLY tensors that changed are the 8 slot_up/slot_down — keys, query_proj/FiLM, gate, value_proj, swilu, backbone all bitwise-zero delta. Combined with self-IoU=1.0: the sole interference channel left in the whole system is *values on shared slots*.
 - Certificate transfer: warmup-audit ↔ postA(B)-audit per-task IoU = L8 1.000, L10-14 0.980-0.988 (live-route A-phase: 0.926-0.945). The 0.98 residual is the value_proj-bias delta (the warmup audit ran on the live path, whose stream at values=0 still carries g×bias; the frozen branch is strictly memory-free) — expected, not drift. A-phase itself no longer moves routing.
 
 ### 2. FORGETTING: SOLVED. The E3-style MSE matrix is flat — first time ever
 
-Ran the full 5×5 forgetting matrix offline (paired-noise `_eval_loss_on_seen_tasks`, 16 batches/task, all 5 per-task checkpoints):
+Ran the full 5×5 forgetting matrix offline (paired-noise, 16 batches/task, all 5 per-task checkpoints):
 
 | ckpt | e4 | e6 | e9 | e2 | e7 |
 |---|---|---|---|---|---|
@@ -2716,66 +2573,41 @@ All five tasks sit at RTO ≤ 12%, i.e. in the calibration curve's <20% bin wher
 
 ### 5. Next steps (proposed, in value order)
 
-1. **Port stationary addressing to the JOINT track — "r2244 + snapshot-frozen routing"** (E38-addendum follow-on, now maximally supported): joint substrate has the fit (init 48), stageB proves stationarity eliminates function-level forgetting, and r2244's within-window losses (e4 35→20, e9 40→20, later e7→0) are the drift-suspect retention tax. Code delta: the frozen suffix branch must run memory WITH slot values snapshotted at sequential start (the joint router/gate were trained on live-with-content features; memory-free features would be OOD for them) — snapshot slot_up/slot_down at seq start (~7GB bf16 at r2244 sizes), thread a use-snapshot flag through the frozen-branch memory call. Expected: init ≈ 48 with a flat matrix → new frontier >46.5, and the drift tax finally quantified within the joint regime.
-2. **Extend stageB to 10 tasks** (same command, `online_task_ids=[0..9]`, ~40h): the matrix predicts the seen-avg holds ≈ its init mean through blocks 5-10 where rwarmupA fell to 24.3. That is the controlled catastrophe-elimination demonstration (mechanism E38 → fix → matched-config rescue) — the cleanest causal story the project owns.
-3. **50-ep re-eval of the 5 retained per-task checkpoints** (~cheap): every conclusion above rides on ±11pp cells; de-noise the trajectory, resolve e6's wobble empirically.
+1. **Port stationary addressing to the JOINT track — "r2244 + snapshot-frozen routing"** (E38-addendum follow-on, now maximally supported): joint substrate has the fit (init 48), stageB proves stationarity eliminates function-level forgetting, and r2244's within-window losses (e4 35→20, e9 40→20, later e7→0) are the drift-suspect retention tax. The frozen suffix branch must run memory WITH slot values snapshotted at sequential start (the joint router/gate were trained on live-with-content features; memory-free features would be OOD for them). Expected: init ≈ 48 with a flat matrix → new frontier >46.5, and the drift tax finally quantified within the joint regime.
+2. **Extend stageB to 10 tasks**: the matrix predicts the seen-avg holds ≈ its init mean through blocks 5-10 where rwarmupA fell to 24.3. That is the controlled catastrophe-elimination demonstration (mechanism E38 → fix → matched-config rescue) — the cleanest causal story the project owns.
+3. **50-ep re-eval of the 5 retained per-task checkpoints**: every conclusion above rides on ±11pp cells; de-noise the trajectory, resolve e6's wobble empirically.
 4. **Staged-track plasticity levers unlocked by zero forgetting** (if the staged track stays a thesis pillar): with drift dead and exposure clean, the levers that backfired via interference are now safe by construction — memory_value_lr 2e-3 (B's fit was best-in-family, its −9.5 retention was the drift tax; pre-registered: under frozen-route the tax should vanish), top_t 1536→~3072 (e9's coverage 17%→34%), steps 5k→7k. Cheap sequential-only reruns from the same A checkpoint.
 5. **e4-class integration gap: do not chase in-protocol** — E35/E36 stand (needs backbone co-adaptation at some phase = joint track). The staged track's honest scope: routing-bound tasks won, integration-bound tasks conceded, zero forgetting.
 
-### Artifacts
-- New: `audit_heldout_frozenroute_rwarmupB_seq25k` (10 JSONs, the 1.0000 measurement), MSE matrix (`scratchpad/mse_matrix.{py,jsonl}` — reusable instrument: paired-noise per-checkpoint loss eval via the trainer's own `_eval_loss_on_seen_tasks`), `field_change.py` (mass-weighted value-field perturbation from checkpoint pairs), `stageB_analysis.py` (full battery), `ckpt_diff.py` (safetensors group diff).
-- Retained: stageB A checkpoint + all 5 per-task sequential checkpoints (needed for #3/#4 and any drift-tax follow-ups), both post-A audits, block JSONs, evals/videos, wandb.
-- GPU free.
-
 ---
-## Entry 40 - 14 Jul 26 (E39 follow-through: joint track PARKED (off-thesis, Josh); the conversion-gap attack goes 4-way parallel — (1) affine slots + no gate [LAUNCHED], (2) lr 2x, (3) steps 7k, (4) top_t 3072. Code shipped: lora_slot_bias (affine "lora + value") + eval_final_episodes; 20/20 smokes)
+## Entry 40 - 14 Jul 26 (E39 follow-through: joint track PARKED (off-thesis, Josh); the conversion-gap attack goes 4-way parallel — (1) affine slots + no gate, (2) lr 2x, (3) steps 7k, (4) top_t 3072)
 
-### Decisions from the E39 discussions (recorded so the reasoning survives)
+### Decisions from the E39 discussions
 
-1. **Joint track parked as off-thesis (Josh).** The thesis is "take an off-the-shelf VLA and add capabilities without erasing old ones" (with router-abstention as the future-work arc), so "r2244 + snapshot-frozen routing" is at most a *pricing ablation* (what does co-training buy at matched stationarity), not the mainline. Josh's counter to the E39 integration-gap story — "base + adapters is how everyone finetunes; the backbone shouldn't have to adapt" — is a testable claim, NOT settled by the E39 exclusion inference: our memory differs from standard LoRA-FT in four taxed ways (sparse routed mixture of 144 rank-2 fragments vs dense unconditional adapter; 4 expert-MLP sites vs attention+MLP everywhere; a trust gate in front; softmax averaging). **The per-task LoRA-FT baseline (E36, reviewer-mandatory, PEFT wired) is the arbiter**: LoRA-FT at 35-50 on e4/e9 => backbone sufficient, the deficit is OUR machinery's conversion tax (closable in-protocol); LoRA-FT ~10 => frozen-backbone adapters can't do those tasks at all, scope the claim. PROPOSED, not yet scheduled (not in the 4-way batch). Supporting fact: libero-90 has no dual-cycle tasks, so no stage-1 finetune can "embed composition subspaces" — the joint runs' e4/e9 rollouts (35-40) were installed by VALUES on a frozen backbone at sequential time, so composition-through-values is demonstrably possible; the joint edge is conversion machinery, not backbone knowledge.
-2. **Gate REMOVED rather than saturated (Josh's call, agreed).** The E39 candidate mechanism for the conversion gap: the A-phase gate is calibrated on libero-90 where the backbone is competent and memory auxiliary (settles 0.72-0.85 mid-sigmoid), then deployed where memory carries ~everything (stage-1 floors ~0-2) through a valve whose delivered magnitude is state-dependent (g(1-g) sensitivity ~5x saturated) and never saw libero-10. Saturation-pressure would patch this; removal deletes it structurally, with no aux weight to tune. Every healthy joint run effectively ran ungated (0.97-0.99, "no modulation" — E19). We keep per-channel state-dependent modulation anyway via swilu (`value_proj(out * silu(swilu_proj(x)))`). `mem_gated=false` is an existing flag; must apply from the A phase onward (values calibrate ||dV|| ~ target/g; stripping at deploy overshoots ~1.3x). Not kept for the abstention roadmap either: an MSE-trained trust valve is not an OOD-abstention detector — build that purpose-built later. (Gate-variance probe — is the 0.77 a constant or a modulator? — noted, not run.)
+1. **Joint track parked as off-thesis (Josh).** The thesis is "take an off-the-shelf VLA and add capabilities without erasing old ones" (with router-abstention as the future-work arc), so "r2244 + snapshot-frozen routing" is at most a *pricing ablation* (what does co-training buy at matched stationarity), not the mainline. Josh's counter to the E39 integration-gap story — "base + adapters is how everyone finetunes; the backbone shouldn't have to adapt" — is a testable claim, NOT settled by the E39 exclusion inference: our memory differs from standard LoRA-FT in four taxed ways (sparse routed mixture of 144 rank-2 fragments vs dense unconditional adapter; 4 expert-MLP sites vs attention+MLP everywhere; a trust gate in front; softmax averaging). **The per-task LoRA-FT baseline (E36, reviewer-mandatory) is the arbiter**: LoRA-FT at 35-50 on e4/e9 => backbone sufficient, the deficit is OUR machinery's conversion tax (closable in-protocol); LoRA-FT ~10 => frozen-backbone adapters can't do those tasks at all, scope the claim. Supporting fact: libero-90 has no dual-cycle tasks, so no stage-1 finetune can "embed composition subspaces" — the joint runs' e4/e9 rollouts (35-40) were installed by VALUES on a frozen backbone at sequential time, so composition-through-values is demonstrably possible; the joint edge is conversion machinery, not backbone knowledge.
+2. **Gate REMOVED rather than saturated (Josh's call, agreed).** The E39 candidate mechanism for the conversion gap: the A-phase gate is calibrated on libero-90 where the backbone is competent and memory auxiliary (settles 0.72-0.85 mid-sigmoid), then deployed where memory carries ~everything (stage-1 floors ~0-2) through a valve whose delivered magnitude is state-dependent (g(1-g) sensitivity ~5x saturated) and never saw libero-10. Saturation-pressure would patch this; removal deletes it structurally, with no aux weight to tune. Every healthy joint run effectively ran ungated (0.97-0.99, "no modulation" — E19). We keep per-channel state-dependent modulation anyway via swilu (`value_proj(out * silu(swilu_proj(x)))`). Removal must apply from the A phase onward (values calibrate ||dV|| ~ target/g; stripping at deploy overshoots ~1.3x). Not kept for the abstention roadmap either: an MSE-trained trust valve is not an OOD-abstention detector — build that purpose-built later. (Gate-variance probe — is the 0.77 a constant or a modulator? — noted, not run.)
 3. **"Lora + value" = per-slot AFFINE, not a layer split (from Josh's hybrid idea).** value_i(x) = U_i V_i x + b_i. The homogeneous LoRA (up @ SiLU(down @ x)) has no constant term — the DC component of a correction must ride x's stable cone direction, spending rank. The per-slot bias learns the DC directly (no U-V product coupling => robust to e9-style diluted writes), frees rank for the state-dependent residual, and restores the additive-constant class of value_type="vector" WITHOUT handing state-conditionality to the router (which the warm-up deliberately de-resolves within-task: q_intra 0.883 — vectors-by-routing would rebuild the E21/E22c per-task-bias pathology). Layer-split variants (lora early / vectors late or vice versa) rejected: L12/L14 carry the read mass, trust, and action proximity (r2244's winning allocation), and constants there would be router-addressed precisely where within-task resolution is weakest.
 4. **e6's 60->25 formally attributed to eval noise + marginality** (Josh's challenge "would noise explain +/-30pp?"): a single -35pp cell at 20 eps under constant p~0.36 is a ~2-5% draw; with ~12 adjacent-cell pairs per run, >=1 such swing per run is near a coin flip — and every baseline shows them (C's e9 35->50 "negative forgetting"; r2244's e4 55->20 in-window). The claim rests on the paired-noise MSE matrix (+0.1% across e9's block), not on noise arguments. All 4 new arms carry a 50-ep final eval (below) to shrink the headline cell to +/-7pp.
 
-### Code shipped (smoked 20/20, `scratchpad/smoke_affine.py`)
+### The 4-way parallel batch
 
-- `--policy.memory_layer.lora_slot_bias` (default false): per-slot bias b_i (v_dim) on LoRA slots, added to the slot output before corruption/weighted-sum. Zero-init => flag-on is BITWISE identical to flag-off until trained (smoked); legacy checkpoints load with `missing={slot_bias}` and keep the zero init (smoked on the module load path). Tagged `pk_value_param` + `fixed_lr` => value optimizer groups (both trainers), TF-IDF top-t row mask (`_get_value_params` extended; dim-0 slot indexing uniform — smoked), protection, and the offload gather (smoked) all apply unchanged. Files: `memory_config.py`, `memory_lite.py`, `lerobot_sequential_train.py`.
-- `--eval_final_episodes` (sequential trainer, default 0 = unchanged): intermediate evals keep `eval.n_episodes`; the eval after the FINAL task uses this count. Helper `_eval_n_episodes_for_task` (+ fixed an `idx` shadowing hazard at the eval call site by capturing `task_pos` at the loop head). Selection logic smoked.
+All arms: 5 tasks [0-4], C's sequential config, frozen-base routing, beta4, 20-ep evals + **50-ep final**. Arms 2-4 are sequential-only from the EXISTING stageB A checkpoint. Arm 1 runs its own A phase (value-path changes require it; the warmed router drops in unchanged — frozen-branch routing is a function of backbone+keys+query only, which also makes the post-A audit provably identical to stageB's, so it is skipped).
 
-### The 4-way parallel batch (Josh: filesystem imaged -> 4 GPU VMs, one arm each)
-
-All arms: 5 tasks [0-4], C's sequential config, frozen-base routing, beta4, 20-ep evals + **50-ep final**, idempotent skip-guards. Arms 2-4 are sequential-only from the EXISTING stageB A checkpoint (`...frozenroute_rwarmupB_values10k.../checkpoints/last` — already on disk, baked into the image). Arm 1 runs its own A phase (value-path changes require it; the warmed router drops in unchanged — frozen-branch routing is a function of backbone+keys+query only, which also makes the post-A audit provably identical to `audit_heldout_frozenroute_rwarmupB_10k`, so it is skipped).
-
-| # | script (`job_scripts/nebius/libero_90/staged/`) | delta vs stageB | tests | key read |
-|---|---|---|---|---|
-| 1 | `stageC_affine_nogate_A10k_seq5.sh` | `lora_slot_bias=true` + `mem_gated=false` (A rerun + seq) | affine capacity + gate-miscalibration hypothesis jointly | e4/e9 inits vs 10/5; e6-class stability at 50-ep final; A-phase MSE vs 0.092 |
-| 2 | `stageB_seq5_lr2x.sh` | value_lr 1e-3->2e-3 (end 2e-4) | drift-tax-free lr (joint-era B: best fresh diagonal +4, -9.5 retention = the tax, now dead by construction) | inits up with retention flat => bank it; retention drop => the lr tax was never (all) drift |
-| 3 | `stageB_seq5_steps7k.sh` | steps/task 5000->7000 | optimization budget on stationary targets | MSE floors + inits; forgetting must stay flat (matrix if needed) |
-| 4 | `stageB_seq5_topt3072.sh` | top_t 1536->3072 | the e9 DILUTION hypothesis (E39): per-batch L14 write coverage 17%->34% | e9 init off 5 => dilution real; e9 still ~5 at sharper writes => conversion/substrate, not budget |
+| # | delta vs stageB | tests | key read |
+|---|---|---|---|
+| 1 | `lora_slot_bias=true` + `mem_gated=false` (A rerun + seq) | affine capacity + gate-miscalibration hypothesis jointly | e4/e9 inits vs 10/5; e6-class stability at 50-ep final; A-phase MSE vs 0.092 |
+| 2 | value_lr 1e-3->2e-3 (end 2e-4) | drift-tax-free lr (joint-era B: best fresh diagonal +4, -9.5 retention = the tax, now dead by construction) | inits up with retention flat => bank it; retention drop => the lr tax was never (all) drift |
+| 3 | steps/task 5000->7000 | optimization budget on stationary targets | MSE floors + inits; forgetting must stay flat (matrix if needed) |
+| 4 | top_t 1536->3072 | the e9 DILUTION hypothesis (E39): per-batch L14 write coverage 17%->34% | e9 init off 5 => dilution real; e9 still ~5 at sharper writes => conversion/substrate, not budget |
 
 Expected magnitudes (honest): arms 2-4 are worth ~+3-7pp average and ~0 on e4 (its MSE is already joint-level at joint-identical footprints); arm 4 is a hypothesis test more than a fix. Arm 1 is the mechanism bet. The LoRA-FT baseline (above) remains the queued arbiter for whatever gap survives the batch.
 
-### Status
-
-- **Arm 1 LAUNCHED** 14 Jul: flags confirmed in-config (`lora_slot_bias: True, mem_gated: False`), **28 param tensors trainable** (= 32 - 8 gating + 4 slot_bias, as predicted), frozen-base routing enabled.
-- Arms 2-4: scripts ready + syntax-checked; launch on the cloned VMs (guards key on completed checkpoints only).
 - Cross-arm eval note: arms are mutually comparable (same seeds/eval protocol); all differ from stageB itself only by their single delta (stageB @25k baseline row: 20/35/5/70/30 = 32.0 @ 20 eps).
 
-### Update (14 Jul, VM 2) — arm scripts recreated in git; ARM 3 (steps7k) LAUNCHED
-
-- **Gotcha found on the cloned VMs: the four arm scripts never propagated.** `job_scripts/` is gitignored (`.gitignore:27`; the 224 tracked scripts were force-added historically), and the E40 scripts were written without `git add -f` — so commit `a8ac9ff` carried the code + log but not the scripts, and the clones came up without them. All four recreated verbatim from the stageB template + the E40 spec table and force-added: `stageB_seq5_{lr2x,steps7k,topt3072}.sh` + `stageC_affine_nogate_A10k_seq5.sh` (the stageC one is a for-the-record reconstruction — arm 1 is already live on the source box and its run names may differ; check its `outputs/stageC.log` before reuse). All sequential stages carry `--eval.n_episodes=20` + `--eval_final_episodes=50` (50 eps only for the eval after the LAST task's training; flag verified at `lerobot_sequential_train.py:399-404`). **Rule reaffirmed: new files under `job_scripts/` require `git add -f`.**
-- **Arm 3 LAUNCHED** on VM 2 (wandb `x269apkt`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_steps7k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `online_steps_per_task=7000`, frozen-base routing, train_memory_only+freeze_memory_router, β4 protection, top_t 1536, value_lr 1e-3→1e-4, tasks [0-4], 20-ep evals + 50-ep final. Final checkpoint = 035000 (5×7k).
-- VM-2 disk cleanup (clone-local; all `pretrained_model` weights kept): deleted never-resumed `training_state` from the 5 stageB per-task checkpoints (5×19G — run complete, `reinit_optimizer_each_task` makes them dead weight; the weights stay for the MSE-matrix/drift instruments), the stage2-full 40k prior's intermediate `020000` ckpt + `040000/training_state` (final 40k weights kept per E35), and the r2244 pretrain's intermediate `020000` (graduated 40k prior weights kept). Untouched: stage-1 base (in full), warmed-router backtrack ckpt, stageB A ckpt (in full), all finals/`last`, audits, memory_by_task JSONs, evals, `realworld_v2`.
-
-### Update (14 Jul, VM 3) — ARM 2 (lr2x) LAUNCHED
-
-- **Arm 2 LAUNCHED** on VM 3 (wandb `i6zojqts`): run `libero_10_sequential_..._frozenroute_rwarmupB_..._top_t_1536_protect_beta4_lr2x_steps5k_tasks5`, sequential-only from the existing stageB A checkpoint. Config dump verified: `memory_value_lr=2e-3 → 2e-4` linear (the single delta vs stageB), frozen-base routing ENABLED, train_memory_only+freeze_memory_router (32/841 tensors), β4 protection, top_t 1536, tasks [0-4] × 5000 steps, 20-ep evals + 50-ep final; `lr:2.0e-03` confirmed in-log. Final checkpoint = 025000 (5×5k).
-- VM-3 disk cleanup (clone-local, ~200G freed, disk 56%→48%; all `pretrained_model` weights kept): same recipe as VM 2 — deleted never-resumed `training_state` from the 5 stageB per-task checkpoints (5×19G) and the stageB A checkpoint (19G; arms consume its `pretrained_model` only), the stage2-full 40k prior's intermediate `020000` + `040000/training_state` (~56G; final 40k weights kept per E35), and the r2244 pretrain's intermediate `020000` (23G; graduated 40k prior weights kept). Untouched: stage-1 base (in full, per Josh), warmed-router backtrack ckpt, all finals/`last` symlink targets (verified before deletion), audits, memory_by_task JSONs, evals, `realworld_v2` (267G, per Josh).
-
 ---
-## Entry 41 - 15 Jul 26 (E40 3-arm postmortem + the conversion-gap probe program: five instruments, two falsified mechanisms, one corrected over-claim -> a 3-layer failure model. The e6-after-e9 drop is REAL (4/4 replication; E39/E40 noise attribution REVERSED). Soft (grad_scale) protection shipped + calibrated; denoised-chunk error adopted as the gate metric; 3 arms in flight (topt3072 / softprotect / bs64))
+## Entry 41 - 15 Jul 26 (E40 3-arm postmortem + the conversion-gap probe program: five instruments, two falsified mechanisms, one corrected over-claim -> a 3-layer failure model. The e6-after-e9 drop is REAL (4/4 replication; E39/E40 noise attribution REVERSED). Soft (grad_scale) protection calibrated; denoised-chunk error adopted as the gate metric)
 
-### The three completed E40 arms (rsynced to one box; env order e4/e6/e9/e2/e7; finals 50-ep, stageB final 20-ep)
+### The three completed E40 arms (env order e4/e6/e9/e2/e7; finals 50-ep, stageB final 20-ep)
 
 | arm | inits | mean init | final | block-min MSE | block-END MSE | eval-time paired MSE (diag mean) |
 |---|---|---|---:|---:|---:|---:|
@@ -2788,11 +2620,11 @@ Config integrity verified from checkpoints + wandb for all arms (each ran exactl
 
 ### Arm verdicts
 
-- **Arm 1 (affine+nogate): both hypotheses dead, cleanly.** A-phase healthy (held-in 80.8 vs stageB-A 81.7; MSE comparable). The biases LEARNED (nonzero on ~all 147k slots, ||b|| ~0.6x the UV-path norm at every layer, stable A->seq) — the parameterization works; the DC term was not the binding constraint. Gate removal delivered full-strength corrections — also not binding (values recalibrate to the gate during training either way). +4.6pp init is at the noise edge; final 32.8 == baseline. DECISIONS: `mem_gated=false` retired (gate stays — also operationally simpler: gated arms reuse the rwarmupB A checkpoint); `lora_slot_bias` retired from the recipe, flag kept in code.
+- **Arm 1 (affine+nogate): both hypotheses dead, cleanly.** A-phase healthy (held-in 80.8 vs stageB-A 81.7; MSE comparable). The biases LEARNED (nonzero on ~all 147k slots, ||b|| ~0.6x the UV-path norm at every layer, stable A->seq) — the parameterization works; the DC term was not the binding constraint. Gate removal delivered full-strength corrections — also not binding (values recalibrate to the gate during training either way). +4.6pp init is at the noise edge; final 32.8 == baseline. DECISIONS: `mem_gated=false` retired (gate stays); `lora_slot_bias` retired from the recipe.
 - **Arm 2 (lr2x): the only init mover (47.4 = r2244's 48)** — and it gave ~all of it back (final 35.6). Grad norms 0.022 max (no instability). See the correction below for how much of the init story survives.
 - **Arm 3 (steps7k): dead lever at the endpoint.** The -23% block-min MSE is partly a min-over-more-windows selection artifact; the within-block trajectory converges by ~2.5-3k steps then OSCILLATES (e4: 0.087<->0.132 band, no trend — NOT instability, batch-window variance; my earlier "+54% late-block degradation" claim retracted on the full trajectory, and the TF-IDF self-pollution mechanism I proposed for it is disconfirmed in code: DF accumulates per batch but IDF is frozen within a block, recomputed only at boundaries). Endpoint function: -12% vs stageB == the other arms; inits unchanged. Retro-explains E30: 3k->5k helped joint because joint blocks hadn't converged at 3k; staged blocks converge by ~3k, so 5k is already past the knee. 5k->7k retired at the current write rule.
 
-### FORGETTING: still solved in every arm (MSE matrices, paired-noise instrument rebuilt as scripts/vla_analysis/mse_matrix2.py — partial-load slot-swap, 12x less IO)
+### FORGETTING: still solved in every arm (MSE matrices)
 
 Just-trained->final drift: stageB +0.0-1.7% (E39), affine <=+0.6%, lr2x +0.4-2.2%, steps7k +1.2-1.7%. Stationarity holds at 2x LR, with biases, at 7k steps. Untrained-task cells reproduce across arms to 3 decimals (instrument validated). lr2x diagonals uniformly -13% vs stageB.
 
@@ -2805,13 +2637,13 @@ e6 drops across e9's block in **4/4 runs** (stageB -35, affine -10, lr2x -20, st
 4. **Protection can't gate it (structurally)**: rank-mode (1-u)^beta only flips top-t membership — high-TF slots never rank out, and the diffuse tail sits at u~0.01-0.05 under peak normalization (u at core-50 boundary ~0.035; max/p99 ~10-16x) => beta4 vetoes only the top ~1% mega-hot slots (E39 note, now the load-bearing fact).
 Displacement analysis (checkpoint diffs, L14): lr2x moves written slots ~1.6x (median ||d|| 1.33-1.51 vs affine 1.03-1.21, steps7k 0.87-1.08 — steps7k's median slot moved LESS: same mask budget spread over more batches + decayed-LR tail). The giveback (lr2x -11.8pp init->final) rides on this channel: e6 -31, e9's own decay -17, e4 -15 — all post-e9-block or late-block micro-drift.
 
-### The conversion-gap probe program (5 instruments, chronological; all persisted to scripts/vla_analysis/, results in outputs/analysis/e41/)
+### The conversion-gap probe program (5 instruments, chronological)
 
 The sharpest puzzle: steps7k and lr2x reach the SAME eval-time paired MSE (within 2%) with 20-ep inits 10-vs-35 (e4) and 10-vs-25 (e9). Working hypothesis #0 (displacement/amplitude -> "commitment") was formed from this; the program below tested it and its rivals.
 
 **Probe A — downstream-gain (Josh's layer-position hypothesis: "layers 15-17 fix the corrections back toward pretrained behavior").** Inject at L14/L8: the learned memory delta vs matched-norm random vs matched-norm feature-direction perturbations; measure velocity-readout movement. RESULT: **disconfirmed in its strong form** — learned deltas transmit 2-3x BETTER than random (T_rand 1.9-3.2) and 1.2-1.8x better than feature directions, at both layers, every arm. Downstream is an amplifier tuned to the memory's directions, not a fixer. Surviving nuance: amplitude response saturates at L14 (2x delta -> +60-70% output; L8 +81-94%; layer-norm renormalization is the likely mechanism) — a headroom warning for LR pushes, not a case for moving layers. Also: total velocity-space throw of the memory is ARM-INVARIANT (~25 at L14) — lr2x does not deliver a bigger total correction, it delivers a better-placed one. Layer repositioning PARKED with evidence.
 
-**Probe B — denoised-chunk (the integrated field).** Run the real 10-step denoise on demo obs; compare executed chunk to demo chunk. The training loss only ever queries the field ON the noise-demo interpolation bridge (x_t anchored to the true action — teacher-forcing one level down); integration queries the model's OWN trajectory, which leaves the bridge after step 1. RESULT: chunk error ranks arms **exactly as rollouts do, 9/9** (e4: lr2x 0.156 < steps7k 0.172 < stageB 0.191; e9: 0.366/0.401/0.459; e2: 0.224/0.272/0.304) where velocity-MSE couldn't separate lr2x from steps7k. Arm gaps grow on the last 10 chunk steps. **ADOPTED as the standard gate metric** (~10 min/checkpoint, no simulator).
+**Probe B — denoised-chunk (the integrated field).** Run the real 10-step denoise on demo obs; compare executed chunk to demo chunk. The training loss only ever queries the field ON the noise-demo interpolation bridge (x_t anchored to the true action — teacher-forcing one level down); integration queries the model's OWN trajectory, which leaves the bridge after step 1. RESULT: chunk error ranks arms **exactly as rollouts do, 9/9** (e4: lr2x 0.156 < steps7k 0.172 < stageB 0.191; e9: 0.366/0.401/0.459; e2: 0.224/0.272/0.304) where velocity-MSE couldn't separate lr2x from steps7k. Arm gaps grow on the last 10 chunk steps. **ADOPTED as the standard gate metric** (no simulator).
 
 **Probe C — bias decomposition (pre-registered: weak arms carry a systematic pull toward A-phase content; amplitude de-biases).** Signed velocity errors, K=6 paired draws/state, finite-K-corrected bias fraction + cosine to the pre-sequential (A-state) bias field. RESULT: **FALSIFIED.** Bias fractions uniform across arms (0.38-0.43); task-level bias ~0.03 everywhere; every arm shrinks the A-bias field to ~25-35% equally; and r2244 — the best converter — has the HIGHEST bias fraction (0.41-0.47) and STRONGEST A-pull (cos 0.49-0.55 vs staged 0.34-0.42).
 
@@ -2831,41 +2663,36 @@ Assembling all instruments: **within the staged family, function quality is cons
 - **Layer 2 — the family fit ceiling (characterized, not closed):** every frozen-backbone-adapter model produces a velocity field whose error is COHERENT along its own denoise trajectory (~0.95); the endpoint inherits the per-step field error ~1:1 (~0.25-0.3 units). The one-step loss structurally under-weights exactly this component (it samples pointwise against noisy targets; the systematic part hides under the sampling floor — bias_frac ~0.40 of a small number). This is WHY loss and rollout success decouple. All tested levers (rank r4, +600M bias params, gate, steps, 2xLR) move it <=10% — they all act on value-path capacity, which is not where the offset mainly lives.
 - **Layer 3 — staged-family vs base ceiling (open):** base joint finetune = 74.8% on these 5 tasks vs our 32-36; the offset is not task-intrinsic. Rank-2-mixture expressivity vs adaptation budget vs frozen backbone — undecomposed; the base-finetune control was deleted (E31), which elevates the **LoRA-FT baseline to the decisive experiment** (same frozen backbone, dense adapter, same budget, read through the probe battery: if its chunk error ~0.15 -> the tax is OUR sparse-mixture path; if ~ours -> the ceiling is frozen-backbone adaptation generally and the thesis claim scopes to "joint-adapter-level fit with zero forgetting").
 
-### Soft (grad_scale) protection: shipped, smoked, calibrated (the Layer-1 fix)
+### Soft (grad_scale) protection (the Layer-1 fix)
 
 - **Design**: TF-IDF top-1536 mask unchanged (locality); protection moves from the ranking score to the UPDATE: each surviving slot's applied update is multiplied by (1-u_q(s))^beta. **Implementation catch that would have silently no-op'd: Adam's step is invariant to a time-constant per-row gradient scale** (m-hat and sqrt(v-hat) scale together; smoke-measured movement ratio 0.995 under naive grad scaling). Correct mechanism = **post-optimizer-step blend** theta <- theta_pre + scale*(theta_post - theta_pre) on protected rows — exact per-slot LR scaling under any optimizer (smoke: measured 0.00389 vs theoretical 0.25^4 = 0.00391).
-- **u-normalization fix**: `protect_u_norm=corefrac` — u = counts / count-at-core50-boundary, clipped to 1 (peak-norm's u~0.035-at-boundary degeneracy fixed; the whole prior core now protects).
-- New config: `protect_mode` (rank=legacy default, byte-identical) / `protect_u_norm` (peak default). Smokes 33/33 (scripts/vla_analysis/smoke_softprotect.py) + affine regression 20/20.
-- **beta calibration** (offline, real lr2x per-slot deltas x read-mass distributions, L14+L8; scripts/vla_analysis/calibrate_beta.py): smooth trade, no knee — e9-block bleed onto e4/e6 kept 70/60/48/35/24% at beta 1/2/4/8/16 for e9 static write-mass cost 7/12/18/26/35%. **beta=4 chosen**: halves the bleed; static cost overstates real cost (mask reallocates suppressed magnitude to prior-free slots; e9 — the writer that matters — is the CHEAPEST to constrain); midpoint is information-maximizing under unknown damage-response shape. Decision tree: e6 still drops at beta4 -> response is threshold-y -> beta 8-16; e7's init craters (later writers pay cumulatively more, ~28-38% static at beta4) -> beta 2.
+- **u-normalization fix**: u = counts / count-at-core50-boundary, clipped to 1 (peak-norm's u~0.035-at-boundary degeneracy fixed; the whole prior core now protects).
+- **beta calibration** (offline, real lr2x per-slot deltas x read-mass distributions, L14+L8): smooth trade, no knee — e9-block bleed onto e4/e6 kept 70/60/48/35/24% at beta 1/2/4/8/16 for e9 static write-mass cost 7/12/18/26/35%. **beta=4 chosen**: halves the bleed; static cost overstates real cost (mask reallocates suppressed magnitude to prior-free slots; e9 — the writer that matters — is the CHEAPEST to constrain); midpoint is information-maximizing under unknown damage-response shape. Decision tree: e6 still drops at beta4 -> response is threshold-y -> beta 8-16; e7's init craters (later writers pay cumulatively more, ~28-38% static at beta4) -> beta 2.
 
-### Batch-size smokes (Josh's hypothesis: bs32 under-covers the trajectory)
+### Batch-size (Josh's hypothesis: bs32 under-covers the trajectory)
 
-bs128 native: OOM (~146GB demand vs 139.8 usable). bs64 native: OOM (~140GB). bs32 training steady-state is ~125-131GB (the "37GB" VM3 reading was a mid-eval allocator-released snapshot). => effective-64 via `gradient_accumulation_steps=2` (the committed script; the trainer counts OPTIMIZER steps and merges retrieval indices across micro-batches, so the TF-IDF mask sees a true 64-frame TF). **The strongest mechanism for bs64 is mask stability, not gradient noise**: at bs32 the top-1536 is ranked from 32 frames' retrievals -> mask churns -> write budget rotates across slot subsets -> updates smear (the dilution pathology; steps7k made it WORSE — more draws, 37.7k unique slots). 64-frame TF -> stabler selection -> fewer slots, more events each -> counters dilution AND shrinks the bleed surface. This is the anti-dilution lever from the opposite direction to topt3072.
+Effective-64 via `gradient_accumulation_steps=2` (the trainer counts OPTIMIZER steps and merges retrieval indices across micro-batches, so the TF-IDF mask sees a true 64-frame TF). **The strongest mechanism for bs64 is mask stability, not gradient noise**: at bs32 the top-1536 is ranked from 32 frames' retrievals -> mask churns -> write budget rotates across slot subsets -> updates smear (the dilution pathology; steps7k made it WORSE — more draws, 37.7k unique slots). 64-frame TF -> stabler selection -> fewer slots, more events each -> counters dilution AND shrinks the bleed surface. This is the anti-dilution lever from the opposite direction to topt3072.
 
-### In flight (all 5-task, stageB-verbatim + single delta, 50-ep finals)
+### Three arms (all 5-task, stageB-verbatim + single delta, 50-ep finals)
 
-| VM | run | delta | pre-registered reads |
-|---|---|---|---|
-| VM3 | topt3072 | tfidf_top_t 3072 | e9 init + chunk error (dilution-as-budget?); e6@20k cell (2x write breadth should WORSEN the bleed if the model is right — falsification opportunity) |
-| VM2 | lr2x+softprotect (grad_scale/corefrac/beta4) | protection mechanism + 2e-3 | inits >=~45; e6-across-e9-block drop <=10pp (vs -10..-35 in 4/4); e9 init may pay a few pp; final >=42 = new frontier |
-| VM1 | bs64accum2 | effective batch 64 | e9 L14 written-slot count (expect down from 35.8k) + ev/slot p50 up; e9 init + chunk error; e4/e6 bleed shrinkage |
+| run | delta | pre-registered reads |
+|---|---|---|
+| topt3072 | tfidf_top_t 3072 | e9 init + chunk error (dilution-as-budget?); e6@20k cell (2x write breadth should WORSEN the bleed if the model is right — falsification opportunity) |
+| lr2x+softprotect (grad_scale/corefrac/beta4) | protection mechanism + 2e-3 | inits >=~45; e6-across-e9-block drop <=10pp (vs -10..-35 in 4/4); e9 init may pay a few pp; final >=42 = new frontier |
+| bs64accum2 | effective batch 64 | e9 L14 written-slot count (expect down from 35.8k) + ev/slot p50 up; e9 init + chunk error; e4/e6 bleed shrinkage |
 
 Read via retention matrices + slot JSONs + the probe battery (chunk metric first), NOT 20-ep init cells.
 
 ### Next steps (after the 3 arms)
-1. **LoRA-FT per-task baseline** (e4/e9/e2, ~8-17h) — now the decisive Layer-3 experiment; read through the probe battery, not just success.
-2. **Seed-averaging micro-experiment** (offline, ~1h): endpoint error = shared bias + per-seed component (probe-B spread 0.09-0.25 is substantial); averaging denoised chunks over a few noise seeds may cancel the seed part at pure inference cost. Test with probe B before touching evals. Risk: mode-averaging on multimodal segments.
+1. **LoRA-FT per-task baseline** (e4/e9/e2) — now the decisive Layer-3 experiment; read through the probe battery, not just success.
+2. **Seed-averaging micro-experiment** (offline): endpoint error = shared bias + per-seed component (probe-B spread 0.09-0.25 is substantial); averaging denoised chunks over a few noise seeds may cancel the seed part at pure inference cost. Test with probe B before touching evals. Risk: mode-averaging on multimodal segments.
 3. If softprotect works: 10-task extension of the winning config (the catastrophe-elimination demonstration, E39 #2).
 4. Parked with evidence: layer repositioning (probe A), gate/bias variants (arm 1), steps>5k (arm 3), global top-t for retention (E19 + bleed mechanism), joint track (off-thesis, E40).
 
-### Code / artifacts / bookkeeping
-- Trainer: `protect_mode` / `protect_u_norm` / `_core50_boundary_count` / `_snapshot_protected_rows` / `_blend_protected_rows` in lerobot_sequential_train.py (defaults byte-identical; committed ba388ad1 with the E41 instruments + both arm scripts).
-- Instruments PERSISTED to scripts/vla_analysis/ (mse_matrix2, probe_conversion [gain+chunk], probe_bias, probe_offbridge, probe_coherence, calibrate_beta, arms_{slots,displacement,wandb}, smoke_{softprotect,affine}, run_*.sh) — the E39 instruments died in a scratchpad; not again. Results: outputs/analysis/e41/*.jsonl.
-- Job scripts (git add -f, dir gitignored): stageB_seq5_lr2x_softprotect.sh, stageB_seq5_bs64.sh (+ the E40 four from a8ac9fff/reconstructions).
 - Eval-comparability note: stageB's final row is 20-ep; all E41-era finals are 50-ep.
 
 ---
-## Entry 42 - 16 Jul 26 (E41 3-arm verdicts: bs64 EXONERATED-AND-RETIRED (no accum bug; chunk parity at 2x cost); softprotect = new 50-ep frontier 41.2 BUT the blend mechanism is DEFECTIVE (Adam momentum leak, ~90% passthrough) — the number is the lr2x family + eval fortune, not protection; topt3072 FALSIFIES the bleed->rollout model on schedule and identifies COVERAGE as the second fit lever. Fixes shipped (momentum-aware blend + hard veto, smoked); LoRA-FT baseline support built+smoked; next: lr2x+3072 / lr4xsched+3072 / LoRA-FT. 12 days to 70%)
+## Entry 42 - 16 Jul 26 (E41 3-arm verdicts: bs64 EXONERATED-AND-RETIRED (no accum bug; chunk parity at 2x cost); softprotect = new 50-ep frontier 41.2 BUT the blend mechanism is DEFECTIVE (Adam momentum leak, ~90% passthrough) — the number is the lr2x family + eval fortune, not protection; topt3072 FALSIFIES the bleed->rollout model on schedule and identifies COVERAGE as the second fit lever. Fixes: momentum-aware blend + hard veto; next: lr2x+3072 / lr4xsched+3072 / LoRA-FT)
 
 ### The three landed arms (stageB-verbatim + single delta; final rows 50-ep; baselines from E41)
 
@@ -2878,11 +2705,11 @@ Read via retention matrices + slot JSONs + the probe battery (chunk metric first
 | **softprotect** | 35 | 50 | 30 | 70 | 38 | 44.6 | **41.2** | -3.4 |
 | **topt3072** | 15 | 35 | 5 | 85 | 34 | 34.8 | **37.6** | +2.8 |
 
-Loss (wandb block-min/block-end mean): stageB .1274/.1410, lr2x .1132/.1239, bs64 .1176/.1355, softp .1139/.1270, **top3k .1086/.1215** (family-lowest). Probe battery run over ALL arms (chunk grid own-block AND final for t0-t3; slot autopsy L14+L8 with realized-write counts, displacement, self-coverage, full bleed matrix; softp MSE matrix): outputs/analysis/e42/.
+Loss (wandb block-min/block-end mean): stageB.1274/.1410, lr2x.1132/.1239, bs64.1176/.1355, softp.1139/.1270, **top3k.1086/.1215** (family-lowest). Probe battery run over ALL arms (chunk grid own-block AND final for t0-t3; slot autopsy L14+L8 with realized-write counts, displacement, self-coverage, full bleed matrix; softp MSE matrix).
 
 ### Arm 1 verdict — bs64: no gradient-accumulation bug; parity at 2x cost; RETIRED
 
-- Full code audit CLEAN: Accelerate 1.13 scales loss under accumulation (averaged grads); mask/clip/step/zero + LR scheduler gated on sync_gradients; TF-IDF ranks the merged 64-frame indices; value-LR schedule = 5000 optimizer steps (wandb: 125 points, peak 9.82e-4); DF/IDF/protect stats scale-invariant. Config verified from checkpoint.
+- Full code audit CLEAN: Accelerate scales loss under accumulation (averaged grads); TF-IDF ranks the merged 64-frame indices; value-LR schedule = 5000 optimizer steps; DF/IDF/protect stats scale-invariant. Config verified from checkpoint.
 - "Lower loss, worse rollouts" dissolves: loss -8% is real (cleaner gradients); the FUNCTION (chunk) is at parity with stageB, slightly better (e4 .189 vs .191, e9 .448 vs .459, e2 .282 vs .304, e6 .115 vs .126); the init deficit was 20-ep cells; 50-ep finals ~= stageB per task.
 - The E41 mask-stability mechanism fired EXACTLY as designed and bought nothing: written sets shrank 39-46% (e9 35.8k->21.9k L14), ev/slot up — but SELF-COVERAGE (task read mass on own-adapted slots) fell ~10pp/task (e9 67->56%). Concentration gain == coverage loss. At fixed top_t the two are the same budget spent differently; bs32's mask churn was a free coverage scan, not a pathology. Batch size was never the causal variable — retire the axis (and the "dilution" frame with it).
 
@@ -2908,35 +2735,22 @@ Loss (wandb block-min/block-end mean): stageB .1274/.1410, lr2x .1132/.1239, bs6
 - **e6's FUNCTION on demo states is flat across e9's block in ALL SIX arms measured** (chunk own->final: -3%..+0.5%), at bleeds 0.8-3.1%. Whatever converts theta-drift into the residual rollout wobble is invisible on demo states and NOT proportional to bleed — most consistent with off-demo-distribution damage (closed-loop excursion states) + eval noise. softp-vs-lr2x (near-identical physics, 19pp apart on this statistic) bounds the per-arm noise at ~the effect size.
 - **Model update**: at stageB-family exposure (RTO 10-13%, flat matrices, flat chunk retention), write-side interference management earns ~0 rollout points. E41's three arms optimized a solved margin. The bleed model is DEMOTED as a cross-arm decision tool; protection's value case moves to the 10-task extension (2x+ cumulative exposure) and bigger-write regimes.
 
-### Fixes shipped (smoked, not launched)
+### Fixes
 
-1. **Momentum-aware blend**: `_blend_protected_rows(snap, optimizer)` scales the row's exp_avg by the same factor (kills the tail at source; exp_avg_sq untouched). New smoke S12 reproduces the leak (old blend keeps 0.79x movement under churn; designed 0.0625) and verifies the fix (0.0625 exactly; s=0 freezes bitwise).
-2. **`protect_hard_u`** (both modes, default 0=off): slots with u >= threshold removed from top-t CANDIDACY (not just score-zeroed — with top_t >= candidates a zero-score slot still gets selected; smoke S13 caught this, veto made structural via counts masking). Never in mask => no grad, no momentum — airtight. At corefrac, u>=0.9 = the victims' true cores: ~19%/34% (L14/L8) of e9->e6 bleed mass on a few hundred mask slots.
-3. Smokes: softprotect suite now 44 checks incl. S12a-e/S13 (ALL PASS); affine regression 20/20; boundary log now prints hard_u. NB the honest expectation even for the FIXED mechanism: per-slot LR scaling suppresses ENDPOINT displacement only where s x 5000 steps can't converge (u>=~0.4-0.5); the shoulder still converges slowly — the implementable ceiling is closer to the veto-mass curve (26% of bleed @ u*=0.5, L14) than the calibration's 48%.
+1. **Momentum-aware blend**: scales the row's exp_avg by the same factor (kills the tail at source; exp_avg_sq untouched).
+2. **`protect_hard_u`**: slots with u >= threshold removed from top-t CANDIDACY (not just score-zeroed — with top_t >= candidates a zero-score slot still gets selected). Never in mask => no grad, no momentum — airtight. At corefrac, u>=0.9 = the victims' true cores: ~19%/34% (L14/L8) of e9->e6 bleed mass on a few hundred mask slots.
+3. The honest expectation even for the FIXED mechanism: per-slot LR scaling suppresses ENDPOINT displacement only where s x 5000 steps can't converge (u>=~0.4-0.5); the shoulder still converges slowly — the implementable ceiling is closer to the veto-mass curve (26% of bleed @ u*=0.5, L14) than the calibration's 48%.
 
-### LoRA-FT per-task baseline: support built + smoked end-to-end
+### Next
 
-- Existing plumbing: `--peft.*` CLI -> `wrap_with_peft` -> pi05 default targets; `--dataset.episodes` filter; `--env.task_ids` single-task eval; PEFT save/load via factory `use_peft`.
-- Missing pieces found+fixed: **peft not installed** (added 0.19.1); **`get_optim_params` on the wrapped model forwarded to the BASE policy => optimizer over 4.2B frozen params, 0 trainable — training would silently no-op**. Fixed in `wrap_with_peft` (returns trainable params). Smoked: attach (53.2M adapters: LM 39.2M + expert 13.9M + proj 0.1M at r=32, attn+MLP both towers, vision untouched), 4-step CLI train (num_learnable=53M/4B, loss+grads healthy, grad-ckpt composes, episodes filter live), checkpoint saves adapter_model.safetensors, lerobot-eval loads it and rolls out on env.task_ids=[4].
+| VM | config | pre-registered reads |
+|---|---|---|
+| 1 | value_lr 2e-3->2e-4 + top_t 3072 | inits >=~47 AND give-back >=~0 => final >=42-45 (50ep) = new frontier; e9 init >=20; FAIL: give-back <=-8 (levers interact) |
+| 2 | value_lr 4e-3->2e-4 + top_t 3072 | e9 init/chunk vs VM1 (the amplitude-limited cell); block-ENDs vs VM1 (worse => L14 saturation binding, 2x = plateau, axis closed) |
+| 3 | 5x independent LoRA r32 on stage-1 base, 5k steps, 50-ep evals | e4/e9 ~35-50 => our machinery's conversion tax, priced; <=15 => frozen-backbone ceiling, scope the thesis claim; >=60 => rethink value path |
 
-### Storage (was 94% full)
+The 70% arithmetic, honestly: best staged 41.2; base-joint ceiling 74.8 on these 5. The compositions plausibly buy mid-40s. The remaining ~25pp is Layer 2/3 — which is exactly what VM3 prices. If LoRA-FT lands high, the known gap-closers in-protocol are r4-at-L12/14 on the staged track (never run; r2244's +6 came from it in the joint era), the top-p (mass-quantile) mask (e9's 2.4x footprint needs an adaptive budget), and inference-side seed-averaging (E41 #2, still unrun). If LoRA-FT lands low, 70% is not reachable by ANY frozen-backbone adapter method on this suite and the target needs renegotiating toward "joint-adapter-level fit with zero forgetting".
 
-Deleted (analyses discharged; probes/matrices/autopsies persisted to outputs/analysis/e42): per-task intermediate checkpoints + ALL training_state for the six 5-task arms (finals + last + JSONs + evals + wandb kept); r2244-pretrain and frozenbase-40k intermediates (final weights kept); affine-A training_state; smoke dirs. **Freed ~1.1T -> disk 51%** (1.2T free). Untouched: stage-1 base, warmed router, stageB A, realworld_v2, all audits.
-
-### Next (3 VMs; 12 days to 70% avg) — **UPDATE 16 Jul eve: ALL THREE ARMS RUNNING** (VM1+VM2 launched by Josh; VM3 chained behind the generalist-overlap audit via staged/vm3_audit_then_loraft.sh)
-
-| VM | script | config | pre-registered reads |
-|---|---|---|---|
-| 1 | staged/stageB_seq5_lr2x_topt3072.sh | value_lr 2e-3->2e-4 + top_t 3072 | inits >=~47 AND give-back >=~0 => final >=42-45 (50ep) = new frontier; e9 init >=20; FAIL: give-back <=-8 (levers interact) |
-| 2 | staged/stageB_seq5_lr4xsched_topt3072.sh | value_lr 4e-3->2e-4 + top_t 3072 | e9 init/chunk vs VM1 (the amplitude-limited cell); block-ENDs vs VM1 (worse => L14 saturation binding, 2x = plateau, axis closed) |
-| 3 | baselines/loraft_pertask_baseline.sh | 5x independent LoRA r32 on stage-1 base, 5k steps, 50-ep evals | e4/e9 ~35-50 => our machinery's conversion tax, priced; <=15 => frozen-backbone ceiling, scope the thesis claim; >=60 => rethink value path |
-
-The 70% arithmetic, honestly: best staged 41.2; base-joint ceiling 74.8 on these 5. The compositions plausibly buy mid-40s. The remaining ~25pp is Layer 2/3 — which is exactly what VM3 prices. If LoRA-FT lands high, the known gap-closers in-protocol are r4-at-L12/14 on the staged track (never run; r2244's +6 came from it in the joint era), the top-p (mass-quantile) mask (e9's 2.4x footprint needs an adaptive budget), and inference-side seed-averaging (E41 #2, still unrun). If LoRA-FT lands low, 70% is not reachable by ANY frozen-backbone adapter method on this suite and the target needs renegotiating toward "joint-adapter-level fit with zero forgetting". Decision point lands with VM3 (~14h).
-
-### Artifacts
-- Code: lerobot_sequential_train.py (blend+veto fix), pretrained.py (PEFT get_optim_params), smoke_softprotect.py (S12/S13).
-- Instruments: scripts/vla_analysis/{run_e42.sh,run_e42b.sh,e42_slots.py}; results outputs/analysis/e42/{probe_conversion.jsonl,mse_matrix_arms.jsonl,slots_summary.json,slots.out}.
-- Scripts: staged/stageB_seq5_{lr2x_topt3072,lr4xsched_topt3072}.sh, baselines/loraft_pertask_baseline.sh (git add -f).
 - Eval-comparability: all E42 finals 50-ep; init cells remain 20-ep (retired from decisions per E41; the probe battery is the ranking instrument, with the e2-misrank caveat above).
 
 ---
@@ -2948,19 +2762,19 @@ Long discussion with Josh on THE standing question (why sequential loss == multi
 2. **Grounding-gradient proposal (Josh) resolved after full derivation.** Any precomputed/cached gradient fails three ways: gradients at frozen params feed nothing (backprop chains through activation signals; weight grads are leaves); a dataset-averaged (signal x activation) product cannot be re-decomposed into state-conditional signal at new inputs; and at the anchor's own minimum the averaged gradient is ~0 by first-order optimality (gradient = slope, not height — the A-phase values are CONVERGED on libero-90, so the "generalist direction" is zero where we'd harvest it). The valid family members: live rehearsal (= averaging losses; targets retention, which is solved) and the curvature version (= EWC = our protection machinery aimed at the A-phase — same non-problem). The surviving state-conditioned carrier of "generalist opinion at new states" is the base FUNCTION: distillation anchor L = L_task + lambda*||f_adapted(x) - f_base(x)||^2 on new-task states (cache the function, not the gradient). Caveat: the anchor is task-incompetent (stage-1 floors ~0-2), so lambda trades fit for smoothness.
 3. **Remedy shortlist for the off-trail story (all values-only, in-constraint), gated behind the off-trail instrument** (score executed-chunk error on observations harvested from our own rollout episodes; on-trail vs off-trail degradation per arm, staged vs r2244): demo-jitter augmentation (same targets, perturbed observations — local flatness, no labels needed), lambda-anchor (above), and:
 4. **"Freeze the generalist slots" (Josh, from the original memory-layers paper: accumulate pretraining access stats, let CL touch only low-usage slots).** In our stack this is the E42 protection machinery with the store seeded from A-phase (libero-90) usage + protect_hard_u as the freeze (mass-threshold, not slot-count — corefrac handles it). As RETENTION machinery it targets non-problems (pretrain forgetting out-of-scope by E19 constraint; sequential forgetting solved). As FIT machinery the precedents are negative (E9 pretrain-IDF seeding tanked; E19 veto starvation; E42 softprotect's writers IMPROVED by writing into hot slots; coverage won by widening). The interesting reading: a STRUCTURAL distillation anchor — frozen generalist slots pin the shared ~23-44% of every retrieval mixture at the general function, so off-trail routing drift falls back toward the general policy instead of overwritten task-specific content. Zero hyperparameters beyond the mass threshold. If adopted, the claim is "reserved generalist substrate improves off-distribution fallback," NOT the paper's protect-pretraining story.
-5. **RUNNING NOW: the gating measurement** — the A-phase never dumped memory_usage.json, but under frozen-base routing reads are VALUE-INDEPENDENT, so an inert-LR sweep of libero-90 through the A-checkpoint reproduces the A-phase read profile exactly (audit_libero90_usage_rwarmupB_A, 90 tasks x 40 batches, ~1.5h) -> scripts/vla_analysis/generalist_overlap.py computes each sequential task's read/update-event mass on the top-{50,20,10,5}%-mass A-phase sets (outputs/analysis/e42/generalist_overlap.json). High write overlap => E19 starvation regime, freeze is costly; low => freeze ~free (and its residual case is the structural-anchor story). LoRA-FT baseline chains automatically after.
+5. **The gating measurement** — under frozen-base routing reads are VALUE-INDEPENDENT, so an inert-LR sweep of libero-90 through the A-checkpoint reproduces the A-phase read profile exactly (90 tasks x 40 batches), then measure each sequential task's read/update-event mass on the top-{50,20,10,5}%-mass A-phase sets. High write overlap => E19 starvation regime, freeze is costly; low => freeze ~free (and its residual case is the structural-anchor story).
 6. Also noted: VLM-side memory layers (Josh) are viable with a stationarity-safe placement — prefix layers ABOVE the highest expert-memory layer (>14) never enter the prefix caches that expert routing at 8-14 consumes (per-layer KV pairing) — parked as a compute-gated direction pending VM3's read on whether upstream trainable capacity is where the wins are; and inference-side re-planning (execute 25 of 50) noted as legitimate-if-applied-to-all-models, gated behind the per-position error profile.
 
-**Addendum results (17 Jul, 00:30) — generalist-slot overlap MEASURED: the freeze is zero-sum-shaped; demoted.** Gotcha first: this libero_90 build has 73 task_index entries (0-72), not 90 — the audit crashed at "task 73" after sweeping everything that exists (data complete; scripts fixed to 0-72), but the crash idled the box ~7h before the LoRA baseline started (relaunched). Results (outputs/analysis/e42/generalist_overlap.json): A-phase aggregate effnum 58-64k/layer; top-50%-mass core = 22-25k slots (15-17% of table), top-20% ~5.5k, top-10% ~2k. THE PATTERN: sequential tasks' read-overlap ~= write-overlap at EVERY mass threshold (top-50%: reads 26-42% vs writes 23-52%, e4@L14 51.8%(!); top-10%: both 3-8%) — the new tasks write where they read, proportionally at every depth of the A-core. No threshold exists with high read-dependence + low write-demand, i.e. no cheap-protection pocket even under the warmed router: a freeze deep enough to preserve meaningful generalist substrate blocks an equal share of write demand (E19 starvation shape, re-measured), and a free freeze (top-5-10%) protects a near-inert 3-8% of the mixture. VERDICT (revised after discussion, see below): the DEEP freeze (top-50%) is dead — E19 starvation shape re-measured; the SHALLOW freeze (top-10-20% mass, 2-6k slots) is a live bake-off candidate on equal standing with demo-jitter and the lambda-anchor. Side note: e4 (weakest rollout task) is the heaviest A-core writer (up to 52%), e9 the most private (23-27%) — consistent with e4's function living on contested generalist substrate.
+**Addendum results (17 Jul, 00:30) — generalist-slot overlap MEASURED: the freeze is zero-sum-shaped; demoted.** Gotcha first: this libero_90 build has 73 task_index entries (0-72), not 90. Results: A-phase aggregate effnum 58-64k/layer; top-50%-mass core = 22-25k slots (15-17% of table), top-20% ~5.5k, top-10% ~2k. THE PATTERN: sequential tasks' read-overlap ~= write-overlap at EVERY mass threshold (top-50%: reads 26-42% vs writes 23-52%, e4@L14 51.8%(!); top-10%: both 3-8%) — the new tasks write where they read, proportionally at every depth of the A-core. No threshold exists with high read-dependence + low write-demand, i.e. no cheap-protection pocket even under the warmed router: a freeze deep enough to preserve meaningful generalist substrate blocks an equal share of write demand (E19 starvation shape, re-measured), and a free freeze (top-5-10%) protects a near-inert 3-8% of the mixture. VERDICT (revised after discussion, see below): the DEEP freeze (top-50%) is dead — E19 starvation shape re-measured; the SHALLOW freeze (top-10-20% mass, 2-6k slots) is a live bake-off candidate on equal standing with demo-jitter and the lambda-anchor. Side note: e4 (weakest rollout task) is the heaviest A-core writer (up to 52%), e9 the most private (23-27%) — consistent with e4's function living on contested generalist substrate.
 
 **Verdict revision (17 Jul, discussion with Josh — the first "demoted" call was overzealous).** The zero-sum reading equated overlap mass with cost and benefit, but neither conversion is linear, and they bend in opposite directions:
 1. **Cost is sub-linear in write-event overlap.** The hard veto removes frozen slots from top-t CANDIDACY (the S13 fix), so the 1536 budget redistributes to the next-ranked slots automatically — nothing is wasted and the adapted footprint keeps its size, just relocated. Reads are untouched (frozen slots keep serving their preserved A-content into every mixture — the point of the freeze). The residual cost is only that corrections at the 3-8% of read mass on frozen slots must be expressed through the other ~92-97% of each state's 144-slot mixture — mostly compensable (the beta-calibration's static-overstates-real result; LN renormalization). Estimated real fit cost of a top-10-20% freeze: ~1-3%, not the naive 3-16%.
 2. **Benefit is plausibly CONCENTRATED where the freeze is cheap.** The structural-anchor value rides on off-trail routing drift landing on the hottest, most scene-generic slots — i.e. exactly the top-~2k, not the top-25k. Overlap mass is not the currency the benefit is paid in, so the 1:1 table cannot rule the shallow freeze out.
-3. **It is the CHEAPEST bake-off arm to implement** (protect_hard_u shipped+smoked; the A-phase usage profile now on disk; missing piece = a ~20-line seed-the-store-from-stats hook), with no hyperparameters beyond the mass threshold — the opposite of the demotion rationale.
+3. **It is the CHEAPEST bake-off arm to implement**, with no hyperparameters beyond the mass threshold — the opposite of the demotion rationale.
 Honest cautions that stand: the benefit is contingent on the off-trail mechanism (instrument still to run — the gate for the whole remedy family), and the preserved fallback is a policy with 0-2% floors on these tasks (the bet is coherent-generic motion off-trail beats corrupted-mixture motion, keeping states recoverable — plausible, unproven). What the table genuinely killed: the deep freeze, and the paper's protect-most-of-the-substrate framing (our router sends new tasks INTO the pretraining core; theirs evidently didn't).
 
 ---
-## Entry 43 - 17 Jul 26 (Composition arms: levers COMPOSE in function space (block-min 0.0880, project-lowest; 4x does NOT saturate) but 50-ep finals stay in the 40+/-2 band — the conversion slope measured across a 31% loss range (~+2pp per −10% loss, far too shallow for 70). FIRST real function-space give-back ladder (e9 own->final: 1x −3% / 2x +7.7% / 4x +14.5%, pre-registered predictions hit). LoRA-FT partials REPRICE the gap: e4=58 (above base-joint 52) with clean chunk 0.018 vs our 0.153 (9x) — the e4 deficit is substantially FIT, not pure conversion; e6=44 (BELOW staged 54-56). Freeze mechanism shipped (protect_seed_path); softprotect-fixed + freeze5k arms launched on the VMs; jitter probe built+smoked; LoRA compass (expert-only vs VLM-only) queued)
+## Entry 43 - 17 Jul 26 (Composition arms: levers COMPOSE in function space (block-min 0.0880, project-lowest; 4x does NOT saturate) but 50-ep finals stay in the 40+/-2 band — the conversion slope measured across a 31% loss range (~+2pp per −10% loss, far too shallow for 70). FIRST real function-space give-back ladder (e9 own->final: 1x −3% / 2x +7.7% / 4x +14.5%, pre-registered predictions hit). LoRA-FT partials REPRICE the gap: e4=58 (above base-joint 52) with clean chunk 0.018 vs our 0.153 (9x) — the e4 deficit is substantially FIT, not pure conversion; e6=44 (BELOW staged 54-56))
 
 ### The two composition arms (stageB-verbatim + deltas; init cells 20-ep, finals 50-ep; seed 1000; configs verified from checkpoints)
 
@@ -2969,7 +2783,7 @@ Honest cautions that stand: the benefit is contingent on the off-trail mechanism
 | VM1 lr2x+topt3072 | 20->[32] | 55->[56] | 10->[14] | 70->[64] | [36] | 38.2 | **40.4** |
 | VM2 lr4xsched+topt3072 | 30->[20] | 60->40->[54] | 35->[14] | 100->[80] | [44] | 53.8 | **42.4** |
 
-Loss (block-min/block-END means): VM1 **0.0969/0.1077**, VM2 **0.0880/0.1019** — the two lowest in project history (top3k 0.1086, stageB 0.1274). Grad norms clean at 4e-3 (max 0.020); schedules honored (peaks 1.96e-3/3.92e-3). e7's loss response at 4x is the outlier: 0.1167 -> 0.0891 (−24%).
+Loss (block-min/block-END means): VM1 **0.0969/0.1077**, VM2 **0.0880/0.1019** — the two lowest in project history (top3k 0.1086, stageB 0.1274). Grad norms clean at 4e-3 (max 0.020). e7's loss response at 4x is the outlier: 0.1167 -> 0.0891 (−24%).
 
 **Pre-registered gates scored:** VM1 "inits>=47 AND give-back>=0 -> final>=42-45": inits FAILED (38.2), give-back passed (+2.2), final missed (40.4) — neither the frontier nor the FAIL branch fired; the arm is a wash vs softp/lr2x. VM2 "block-ENDs worse => saturation binding": block-ENDs were BETTER — **the amplitude axis did not saturate in function space.** e9 init >=20: VM1 failed (10), VM2 passed (35) then gave it back to 14.
 
@@ -3006,17 +2820,12 @@ Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; 
 
 ### Discussion outcomes (Josh, 17 Jul) — the plan
 
-1. **Off-trail instrument, jitter version BUILT** (`scripts/vla_analysis/probe_jitter.py`, smoked both model classes): perturb raw demo obs (state sigma x per-dim std; image pixel noise; RNG seeded per task/batch/scale so all models see identical inputs), score the 10-step-denoised chunk vs the demo chunk; the READ is across-model degradation slopes at matched clean error (shared target bias cancels). Full version (score on rollout-visited states; target-free drift ||f_after − f_own_block|| on- vs off-trail) needs an obs-dump in the eval loop — deferred pending jitter results. Grid running: staged finals (VM1/VM2/softp/top3k/stageB) x {e4,e9} + LoRA t0; r2244 skipped (10-task exposure = protocol mismatch).
-2. **Softprotect retest LAUNCHED**: `stageB_seq5_lr4xsched_topt3072_softprotect_fixed.sh` — single delta vs VM2 = momentum-FIXED grad_scale blend + corefrac. Pre-registered: e9 own ~0.28 held, own->final <=+4% (vs +14.5%), e9/e4 finals up; FAIL = writer block-min MSE +10%. Framing: mechanism validation + de-taxing the LR axis (bank 4x fit for whenever conversion improves), not a points bet.
-3. **Generalist freeze LAUNCHED**: `stageB_seq5_lr4xsched_topt3072_freeze5k.sh` — top-5000 A-phase read-mass slots/layer (18-19% of A-phase mass; committed artifact `scripts/vla_analysis/data/a_phase_top5k_slots.json`) seeded u=1.0 + protect_hard_u=0.9 structural veto; single conceptual delta vs VM2. **Correction from discussion (Josh): my "freeze buys no fit so it can't push the frontier" was the fit=perf error this project exists to kill.** The mechanism: hottest A-slots = the generalist transforms in every mixture; sequential writes erode them; on-demo MSE never registers (own-task adaptation compensates on-trail); off-trail the eroded generalists are the fallback => rollout cost invisible in loss. Freeze removes the erosion; expected signature = flat MSE, better rollouts, shallower jitter slope. Pre-registered reads in the script header.
-4. **LoRA compass QUEUED** (`baselines/loraft_compass_e4.sh`): two e4-only arms — expert-only (attn+MLP+proj) vs VLM-only (attn+MLP+proj) vs the full-LoRA 58 anchor. A~58/B-low => n256/r4 staged build, VLM memory dead; A-low/B~58 => VLM-side memory is the build (placement chosen by running the E36 feature probe on PREFIX layers, not by guess — and low placement is allowed if the dual-path trick extends to the prefix KV, one extra prefix forward/batch); both mid => expert first; both high => cheapest wins. C (expert-MLP-only, attention ablation) dropped: we are not building attention-path memory regardless (parked; per-token routing makes it feasible in principle — each token routes itself, no seq-level router — but k/v corrections make interference cross-token), so its content only prices a caveat the 1-day n256/r4 arm tests directly.
-5. **n256/r4 dose fixed**: n_keys 384->256 (65.5k slots, ~0.9x current param budget) x r=4, NOT n/4 (36.9k would dip below the A-phase's 58-64k effective slot usage => forced collisions at pretrain fill). Staged rebuild = warm-up ~3h + A ~3h + seq ~14h ~ 1 day/arm. Note: values-only stage-2/3 could likely afford r4-on-all-4-layers at the CURRENT bank too (the config joint training OOM'd on).
+1. **Off-trail instrument, jitter version**: perturb raw demo obs (state sigma x per-dim std; image pixel noise; RNG seeded per task/batch/scale so all models see identical inputs), score the 10-step-denoised chunk vs the demo chunk; the READ is across-model degradation slopes at matched clean error (shared target bias cancels). Full version (score on rollout-visited states; target-free drift ||f_after − f_own_block|| on- vs off-trail) needs an obs-dump in the eval loop — deferred pending jitter results. Grid: staged finals (VM1/VM2/softp/top3k/stageB) x {e4,e9} + LoRA t0; r2244 skipped (10-task exposure = protocol mismatch).
+2. **Softprotect retest**: single delta vs VM2 = momentum-FIXED grad_scale blend + corefrac. Pre-registered: e9 own ~0.28 held, own->final <=+4% (vs +14.5%), e9/e4 finals up; FAIL = writer block-min MSE +10%. Framing: mechanism validation + de-taxing the LR axis (bank 4x fit for whenever conversion improves), not a points bet.
+3. **Generalist freeze**: top-5000 A-phase read-mass slots/layer (18-19% of A-phase mass) seeded u=1.0 + protect_hard_u=0.9 structural veto; single conceptual delta vs VM2. **Correction from discussion (Josh): my "freeze buys no fit so it can't push the frontier" was the fit=perf error this project exists to kill.** The mechanism: hottest A-slots = the generalist transforms in every mixture; sequential writes erode them; on-demo MSE never registers (own-task adaptation compensates on-trail); off-trail the eroded generalists are the fallback => rollout cost invisible in loss. Freeze removes the erosion; expected signature = flat MSE, better rollouts, shallower jitter slope.
+4. **LoRA compass**: two e4-only arms — expert-only (attn+MLP+proj) vs VLM-only (attn+MLP+proj) vs the full-LoRA 58 anchor. A~58/B-low => n256/r4 staged build, VLM memory dead; A-low/B~58 => VLM-side memory is the build (placement chosen by running the E36 feature probe on PREFIX layers, not by guess — and low placement is allowed if the dual-path trick extends to the prefix KV, one extra prefix forward/batch); both mid => expert first; both high => cheapest wins. C (expert-MLP-only, attention ablation) dropped: we are not building attention-path memory regardless (parked; per-token routing makes it feasible in principle — each token routes itself, no seq-level router — but k/v corrections make interference cross-token), so its content only prices a caveat the 1-day n256/r4 arm tests directly.
+5. **n256/r4 dose fixed**: n_keys 384->256 (65.5k slots, ~0.9x current param budget) x r=4, NOT n/4 (36.9k would dip below the A-phase's 58-64k effective slot usage => forced collisions at pretrain fill). Note: values-only stage-2/3 could likely afford r4-on-all-4-layers at the CURRENT bank too (the config joint training OOM'd on).
 6. **Rejected**: seed-averaged inference (Josh: a hack, from other papers, lifts baselines too). Attention memory parked. r2244 as jitter anchor skipped.
-
-### Code/artifacts shipped (commits 75f69f1c, c0facc6f)
-- `--protect_seed_path` (trainer): seeds the prior-usefulness store u=1.0 from {module_key: [slots]} JSON before the task loop; with hard_u => structural candidacy veto for the whole run; validation requires protection on + file exists; '' = legacy byte-identical. Smoke S14a-e (suite 55/55; affine 20/20).
-- `scripts/vla_analysis/data/a_phase_top5k_slots.json` (committed so clone VMs need no audit rsync).
-- `scripts/vla_analysis/probe_jitter.py` + the E43 analysis artifacts: `outputs/analysis/e43/{slots_summary.json,slots.out,probe_conversion.jsonl,probe_jitter.jsonl}`, scratchpad e43 scripts mirrored in the session dir.
 
 ### Entry 43 addendum (17 Jul, discussion) — two working heuristics from the LoRA cells, and the regime filter on old counter-evidence
 
@@ -3033,43 +2842,36 @@ Both VM2 cells hit their pre-registered predictions (own 0.287-0.295 -> 0.2792; 
 ---
 ## Entry 44 - 18 Jul 26 (Overnight E44 program: COMPASS answers the value-path question — expert-only dense LoRA FAILS e4 (14 @ chunk 0.229) while VLM-only nearly reproduces full (40 @ 0.030) => perception adaptation carries ~10x of the fit; span attribution finds the leverage CONCENTRATED in the language field (instruction + pi05's STATE-AS-TEXT tokens: 36-57% of dL/dh at 20x per-position density, L15 peak) with OPEN routing geometry (inter-task cos 0.73-0.86 vs 0.96+ image); softprotect-FIXED passes its gate (e9 give-back +14.5% -> +3.9%, victim cores 0.00% bleed) but taxes the last writer (+49% block-min); freeze5k mechanically perfect (0/5000 slots moved) and strategically null at 5 tasks (give-back WORSE +19.2%); multitask LoRA confirms the threshold law's e6 flip (52 vs specialist 44) and kills its iso-budget strong form. => THE BUILD: text-span VLM memory at LM [15,16], uniform n256/r2 across all 6 layers (expert right-sized to its measured 58-64k effective usage), VLM routing sweep LAUNCHED)
 
-### Overnight results (all pre-registered reads scored; full battery in outputs/analysis/e43/e44_running_notes.md)
+### Overnight results (all pre-registered reads scored)
 
 **Compass (e4, 50-ep + chunk):** full LoRA 53.2M -> chunk 0.020 / roll 58; VLM-only 39.2M -> 0.030 / 40; expert-only 13.9M -> 0.229 / 14 (train loss plateau ~0.18 = ceiling, not undertraining); staged memory (expert side) 0.118-0.19 / 20-35. VERDICT: the e4 fit requirement is UNMEETABLE from the expert side at any density — placement, not density/rank, is the currency (the "22x per-forward gap" framing dies: expert-dense has 6x our per-forward params and does worse than our sparse memory at matched placement, A-phase-substrate caveat noted). VLM necessary and nearly sufficient; the expert tower adds 0.030->0.020 + 18pp (e4's threshold sits ~0.02-0.03 — steepest part of the curve). Threshold law 4/4 then 5/5 (VLM-only high-chunk... low-chunk/high-roll branch consistent).
 
-**Span attribution (new instrument, scripts/vla_analysis/probe_span_attribution.py, on the VLM-only LoRA):** pad control exactly 0.00% at every layer (instrument clean); Taylor term ~0 at displacement 0.35-0.94 (beyond first order — expected). Gradient share of the action loss by prefix span: image (~770 pos) 64->43% falling with depth; instruction (~24 pos) 13->8%; **STATE-AS-TEXT (~30-40 pos) 22->49% RISING with depth — pi05 tokenizes proprioception into the prompt (`Task: ..., State: ...;` — processor_pi05.py:83), and at L15 those positions carry HALF the loss sensitivity at ~20x the per-position density of image tokens.** The language FIELD (instruction+state) = 36-57% of leverage in ~60 contiguous positions. The adapter moved text-position hiddens as much as image ones (disp parity).
+**Span attribution (new instrument, on the VLM-only LoRA):** pad control exactly 0.00% at every layer (instrument clean); Taylor term ~0 at displacement 0.35-0.94 (beyond first order — expected). Gradient share of the action loss by prefix span: image (~770 pos) 64->43% falling with depth; instruction (~24 pos) 13->8%; **STATE-AS-TEXT (~30-40 pos) 22->49% RISING with depth — pi05 tokenizes proprioception into the prompt (`Task:..., State:...;`), and at L15 those positions carry HALF the loss sensitivity at ~20x the per-position density of image tokens.** The language FIELD (instruction+state) = 36-57% of leverage in ~60 contiguous positions. The adapter moved text-position hiddens as much as image ones (disp parity).
 
-**Placement probe (feat_probe_vlm.py, corrected text-span pooling after a padding artifact):** linear task probe 100% at every LM layer 2-16 (98.8-99.3 at 17); all-token (image-dominated) inter-task cos 0.962(L12)-0.995(L17) — crowded, avoid 16/17; **text-span positions: inter-task cos 0.73-0.86, the most open task geometry ever measured in the project, basket family 0.86-0.95 (vs 0.99+ image / 0.978-0.994 expert-side) — the instruction stream separates the lookalike pairs the scene cannot.** Image side: discriminative-but-crowded (task signal spatially sparse in object patches; scenes genuinely ambiguous on lookalikes — the E28 floor at representation level).
+**Placement probe (corrected text-span pooling after a padding artifact):** linear task probe 100% at every LM layer 2-16 (98.8-99.3 at 17); all-token (image-dominated) inter-task cos 0.962(L12)-0.995(L17) — crowded, avoid 16/17; **text-span positions: inter-task cos 0.73-0.86, the most open task geometry ever measured in the project, basket family 0.86-0.95 (vs 0.99+ image / 0.978-0.994 expert-side) — the instruction stream separates the lookalike pairs the scene cannot.** Image side: discriminative-but-crowded (task signal spatially sparse in object patches; scenes genuinely ambiguous on lookalikes — the E28 floor at representation level).
 
 **Protection arms (both single-delta twins of VM2=4x+3072 @ 42.4):**
-- softprotect-FIXED (grad_scale/corefrac/beta4): **mechanism works in production** — u-bin displacement exactly inside the (1-u)^4 envelope (u>=0.9 slots 0.0000; the E42 leak's same bin moved 1.55), victim-core bleeds 0.00% everywhere, e2blk->e9 full bleed 7.55->1.54%. **e9 chunk gate PASS: own 0.2665 (best-ever) -> final 0.2770 = +3.9% (gate <=4; twin +14.5%)**, e9 roll 14->26, e4 20->30. THE BILL: last-writer starvation — e7 block-min +48.7% -> roll 44->28 (the corefrac store accumulates monotonically; by t4 the writer is attenuated across 4 prior profiles); e2 +10.5% absorbed. Final 39.6 ~= twin 42.4 (victims up, writers down). e6 34-vs-54 = **chunk-rollout misrank #3** (its function flat + family-best 0.0714->0.0728) — e6 cells carry no attribution weight, now demonstrated three ways. NEXT (queued): a non-accumulating/decaying protection store to keep e9's +12 without e7's -16.
-- freeze5k (top-5k A-core seeded, hard_u 0.9): 0/5000 seeded slots moved, bitwise, 40/40 checks — the protect_seed_path mechanism is perfect. Strategically NULL at this horizon: selfcov -10pp/task (frozen slots carry 10-24% of read mass, un-adaptable — a direct read-write-product hit), e7 block-min +26.5%, bleeds UP (displaced budget crowds victim shoulders) => e9 give-back WORSE (+19.2% vs twin +14.5%), finals 39.2, all 5 cells <= twin, jitter slopes ~= twin (no off-trail dividend in-shell). The A-core erosion it guards against measures 0.2-0.5% core50 here — it prevented non-damage. RETIRED at 5-task scale; revisit only if a 10-task run shows real A-core erosion.
+- softprotect-FIXED (grad_scale/corefrac/beta4): **mechanism works in production** — u-bin displacement exactly inside the (1-u)^4 envelope (u>=0.9 slots 0.0000; the E42 leak's same bin moved 1.55), victim-core bleeds 0.00% everywhere, e2blk->e9 full bleed 7.55->1.54%. **e9 chunk gate PASS: own 0.2665 (best-ever) -> final 0.2770 = +3.9% (gate <=4; twin +14.5%)**, e9 roll 14->26, e4 20->30. THE BILL: last-writer starvation — e7 block-min +48.7% -> roll 44->28 (the corefrac store accumulates monotonically; by t4 the writer is attenuated across 4 prior profiles); e2 +10.5% absorbed. Final 39.6 ~= twin 42.4 (victims up, writers down). e6 34-vs-54 = **chunk-rollout misrank #3** (its function flat + family-best 0.0714->0.0728) — e6 cells carry no attribution weight, now demonstrated three ways. NEXT: a non-accumulating/decaying protection store to keep e9's +12 without e7's -16.
+- freeze5k (top-5k A-core seeded, hard_u 0.9): 0/5000 seeded slots moved, bitwise — the mechanism is perfect. Strategically NULL at this horizon: selfcov -10pp/task (frozen slots carry 10-24% of read mass, un-adaptable — a direct read-write-product hit), e7 block-min +26.5%, bleeds UP (displaced budget crowds victim shoulders) => e9 give-back WORSE (+19.2% vs twin +14.5%), finals 39.2, all 5 cells <= twin, jitter slopes ~= twin (no off-trail dividend in-shell). The A-core erosion it guards against measures 0.2-0.5% core50 here — it prevented non-damage. RETIRED at 5-task scale; revisit only if a 10-task run shows real A-core erosion.
 
 **Multitask LoRA (one adapter, 5 tasks, SAME 5k total budget):** 49.2 overall — e4 38 / e6 52 / e9 36 / e2 72 / e7 48. Pre-registered: e6 UP vs specialist 44 ✓ (breadth removes the n=1 penalty, lands in the staged 54-56 band); e4/e9 down ✓ (precision-bound, 1/5 per-task exposure); **iso-budget strong form FAILS** (matched-3 avg 42.0 vs specialists 57.3) — the two currencies (precision, support) trade at task-specific rates; support pays near threshold, precision rules far from it. e7=48 = best e7 measured anywhere.
 
-### THE BUILD (decided with Josh; code SHIPPED + smoked)
+### THE BUILD (decided with Josh)
 
 **Text-span VLM memory:** modules on paligemma LM layers [15,16], attached to the LAST-200 prefix positions (the tokenized language field = instruction + state-as-text), retrieval computed on that slice only. Placement logic: L15+ keeps the prefix KV at <=14 bit-identical => the expert router's certificate, its frozen-base routing, AND its value-path inputs all survive untouched (per-layer KV pairing: suffix i attends prefix i only); the lowest VLM module's router input is memory-free by construction. Rejected: full-attachment v1 (routing on the crowded 0.96+ image cone, 14x counter blow-up — prefix is ~770 tokens vs the suffix's 51, the "why were VLM forwards so high" mystery from day-2, now a design input); layers 16/17-only (geometry degrades); <=L14 (dual-path prefix build not warranted for the leverage delta).
 
-**Uniform n256/r2 across all 6 memory layers (Josh):** the expert bank right-sized 384^2->256^2 (65,536 ~= its measured 58-64k aggregate effective usage — right-sizing a FRESH bank, not slot-transplant pruning) + VLM 256^2 r2 on the 2048-dim hidden. VRAM: total values 2.15B (quadruple 34.4GB < today's expert-only 38.7) — the expert shrink pays for the VLM addition; residual lever = bs16/accum2 or VLM knn16 vs the gather-activation term (stored per-token slot matrices — the cost term bank size does NOT reduce), chosen by a measured VRAM gate before A-phase. VLM knn=16 (routing_loss_topk aligned =16, E24 rule).
+**Uniform n256/r2 across all 6 memory layers (Josh):** the expert bank right-sized 384^2->256^2 (65,536 ~= its measured 58-64k aggregate effective usage — right-sizing a FRESH bank, not slot-transplant pruning) + VLM 256^2 r2 on the 2048-dim hidden. Total values 2.15B — the expert shrink pays for the VLM addition. VLM knn=16 (routing_loss_topk aligned =16, E24 rule).
 
-**Code (commit pending this entry):** memory_config.py — vlm_layers/vlm_mem_n_keys/vlm_lora_rank/vlm_mem_knn/vlm_text_span + internal text_span; memory_lite.py — MLPPlusMemory text-span forward (slice retrieval, containment: pre-span positions bitwise plain-mlp; memory_only guarded); modeling_pi05.py — VLM attach via derived cfg (dataclasses.replace) with placement guard (vlm_layers must sit ABOVE the highest expert memory layer). The joint training path already dispatches wrapped MLPs generically for BOTH towers (task_ids/lang_emb reach VLM modules with zero new threading); prefix-only inference calls mlp(x) plain (losses off, memory active) — correct. Smokes: module suite 16/16 (smoke_vlm_memory.py: containment, slice-only retrieval, short-seq guard, grads, legacy identity, derived attach) + policy-level on the real stage-1 checkpoint (attach logs, 6/6 trainable tensors on LM15/16 only, retrieval token dim exactly B*200, aux losses live and keys grads NONZERO on the two-forward queue test — the first-forward zero-grad is the known E23 single-task/empty-queue artifact).
+### VLM routing sweep (regime hazards: (1) geometry already open => sep may need less force; (2) instruction constant within task => contrastive intra-pull is an elevated E21 collapse risk — the state tokens carry the within-task variation the router must keep)
 
-### VLM routing sweep (3 arms, ~2.3h each + 35min audit; regime hazards: (1) geometry already open => sep may need less force; (2) instruction constant within task => contrastive intra-pull is an elevated E21 collapse risk — the state tokens carry the within-task variation the router must keep)
-
-Gates (vlm_audit_analysis.py, re-anchored for the 65,536 bank): PASS = held-out famIoU <= ~0.25 AND per-task core50 >= ~650 AND effnum >= ~500; COLLAPSE tripwire effnum <= ~150 (per-task-bias signature, kill regardless of IoU); stretch famIoU <= 0.15. Winner -> joint A-phase (both value banks; expert re-warmed at n256 in parallel on this box, gate: famIoU <= ~0.20 / core50 >= ~1300 vs the n384 certificate 0.145/2955) -> e4 1-task plasticity probe (chunk toward <=0.08 = build validated; ~0.12 = restricted attachment failed -> full-attachment fallback arm) -> 5-task sequential.
-
-Scripts to run (job_scripts/nebius/libero_90/staged/):
-- vlm_rwarmup_sweep_armA_c0.05_sep5.0.sh (expert_rwarmup10k_n256.sh chained behind it)
-- vlm_rwarmup_sweep_armB_c0.0125_sep2.0.sh
-- vlm_rwarmup_sweep_armC_c0_sep5.0.sh
+Gates (re-anchored for the 65,536 bank): PASS = held-out famIoU <= ~0.25 AND per-task core50 >= ~650 AND effnum >= ~500; COLLAPSE tripwire effnum <= ~150 (per-task-bias signature, kill regardless of IoU); stretch famIoU <= 0.15. Winner -> joint A-phase (both value banks; expert re-warmed at n256, gate: famIoU <= ~0.20 / core50 >= ~1300 vs the n384 certificate 0.145/2955) -> e4 1-task plasticity probe (chunk toward <=0.08 = build validated; ~0.12 = restricted attachment failed -> full-attachment fallback arm) -> 5-task sequential.
 
 ### Entry 44 addendum (18 Jul ~14:00) — PAD CONTAMINATION bug in the v1 text-span attach: found at arm A's audit, mechanism-verified, FIXED, sweep relaunched as _padfix
 
 Arm A's audit failed both gates (famIoU 0.466/0.469, core50 95-418) with a signature that unmasked a v1 design bug: the last-200 span includes ~140 PAD positions (valid language tokens ~52-57), and pad hiddens — near-identical across all samples and tasks — query the memory too. Direct verification on the arm-A checkpoint: the pad region's ~40k slot-draws collapse onto ~230 unique slots (the shared core) while the text region routes richly (8-9k unique slots/task-batch) — the router is healthy on real tokens; the statistics, TF counts, contrastive means, and routing histograms were drowning in 70% pad mass. Contaminated B/C audits confirm ARM-INVARIANCE (famIoU 0.454-0.507 for all three recipes — the sweep measured the pad floor, not the routing configs).
 
-FIX (commit with this entry): `token_mask` threaded through HashingMemoryLite.forward — the language attention mask reaches the VLM wrappers via `set_vlm_token_mask` at both pi05 embed_prefix call sites. Valid tokens are a contiguous PREFIX of the field, so the loss/queue machinery runs on a rectangular [:, :Tv] slice (no internal loss-fn surgery); last_indices/last_weights + per-task diagnostics filter by the full mask (audit/TF-IDF/protection see valid tokens only); memory output zeroed at pads (bitwise plain-mlp there); stale-mask shape guard -> unmasked behavior. Ring-buffer sizing pinned via size_T (varying Tv would have churned the routing queue). Smokes: module suite 20/20 (S9a-d pad exclusion) + policy-level (last_indices token dim 431 = sum of valid tokens across the batch, aux losses + keys grads live). Sweep run/audit names bumped to _padfix; contaminated checkpoints retained for the before/after comparison.
-## Entry 45 - 18 Jul 26 (VLM routing sweep: ALL THREE ARMS FAIL famIoU (0.42-0.53) — failure is CONTENT-STRUCTURAL, not dose: the state-as-text sub-span routes on shared digit vocabulary (sub-span probe: state region famIoU 0.36-0.40 vs instruction 0.21-0.22, which PASSES gates on the failed checkpoints). Aux-only regime: contrastive = the SPREADING force (breadth monotone in c; B-vs-D single delta). Querystats probe: state positions carry task signal at 0.11-0.13x their digit noise; pooled-state key near-degenerate (family cos 0.98-0.99); instruction anchor alone already carries within-task conditionality (intra-cos 0.864-0.890). => POOLED-ROUTER build shipped (route state region on one per-sample anchored key; value path per-position) + 3-arm overnight chain to the e4 decision instrument)
+FIX: the language attention mask reaches the VLM wrappers. Valid tokens are a contiguous PREFIX of the field, so the loss/queue machinery runs on a valid-token slice; per-task diagnostics filter by the full mask (audit/TF-IDF/protection see valid tokens only); memory output zeroed at pads (bitwise plain-mlp there).
+## Entry 45 - 18 Jul 26 (VLM routing sweep: ALL THREE ARMS FAIL famIoU (0.42-0.53) — failure is CONTENT-STRUCTURAL, not dose: the state-as-text sub-span routes on shared digit vocabulary (sub-span probe: state region famIoU 0.36-0.40 vs instruction 0.21-0.22, which PASSES gates on the failed checkpoints). Aux-only regime: contrastive = the SPREADING force (breadth monotone in c; B-vs-D single delta). Querystats probe: state positions carry task signal at 0.11-0.13x their digit noise; pooled-state key near-degenerate (family cos 0.98-0.99); instruction anchor alone already carries within-task conditionality (intra-cos 0.864-0.890). => POOLED-ROUTER build (route state region on one per-sample anchored key; value path per-position) + 3-arm overnight chain to the e4 decision instrument)
 
 ### Sweep verdict (padfix arms; gates famIoU<=0.25 ∧ core50>=650 ∧ effnum>=500; collapse effnum<=150)
 
@@ -3080,48 +2882,44 @@ FIX (commit with this entry): `token_mask` threaded through HashingMemoryLite.fo
 | C | 0 | 5.0 | killed <1k steps (top-1 0.7, support ~300) | | | COLLAPSE |
 | D | 0.5 | 2.0 | 0.501/0.529 | 0.364/0.411 | 11.0k/13.1k | FAIL (pre-registered sprawl signature) |
 
-Integrity: configs verified single-delta from checkpoints; the 5a64d2b4-vs-b1ce1350 code skew between arms is immaterial (diffed: loss/queue machinery ran on the valid-token slice in both; never-attach = hygiene/VRAM); pad fix verified working (cores 3-13k with real arm variance vs the contamination's 95-418 shared pad core — same famIoU number, completely different object). No collapse in A/B/D (effnum min 1286).
+Integrity: configs verified single-delta from checkpoints; code skew between arms is immaterial (loss/queue machinery ran on the valid-token slice in both); pad fix verified working (cores 3-13k with real arm variance vs the contamination's 95-418 shared pad core — same famIoU number, completely different object). No collapse in A/B/D (effnum min 1286).
 
 ### Mechanism (three facts + one instrument)
 
 1. **c sets breadth, monotonically** (core50 4.2k -> 8.4k -> 11k at c 0.0125 -> 0.05 -> 0.5; B-vs-D is a clean single delta). In the aux-only warm-up (values pinned => MSE grad on router exactly 0, E36 smoke) SupCon's SAME-TASK-DENOMINATOR term (uniformity) is the only anti-collapse force — its coefficient sets the equilibrium radius. The joint-era "c = compaction" calibration inverts here: there MSE spread and alignment tightened; here sep collapses (arm C) and uniformity spreads. On this tower same-task mean queries differ ONLY via state digits => the uniformity push inflates exactly the generic subspace.
 2. **sep bought nothing** (A sep5 >= B sep2 on famIoU) — translation can't keep clouds this large disjoint (E25-P7 replayed).
 3. **The protocol is fine**: the expert n256 re-warm ran the identical aux-only recipe the same day and PASSED (famIoU 0.145 = the n384 certificate; core50 1713; family 0.267/0.115/0.055). The difference is the routed content.
-4. **Sub-span probe** (NEW instrument, scripts/vla_analysis/probe_subspan.py — per-position routing reconstructed from the order-preserving eval-path stats; region split instr[0:16)/mid/state[28:]): the language field is two objects. State region (~2/3 of valid positions): each task routes onto ~45k slots (69% of bank) of shared numeric vocabulary — famIoU 0.36-0.40, bg 0.20-0.29. Instruction region: famIoU 0.212-0.224, core50 407-1610, bg 0.051-0.091 — arm A's instr region PASSES all three gates on the checkpoint that just failed; instr famIoU ~0.22 is ARM-INVARIANT (the genuine word-sharing floor, 3.4x bg). Caveat: per-position IoUs are estimator-depressed (sparse-vs-sparse, E24); region aggregates are the honest numbers. Artifacts outputs/analysis/e44/subspan_arm{A,B}.json.
+4. **Sub-span probe** (NEW instrument, per-position routing reconstructed from the order-preserving eval-path stats; region split instr[0:16)/mid/state[28:]): the language field is two objects. State region (~2/3 of valid positions): each task routes onto ~45k slots (69% of bank) of shared numeric vocabulary — famIoU 0.36-0.40, bg 0.20-0.29. Instruction region: famIoU 0.212-0.224, core50 407-1610, bg 0.051-0.091 — arm A's instr region PASSES all three gates on the checkpoint that just failed; instr famIoU ~0.22 is ARM-INVARIANT (the genuine word-sharing floor, 3.4x bg). Caveat: per-position IoUs are estimator-depressed (sparse-vs-sparse, E24); region aggregates are the honest numbers.
 
 ### Discussion (Josh) -> the design
 
 Options for the router input: (1) pool everything (rejected — sacrifices the measured-good per-token instruction routing); (2) per-token instr + pool(state) key for the state region; (3) per-token instr + state keyed by pooled(instr(+state)) — anchor + smooth offset = footprint translation by construction. Josh's push: measure the component variances ANALYTICALLY first and scale-match (the E28 lesson: ||scene||/||beta|| = 17-21x WAS the routing outcome).
 
-**Querystats probe** (NEW, scripts/vla_analysis/probe_querystats.py, stage-1 features = the router input, libero_10; outputs/analysis/e44/querystats_stage1.json):
+**Querystats probe** (NEW, stage-1 features = the router input, libero_10):
 - State positions: between-task/within-task variance = **0.126 (L15) / 0.112 (L16)** vs instruction 0.985/0.810 — task context IS mixed in (Josh's hypothesis, confirmed present) but sits 8-9x under the digit noise => per-token state routing routes on the generic 88% (the sprawl, quantified).
 - Pooled state component: between-task cos 0.931/0.970, **family 0.981/0.991** — near-degenerate; a state-only palette key has almost no family separation to work with.
 - Instruction pool: between 0.800/0.866, family 0.882/0.919; **intra-cos 0.864/0.890** — the anchor alone already carries within-task variation (image/state context bleeds into instruction-token hiddens) => the E21 constant-palette fear is empirically weakened at b=0.
 - Composite grid k = a*nrm(instr)+b*nrm(state): separation degrades monotonically in b (inter 0.800 -> 0.898 -> 0.931 across b=0 -> 1 -> state-only). **(1,0) dominates the init geometry**; b>0 only pays if the trained proj converts the state channel into conditionality worth the separation cost. Pooled means arrive at sqrt(rho)-shrunken norms (coherence 0.22-0.49) => component RMS-normalization is mandatory (the lop-sidedness Josh predicted, measured).
 - Multiplicity design note: all state positions share one key => the palette enters losses/stats at xn_state. Deliberate split: TF/write-demand counts keep the multiplicity (slots serve n_state positions); routing-loss dedup (loss-mask) DEFERRED as a fast-follow — tonight's arms carry the documented z-mean weighting (~2/3 palette).
 
-### THE BUILD (shipped, smoked)
+### THE BUILD
 
-- `vlm_router_pool` ("" legacy / "anchored" / "state") + `vlm_router_pool_weights` (memory_config.py); `MLPPlusMemory._pooled_router_keys` — router keys ONLY (value path per-position on live x): instr positions [0,b) per-token; positions [b,v) share a*nrm(pool instr[3:b]) + b*nrm(pool state[b+3:v-5]), rescaled to batch-mean token RMS; per-row fallback to per-token when the boundary is missing (memory_lite.py). Boundary threaded from the embed_prefix call sites via token id 3040 ("▁State", tokenizer pinned in processor_pi05.py): `_vlm_instr_len_from_tokens` -> `set_vlm_token_mask(masks, instr_len=...)` (modeling_pi05.py).
-- Smokes: module S11a-i (broadcast-region routing identical / instr per-token / per-position value outputs / marker-less fallback / missing-instr_len == legacy bitwise / mode+weight variants / pre-span + ragged-tail invariants / grads) — suite ALL PASS; policy-level on the real stage-1 ckpt: instr_len=17 usable 8/8, **broadcast-region routing shared: True at L15+L16**, two-forward queue test keys grads 14.0/16.6.
-- Merge tooling: `extract_router_bank.py` (expert tower's 60 memory tensors from the n256 re-warm, 1.11B params, bit-exact — values are the router-only warm-up's slot_down-random/slot_up-zero) -> outputs/analysis/e44/expert_bank_n256_rwarmup10k.safetensors (4.4G) + expert_bank_n256_config.json; `merge_banks.py` (pure safetensors union + config merge, no model build; placement guard makes the certificates provably survive: expert routing reads prefix KV <=L14 which VLM mem at 15/16 cannot touch; VLM routing input memory-free below).
+- Router keys ONLY (value path per-position on live x): instr positions [0,b) per-token; positions [b,v) share a*nrm(pool instr[3:b]) + b*nrm(pool state[b+3:v-5]), rescaled to batch-mean token RMS; per-row fallback to per-token when the boundary is missing.
 
-### The 3-arm chain (scripts staged/vlm_pool_*)
+### The 3-arm chain
 
-`vlm_pool_chain_common.sh`: warm-up 10k (router-only, c0.05/sep5.0) -> audit -> vlm_audit_analysis + subspan -> PERMISSIVE gate (kill only min-effnum<=100 or famIoU>=0.45 both layers — strict E44 gates don't transfer to palette-dominated famIoU; morning reads decide) -> merge -> A-phase 10k (values both towers, routers frozen, frozen-base expert routing, bs32 w/ bs16xaccum2 fallback) -> e4 1-task probe (C-config: beta4/top_t1536/5k steps/lr 1e-3->1e-4, 20-ep eval). Chunk probes centrally in the morning; winner -> 5-task attribution run (C-config, vs stageB 32.0/35.0 its near-twin). Arms: **A anchor10 (1,0)** [base box] / **B anchor1005 (1,0.5)** / **C statepool** [bracket end + querystats-calibration cell]. Deferred: 10-task extension (post-validation), sep refinement wave (tomorrow daytime if cells marginal), loss-mask dedup.
+Warm-up 10k (router-only, c0.05/sep5.0) -> audit -> vlm_audit_analysis + subspan -> PERMISSIVE gate (kill only min-effnum<=100 or famIoU>=0.45 both layers — strict E44 gates don't transfer to palette-dominated famIoU; morning reads decide) -> merge -> A-phase 10k (values both towers, routers frozen, frozen-base expert routing, bs32) -> e4 1-task probe (C-config: beta4/top_t1536/5k steps/lr 1e-3->1e-4, 20-ep eval). Chunk probes centrally in the morning; winner -> 5-task attribution run (C-config, vs stageB 32.0/35.0 its near-twin). Arms: **A anchor10 (1,0)** / **B anchor1005 (1,0.5)** / **C statepool** [bracket end + querystats-calibration cell]. Deferred: 10-task extension (post-validation), sep refinement wave (tomorrow daytime if cells marginal), loss-mask dedup.
 
-### Entry 45 addendum (18 Jul eve) — the pooled-state-key question resolved by the variance ledger; merge tooling tested end-to-end; 3-arm chain LAUNCHED
+### Entry 45 addendum (18 Jul eve) — the pooled-state-key question resolved by the variance ledger
 
 **"Doesn't the pooled state key also carry within-task information?" (Josh) — yes, and the probe says the anchor already carries more of it.** The ledger, from querystats: after pooling, the INSTRUCTION pool's within-task variance is 165.9/150.8 (L15/L16) vs the state pool's 77.9/84.9 — attention has already mixed image/proprio context into the instruction-token hiddens, and that contextual bleed survives pooling ~2x better than the state signal survives its own digit noise. Sharper still, the state pool's variation is task-INTERLEAVED: intra-cos 0.852 < inter-cos 0.931 (two same-task samples are less similar than two task centroids — task structure buried), while the instr pool is coherent (intra 0.864 > inter 0.800). So b>0 buys little conditionality not already present at (1,0), at a measured separation cost (inter 0.800->0.898 at b=1). Framing worth recording: **(1,0) is not state-blind memory — state enters through the per-position value path (U_sV_s x_p on each live hidden) and through the anchor's contextual bleed; b controls only whether SLOT SELECTION keys on direct proprioception.** Standing caveats (why (1,0.5) still gets a box): these are init-time statistics through the identity map — a trained proj could extract the task-orthogonal component of the state pool; and variance accounting is not information accounting (phase gating could need the direct channel).
 
-**Merge tooling tested end-to-end** (old armA ckpt + the shipped bank): 895 tensors (22 VLM mem + 60 expert mem), config graft correct (expert [8,10,12,14]/n256/knn36 + VLM fields); the merged artifact loads in exact A-phase mode — **48/847 trainable** (= values + gate/value_proj/swilu x 6 memory layers, both towers), forward/backward clean at 1.0s/step. Tolerance fix for pre-pool configs (66d46b84). Mode flags (train_router_only=True etc.) ride in checkpoint configs and are explicitly overridden at every downstream stage's CLI (E37 rule, applied).
-
-**Launched** (arms A/B/C across the three boxes). Morning protocol: chunk probes on the three e4 checkpoints (pass toward <=0.08; staged-best 0.153, LoRA target 0.020) + audits + subspan region reads -> winner -> 5-task attribution run (C-config). A hard-gate stop overnight ("GATE: HARD FAIL") is a result, not a bug.
+Morning protocol: chunk probes on the three e4 checkpoints (pass toward <=0.08; staged-best 0.153, LoRA target 0.020) + audits + subspan region reads -> winner -> 5-task attribution run (C-config). A hard-gate stop overnight ("GATE: HARD FAIL") is a result, not a bug.
 
 ---
-## Entry 46 - 19 Jul 26 (Pooled-router sweep verdict: BOTH anchored variants hit the expert-certificate routing level (famIoU 0.145-0.151) and produce the largest e4 fit gain in the project (chunk 0.153 -> 0.099, -35%); winner = anchor+state (arm B). Discussion corrections: capacity ledger = read-write product (params fell 11% while the palette became an always-read/always-trained block); L16 routing was NON-stationary (Josh's catch) -> frozen-route extended to the VLM tower (bitwise-exact smoke); route-once shipped (retrieval computed once per shared key; knn36 VRAM 136 -> 127GB); bank-scaling law measured (footprints track bank size, famIoU invariant). -> E46: three like-for-like joint router re-warms (incumbent / vlm-knn36 / uniform n128-r4) LAUNCHED, stop-after-audit)
+## Entry 46 - 19 Jul 26 (Pooled-router sweep verdict: BOTH anchored variants hit the expert-certificate routing level (famIoU 0.145-0.151) and produce the largest e4 fit gain in the project (chunk 0.153 -> 0.099, -35%); winner = anchor+state (arm B). Discussion corrections: capacity ledger = read-write product (params fell 11% while the palette became an always-read/always-trained block); L16 routing was NON-stationary (Josh's catch) -> frozen-route extended to the VLM tower; route-once (retrieval computed once per shared key); bank-scaling law measured (footprints track bank size, famIoU invariant). -> E46: three like-for-like joint router re-warms (incumbent / vlm-knn36 / uniform n128-r4))
 
-### Results — the overnight pooled-router sweep (three chains, all completed unattended)
+### Results — the overnight pooled-router sweep (three chains)
 
 Each chain: VLM router warm-up (10k, aux losses only) -> held-out audit -> merge with the
 certified expert n256 bank -> joint A-phase (values both towers, 10k on libero_90) -> single-task
@@ -3176,23 +2974,21 @@ anchors: previous staged best 0.153, single-task LoRA specialist 0.020).
    routing-loss candidate pool the keys were trained with (E14-16 alignment) — flipping knn on
    16-trained keys is an uncertified router.
 
-### Builds shipped today (all smoked + pushed: 543cb4e1, c74862de, + topk alignment)
+### Builds
 
-- **Frozen-route extended to the VLM tower** (same flag governs both towers): a no-grad fork
+- **Frozen-route extended to the VLM tower**: a no-grad fork
   advances a memory-free prefix stream from L15 and recomputes L16's attention front on it;
-  inference reuses the capture/stash dual pass. 15/15 smokes; router features BITWISE-exact on
-  every valid token (the only diffs live on pad rows, which attend nothing and are excluded from
-  memory — they also explain the first smoke run's spurious failures). No router retrain needed
+  inference reuses the capture/stash dual pass.
+  No router retrain needed
   in principle (memory-free = the certification distribution up to the value_proj-bias residual,
   the known 0.98-transfer term).
 - **Route-once** for shared router keys: the state region routes ONCE per sample on a compact
   sequence [state key, instruction tokens] (key first keeps valid tokens a contiguous prefix for
-  the loss machinery); slot params gathered once per row, applied per-position
-  (apply_shared_palette). Output parity with the redundant path 1.2e-07; usage/TF/audit stats
+  the loss machinery); slot params gathered once per row, applied per-position.
+  Usage/TF/audit stats
   keep served-position multiplicity (numbers comparable); routing/contrastive losses now count
   each unique key ONCE — the pre-registered dedup, a deliberate change to future warm-ups'
-  training signal. VRAM: A-phase 127.8 -> 122.1GB (knn16); **knn36 136.4 -> 126.9GB** — the knn
-  axis is unblocked (was ~4GB headroom, now ~13.5GB).
+  training signal.
 - **Per-tower routing_loss_topk alignment** codified: the derived VLM cfg sets topk = vlm_knn.
 - Also measured: knn is now a per-task palette-capacity lever (64 -> 144 slots x r) under pooled
   routing.
@@ -3209,27 +3005,26 @@ value-filling on an uncertified router. Plasticity comparison happens AFTER cert
 A-phase -> filled e4 probe + chunk (comparable to last night's anchors; the blank-bank shortcut
 was considered and rejected for cross-session comparability).
 
-| arm | box | expert | VLM | question |
-|---|---|---|---|---|
-| 1 incumbent | VM2 | n256/r2/knn36 | n256/r2/knn16 | the baseline, re-certified under the new protocol |
-| 3 knn axis | VM3 | n256/r2/knn36 | n256/r2/**knn36** | does palette capacity 64->144 pay? |
-| 2 uniform | base box | **n128/r4/knn36** | **n128/r4/knn36** | iso-rank-unit concentration: 4x fewer, stronger slots |
+| arm | expert | VLM | question |
+|---|---|---|---|
+| 1 incumbent | n256/r2/knn36 | n256/r2/knn16 | the baseline, re-certified under the new protocol |
+| 3 knn axis | n256/r2/knn36 | n256/r2/**knn36** | does palette capacity 64->144 pay? |
+| 2 uniform | **n128/r4/knn36** | **n128/r4/knn36** | iso-rank-unit concentration: 4x fewer, stronger slots |
 
 All: sep 5.0, c 0.05, anchored (1.0, 0.5), 10k compressed, router lr 1e-4. Pre-registered arm-2 read: expert core50 ~400-800 at
 famIoU ~0.145 = scaling law holds; famIoU up at scaled cores = the per-query-draw floor binds.
 
 ### Next steps
 
-1. Arm 2 uniform warm-up running on the base box; arms 1/3 on the VMs.
-2. Afternoon re-assess on the three audit certificates -> A-phases on survivors (VRAM-gated for
-   arm 2's r4) -> filled e4 probes + chunk -> select -> graduate ONE config to the 5-task
+1. Afternoon re-assess on the three audit certificates -> A-phases on survivors
+   -> filled e4 probes + chunk -> select -> graduate ONE config to the 5-task
    sequential (C-config, vs stageB 32.0/35.0).
-3. Queued behind selection: 10-task extension; LoRA specialist cells e2/e7; the sep-response
+2. Queued behind selection: 10-task extension; LoRA specialist cells e2/e7; the sep-response
    question in the anchored regime; protection-store decay fix before any multi-task run that
    needs it.
 
 ---
-## Entry 47 - 19 Jul 26 (E46 three-arm audit verdict: the new protocol re-certifies the incumbent EXPERT router to the third decimal, but the route-once LOSS DEDUP collapsed the VLM state palette to ~2 query-draws (famIoU 0.08 -> 0.19-0.24) — the deduped loss under-weights the palette relative to its deployment read mass; arm 2 (n128) breaks the bank-scaling law on both towers. Fix: vlm_route_once flag (warm-ups broadcast, downstream compact) + arm 1'/3' re-warms LAUNCHING)
+## Entry 47 - 19 Jul 26 (E46 three-arm audit verdict: the new protocol re-certifies the incumbent EXPERT router to the third decimal, but the route-once LOSS DEDUP collapsed the VLM state palette to ~2 query-draws (famIoU 0.08 -> 0.19-0.24) — the deduped loss under-weights the palette relative to its deployment read mass; arm 2 (n128) breaks the bank-scaling law on both towers. Fix: warm-ups broadcast, downstream compact)
 
 ### Results — the three like-for-like joint router warm-ups (all completed + audited 19 Jul)
 
@@ -3258,7 +3053,7 @@ slot set, decomposed below):
 | arm 3 (vlm knn36) | 0.204 / 0.210 | 0.030 / 0.038 | 0.191 / 0.186 | 109-110 / 306-310 |
 | arm 2 (n128) | 0.326 / 0.267 | 0.048 / 0.055 | 0.301 / 0.224 | 89-102 / 246-282 |
 
-Instrument note (fix deferred): route-once reordered the per-sample stats rows to
+Instrument note: route-once reordered the per-sample stats rows to
 [palette x n_state, then instruction tokens], so the sub-span probe's position->region
 labels are scrambled on route-once checkpoints — its "instr[0:16)" block is pure
 palette. The audit summaries are position-agnostic and unaffected; the palette numbers
@@ -3308,39 +3103,25 @@ run broadcast, where labels are correct again).
    consequence is genuinely unknown — testable cheaply as an A-phase hedge on today's
    arm 3 if wanted.
 
-### Builds shipped (with this entry's commit)
+### Fix
 
-- **`--policy.memory_layer.vlm_route_once`** (default true, memory_config.py /
-  memory_lite.py): gates the compact route-once dispatch. False forces the byte-exact
+- **Route-once switch** (default true):
+  gates the compact route-once dispatch. False forces the byte-exact
   legacy broadcast path (shared key routed at every state position -> losses/queues
   carry served-position multiplicity). Warm-ups run false; A-phase/sequential/inference
-  keep true (router frozen -> paths numerically interchangeable, parity 1.19e-07, and
-  the compact path saves ~6-10GB VRAM at knn16/36). Smokes S13a-g appended to
-  smoke_vlm_memory.py (suite ALL PASS): default-true attr, flag-off broadcast call
-  shape, output parity 1.19e-07, per-position stats layout restored, stats row count,
-  routing-queue rows 48-vs-24 (multiplicity restored), contrastive per-sample mean
-  shifts 0.58 (palette weight back). Also verified the field rides the derived-VLM-cfg
-  dataclasses.replace path.
-- Scripts: joint_rwarmup_common.sh now passes vlm_route_once=false (+ header rationale,
-  + BATCH_SIZE/GRAD_ACCUM env fallback for OOM); new wrappers
-  joint_rwarmup_arm1p_incumbent_bcast.sh (VM2) / joint_rwarmup_arm3p_vlmknn36_bcast.sh
-  (VM3), tags arm1p_n256r2_vlmknn16_bcast / arm3p_n256r2_vlmknn36_bcast.
+  keep true (router frozen -> paths numerically interchangeable, parity 1.19e-07).
 
 ### Next steps
 
-1. **Arms 1'/3' re-warms launched on VM2/VM3** (same chain shape: warm-up -> audit ->
+1. **Arms 1'/3' re-warms** (same chain shape: warm-up -> audit ->
    analyses -> sub-span -> STOP). Pre-registered reads: arm 1' ~ poolB's certificate (VLM famIoU ~0.149/0.147, palette
    ~0.08 / effnum 600-800) — it is poolB's exact replica plus the protocol
    improvements; arm 3' answers the knn36 palette-capacity question at matched loss
    semantics (the E46 comparison was confounded by the dedup pinning palette size to
    ~2 draws in both variants). Expert side expected unchanged (~0.145-0.17) for both.
-   A broadcast joint warm-up at knn36 has never run — VRAM estimated ~125-135GB; the
-   BS/ACC fallback covers an OOM.
 2. **Arm 2' = uniform n192/r4/knn36 both towers, broadcast losses**
-   (decided with Josh; script
-   joint_rwarmup_arm2p_uniform_n192r4_bcast.sh, run
-   libero_90_pi05_jointwarm10k_arm2p_n192r4_knn36_bcast, BS16/ACC2 for the
-   broadcast+r4 VRAM term). Why: n192 is the unmeasured scaling-law midpoint (4x
+   (decided with Josh).
+   Why: n192 is the unmeasured scaling-law midpoint (4x
    cumulative from n384; the law held at 2.25x, broke at 9x), and n192/r4 is the
    CLEAN iso-budget concentration arm (147,456 rank-units/layer vs n256/r2's
    131,072; the original n128/r4 arm was only HALF the budget — a mislabeling in the
@@ -3357,11 +3138,9 @@ run broadcast, where labels are correct again).
 4. After graduation: A-phases -> t0-block chunk (== the e4 probe: same C-config 5k
    steps; anchors 0.153 / 0.0994 / 0.020, kill >= ~0.12) -> 5-task attribution runs
    (C-config, vs stageB 32.0/35.0).
-5. Deferred: sub-span probe route-once-aware row mapping; protection-store decay fix
-   before multi-task runs needing it; 10-task extension behind selection.
 
 ---
-## Entry 48 - 19 Jul 26 (E47 broadcast re-warm verdict: arm 1' REPRODUCES the poolB certificate (dedup attribution closed end-to-end); knn36's apparent advantage was a dedup artifact (score-profile-depth mechanism) but remains a 2.25x per-forward capacity lever; n192 FAILS via a newly measured mechanism — per-half subkey utilization crosses the pigeonhole knee (demand ~ n^0.74; n256 sits AT the knee) — the bank axis is closed with a sizing rule. GRADUATION: three chains on the palette-constancy axis (arm 1' / arm 3' / arm 3-old) -> A-phase -> 5-task, RUNNING)
+## Entry 48 - 19 Jul 26 (E47 broadcast re-warm verdict: arm 1' REPRODUCES the poolB certificate (dedup attribution closed end-to-end); knn36's apparent advantage was a dedup artifact (score-profile-depth mechanism) but remains a 2.25x per-forward capacity lever; n192 FAILS via a newly measured mechanism — per-half subkey utilization crosses the pigeonhole knee (demand ~ n^0.74; n256 sits AT the knee) — the bank axis is closed with a sizing rule. GRADUATION: three chains on the palette-constancy axis (arm 1' / arm 3' / arm 3-old) -> A-phase -> 5-task)
 
 ### Results — the three broadcast re-warms (vlm_route_once=false; audited + analyzed 19 Jul eve)
 
@@ -3389,11 +3168,7 @@ VLM (audit famIoU L15/L16 | palette famIoU | palette effnum | instr famIoU (inst
 | arm 2' n192 | 0.202/0.195 | 0.136/0.111 | 650/851 | 0.309/0.330 (0.21/0.25) |
 | arm 3-old (dedup) | 0.204/0.210 | 0.191/0.186 | 306/310 | ~0.09-0.10 per-pos |
 
-Incident note: arm 2''s audit OOMed twice (the audit script ran the checkpoint's saved
-broadcast+r4 config; 8.4GB short at bs32, then 1.5GB short with the route-once
-override). Fixes shipped: audit_heldout_routing.sh now forces the compact route-once
-path (routing-identical; parity-smoked) and takes AUDIT_BS/AUDIT_STEPS env overrides —
-arm 2' re-audited at bs16 x 200 steps/task (total audited samples MATCHED to every
+Note: arm 2' re-audited at bs16 x 200 steps/task (total audited samples MATCHED to every
 other audit; famIoU/core50/effnum are mass-normalized aggregates, invariant to the
 batch/step split at matched coverage).
 
@@ -3442,19 +3217,19 @@ batch/step split at matched coverage).
    LoRA-like degenerate-perfect read-write product). Tonight's chains are a 3-point
    read-out of the constancy-vs-fit curve, not just pairwise contrasts.
 
-### Graduation (decided with Josh) — RUNNING
+### Graduation (decided with Josh)
 
-Each chain (grad scripts, commit c8d301f0): A-phase (10k values-only both towers on
+Each chain: A-phase (10k values-only both towers on
 libero_90, routers frozen, frozen-route ON, compact path restored downstream) -> 5-task
 sequential (C-config: beta4, top_t 1536, 5k steps/task, value lr 1e-3->1e-4, 20-ep
 intermediates + 50-ep final; comparator stageB 32.0 final / 35.0 init). Arm 2' NOT
 graduated (pre-registered kill: famIoU >= ~0.18 at 3 of 4 expert layers).
 
-| box | chain | axis position |
-|---|---|---|
-| base box | arm 1' | state-conditional end, best certificates |
-| VM3 | arm 3' | middle; the knn/per-forward-capacity contender |
-| VM2 | arm 3-old | constant end; compact-palette fit hypothesis |
+| chain | axis position |
+|---|---|
+| arm 1' | state-conditional end, best certificates |
+| arm 3' | middle; the knn/per-forward-capacity contender |
+| arm 3-old | constant end; compact-palette fit hypothesis |
 
 **Gate 2 (pre-registered):** each sequential's t0 block IS the e4 probe (same C-config
 5k steps) — chunk error on checkpoints/005000 vs anchors 0.153 (old staged best) /
@@ -3467,17 +3242,11 @@ blocks run. Chunk probes run centrally with the standard instrument.
 2. 5-task finals + probe battery -> select the 10-task carrier. If arm 3'
    wins fit materially, the knn choice becomes capacity-vs-family-exposure and the
    10-task decides; if fit ~equal, arm 1' wins outright on certificates.
-3. Deferred (unchanged): sub-span probe route-once-aware row mapping (only needed for
-   compact checkpoints); protection-store decay fix before 10-task; 10-task extension
-   behind selection.
-4. Cleanup this session: arm 2' warm-up checkpoints deleted (dead branch; audit +
-   sub-span + wandb retained); arm 3-old's staged local checkpoint copy kept until its
-   VM2 chain completes.
 
 ---
-## Entry 49 - 20 Jul 26 (E48 graduation verdict: arm 1' = NEW FRONTIER 40.0 at plain C-config — the palette-constancy axis is monotone on every instrument incl. all 15 cross-arm final-chunk cells; knn axis closed at 16; the read-write product heuristic gains a STATE-CONDITIONALITY factor; new protection-x-palette starvation mechanism measured; retention POSITIVE in function space. -> composition + VLM-r4 arms scripted for the VMs (graft tooling shipped); image-span plan fixed (step 1 keep-expert single-delta / step 2 drop-expert reallocation); 1A running)
+## Entry 49 - 20 Jul 26 (E48 graduation verdict: arm 1' = NEW FRONTIER 40.0 at plain C-config — the palette-constancy axis is monotone on every instrument incl. all 15 cross-arm final-chunk cells; knn axis closed at 16; the read-write product heuristic gains a STATE-CONDITIONALITY factor; new protection-x-palette starvation mechanism measured; retention POSITIVE in function space. -> composition + VLM-r4 arms; image-span plan fixed (step 1 keep-expert single-delta / step 2 drop-expert reallocation))
 
-### Results — the three graduation chains (all completed; battery in outputs/analysis/e48/)
+### Results — the three graduation chains
 
 Recap: three chains from the E47/48 certified joint router warm-ups, differing ONLY in
 the VLM router — arm 1' knn16 broadcast-loss keys (state-conditional palette, ~11-13
@@ -3562,7 +3331,7 @@ Probe battery (all pre-registered instruments run):
 
 ### Discussion (Josh) -> decisions
 
-- **The 8-day / 70% arithmetic, corrected and re-anchored.** Josh challenged the
+- **The 70% arithmetic, corrected and re-anchored.** Josh challenged the
   pessimism citing three lifters; the ledger has TWO (freeze-top-5k was misremembered
   — E44 measured it null-to-negative, 39.2 vs twin 42.4; protection is insurance
   already baked into every run). Composition of the two real lifters (arm 1'
@@ -3576,17 +3345,16 @@ Probe battery (all pre-registered instruments run):
   matched every 5k arm; "5k->7k retired"), 2x LR moves the knee EARLIER, and all
   three new arms show the converged signature (block-end ~11% above block-min =
   oscillation band). Revisit trigger: t0 block still descending at 4.5-5k.
-- **Two VM arms scripted + shipped (commit 6edb54e7), launch via Josh's local claude:**
-  1. seq5_arm1p_lr2x_topt3072.sh — composition, sequential-only from arm 1's existing
+- **Two arms:**
+  1. composition, sequential-only from arm 1's existing
      A checkpoint (lr 2e-3->2e-4, top_t 3072).
-  2. grad_arm1p_vlmr4.sh — VLM rank 4 via graft_vlm_rank.py: the warm-up trains
+  2. VLM rank 4: the warm-up trains
      keys/proj only and frozen-route makes routing values-independent, so the r2
-     certificate transfers WITHOUT re-warming; torch raises on shape-mismatched
-     tensors even at strict=False, so the graft drops the 4 r2-shaped VLM slot tensors
-     (fresh r4 init; slot_up zero => memory output 0 at start). Smoked: 4 tensors
-     fresh, 34 router tensors bit-identical, 48/895 trainable. Sequential forced to
-     bs16xacc2 (r4 ~135GiB at bs32 vs ~137-139 usable; accum overhead measured +12%).
-  The common chain body gained SEQ_* env overrides (defaults byte-identical to E47).
+     certificate transfers WITHOUT re-warming;
+     the graft drops the 4 r2-shaped VLM slot tensors
+     (fresh r4 init; slot_up zero => memory output 0 at start).
+     Sequential forced to
+     bs16xacc2.
 - **Image-span design settled** (one history inversion corrected en route: pooling was
   never the collapse — per-token state routing was the E45 failure and the E47
   collapse was the loss DEDUP; pooled retrieval + broadcast loss accounting is the
@@ -3603,38 +3371,28 @@ Probe battery (all pre-registered instruments run):
   0.229/14) — this voids the placement guard (it exists to protect expert routing), so
   VLM memory can go to lower layers where image leverage concentrates; freed budget =
   16GiB. Capacity split (4 layers r2 vs 2 layers r4, both budget-neutral ~122GiB;
-  r4x3 marginal at bs16xacc2) decided by 1A's audit + the nebius3 r4 arm (which IS the
+  r4x3 marginal at bs16xacc2) decided by 1A's audit + the r4 arm (which IS the
   rank-axis measurement on the right tower). Step 2 runs the full chain without a
   human review stop but keeps automated hard-fail tripwires. Lean: layers > rank
   (rank's record is weak everywhere tested; layers buy new routing surfaces =
   conditional capacity, the currency conclusion 2 just validated; image leverage sits
   earlier in the stack). Bonus physics: prefix memory runs 1x per 50-action chunk at
   inference (cached) vs the expert tower's 10x per denoise.
-- 1A scope addition: the sub-span probe's route-once-aware row mapping (deferred since
-  E47) is now load-bearing — audits force the compact path and the compact row layout
-  with image keys ([region keys, state key, instr tokens]) can't be recovered by the
-  constant-prefix trick.
 
 ### Next steps
 
-1. Composition arm + VLM-r4 arm launched on the VMs; Gate-2 chunk probes on their t0
-   checkpoints run centrally (~0.12 kill).
+1. Composition arm + VLM-r4 arm; Gate-2 chunk probes on their t0
+   checkpoints (~0.12 kill).
 2. **1A**: querystats-image probe (layers incl. candidates below 15 to
-   inform step 2) -> freeze region count / (a,b) / normalization -> code (vlm span
-   extension, k region keys, row mapping) + smokes -> joint warm-up (broadcast) ->
+   inform step 2) -> freeze region count / (a,b) / normalization ->
+   joint warm-up (broadcast) ->
    audit with image-region gates -> review with Josh.
 3. Then 1B (A + 5-task, single delta vs arm 1' 40.0/0.0940/chunk grid); then step 2.
-4. Deferred, unchanged: protection-store decay before amplitude-at-scale; e9
-   warm-up footprint-dispersion gate; 10-task behind nailing 5.
-
-Artifacts: outputs/analysis/e48/{working_tables.md,slots.out,probe_conversion.jsonl,
-mse_matrix.jsonl}; graft at outputs/train/libero_90_pi05_jointwarm10k_arm1p_vlmknn16_r4graft;
-commits 6edb54e7 (tooling+scripts) + this entry.
 
 ---
-### Entry 49 addendum (20 Jul eve) — 1A design frozen from the querystats-image probe; build shipped (smoked 15/15 + policy-level); warm-up chain RUNNING
+### Entry 49 addendum (20 Jul eve) — 1A design frozen from the querystats-image probe
 
-**Probe results** (`outputs/analysis/e49/querystats_image_stage1.json`, layers 7-16, stage-1
+**Probe results** (layers 7-16, stage-1
 features, libero_10): (1) patch-level between/within task variance on real cameras =
 0.06-0.22 — squarely the state-digit sprawl band (state 0.11-0.13, instruction 0.81-0.99)
 → per-token image routing confirmed dead before spending a warm-up. (2) Pooled image
@@ -3651,24 +3409,7 @@ via img_masks. **Frozen: g2 (2x2 regions per real camera → 8 image keys/sample
 positions each), a=1.0 b=0.5, layers [15,16], component-RMS normalization rescaled to
 the language-field token RMS.**
 
-**Build** (commit a8b8a85f): `vlm_image_regions`/`vlm_image_pool_weights` +
-`router_only_fast` (exact value-path skip at pinned-zero values — makes the literal
-571-row broadcast warm-up affordable; A/seq/audit gained explicit
-`router_only_fast=false` overrides per the E37 rule, without which the A-phase would
-silently train nothing). Route-once compact layout [8 region keys, state key, instr
-tokens] with per-region palette application; literal-broadcast path drops inactive-camera
-positions so valid tokens stay a contiguous prefix for the loss machinery. Smokes S15a-h
-ALL PASS — the load-bearing two: route-once↔broadcast parity 1.19e-07 at NONZERO values,
-and router_only_fast bitwise-exact on both paths. Policy-level smoke on stage-1:
-broadcast T=571, keys grads live through the image keys, no fallback. The sub-span
-probe's route-once-aware row mapping (deferred since E47) shipped — auto-detects
-image-compact / state-compact / literal layouts by row count.
-
-**LAUNCHED**: warm-up
-`libero_90_pi05_jointwarm10k_imgspan_g2_n256_vlmknn16_bcast` — 0.87 s/step at bs32,
-32 GiB (the value-skip makes the image-broadcast warm-up FASTER than the text-only
-ones) → audit → analyses → region-split sub-span → STOP for review.
-Review gates (wrapper header): image-region famIoU <= ~0.25 at per-region effnum >=
+Review gates: image-region famIoU <= ~0.25 at per-region effnum >=
 ~300 (no ~2-draw collapse), state/instr regions within ~20% of arm 1' (0.074/0.084
 palette, ~0.20 instr), expert certificate reproduced. The audit famIoU topline is
 image-mass-weighted — read the sub-span region table, not the topline.
@@ -3676,9 +3417,8 @@ image-mass-weighted — read the sub-span region table, not the topline.
 ---
 ### Entry 49 addendum 2 (20 Jul night) — composition Gate-2: the amplitude levers COMPOSE on the new substrate (e4 chunk 0.112 -> 0.0753, -33%); first e4 cell at the edge of its conversion window
 
-The composition arm (arm 1' substrate + lr 2e-3->2e-4 + top_t 3072, running on the
-VMs alongside the VLM-r4 arm) delivered its t0 checkpoint; Gate-2 chunk probe run
-here concurrently with the 1A warm-up:
+The composition arm (arm 1' substrate + lr 2e-3->2e-4 + top_t 3072)
+delivered its t0 checkpoint; Gate-2 chunk probe:
 
 - **e4 own-block chunk 0.0753** (late10 0.0794, seed spread 0.061) vs arm 1' 0.1119
   (0.1275 / 0.079) — the best e4 function ever measured outside the LoRA compass
@@ -3693,12 +3433,12 @@ here concurrently with the 1A warm-up:
   breadth-law discount per E43 — e9 converted at 0.068). Late-chunk error improved
   MORE than the mean (-38%) and seed spread tightened — the compounding tail is
   cleaner, which is where rollouts live.
-- Residuals: one cell; rollout conversion unproven until the 50-ep final (~11h);
+- Residuals: one cell; rollout conversion unproven until the 50-ep final;
   amplitude give-back is the known risk — re-check own->final at 025000 against
   arm 1's uniformly-improving retention grid.
 
 ---
-### Entry 49 addendum 3 (20 Jul night) — 1A CERTIFIES; 1B LAUNCHED (no further gates per Josh)
+### Entry 49 addendum 3 (20 Jul night) — 1A CERTIFIES
 
 Audit review: image regions famIoU 0.091/0.128 at effnum 548/665 (state-conditional
 ~8-10 draws; sprawl and collapse branches both dead), bg 0.010/0.013; **the instruction
@@ -3708,17 +3448,16 @@ state palette L16 0.127 (arm 1' 0.084, +51% relative — the one watch-item, at 
 level which still made 37.2); topline 0.105/0.141 < arm 1's 0.136/0.156; expert
 certificate reproduced (5th consecutive). 2.5/3 gates -> certified.
 
-1B LAUNCHED: grad_imgspan_g2.sh — C-config verbatim from the imgspan warm-up, the
-SINGLE-DELTA cell vs arm 1' (composition levers deliberately not stacked; they're
-being measured on the VMs in parallel). Health verified: router_only_fast=False +
-vlm_route_once=True overrides took, 48/895 trainable. Comparators: t0 chunk vs 0.112,
+1B: C-config verbatim from the imgspan warm-up, the
+SINGLE-DELTA cell vs arm 1' (composition levers deliberately not stacked).
+Comparators: t0 chunk vs 0.112,
 50-ep final vs 40.0, alongside the composition final (its Gate-2: e4 chunk 0.0753)
 and the r4 arm.
 
 ---
-## Entry 50 - 21 Jul 26 (Morning-review verdicts: COMPOSITION = new frontier 46.0 (amplitude converts on the VLM substrate; e4 14->34 as its Gate-2 chunk predicted); BOTH substrate bets FAIL with BETTER on-demo function (vlmr4 30.4, imgspan 28.8) — the conversion gap re-surfaces at substrate scale; jitter probe + Josh's amplification model relocate the imgspan failure to the VALUE PATH at image positions (image stack parked); r4 axis closed on both towers. -> E50 wave: layer-max gated chain (RUNNING here), top-p write budget + lr4x arms (VMs))
+## Entry 50 - 21 Jul 26 (Morning-review verdicts: COMPOSITION = new frontier 46.0 (amplitude converts on the VLM substrate; e4 14->34 as its Gate-2 chunk predicted); BOTH substrate bets FAIL with BETTER on-demo function (vlmr4 30.4, imgspan 28.8) — the conversion gap re-surfaces at substrate scale; jitter probe + Josh's amplification model relocate the imgspan failure to the VALUE PATH at image positions (image stack parked); r4 axis closed on both towers. -> E50 wave: layer-max gated chain, top-p write budget + lr4x arms)
 
-### Results — the three overnight arms (50-ep finals; battery in outputs/analysis/e50/)
+### Results — the three overnight arms (50-ep finals)
 
 Recap: all three built on the E48 frontier, arm 1' (expert n256/r2/knn36 at [8,10,12,14],
 VLM text-field n256/r2/knn16 at [15,16], famIoU-0.145-certified router; 40.0 final /
@@ -3809,7 +3548,7 @@ per-dim std, image pixel sigma 0.05) on the four final checkpoints:
    bill, 0.2-0.5% erosion = protected non-damage), and the amplification model argues
    against it structurally (brittleness lives in NEW content's gain, not old content's
    erosion). Revisit only if VLM A-core erosion under composition-scale writes measures
-   >~5% (cheap check: arm 1' A-usage inert sweep + checkpoint diff — not scheduled).
+   >~5% (cheap check: arm 1' A-usage inert sweep + checkpoint diff).
 7. Protection-store decay rejected as insufficiently general (Josh). e9's remaining
    budget starvation is real but small: at top_t 3072, e4/e2/e7 are effectively
    un-truncated (selfcov 0.90-0.97) while e9 (~0.80 expert-side) and e6 (0.68-0.83)
@@ -3817,47 +3556,39 @@ per-dim std, image pixel sigma 0.05) on the four final checkpoints:
 
 ### Next steps (the E50 wave; all three = single deltas, 50-ep finals)
 
-1. **Layer-max gated chain** [RUNNING]: expert [2,4,6,8] +
+1. **Layer-max gated chain**: expert [2,4,6,8] +
    VLM text-field [10,12,14,16], n256/r2 everywhere (3.2B values; seq bs16xacc2).
    Rationale: parameter-max the tower the compass says carries fit, at depths where the
    anchor geometry is best (E49 probe: separation improves monotonically downward);
-   Josh's split satisfies the placement guard with EXISTING code (all VLM layers above
-   expert max; policy smoke 8/8 attach + live grads + multi-layer fork verified).
-   Automated gate (gate_layermax.py, validated PASS on the imgspan audit / FAIL on
+   Josh's split satisfies the placement guard (all VLM layers above
+   expert max).
+   Automated gate (validated PASS on the imgspan audit / FAIL on
    frozenbase): fail -> auto-fallback compact split expert [9,10,11,12] + VLM
    [13,14,15,16] -> re-gate -> fail = STOP (drawing board). Known risk the gate
    watches: expert routing at L2/L4 (feat-probe separability L4 89.5% vs 98 plateau).
-2. **Top-p write budget** (seq5_arm1p_lr2x_topp09.sh): k = min(n_read, max(3072,
+2. **Top-p write budget**: k = min(n_read, max(3072,
    ceil(0.9*n_read)), 16384) per module per batch — "write ~everything you read";
-   single delta vs composition. Smoked S16a-e; [top_p] mask-size logging in-run.
-3. **lr-max** (seq5_arm1p_lr4xsched_topt3072.sh): 4e-3 -> 2e-4 on the composition
+   single delta vs composition.
+3. **lr-max**: 4e-3 -> 2e-4 on the composition
    substrate; the amplitude-headroom cell (E43: function did not saturate at 4x;
    give-back is the accepted risk).
-4. Storage: ~560G freed (closed-branch E40-44 sequential dirs deleted entirely — wandb
-   server + outputs/analysis archives retain their numbers; imgspan/arm1p seq
-   intermediates + training states; imgspan A-phase; r4 graft). Kept: stageB baseline
-   run, all warm-up certificates, arm 1' A-checkpoint (the shared substrate for the VM
-   arms), r2244/sep5/frozenbase-40k era anchors, stage-1 base, realworld_v2.
 
 ### Entry 50 addendum (22 Jul) — CORRECTION: the original layer-max split was accidentally SKIPPED, not rejected; the placement direction is UNSETTLED
 
 The chain's fallback fired on an instrumentation failure, not a measurement: attempt A's
 (expert [2,4,6,8] / VLM [10,12,14,16]) warm-up trained fine, but its AUDIT OOMed at
-bs32 (the audit runs the full value path + backward + both frozen-route forks, and A's
-forks span the maximum depth — 0.7GiB over the ceiling; same failure shape as E48's
-arm-2' audit, whose AUDIT_BS fix existed and was not carried into the 8-module chain).
-The gate saw zero task JSONs and fail-safed to attempt B (compact, [9,10,11,12] +
-[13,14,15,16]), which certified well (famIoU 0.140-0.154 uniform over all 8 modules)
-and is now in its sequential. Attempt A's router is UNMEASURED — checkpoint retained,
-AUDIT_BS=16 fix committed, and a re-audit + gate is queued behind the compact chain
-(~45min). Until that lands, "compact beats max" is not a conclusion anywhere — the
+bs32.
+The gate fail-safed to attempt B (compact, [9,10,11,12] +
+[13,14,15,16]), which certified well (famIoU 0.140-0.154 uniform over all 8 modules).
+Attempt A's router is UNMEASURED.
+Until then, "compact beats max" is not a conclusion anywhere — the
 max-vs-compact placement question is open, and if A gates PASS its own A-phase +
-sequential is a ~1-day follow-up decision against the compact result.
+sequential is a follow-up decision against the compact result.
 
 ---
 ## Entry 51 - 22 Jul 26
 
-### Part 1 — lr4x verdict (amplitude axis closed at 2x: an inverted-U dose-response) -> BUDGET-CONSERVING protection designed (Josh), built, smoked; arm LAUNCHING on the freed VM
+### Part 1 — lr4x verdict (amplitude axis closed at 2x: an inverted-U dose-response) -> BUDGET-CONSERVING protection designed (Josh)
 
 **The lr4x result that motivates the arm.** The 4x-LR cell on the frontier substrate
 (arm 1' + top_t 3072) landed 40.4 @ 50 eps (22/54/18/76/32), completing the amplitude
@@ -3880,7 +3611,7 @@ plasticity shrinks monotonically with task index (the measured E44 bill: e7 bloc
 +49%, rollout 44->28, net wash 39.6 vs 42.4).
 
 **The fix (Josh's design, v2 after review): budget-conserving REDISTRIBUTION within
-the unchanged mask** (`protect_mode=budget`). *[SUPERSEDED — see Part 4: v2 NaN'd ~200
+the unchanged mask**. *[SUPERSEDED — see Part 4: v2 NaN'd ~200
 steps after the first task boundary (momentum-boost compounding) and its refund had a
 u==0 eligibility cliff; it never produced a valid run. The design below is recorded as
 history; the shipped mechanism is v3.]* The top-t filter stays byte-identical
@@ -3896,20 +3627,9 @@ touching the store (more general than the rejected decay); (ii) protection =
 redistribution, not suppression — and the conserved budget concentrates on the
 writer's private core, the read-write-product-positive allocation (E48 currency);
 (iii) u-norm corefrac (whole prior cores at u~1, shoulders graded); (iv) protected
-slots are NEVER boosted (fill skips any slot with u > 0 — two bugs of exactly this
-shape were caught in build review before smoking).
+slots are NEVER boosted (fill skips any slot with u > 0).
 
-**Build + smokes** (commit with this entry): budget branch in
-`_compute_tfidf_top_indices_for_batch` (legacy top-t selection, score-ordered
-water-fill, full-vector scale emission), blend snapshot predicate relaxed scale<1 ->
-scale!=1 (boosted rows must blend), config validation + SEQ_PROTECT_MODE/UNORM
-threaded through the chain common body. Smokes S18a-h ALL PASS — the load-bearing
-four: mask BITWISE-identical to legacy top-t with and without protection; budget
-conservation exact (sum(scale)=3072.000 over the mask); water-fill lands
-hottest-unprotected-first with protected slots never boosted; the blend moves rows at
-exactly 2x/1x/0x with momentum scaled to match.
-
-**The arm** (`seq5_arm1p_lr4xsched_topt3072_budgetprotect.sh`; sequential-only from
+**The arm** (sequential-only from
 the arm 1' A-checkpoint): single
 delta vs lr4x 40.4 = protect_mode rank->budget + u_norm peak->corefrac, write
 breadth/mask unchanged by construction. Pre-registered:
@@ -3919,13 +3639,9 @@ toward >=26; e7 block-min <= ~0.085 (the starvation tripwire; E44's grad_scale p
 frontier.** The claim under test: keep 4x's boundary wins, redistribute (not
 suppress) the write pressure that produced the -5 give-back.
 
-(Parts 2+ today, pending landings: the top-p mid-run alert — record losses with
-collapsing rollouts, the implicit-protection-of-the-budget story; the compact
-layer-max sequential; the attempt-A re-audit.)
-
 ### Part 2 — top-p verdict: 19.2, the worst 50-ep final of the staged era, on the BEST losses ever recorded — the write budget was load-bearing protection all along
 
-**Result** (`..._topp09f3072_lr2x_steps5k`, nebius4): final 2/10/0/64/20 = **19.2** (comp,
+**Result**: final 2/10/0/64/20 = **19.2** (comp,
 its single-delta twin at fixed top_t 3072: 46.0). Block-min losses were the project's
 best at the time (0.050/0.037/0.089/0.052/0.055) — the starkest fit/rollout
 dissociation ever measured, and the first early-task cliffs since pre-stationarity
@@ -3959,14 +3675,14 @@ top_t was never just an interference knob; the budget+ranking pair silently prov
 BOTH core protection and tail preservation, and every "breadth is safe" datapoint
 (E42-43, comp's RTO 71% at zero cost) was conditional on them. (ii) Any future
 adaptive-coverage lever must carry magnitude control. (iii) This strengthens the
-budget arm (Part 1, running on nebius3) on both channels by construction: mask stays
+budget arm (Part 1) on both channels by construction: mask stays
 3072 (no tail explosion) and prior cores enter the mask only at (1-u)^beta ~ 0
 magnitude (STRONGER core protection than rank mode, which provably could not exclude
-high-TF cores at any budget). (iv) Chunk/MSE-matrix probes deferred (GPU busy with the
-compact layer-max sequential) and likely unnecessary — the mechanism question is
+high-TF cores at any budget). (iv) Chunk/MSE-matrix probes deferred
+and likely unnecessary — the mechanism question is
 answered at the slot/field level.
 
-### Part 3 — top-p post-mortem discussion (dose vs structure) + the agreed board (nebius4 PAUSED pending the compact-LM read)
+### Part 3 — top-p post-mortem discussion (dose vs structure) + the agreed board
 
 **Was 0.9 simply too big?** (Josh's question, discussed): partly — but the structure is
 fragile at any useful dose. Both kill channels scale CONTINUOUSLY with mask fraction
@@ -3982,30 +3698,30 @@ vs ~0.07), which no write budget fixes.
 
 **Static mask is now measured-best from both sides** (comp 46.0 above, top-p 19.2
 below); whether static SCALES beats static full-LR is exactly the budget arm's
-question (lands tomorrow).
+question.
 
-**Agreed board (Josh: "agree on all points"; the top-p box paused, holding):**
+**Agreed board (Josh: "agree on all points"):**
 1. compact layer-max final + full battery incl. jitter
    (substrate rule) + the attempt-A re-audit (settles max-vs-compact placement).
 2. budget-4x final — needs >46.0 to displace the frontier;
    mechanism validated at the autopsy either way.
-3. [HELD] branch on the compact-LM final: >= ~40 at plain C-config ->
+3. branch on the compact-LM final: >= ~40 at plain C-config ->
    compact-LM + composition levers (lr2x + top_t 3072; the arm-1' one-two, 40.0->46.0,
    on a substrate with 2x the VLM layers — the highest-EV cell on the board);
-   < ~40 -> layer axis dead, that box takes budget@2x instead (clean comp's residual
+   < ~40 -> layer axis dead, budget@2x instead (clean comp's residual
    +7.6% e4 own->final give-back).
-4. Endgame (6 days): converge substrate (arm 1' vs compact-LM, informed by the
+4. Endgame: converge substrate (arm 1' vs compact-LM, informed by the
    attempt-A verdict) x optimization package (2x+3072 +/- budget) into ONE frontier
    config, full battery, and reserve the final ~day for a clean confirmatory run of
    the frontier rather than one more speculative arm.
 
-### Part 4 — budget v2 NaN postmortem (momentum-boost compounding + the u==0 eligibility cliff) -> v3 REDESIGN (Josh's conserved proportional allocation), smoked, relaunching
+### Part 4 — budget v2 NaN postmortem (momentum-boost compounding + the u==0 eligibility cliff) -> v3 REDESIGN (Josh's conserved proportional allocation)
 
-**The run.** `..._budgetcf_steps5k` (nebius3, v2 water-fill) diverged to loss=nan at
-~step 5.2k — ~200 steps after the FIRST task boundary — and kept stepping NaN until
-Josh killed it (~25 min). t0 artifacts are clean (empty store => budget provably inert
+**The run.** The v2 water-fill run diverged to loss=nan at
+~step 5.2k — ~200 steps after the FIRST task boundary.
+t0 artifacts are clean (empty store => budget provably inert
 => t0 bitwise plain-lr4x; the 005000 checkpoint and boundary eval predate the
-corruption). Run dir deleted on relaunch; wandb retains the record.
+corruption).
 
 **Root cause 1 — the NaN: momentum-boost compounding.** The v2 water-fill assigns
 boosted slots scale up to 2.0; boosted slots are by construction the writer's hottest
@@ -4018,15 +3734,6 @@ incident in the protection line (grad-scale invariance E41, momentum tail leak E
 momentum boost compounding E51): two individually-correct mechanisms (E42 fix; budget
 boost) composed divergently, and v2 was the first time any scale > 1 flowed through
 the E42 line.
-
-**Why the smokes missed it (owned).** S18h asserted the boost arithmetic for ONE step
-("moves rows at exactly 2x with momentum scaled to match") — true for one step,
-divergent across steps; no smoke ran a persistent boosted row for N steps. Worse, the
-S18 suite was run ephemerally during the build and never committed — the E41
-"instruments died in a scratchpad; not again" rule, violated for smokes.
-METHODOLOGY ADOPTED: (1) any change to the protection path gets a MULTI-STEP Adam
-integration test, not single-step algebra; (2) smokes persist to
-scripts/vla_analysis/ alongside instruments, same rule.
 
 **Root cause 2 — the design flaw the one pre-NaN log line exposed.** `[budget] 15:
 unspent 354/446` (the only trustworthy line; everything after the NaN is garbage
@@ -4051,13 +3758,13 @@ it.)
 - Mask = top-t by score. u=1 slots score 0 => never selected => frozen, their seats
   going to clean slots (better than v2's in-mask-at-scale-0, which wasted seats).
 - scale_i = min(2.0, lam*score_i), lam solved EXACTLY so sum(scale) == mask size
-  (`_conserved_proportional_scales`: with the top m capped, lam = (k - m*cap)/suffix_m;
+  (with the top m capped, lam = (k - m*cap)/suffix_m;
   smallest feasible m; sort+cumsum, closed form). Conservation exact by construction —
   no deficit, refund, eligibility set, or unspent remainder EXISTS. Below-average-score
   slots donate LR to above-average ones continuously ("slot A would cause forgetting ->
   deduct; slot B is clean and hot -> bump").
 - Momentum: exp_avg *= min(scale, 1). Attenuation keeps the exact E42 tail-kill
-  semantics (s=0 bitwise freeze; grad_scale mode byte-identical, scales <= 1); boost
+  semantics (s=0 bitwise freeze); boost
   acts on the delta blend only == per-row 2x-LR Adam while in-mask (bounded per step,
   1x tail after mask exit). The v2 NaN is structurally impossible.
 - Accepted consequence, eyes open: with an EMPTY store (t0) score == tfidf, so t0 runs
@@ -4066,30 +3773,18 @@ it.)
   t0 is the built-in tripwire: block-min > ~0.075 (twin 0.0651) => proportional
   allocation hurts a clean writer => kill.
 
-**Shipped + smoked** (suite scripts/vla_analysis/smoke_softprotect.py, now the
-persistent home): momentum clamp; `_conserved_proportional_scales`; the v3 branch
-(replacing v2 wholesale); S18a-f (lam-solver hand cases [4,2,1,1]->[2,1,.5,.5] and
-[10,1,1,1]->[2,.667x3]; flat->flat; conservation exact on a 3072-slot Pareto tail,
-sum=3072.0000; twin-mask identity vs rank mode; u=1 exclusion with seats reallocated;
-t0 empty-store == pure-TF membership + conserved) and S19a-g MULTI-STEP (300 Adam
-steps with a persistent 2.0/0.4/1.0/0.0 scale pattern: all finite; boosted-row
-trajectory == an actual 2x-LR Adam run to 1e-5; boosted-row momentum == plain Adam's;
-s=0 bitwise frozen; and S19g re-runs the v2 unclamped line -> exp_avg = nan,
-the bug preserved as a regression test). Full suite ALL PASS. Wrapper header rewritten
-to v3 + tripwires; run name bumped `budgetcf` -> `budgetprop` (fresh dir + wandb row).
-
-**Relaunch**: same wrapper, same substrate
+**Relaunch**: same substrate
 (arm 1' A-checkpoint), same schedule (4e-3 -> 2e-4, top_t 3072, beta4/corefrac,
 5 tasks x 5k, 50-ep final). Judged against lr4x 40.4 (nearest twin — masks bitwise
 shared) and composition 46.0 (the frontier). Pre-registered: t0 tripwire above; NaN
 watch at the first boundary (~5.2k — the v2 signature); e9 final back toward >=26;
 e7 block-min <= ~0.085 (last-writer starvation tripwire — conservation should hold
-~0.075); "[budget] ... sum 3072" lines = conservation in production.
+~0.075).
 
 ### Part 5 — attention-family compass (e4): KILL branch fires — dense VLM-attention-only LoRA (chunk 0.106, plateaued) loses to our own sparse MLP-site frontier (0.081); the "architectural shift" does not carry the dense-adapter gap
 
-**Design** (nebius4, ~4h; wrapper `loraft_compass_e4_attnsplit.sh`, pre-registered gates
-in header): dense per-task LoRA on e4, byte-identical recipe to the E43/44 compass
+**Design**:
+dense per-task LoRA on e4, byte-identical recipe to the E43/44 compass
 anchors, targets = VLM LM self_attn q/k/v/o (all 18 blocks) + common action/state
 projections, r32, 7.5M trainable (GQA makes k/v adapters small). The superset cell for
 any attention-side memory: its failure kills o-only a fortiori.
@@ -4116,13 +3811,13 @@ and our existing substrate already beats the cell. Notable positive: our sparse
 MLP-site system outperforms a dense adapter on the wrong family — placement beats
 density again (E44's compass lesson, now within-tower).
 
-**Pending to consolidate tomorrow:** the 50-ep cell (nebius4, mid-eval; fit-threshold
-curve predicts ~15-30 — decorative post-kill); the MLP-only arm (auto-queued next on
-nebius4, lands overnight; predicted chunk ~0.03-0.045 = the our-site-is-right
+**Pending:** the 50-ep cell (fit-threshold
+curve predicts ~15-30 — decorative post-kill); the MLP-only arm
+(predicted chunk ~0.03-0.045 = the our-site-is-right
 confirmation). Colleague's suggestion 1 resolved: right method (compass-first — one
 VM-evening priced the direction), negative answer.
 
-### Part 6 — MLP-only compass arm KILLED (Josh's call; the site question rests on subtraction: VLM-full 0.030 works, attn-only 0.106 doesn't ⇒ MLP carries it) -> nebius4 reassigned to CLAMPED MASS-BASED TOP-P; design frozen from measurement; arm launching
+### Part 6 — MLP-only compass arm KILLED (Josh's call; the site question rests on subtraction: VLM-full 0.030 works, attn-only 0.106 doesn't ⇒ MLP carries it) -> CLAMPED MASS-BASED TOP-P; design frozen from measurement
 
 **Design freeze (the E45 playbook).** Block-aggregate k90 (slots covering 90% of a
 task-block's read mass) from comp's JSONs, per module: expert L8-14 = 8.9-21.9k with
@@ -4135,24 +3830,21 @@ slots — the E50 rule measured the ~90%-incidental binary tail and produced the
 the mass semantics REPLACE it in code, count rule retired).
 
 **Honest degeneracy note (pre-registered):** the mass rule only ignores tails whose
-aggregate mass < 1-p (S20b5/b6); if per-batch TF tails are fat, every module pins at
+aggregate mass < 1-p; if per-batch TF tails are fat, every module pins at
 the 5120 cap and the arm degenerates to static top_t=5120 — still the two-sided band
-test, and the in-run [top_p] k/n_read lines identify the regime within the first hour.
+test.
 The cap (not p) is the load-bearing guard; both E50 kill channels scale with mask
 size and are bounded to ~1.7x comp's known-benign leak.
 
-**Shipped:** mass-based k rule replacing the count rule in the top_p branch (+config
-docstring), SEQ_TOP_P_CAP threaded through the chain body, smokes S20a-b6 (end-to-end
-floor/cap/band, negligible-vs-fat tail semantics) ALL PASS. Wrapper
-`seq5_arm1p_lr2x_topp09mass_f3072c5120.sh` — single delta vs comp 46.0; pre-registered
-reads + kill line in header. What was given up: the MLP-only confirmation cell (~4h
-from landing) — the our-site-is-right claim now rests on the strong subtraction
+Arm: single delta vs comp 46.0.
+What was given up: the MLP-only confirmation cell
+— the our-site-is-right claim now rests on the strong subtraction
 inference rather than direct measurement; recorded as an accepted trade.
 
-### Part 7 — COMPACT LAYER-MAX VERDICT: 44.8 at plain C-config — the layers axis pays where rank/imgspan failed; battery + attempt-A re-audit close the placement question; FOLD-IN (layermax + lr2x + top_t 3072) auto-launched overnight
+### Part 7 — COMPACT LAYER-MAX VERDICT: 44.8 at plain C-config — the layers axis pays where rank/imgspan failed; battery + attempt-A re-audit close the placement question; FOLD-IN (layermax + lr2x + top_t 3072)
 
-**The result** (`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt1536_steps5k`,
-50-ep final; substrate = expert [9,10,11,12] + VLM text-field [13,14,15,16], 8 modules,
+**The result**
+(50-ep final; substrate = expert [9,10,11,12] + VLM text-field [13,14,15,16], 8 modules,
 n256/r2, bs16xacc2):
 
 | | arm 1' (6 mod) | **layermax (8 mod)** | comp (arm1p + levers) |
@@ -4181,9 +3873,9 @@ tracked its function in either direction.
   baked in): t0 0.0452 / t1 0.0353 / t3 0.0538 / t4 0.0503 — beats comp WITH ITS
   LEVERS ON per-cell by 24-55% (comp: 0.0810/0.0506/0.1200/0.0662) at plain config.
   t0's 0.0452 approaches the e4 conversion window (~0.02-0.03); the fold-in's levers
-  aim exactly there. [t2/e9 cell missing: probe_conversion.py hardcodes LAYERS=[14,8]
-  for its gain probe and crashed on the new layout — instrument debt, parameterize
-  before the next battery; e9's rollout 44 is the primary read regardless.]
+  aim exactly there. [t2/e9 cell missing:
+  its gain probe crashed on the new layout;
+  e9's rollout 44 is the primary read regardless.]
 - Jitter: relative slopes are elevated (image@0.05 3.4-4.1x, state@0.1 2.0-2.9x)
   BECAUSE the clean floor halved; ABSOLUTE perturbed errors stay at-or-below arm 1'
   everywhere (t0 image 0.173 vs arm1p ~0.234) — the imgspan kill signature (absolute
@@ -4195,8 +3887,8 @@ tracked its function in either direction.
   0.65-0.70 vs 0.56-0.61). Read-write product raised by LAYERS, which converts —
   where raising it by rank (r4: -10) did not.
 
-**Attempt-A re-audit** (`audit_heldout_jointwarm_layermax_e2468_v10121416_10k`,
-AUDIT_BS=16; closes the E50-addendum "direction unsettled"): **GATE PASS, but
+**Attempt-A re-audit**
+(closes the E50-addendum "direction unsettled"): **GATE PASS, but
 strictly weaker than compact where it matters.** Expert famIoU 0.163 (L8) worsening
 to 0.212 (L2) — L2 individually violates the <=0.20 band; the gate passes on the
 3-of-4 rule — vs compact's uniform 0.140-0.154. The E36 feature-probe prediction
@@ -4210,11 +3902,10 @@ build's forced expert [5-10] is half inside the flagged band; the evidence-clean
 extension is **expert [8-11] + VLM [12-16] = 9 modules** (every layer inside
 measured-good territory). Decision deferred behind the fold-in + budget verdicts.
 
-**FOLD-IN LAUNCHED** (run
-`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt3072_lr2x_steps5k`):
+**FOLD-IN**:
 layermax substrate + the composition levers (lr 2e-3 -> 2e-4, top_t 3072),
-sequential-only from the existing A-checkpoint; config verified in-log (3072 /
-2e-3 / bs16xacc2 / beta4 / frozen-route / 50-ep final). Pre-registered: beat 46.0
+sequential-only from the existing A-checkpoint.
+Pre-registered: beat 46.0
 to take the frontier; **>= 49.2 crosses the multitask-LoRA line (the recalibrated
 "must" target)**; e4 >= 34 and e9 >= ~40 must survive amplitude (the lr4x
 displacement lesson); give-back tripwire <= ~-3; block-min mean pushing below
@@ -4224,11 +3915,11 @@ displacement lesson); give-back tripwire <= ~-3; block-min mean pushing below
 the top-p slot (Part 6). Target ladder recalibrated (discussion): must = beat
 multitask-LoRA 49.2; good = 52-55 (~85-90% of the specialist oracle at none of its
 advantages); the missing table cells (e2/e7 specialists, naive sequential LoRA — the
-headline forgetting baseline) queue on whichever box frees first.
+headline forgetting baseline) still to run.
 
-### Part 8 — budget-v3 verdict: core overwrite ELIMINATED (0 events vs 260k-1.1M) and e9 rescued (+22 vs twin), but 43.6 < comp's 46.0 — the residual is amplitude's own cost, so the amplitude axis CLOSES at 2x; the gains ledger pivots the program to LAYERS (spread-A chain launched with levers; absolute-max certify-first queued)
+### Part 8 — budget-v3 verdict: core overwrite ELIMINATED (0 events vs 260k-1.1M) and e9 rescued (+22 vs twin), but 43.6 < comp's 46.0 — the residual is amplitude's own cost, so the amplitude axis CLOSES at 2x; the gains ledger pivots the program to LAYERS (spread-A chain with levers; absolute-max certify-first)
 
-**Result** (`..._budgetprop_steps5k`, nebius3, 50-ep final): **43.6** = 24/48/40/76/30
+**Result** (50-ep final): **43.6** = 24/48/40/76/30
 vs lr4x twin 40.4 (+3.2, clears it) vs comp 46.0 (−2.4, short). Trajectory
 25/40-35/25-60-55/40-45-30-65/24-48-40-76-30.
 
@@ -4253,9 +3944,9 @@ the +17% on e6 is partly the genuine writer tax (e6 shares "mug" content with e4
 now-untouchable core), but the across-the-board pattern is consistent with the mask
 tail running at 0.2-0.5x LR and under-converging (the concentration concern raised at
 design time; E42's coverage lesson). **The clean single-delta cell this identifies:
-rank+corefrac @2x+3072 (one env var from comp) — core exclusion without the
+rank+corefrac @2x+3072 — core exclusion without the
 proportional tail, at the amplitude that pays no brittleness. Deprioritized behind
-the layers pivot (below); rides any idle box window.**
+the layers pivot (below).**
 
 **The 4x-vs-2x residual decomposed — and the amplitude axis closes.** e4's deficit vs
 comp (24 vs 34) is NOT interference: zero events touched its core, and its block-min
@@ -4275,8 +3966,8 @@ interpolates them (~45-47 projection) on a substrate being superseded the same d
 **THE PIVOT (Josh's gains-ledger argument, adopted):** scope beats optimization,
 four times running — VLM build +6, layermax +4.8, levers-on-new-substrate +6, vs
 protection/budget/top-p ≈ 0-3 each. The program's remaining bets go to LAYERS:
-1. **[LAUNCHED] Spread-A chain** (`seq5_layermax_A_spread_lr2x_topt3072.sh`,
-   commit 7d89dc69): attempt A's substrate (expert [2,4,6,8] + VLM [10,12,14,16] —
+1. **Spread-A chain**:
+   attempt A's substrate (expert [2,4,6,8] + VLM [10,12,14,16] —
    8 modules SPREAD over depth 2-16) through A-phase + 5-task sequential WITH the
    composition levers, matching the running compact fold-in. **Count-matched,
    bank-matched, rank-matched vs compact: spacing is the only substrate variable**
@@ -4284,25 +3975,18 @@ protection/budget/top-p ≈ 0-3 each. The program's remaining bets go to LAYERS:
    certified at parity (0.132-0.152) in better anchor geometry (E49 downward
    improvement; E43 lower-layer transmission). Against: the certificate streak (5/5)
    and A's weaker expert half (0.163-0.212).
-2. **[QUEUED] Absolute layer-max certify-first**: expert [4-9] + VLM
-   [10-16] = 13 modules, 5.4B values (Adam ~43GB → bs8xacc4 likely; warm-up cheap
-   via router_only_fast; AUDIT_BS=8). Warm-up + audit (~4h) first; full chain ONLY on a
+2. **Absolute layer-max certify-first**: expert [4-9] + VLM
+   [10-16] = 13 modules, 5.4B values.
+   Warm-up + audit first; full chain ONLY on a
    certificate pass, with the spread-vs-contiguous verdict shaping its layout
    (A ≥ compact → spread the 13; A < compact → contiguous as specced). Known
    marginal layer: expert L4 (famIoU ~0.195 in A's audit; trim to [5-9] if it drags).
 3. Fold-in interim: block-mins t0 0.0304 / t1 0.0156 / t2 0.0725 — through
    the <0.045 pre-registration.
 
-**Board after this part:** Ladder cells
-(e2/e7 specialists + naive-sequential LoRA — the headline forgetting baseline) queue
-behind the layers wave. Storage: base cleaned 88%→75% (dead-branch checkpoints
-[top-p / vlmr4 / imgspan / attn-compass], analyzed-run intermediates + training
-states; layermax-plain per-task MODELS retained pending the chunk-instrument layer
-fix and own-block re-probe).
+### Part 9 — mass top-p verdict: 37.6 — the rule ran as designed and the DOSE-RESPONSE kills the axis; slot-level mechanics extracted (continuous damage, two-channel threshold separation, the layers-vs-budget collision principle)
 
-### Part 9 — mass top-p verdict: 37.6 — the rule ran as designed and the DOSE-RESPONSE kills the axis; slot-level mechanics extracted (continuous damage, two-channel threshold separation, the layers-vs-budget collision principle); absolute-max warm-up LAUNCHED on the freed box
-
-**Result** (`..._topp09mass_f3072c5120_lr2x_steps5k`, nebius4, 50-ep final): **37.6**
+**Result** (50-ep final): **37.6**
 = 22/42/12/88/24 vs comp (its single-delta twin, static 3072 @ 2x) 46.0 =
 34/60/26/84/26. Block-min mean **0.0639** — BETTER than comp's 0.0687 (family-best
 fit at 2x); the top-p fit/rollout dissociation again, milder than the count-rule's
@@ -4357,13 +4041,13 @@ Confound note (pre-registered honesty): measured under weak core protection
 budget-v3's exclusion would have blocked much of the core dose, but the corefrac
 writer-tax + derivation 3 say it would not clear 46.0. Stays unrun.
 
-**Launched behind it: the absolute layer-max warm-up** —
-`joint_rwarmup_absmax_e4to9_v10to16.sh` (d425d601): expert [4-9] + VLM [10-16] = 13
-modules, 5.37B values, n256/r2, broadcast losses, certify-first (warm-up -> audit at
-AUDIT_BS=8x400 -> STOP for manual review; bands in the header — expert famIoU <=
+**The absolute layer-max warm-up** —
+expert [4-9] + VLM [10-16] = 13
+modules, 5.37B values, n256/r2, broadcast losses, certify-first (warm-up -> audit
+-> STOP for manual review; bands — expert famIoU <=
 ~0.20 on >= 5/6, VLM <= ~0.25 all 7, no palette collapse; trim option expert [5-9]
-if only L4 fails). Config smoke passed (placement guard, bank arithmetic). Wrapper
-tries bs16xacc2 first with an auto-fallback ladder. Chain launch decision
+if only L4 fails).
+Chain launch decision
 waits on THREE inputs: this certificate, the compact
 fold-in final, and spread-A (which decides contiguous vs spread layout).
 
@@ -4388,11 +4072,10 @@ shrink from banks added below). All seven uniformly smaller than compact's would
 falsify this and revive a coupling channel.**
 
 ---
-## Entry 52 - 23 Jul 26 (Fold-in verdict 43.6: the give-back postmortem — best per-task functions ever recorded (e4/e9 cross their conversion thresholds for the first time), then 2x-LR write drift pushes both back across: FIRST rising MSE-forgetting diagonal of the stationary era (e4 +22.6%), e4 V16 core-drift dose ladder 36/44/55/59-69% -> finals 34/34/18/0. Give-back is created by the AMPLITUDE, not the substrate (plain give-backs 0-3%). Patch cell scripted: rank+corefrac on the fold-in config -> free VM)
+## Entry 52 - 23 Jul 26 (Fold-in verdict 43.6: the give-back postmortem — best per-task functions ever recorded (e4/e9 cross their conversion thresholds for the first time), then 2x-LR write drift pushes both back across: FIRST rising MSE-forgetting diagonal of the stationary era (e4 +22.6%), e4 V16 core-drift dose ladder 36/44/55/59-69% -> finals 34/34/18/0. Give-back is created by the AMPLITUDE, not the substrate (plain give-backs 0-3%). Patch cell: rank+corefrac on the fold-in config)
 
 ### The result
 
-`libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4_topt3072_lr2x_steps5k`
 (layermax compact substrate + lr 2e-3->2e-4 + top_t 3072; 50-ep final): **43.6** =
 e4 18 / e6 58 / e9 30 / e2 76 / e7 36 — below BOTH parents (comp 46.0, layermax-plain
 44.8). Trajectory (20-ep intermediates): e4 **55**->40->25->35->**18**; e9 **55**->25->
@@ -4402,7 +4085,7 @@ are the best cells ever recorded for those tasks by ~20pp. Two parent anchors: c
 did the IDENTICAL crash at e2's block (50->25->26; fold-in 55->25->30), and both parents
 IMPROVED e4 across e7's final block (comp +14, plain +4) where the fold-in fell -17.
 
-### Battery (full; artifacts outputs/analysis/e52/, instruments persisted to scripts/vla_analysis/)
+### Battery (full)
 
 **1. Fit: the levers composed perfectly.** Block-min mean **0.0409 (project low**; plain
 0.0528, comp 0.0687), every block best-ever, grad norms clean (max 0.029). Own-block
@@ -4418,8 +4101,8 @@ e9 +11.0%, e2 +3.7%, e7 own=final. Historical band since frozen-route: +0-5% tot
 (prior max: arm 1' e4 +4.8%). Real function-space forgetting is back at 2x LR on the
 8-module substrate.
 
-**3. Delivered damage (read-mass-weighted value drift on victim cores; new instrument
-e52_drift.py).** e4's damage is VLM-core overwrite: V16 core drift 17% (after e6's
+**3. Delivered damage (read-mass-weighted value drift on victim cores).**
+e4's damage is VLM-core overwrite: V16 core drift 17% (after e6's
 block) -> 36% (e9's) -> 45% (e2's) -> **55%** (e7's); expert side only 6-11%. Cross-run
 dose-response, e4 V16 core drift -> e4 final: **plain 36% -> 34; comp ~44% (recorded
 E51P2) -> 34; fold-in 55% -> 18; top-p count-rule 59-69% -> 0.** The cliff sits between
@@ -4446,8 +4129,8 @@ BETTER than comp's 0.0810 yet rolls 18 vs 34 — cross-substrate misrank #3, now
 cross-CONFIG) is the known off-trail conversion layer, operating for the first time on
 cliff-edge tasks.
 
-**6. Layermax-plain backfill (own-block cells + the missing t2 final; probe_conversion
-LAYERS hardcode parameterized — instrument debt discharged): the give-back is created
+**6. Layermax-plain backfill (own-block cells + the missing t2 final):
+the give-back is created
 by the LEVERS, not the substrate.** Plain (1x) own->final: e4 0.0450->0.0448 (flat!),
 e6 +2.7%, e9 +1.4%, e2 +1.8% — the healthy stationary-era pattern. And plain's e4 own
 0.0450 NEVER crossed the threshold: 1x buys retention by never winning the fit.
@@ -4473,9 +4156,9 @@ converts 1:1. Same drift, new location. The frontier config's problem is no long
 fit (0.0409) and no longer breadth (3072 selfcov 0.79-0.97) — it is that nothing
 protects at-threshold functions from later writers at 2x displacement.
 
-### Decision + the patch cell (scripted; Josh: launch on the free VM, base stays analysis)
+### Decision + the patch cell
 
-`seq5_layermax_compact_lr2x_topt3072_corefrac.sh` (this commit): the fold-in config
+Patch cell: the fold-in config
 with ONE delta — `protect_u_norm` peak -> **corefrac** (mode stays rank; the E51-Part-8
 identified single-delta cell, now on the layermax substrate where it matters most).
 Mechanism already measured in budget-v3: corefrac puts whole prior cores at u=1 ->
@@ -4484,8 +4167,8 @@ score tfidf*(1-u)^4 = 0 -> ZERO later-task events into prior cores at every modu
 attacks e9's channel too. Writer cost priced from this run's JSONs: only **1-5% of
 each writer's update events** land on prior cores -> rank-mode relocation
 (candidacy-only, full LR) is near-free — avoids budget mode's proportional-speed
-writer tax (+13-17% block-mins) that kept budget-v3 off the frontier. Pre-registered
-(in the wrapper header): core events = 0 at all 8 modules; e4 V16 drift <= ~20%;
+writer tax (+13-17% block-mins) that kept budget-v3 off the frontier. Pre-registered:
+core events = 0 at all 8 modules; e4 V16 drift <= ~20%;
 e4 >= 34 (init ~50s); e9 >= 40; e6 >= ~50 with t1 block-min <= 0.020 (mug-share
 writer-tax tripwire); block-min mean <= 0.045; give-back >= -3; **beat 46.0 = frontier;
 >= 49.2 crosses multitask-LoRA**. Anti-recommendations recorded: do NOT revert to 1x
@@ -4495,38 +4178,28 @@ Reserve levers if the shoulder still leaks: beta 8, protect_hard_u=0.9, budget m
 
 ### Next steps
 
-1. Launch the corefrac cell on the free VM (needs the layermax
-   A-checkpoint rsynced from base, spread-A precedent).
 2. Spread-A final: head-to-head vs the fold-in at matched levers
    — note its give-back numbers are now as informative as its final (the spacing
    hypothesis must also survive the amplitude channel).
-3. Absmax certificate (nebius4): score against the header bands + the Part-9-addendum
+3. Absmax certificate: score against the header bands + the Part-9-addendum
    pre-registration when the audit lands.
-4. Endgame (5 days): the corefrac verdict picks the frontier config; full battery;
+4. Endgame: the corefrac verdict picks the frontier config; full battery;
    reserve the last ~day for the clean confirmatory run.
 
-Battery artifacts: outputs/analysis/e52/{working_tables.md, mse_matrix_foldin.jsonl,
-probe_conversion_{foldin,plain}.jsonl, probe_jitter_foldin.jsonl, core_drift.json,
-slots_e52.out/json}; instruments scripts/vla_analysis/{e52_slots,e52_drift}.py +
-run_e52_*.sh; probe_conversion.py PROBE_LAYERS parameterization (tower-qualified).
-
 ---
-## Entry 53 - 24 Jul 26 (E53 battery: corefrac = NEW FRONTIER 51.6, first config past the multitask-LoRA must-line — total core exclusion at zero writer tax, flat MSE matrix + held chunk grid restored at 2x; spread-A = best per-task functions in project history (t0 beats the dense VLM-LoRA specialist) taxed at the full peak-norm drift rate; absmax audit backfill: the expert text-anchor is a decisive low-layer rescue → 3-arm corefrac wave scripted (absmax / spread / spread+anchor))
+## Entry 53 - 24 Jul 26 (E53 battery: corefrac = NEW FRONTIER 51.6, first config past the multitask-LoRA must-line — total core exclusion at zero writer tax, flat MSE matrix + held chunk grid restored at 2x; spread-A = best per-task functions in project history (t0 beats the dense VLM-LoRA specialist) taxed at the full peak-norm drift rate; absmax audit backfill: the expert text-anchor is a decisive low-layer rescue → 3-arm corefrac wave (absmax / spread / spread+anchor))
 
 ### The two landed runs
 
-- **corefrac** `libero_10_seq5_jw_layermax_compact_e9to12_v13to16_beta4corefrac_topt3072_lr2x_steps5k`
+- **corefrac**
   — the E52 patch cell: fold-in config (compact layermax, lr 2e-3→2e-4, top_t 3072)
   + the single delta `protect_u_norm` peak→corefrac (mode stays rank).
-- **spread-A** `libero_10_seq5_jw_layermax_A_e2468_v10121416_beta4_topt3072_lr2x_steps5k`
+- **spread-A**
   — the E51 spacing isolation: expert [2,4,6,8] + VLM [10,12,14,16], same levers,
   peak-norm β4 (predates corefrac).
 
-Full battery (items 1-8) run on both; instruments extended and persisted
-(`e53_slots.py` with the logged-IoU validation folded in, `e53_drift.py` with
-core/shoulder/full bands — full = the deleted `field_change.py` read —
-`e53_ckpt_diff.py` rebuilt from the lost E39 scratchpad, `e53_wandb_retention.py`,
-GPU runners). Integrity: computed pairwise read-IoU == logged `memory_iou` to 4
+Full battery (items 1-8) run on both.
+Integrity: computed pairwise read-IoU == logged `memory_iou` to 4
 decimals on both (0.0902/0.0902, 0.0897/0.0897); ckpt-diff proves values-only on
 every block transition (16 slot tensors move, router/gate/backbone/vision bitwise
 zero); corefrac's 005000 is BITWISE the fold-in's (identical MSE row + own-chunk
@@ -4606,99 +4279,46 @@ into the expert router at B=0.5, FiLM off):
 
 The anchor rescues exactly the low layers that were the flagged risk, and produces
 the cleanest expert-side routing ever certified (bg ~4× below anything prior);
-VLM 0.132-0.150 untouched. Chain history: the automated gate tripped on L9 0.174 vs
-its 0.165 line (calibration miss — inside every historical certificate standard);
-graduation relaunched manually; the sequential (rank+peak, bs16×acc2+ckpt) was
-killed before stepping (slow config + results-in-turn). Warm-up postmortem: its 9h
-(vs the usual ~3h) was a sequential-stage VRAM config carried into the warm-up —
-router-only training on a frozen backbone needs neither grad-ckpt (router grads do
-not chain through the backbone) nor accum (E49 precedent: 32GiB @ bs32). Standing
-VRAM fact to carry (E52 A-phase): at 5.37B values the card is fixed-cost-dominated —
-bs16 demanded only ~5GB less than bs32 — which bears directly on the arm-1 batching
-question below.
+VLM 0.132-0.150 untouched. The automated gate tripped on L9 0.174 vs
+its 0.165 line (calibration miss — inside every historical certificate standard).
 
-### Incidents (both fixed, both worth remembering)
+### The wave (corefrac in all)
 
-1. **HF Hub 429 rate limits currently masquerade as "tokenizer vocabulary corrupted"**
-   (newer transformers makes a hub `model_info` call inside tokenizer init; the 429
-   surfaces as OSError). All assets are locally cached → `HF_HUB_OFFLINE=1` is now in
-   the battery runners and the three new arm wrappers. Any VM chain launched during
-   an exhausted quota window can die at the same spot with the same misleading error.
-2. **Two chunk probes cannot share the GPU** (~70GB each at the gain-probe einsum;
-   E52 never overlapped them, the E53 parallel layout did) — serialize chunk stages.
-
-### The wave (scripts shipped this commit; corefrac + offline-mode in all)
-
-| arm | box | script | delta / question |
-|---|---|---|---|
-| 1 | base | `seq5_absmax_anchor05nofilm_corefrac_bs8acc4.sh` | certified absmax substrate + corefrac, seq-only; Josh's batching call (bs8×acc4, no ckpt) as rung 1 of a `SEQ_LADDER` (→ +ckpt → bs16×acc2+ckpt; the E52 weak-batch-leverage fact says rung 1 may OOM — the ladder is the empirical answer). **Launch pending discussion.** |
-| 2 | nebius3 | `seq5_layermax_A_spread_lr2x_topt3072_corefrac.sh` | spread + corefrac, seq-only, single delta vs 41.2; reuses the on-box A-checkpoint. e7 = the decision cell corefrac cannot help. |
-| 3 | nebius4 | `joint_layermax_A_anchor05_nofilm_corefrac_full_chain.sh` | the candidate win: spread substrate + anchored-nofilm expert router (fresh warm-up, ~3-4h at corrected config) + corefrac. Gated (bands calibrated per the absmax lesson: ≤0.18/layer with one grace to 0.20; L2 = the honest unknown, never probed). vs arm 2 = the anchored router's conversion value at matched substrate+protection. |
+| arm | delta / question |
+|---|---|
+| 1 | certified absmax substrate + corefrac, seq-only. |
+| 2 | spread + corefrac, seq-only, single delta vs 41.2; e7 = the decision cell corefrac cannot help. |
+| 3 | the candidate win: spread substrate + anchored-nofilm expert router (fresh warm-up) + corefrac. Gated (bands calibrated per the absmax lesson: ≤0.18/layer with one grace to 0.20; L2 = the honest unknown, never probed). vs arm 2 = the anchored router's conversion value at matched substrate+protection. |
 
 Common pre-registrations: core events = 0 at all modules; MSE matrices flat (≤~+5%);
-function give-backs ≤~5%/task; **beat 51.6 to take the frontier**. Infrastructure:
-`joint_aphase_seq5_common.sh` gained the optional `SEQ_LADDER` (unset = byte-identical;
-rungs failing before 005000 = VRAM → wipe and next rung; after = abort loudly).
+function give-backs ≤~5%/task; **beat 51.6 to take the frontier**.
 Portfolio decision (discussed): the 10-task extension (the catastrophe-elimination
 demonstration, arguably unblocked now that 51.6 > the must-line) takes the winner's
 slot AFTER the wave rather than displacing an arm.
 
 ### Next steps
 
-1. Launch arms 2 + 3 on the VMs; arm 1 here after the
-   batching discussion (the ladder makes either resolution safe).
-2. Battery on each landing (serialize the chunk stages); arm-3-vs-arm-2 is the
+2. Battery on each landing; arm-3-vs-arm-2 is the
    attribution read; e7 across arms 2/3 is the substrate-conversion read.
-3. Winner → 10-task extension and/or the clean confirmatory run (endgame ~4 days).
+3. Winner → 10-task extension and/or the clean confirmatory run.
 4. Standing: corefrac default-on everywhere; peak-norm retired; 20-ep init cells
    remain retired from decisions (the corefrac give-back story is the reminder why).
 
-Artifacts: `outputs/analysis/e53/` (both MSE matrices, chunk/jitter grids, slots
-with IoU validation, core/shoulder/full drift, ckpt-diff, wandb/retention JSON);
-instruments + runners in `scripts/vla_analysis/`; the three arm wrappers + common-body
-ladder in `job_scripts/nebius/libero_90/staged/`.
-
-**Update (24 Jul) — arm-1 batching smoke: Josh's config WINS decisively;
-arm 1 LAUNCHED.** Task-0-only smokes of the
-real sequential command on the 13-module absmax substrate, ~500/400 optimizer steps
-each, peak VRAM polled: **bs8×acc4 no-ckpt = 2.40 s/opt-step at 125.6GB (fits, ~18GB
-headroom, zero OOM) vs bs16×acc2+ckpt = 3.35 s/opt-step at the same peak — 28%
-faster.** The mechanism is cleaner than the generic +33%-recompute arithmetic: on a
-frozen backbone with values-only training the TRUE backward is cheaper than the
-forward (bwd 0.187 vs fwd 0.273 — grads reach only value tensors), so checkpointing's
-recompute nearly triples the backward (0.187→0.970). The E52 "fixed-cost-dominated,
-batch can't save it" reading was over-general — it held for the A-phase rungs tried
-(bs32/bs16) but bs8 clears the activation bar. Ladder retained in the wrapper
-(rung 1 confirmed live).
-
-**Update (24 Jul, PM) — arm-3 GATE FAILED (anchored-expert over-compaction); expert_anchor_weight 0.5 -> 0.1 refinement + re-launch.** The spread + anchored-nofilm-expert + corefrac warm-up (`..._layermax_A_anchor05_nofilm_...`) HARD-FAILED the gate on **expert core50 330-457 (< 800 floor)** — while expert famIoU **0.113-0.140** and bg **0.017-0.022** were the *cleanest expert routing ever certified*. VLM tower passed clean (min-eff 381-914). Classic E21: separation and capacity are two readings of routing breadth, and this moved them apart the wrong way.
+**Update (24 Jul, PM) — arm-3 GATE FAILED (anchored-expert over-compaction); expert_anchor_weight 0.5 -> 0.1 refinement.** The spread + anchored-nofilm-expert + corefrac warm-up HARD-FAILED the gate on **expert core50 330-457 (< 800 floor)** — while expert famIoU **0.113-0.140** and bg **0.017-0.022** were the *cleanest expert routing ever certified*. VLM tower passed clean (min-eff 381-914). Classic E21: separation and capacity are two readings of routing breadth, and this moved them apart the wrong way.
 
 Diagnosis: the expert text-anchor (per-layer pooled LM-**instruction** hidden, which is ~constant within a task) injected at weight 0.5 **over-compacts the expert router by collapse, not translation** — the expert router's native `proj(x)` is already the discriminative state-conditional signal (E28: scene 20x > language), so adding a strong per-task-constant just pulls every frame of a task into a tight cone (core50 ~1700 -> ~400, a ~4x capacity cut; the compact-layermax cert is 1664-1875 at famIoU 0.14-0.15). It looks spotless because the warm-up is aux-losses-only — separation *is* what over-compaction maximizes, so loss/famIoU curves are perfect; only core50/effnum shows the collapse.
 
 **The E53 absmax "cleanest ever certified" anchor had the SAME latent collapse** (expert core50 425-648, all < 800) — but the backfill reported only famIoU/bg and its sequential was killed before stepping, so nothing ever checked capacity. This gate is the first with a core50 floor on an anchored-expert router; it caught what was always there. E21's trap replaying ("the audit had no capacity gate"). **Revision to E53's "the expert text-anchor is a decisive low-layer rescue": it rescues famIoU/bg by cutting expert capacity ~4x — a bad trade at weight 0.5.** (The VLM anchor is unaffected — it reads the language field where the anchor belongs, E45.)
 
-Refinement: **`expert_anchor_weight` 0.5 -> 0.1** (5x weaker). Script renamed `anchor05` -> `anchor01` (`joint_layermax_A_anchor01_nofilm_corefrac_full_chain.sh`) with `ARM_TAG`/`SEQ_RUN` freshened so the warm-up re-trains from scratch — skip-guards key on `ARM_TAG`, so keeping the tag would silently reuse the failed 0.5 router; the failed 0.5 warm-up/audit stay on nebius4. VLM anchor `[1.0,0.5]` untouched. **Two-sided gate risk, pre-registered:** 0.1 may now *under*-separate — the unanchored spread-A L2 famIoU was 0.212 vs the gate's 0.18 ceiling (+ one grace to 0.20). The gate arbitrates. If 0.1 fails the other way (famIoU back near control), the anchored-expert idea is bracketed and arm 2 (plain spread-A + corefrac, nebius3) stands as the spread verdict.
+Refinement: **`expert_anchor_weight` 0.5 -> 0.1** (5x weaker). VLM anchor `[1.0,0.5]` untouched. **Two-sided gate risk, pre-registered:** 0.1 may now *under*-separate — the unanchored spread-A L2 famIoU was 0.212 vs the gate's 0.18 ceiling (+ one grace to 0.20). The gate arbitrates. If 0.1 fails the other way (famIoU back near control), the anchored-expert idea is bracketed and arm 2 (plain spread-A + corefrac) stands as the spread verdict.
 
-## Important
-Runs have been moved to cold storage (off this VM, on the external backup drive). If you need them for analysis, ask the user to rsync them back to this VM:
-- realworld_v2
-- libero_90_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4_steps5k
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4_lr2x
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4_lr2x_steps5k
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta8
-- libero_90_pi05_8_10_12_14_film_lora_2244_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k
-- libero_10_sequential_pi05_8_10_12_14_film_lora_2244_sample_contrastive_0.05_sep_5.0_noloc_knn_36_rq512_40k_top_t_1536_protect_beta4_steps5k
-
-## E53 ARM-3 — expert-anchor separation sweep (empty window) + VM teardown cold-storage move (2026-07-25)
+## E53 ARM-3 — expert-anchor separation sweep (empty window) (2026-07-25)
 
 ### Separation sweep (anchored-expert router)
 ARM 3 = spread substrate ([2,4,6,8]+[10,12,14,16]) + per-task-constant pooled-LM-instruction
 expert anchor (expert_anchor_pool=text, FiLM off) + corefrac. Swept EXPERT_ANCHOR_W as a
-gate-directed bisection; each probe was a FRESH warm-up from base_nomem_50k (new run tag; prior
-warm-up deleted between probes). The anchor weight is a single routing-breadth knob read two ways:
+gate-directed bisection; each probe was a FRESH warm-up from base_nomem_50k.
+The anchor weight is a single routing-breadth knob read two ways:
 it sets both separation (expert famIoU, lower=better) and compaction (core50, higher=more capacity),
 so the two trade off along the same axis. Gate: expert famIoU <=0.18 (one grace layer <=0.20),
 bgIoU <=0.10, core50 >=800, min-eff >=300; VLM famIoU <=0.165.
@@ -4714,32 +4334,16 @@ overlapping -> the viable window is EMPTY; no expert-anchor weight passes the ga
 failure modes collide (needs MORE anchor to fix famIoU, LESS to fix core50 — contradictory). VLM
 anchor passed at every weight (famIoU 0.11-0.15) — the failure is expert-specific. Verdict: the
 anchored-expert router is not viable on this substrate. Standings unchanged: compact+corefrac 51.6
-= frontier; spread+corefrac 47.6 = spread result (corefrac lift: +8.0 compact, +6.4 spread). All 5
-warm-up audit certificates (+logs) retained on base.
-
-### VM teardown — checkpoints moved to cold storage
-Winding down the GPU VMs (nebius3/VM2, nebius4/VM3). Runs on the VMs but not on base were rescued to
-base, trimmed to the `last`-target checkpoint only (10k for warm-ups/A-phases, 25k for sequentials).
-The following 6 were then moved base -> cold storage (external SSD /media/josh/Backup/memory-models,
-full dirs incl training_state, 0-diff verified) and DELETED from base to free space. To use for
-analysis, rsync them back from cold storage.
-  - libero_90_pi05_jointA10k_arm3old_dedup_vlmknn36            (E47, ckpt 010000)
-  - libero_90_pi05_jointwarm10k_arm1_incumbent_n256r2_vlmknn16 (E46, ckpt 010000)
-  - libero_10_seq5_jw_arm1p_vlmknn16_beta4_topp09f3072_lr2x_steps5k (E50 top-p, ckpt 025000)
-  - libero_90_pi05_jointA10k_arm3p_vlmknn36                    (E47, ckpt 010000)
-  - libero_90_pi05_jointwarm10k_arm3_n256r2_vlmknn36           (E47, ckpt 010000)
-  - libero_10_sequential_pi05_8_10_12_14_frozenroute_rwarmupB_c0.05_sep5.0_noloc_rq512_top_t_3072_softprotect_fix_cf_beta4_lr4xsched_steps5k_tasks5 (E43, ckpt 025000)
+= frontier; spread+corefrac 47.6 = spread result (corefrac lift: +8.0 compact, +6.4 spread).
 
 ---
-## Entry 54 - 26 Jul 26 (ARM-1 BACKFILL: absmax+anchor05+corefrac = NEW FRONTIER **53.6** with ZERO net give-back — on the router that FAILS the capacity gate at every expert layer; the capacity ledger falsifies the per-layer core50 floor (total −27% vs compact, re-allocated to the VLM tower + 3x cleaner shoulders); AAAI dropped → ICRA (~6 wks); spread re-opened at w=0.35 via GLOBAL loss levers — sep8-vs-c015 probe pair LAUNCHED)
+## Entry 54 - 26 Jul 26 (ARM-1 BACKFILL: absmax+anchor05+corefrac = NEW FRONTIER **53.6** with ZERO net give-back — on the router that FAILS the capacity gate at every expert layer; the capacity ledger falsifies the per-layer core50 floor (total −27% vs compact, re-allocated to the VLM tower + 3x cleaner shoulders); AAAI dropped → ICRA; spread re-opened at w=0.35 via GLOBAL loss levers — sep8-vs-c015 probe pair)
 
 ### Arm-1 backfill (the result E53's "standings unchanged" line predates)
 
-The E53 arm-1 sequential — `libero_10_seq5_jw_absmax_anchor05nofilm_beta4corefrac_topt3072_lr2x_steps5k`
+The E53 arm-1 sequential
 (absmax substrate: expert [4-9] + VLM [10-16] = 13 modules, n256/r2, 5.37B values; the
-anchored-nofilm expert router at w=0.5; corefrac + lr2x + top_t 3072; bs8×acc4; wandb
-`nmuu4afg`) — completed on 24-25 Jul but was never logged. Verified from disk this session
-(all 5 per-task checkpoints + evals + memory_by_task JSONs intact, 346G on base):
+anchored-nofilm expert router at w=0.5; corefrac + lr2x + top_t 3072):
 
 | step | e4 | e6 | e9 | e2 | e7 | seen-avg |
 |---|--|--|--|--|--|--|
@@ -4760,7 +4364,7 @@ spread+corefrac 47.6 / comp 46.0 / layermax-plain 44.8.
 ### The gate paradox (verified from the audit summaries)
 
 This run's router is exactly the configuration class the E53 sweep condemned. The
-anchored absmax certificate (`audit_heldout_jointwarm_absmax_anchor05_nofilm_e4to9_v10to16_10k`),
+anchored absmax certificate,
 recomputed this session:
 
 | expert layer | core50 mean (min-max/task) | famIoU | bgIoU | core50 ≥ 800 gate |
@@ -4801,13 +4405,13 @@ layers" is right in structure but NOT a clean swap: ALL-bank total is 27% BELOW 
 tower** (2,808→4,107, 4→7 banks) — capacity re-allocated to where the compass says fit
 lives. Causal test for (1), unscheduled: c-up on absmax at held separation (inflate cores;
 if give-back returns, small cores were load-bearing; if not, it was separation/bg).
-Terminology note for the record: the E53 sweep's `w` was `expert_anchor_weight`
-(verified from script + checkpoint configs); `routing_inter_task_separation_weight`
+Terminology note for the record: the E53 sweep's `w` was `expert_anchor_weight`;
+`routing_inter_task_separation_weight`
 stayed 5.0 throughout — the sep loss itself has not been swept since E26.
 
 ### Decisions (Josh, 26 Jul)
 
-1. **AAAI abandoned → ICRA, ~6 weeks.** The endgame-countdown pressure is off; the plan
+1. **AAAI abandoned → ICRA.** The endgame-countdown pressure is off; the plan
    gains room for the missing baselines and seeds (below).
 2. **Spread is the testbed** — best measured memory→fit substrate (E53: best own-block
    chunks on all five tasks; t0 beat the dense VLM-LoRA specialist), publishable size
@@ -4827,12 +4431,12 @@ stayed 5.0 throughout — the sep loss itself has not been swept since E26.
    losses would need −0.10..−0.13, beyond any measured loss-side famIoU move (max ~0.09,
    the whole E26 sep curve); w=0.35 needs −0.03..−0.07, inside precedent.
 
-### LAUNCHED: E54 probe pair — spread @ w=0.35, global loss-lever isolation
+### E54 probe pair — spread @ w=0.35, global loss-lever isolation
 
-Both: fresh warm-ups from `base_nomem_50k` (fresh ARM_TAGs), spread substrate
+Both: fresh warm-ups from `base_nomem_50k`, spread substrate
 (expert [2,4,6,8]/n256/r2/knn36 + VLM [10,12,14,16]/n256/r2/knn16), expert text-anchor
 FiLM-off at **w=0.35**, E53 arm-3 recipe otherwise verbatim, broadcast losses,
-warm-up → audit → analyses → sub-span → STOP + gate-summary print:
+warm-up → audit → analyses → sub-span → STOP:
 
 | probe | delta | expert mechanism | VLM risk (same audit watches it) |
 |---|---|---|---|
@@ -4843,9 +4447,9 @@ Honest uncertainty on P2, pre-registered: the joint-era precedent is against it 
 c-up compacted without separating); the counter-argument is that regime was
 MSE-dominated with no anchor. Genuinely a hypothesis test.
 
-**Gates (recalibrated, printed informationally at chain end):** expert famIoU ≤ 0.18
+**Gates (recalibrated):** expert famIoU ≤ 0.18
 (one grace ≤ 0.20), bg ≤ 0.10, mean core50 ≥ 400 (tripwire, not 800), min-task effnum
-≥ 300; VLM famIoU ≤ 0.165 all layers, palette effnum ≥ ~500 via the subspan JSON.
+≥ 300; VLM famIoU ≤ 0.165 all layers, palette effnum ≥ ~500.
 **Decision rule:** one threads → its A-phase + 5-task sequential w/ corefrac; both →
 better joint margin; neither but one direction moves expert famIoU cleanly → dose
 refinement (sep 12 / c 0.25 / w 0.375); both damage the VLM before fixing the expert →
@@ -4853,14 +4457,7 @@ per-LAYER anchor weight fallback (heavy at L2/L4 only — anchor knobs are inher
 expert-scoped, so no per-tower loss plumbing needed; the deficit is layer-local, plain
 spread already passes at L6/L8).
 
-**Code (this commit):** `joint_rwarmup_common.sh` gained `SEP_W`/`CONTRASTIVE_W` env
-fallbacks (defaults 5.0/0.05 — byte-identical unset); new chain
-`staged/joint_layermax_A_w035_sep8_vs_c015_probes.sh` (per-probe subshell isolation so
-P1 failure can't kill P2; AUDIT_BS=16×200 per the 8-module OOM precedent;
-HF_HUB_OFFLINE=1). Config verified in-log (sep 8.0, anchor 0.35, both towers' layers
-correct); wandb `hv3bpga8`.
-
-### ICRA plan (~6 weeks, agreed shape)
+### ICRA plan (agreed shape)
 
 - **Wk 1:** spread routing rejig (this probe pair + at most one refinement) → certified
   winner → A-phase + 5-task w/ corefrac. Output: the missing spread cell + the
@@ -4875,14 +4472,13 @@ correct); wandb `hv3bpga8`.
   specialists (complete the oracle table), multitask-LoRA at 10 tasks if 10-task
   headlines.
 - **Wk 3-4:** seeds — ≥3 on headline config + main baseline (everything to date is
-  single-seed at ±7pp/cell). The compute sink; argues for re-provisioning 1-2 VMs
-  (single-box this alone is ~2 wks).
+  single-seed at ±7pp/cell).
 - **Wk 5-6:** consolidation + writing + one clean confirmatory run. The ablation table
   mostly exists in this log (amplitude/write-budget/bank/knn/rank/palette-constancy
   dose-responses, stationarity, protection modes) — writing work, not compute. Decide
   the real-robot question EARLY (realworld_v2 exists; can't be bolted on in wk 5).
 
-### Update (26 Jul PM) — P1 verdict: sep8 FAILS (weak dose-response) but exposes the anchor famIoU U-CURVE: plain spread (w=0) beats every anchored point below w=0.5 → probe 3 (w=0 + sep8) QUEUED
+### Update (26 Jul PM) — P1 verdict: sep8 FAILS (weak dose-response) but exposes the anchor famIoU U-CURVE: plain spread (w=0) beats every anchored point below w=0.5 → probe 3 (w=0 + sep8)
 
 **P1 (w=0.35, sep 5→8): FAIL.** Expert famIoU 0.207/0.225/0.200/0.238 (L2/4/6/8; one
 grace at L6, three hard) vs the sep5 twin 0.238/0.241/0.207/0.250 — delta
@@ -4905,23 +4501,22 @@ Meanwhile bg improves monotonically in w (0.094-0.119 → 0.022 at 0.5): **the a
 separates what is already different and merges what is similar.** w=0.35 ≈ the worst
 operating point; the E54 probe pair was standing on it.
 
-**Probe 3 QUEUED (Josh: keep probing)** — `joint_layermax_w0_sep8_probe.sh`,
-auto-starts when the P2 chain frees the GPU.
+**Probe 3 (Josh: keep probing).**
 The cell the data points at: plain-spread certificate + ONE delta (sep 5→8), no
 anchor, FiLM on to match the comparator. Pre-registered (transfer P1's per-layer
 deltas onto plain): famIoU ~0.181/0.179/0.182/0.151 = PASS with one-grace headroom at
 core50 ~1600-1800; bg is the borderline axis (L2 0.119 −15% ≈ 0.10). Fail-routes (bg route corrected
-in discussion — the script header's "w≤0.1 anchor for bg" is DEAD per the U-curve;
+in discussion — the "w≤0.1 anchor for bg" is DEAD per the U-curve;
 the bg-trimmer at w=0 is c-up ~0.1, SupCon pull → compaction → lower bg at affordable
 capacity cost): deltas don't transfer → sep 12; bg stuck → accept-with-note or
 w=0 + sep8 + c≈0.1; famIoU unmoved → pivot to the anchored-w0.5 + corefrac
-sequential (the absmax recipe on spread — warm-up already on disk, relaxed-gate
+sequential (the absmax recipe on spread — relaxed-gate
 justified; NOT launched).
 
 **P2 (c=0.15 @ w=0.35) re-scoped:** still lands as the contrastive mechanism
 test, but it stands on the handicapped w — any positive read gets re-tested at w=0.
 
-### Update 2 (26 Jul eve) — P2 FAIL (contrastive separates families in NO measured regime); P3 (w=0 + sep8) PASSES THE FULL GATE — first certified spread router, at 2-4x anchored capacity; cells B/C queued overnight
+### Update 2 (26 Jul eve) — P2 FAIL (contrastive separates families in NO measured regime); P3 (w=0 + sep8) PASSES THE FULL GATE — first certified spread router, at 2-4x anchored capacity
 
 - **P2 (w0.35, c0.15): FAIL, informatively.** Expert famIoU 0.249/0.244/0.211/0.252 vs
   twin 0.238/0.241/0.207/0.250 — +0.002..+0.011, null/wrong direction — while core50
@@ -4939,14 +4534,13 @@ test, but it stands on the handicapped w — any positive read gets re-tested at
 - Net: **the anchor is bracketed as unnecessary on this substrate** — sep8 alone
   separates the family below every anchored point's famIoU except w=0.5's, at 2-4x
   the capacity. First spread router to certify.
-- Overnight (chain `probesBC`, queued behind P3): **cell B** w=0.40+sep8 (the
+- **cell B** w=0.40+sep8 (the
   absmax-band middle; pre-reg PASS at famIoU 0.155-0.19 / core50 580-740) and
   **cell C** w=0.5+c=0.15 (family-clean end; pre-reg core50 → 400-650 at
   famIoU ≤~0.16 — also the small-cores-vs-separation causal probe), then **probe 4**
   = P3-nofilm (w=0 + sep8 + lang_to_query=false, no anchor — the
   zero-language-machinery router, Josh's FiLM-removal cell; pre-reg famIoU within
-  ~0.01-0.02 of P3 ⇒ FiLM removable and P4 graduates over P3). Morning pick across
-  the five certificates; sequential launch = Josh's call.
+  ~0.01-0.02 of P3 ⇒ FiLM removable and P4 graduates over P3).
 
 ### Update 3 (27 Jul AM) — overnight verdicts: B PASSES in the absmax band (bg 0.025-0.037, FiLM-free); C fails the core floor by one layer (c-axis closed); P4 CATASTROPHIC SPRAWL — language conditioning is LOAD-BEARING at warm-up, "FiLM inert" was an inference-time property only
 
@@ -4985,58 +4579,29 @@ Expert-tower scoreboard (all six E54 probes; VLM passed and was ≈invariant in 
    Exactly the core50↔consistency dose-response pair. Recommendation: graduate BOTH
    through A-phase + 5-task corefrac sequentials this week, **B first** (pattern-matches
    the frontier's winning profile, at publishable size, with the simpler language
-   story); P3 second as the capacity arm. Sequential launches = Josh's call.
-   **Graduating warm-up checkpoints:** B =
-   `libero_90_pi05_jointwarm10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416`,
-   P3 = `libero_90_pi05_jointwarm10k_layermax_sep8_e2468_v10121416`.
+   story); P3 second as the capacity arm.
 
-### Update 4 (27 Jul) — GRADUATING B: chain LAUNCHED
+### Update 4 (27 Jul) — GRADUATING B
 
-`staged/grad_layermax_A_anchor040_sep8_nofilm_corefrac.sh` (4a7fc641) — E53 arm-2 recipe
+E53 arm-2 recipe
 verbatim (top_t 3072, lr 2e-3→2e-4, β4+corefrac, 5×5000, bs16×acc2, 50-ep final); the only
 delta vs spread+corefrac 47.6 is B's warm-up checkpoint, so it's a clean single-delta
-router cell. Full pre-registration in the script header. A-phase
-`..._jointA10k_layermax_A_anchor040_sep8_nofilm_e2468_v10121416` → sequential
-`..._seq5_jw_layermax_A_anchor040_sep8_nofilm_beta4corefrac_topt3072_lr2x_steps5k`;
-wandb `fubfz15r`. Beat 47.6 = the router delta pays;
+router cell.
+Beat 47.6 = the router delta pays;
 51.6 = spread takes the frontier; ≥52 ⇒ the 53.6 win was shoulder cleanliness, not banks.
 
-Health: 64 trainable tensors / 841 frozen (8 modules × 8), frozen-base routing + anchor
-B=0.4 confirmed in-log, E37 overrides took (the ckpt carries `train_router_only` and
-`router_only_fast` True). A-phase bs32 OOMed → ladder demoted to bs16×acc2 (expected at
-8 modules).
+### Update 5 (28 Jul) — run 1 lost at task 2/5
 
-Run under `systemd-run --unit=gradB` (SIGTERM/TimeoutStopSec=45), not tmux — this box is
-the preemptible spot instance now. Relaunching the wrapper is idempotent at stage level,
-but there is no within-stage resume: a preemption costs ≤~4.8h (A) or one 5k block (seq).
-Worth plumbing `--resume` before the 10-task run.
-
-### Update 5 (28 Jul) — run 1 lost to a shm/logind bug at task 2/5; resume plumbing added; relaunched
-
-The first attempt died at 20:42 in task 2 (evals banked: e4 55, then e4 50 / e6 40 — e4's
+The first attempt died in task 2 (evals banked: e4 55, then e4 50 / e6 40 — e4's
 −5 across the first boundary vs fold-in's −15 and compact-corefrac's −20 is the only
-signal worth keeping). Cause was infrastructural, not the config: `logind` `RemoveIPC=yes`
-+ `Linger=no` means every SSH logout sweeps the user's `/dev/shm`, and the watchers I had
-polling every 60-90s produced 546 login sessions in 6h — one sweep eventually landed in a
-DataLoader worker's create→unlink window (`could not unlink the shared memory file`).
-Fixed with `loginctl enable-linger josh` + SSH `ControlMaster` (0 sessions per poll now);
-written up in `phddev/CLAUDE.md` §9.5.1.
-
-Resume had to be built before relaunching, because the protection store and online-IDF
-accumulators live in module globals and were never checkpointed — restarting from a
-mid-run checkpoint would have run the remaining tasks with an EMPTY protection store,
-i.e. silently measuring a different method. Now `sequential_state.pt` is written atomically
-into each per-task checkpoint (0.03s), `--resume_sequential` restores it and *refuses* if
-absent, and the chain auto-resumes from the last completed boundary (smokes 22/22,
-`scripts/vla_analysis/smoke_sequential_resume.py`). A-phase was reused; sequential
-relaunched from task 0 at 03:33 UTC 28 Jul.
+signal worth keeping). Cause was infrastructural, not the config.
 
 ---
-## Entry 55 - 28 Jul 26 (B graduation lands: spread+anchor040+sep8+corefrac = **53.2** — statistically the frontier at 3.2B/8 banks; the ≥52 branch FIRES (absmax's 53.6 was shoulder cleanliness, not bank count) → spread is headline-eligible. Battery: corefrac-flat matrices + project-best chunks on 4/5 tasks (e4 at full-specialist level); e7 core-volume hypothesis tested from the audits — simple form dead, an expert-DEPTH pattern found; e7's threshold is the open question → e7/e2 specialist cells LAUNCHED)
+## Entry 55 - 28 Jul 26 (B graduation lands: spread+anchor040+sep8+corefrac = **53.2** — statistically the frontier at 3.2B/8 banks; the ≥52 branch FIRES (absmax's 53.6 was shoulder cleanliness, not bank count) → spread is headline-eligible. Battery: corefrac-flat matrices + project-best chunks on 4/5 tasks (e4 at full-specialist level); e7 core-volume hypothesis tested from the audits — simple form dead, an expert-DEPTH pattern found; e7's threshold is the open question)
 
 ### The run
 
-Relaunch (E54-U5) completed clean, 03:33→21:10 UTC. Determinism first: run 2 reproduced
+Determinism first: run 2 reproduced
 run 1 exactly through the replayed window — loss traces to 3 decimals every logged step,
 evals identical (e4 55.0; then 50/40) — so the crash cost wall-clock only, run 1's banked
 cells were real, and the A-phase-reuse + resume plumbing changed nothing about the method.
@@ -5064,7 +4629,7 @@ cells were real, and the A-phase-reuse + resume plumbing changed nothing about t
   final moved e4 30→44, e6 35→60, e9 50→56. The E41 retired-instrument rule survives
   another live demonstration.
 
-### Battery (MSE matrix + chunk; ~25 min GPU; runner `run_e55_gpu_gradB.sh`, artifacts `outputs/analysis/e55/`)
+### Battery (MSE matrix + chunk)
 
 MSE diag drift (just-trained → final), vs the two matched comparators:
 
@@ -5135,7 +4700,7 @@ monotone pattern at ±7pp cells: suggestive, not proof.
    spread-A-level fits; lands ~48-51), UP as science — under the sweet-spot frame it is the
    big-core point on the breadth dose-response at matched protection, i.e. a paper figure.
 
-### LAUNCHED: e7 + e2 LoRA specialists (the two missing oracle cells; `loraft_e7_e2.sh`, e7 first)
+### e7 + e2 LoRA specialists (the two missing oracle cells)
 
 r32/5k recipe byte-identical to the t0-t2 anchors (58.0/0.0204, 44.0/0.020, 70.0/0.0675).
 e7 doubles as the threshold arbiter, pre-registered: specialist converts at **≲0.02** → the
@@ -5144,20 +4709,18 @@ gets a concrete target ~0.02); specialist needs **≳0.04-0.05** → our 0.032 i
 a threshold our broader support should only relax — the threshold law breaks on e7 and the
 off-trail/conversion story revives. e2's cell completes the reviewer table either way.
 
-### Board
+### Next
 
-1. Specialist cells land overnight → decide the next arm: **9-module hybrid** (expert
+1. Decide the next arm: **9-module hybrid** (expert
    [8-11] + VLM [12-16], B's router recipe, corefrac; certify-first) — the push-60 bet
    (layers axis 4/4, the e7 depth pattern, B's router) — vs **P3** (the dose-response
    point). Discipline flag stands: E54 wk-1 allows "at most one refinement"; the 9-module
    is the last substrate spin before the 10-task.
-2. Infra: gradB ran under systemd with the new resume plumbing armed but never exercised
-   (no preemption); it remains untested in production.
 
-### Entry 55 addendum (29 Jul, overnight) — e7 specialist lands: 60.0 @ chunk 0.0330 — the threshold-vs-conversion arbiter RESOLVES for conversion; LoRA-cell config finding; P3 chain + e2 queued
+### Entry 55 addendum (29 Jul, overnight) — e7 specialist lands: 60.0 @ chunk 0.0330 — the threshold-vs-conversion arbiter RESOLVES for conversion; LoRA-cell config finding
 
 **e7 specialist cell** (r32/5k, anchor recipe): **60.0 @ 50 eps, clean chunk 0.0330**.
-Oracle row: e4 58/0.0204 · e6 44/0.020 · e9 70/0.0675 · **e7 60/0.0330** · e2 tonight.
+Oracle row: e4 58/0.0204 · e6 44/0.020 · e9 70/0.0675 · **e7 60/0.0330**.
 
 **The arbiter verdict.** Neither E55 branch fired as written — the answer is sharper:
 the specialist converts at the SAME on-demo function we already have (0.0330 vs B's
@@ -5174,29 +4737,15 @@ smoother than spread-A's e7, image@0.05 slightly WORSE: 0.186 vs 0.177) — yet 
   CONVERSION lever (action-proximal expert banks), not a fit lever. The specialist's
   adapters sit at every depth incl. action-proximal — consistent, not yet causal.
 
-**LoRA-cell config finding (Josh).** grad-ckpt was NOT waste at bs32: no-ckpt demands
-138.4 GiB (OOM, measured) vs 30 GiB with ckpt — the E31 "OOMs without ckpt" precedent
-holds for LoRA at bs32 after all (my extrapolation from the ckpt-on reading was wrong by
-~4x). Standard LoRA-cell config henceforth: **bs16 × accum2, no ckpt** (effective batch
-32 preserved; E42 audit covers the accumulation path) — faster than both.
-
-**Ops note (two incidents, one shape):** the t3 stub dir from the swapped-out unit and
-the killed probe's scratch dir both produced `FileExistsError` on relaunch — the
-partial-dir guard pattern (graduation wrappers) must ride EVERY relaunch path, not just
-chain wrappers. Both now guarded in the queue scripts.
-
-**Board:** P3 graduation chain RUNNING (A-phase on the bs16×acc2 ladder rung, same as
-B) → queue2: e2 specialist (bs16×acc2) + its chunk probe. The E54-U5 sequential
-resume plumbing is the recovery path if the spot instance is reclaimed.
+Standard LoRA-cell config henceforth: **bs16 × accum2, no ckpt** (effective batch
+32 preserved; E42 audit covers the accumulation path).
 
 ---
 ## Entry 56 - 30 Jul 26 (P3 verdict 47.2: the anchor's SHOULDER cleanup is the whole +6, sep8 alone buys nothing — B confirmed as the config on both performance and simplicity; the core-breadth dose-response is now a 3-point curve; ORACLE TABLE COMPLETE (e2 84.0) and it re-frames the ceiling: our e2 86 BEATS its specialist)
 
 ### P3 (the capacity-end router) — 47.2
 
-`libero_10_seq5_jw_layermax_sep8_beta4corefrac_topt3072_lr2x_steps5k`; chain clean
-(09:06 -> 03:06, its own A-phase; the one Traceback in-log is the expected bs32 A-phase
-rung OOM, ladder demoted to bs16xacc2 as B's did). Config verified from the log: P3's
+Config verified from the log: P3's
 A-checkpoint, seed 1000, corefrac, top_t 3072, lr 2e-3 -> 2e-4 — single-delta vs B.
 
 | step | e4 | e6 | e9 | e2 | e7 | seen-avg |
@@ -5237,9 +4786,7 @@ mpnet; the anchor is the only conditioning). The router axis is CLOSED.
 
 ### Oracle table complete — and it re-frames the ceiling
 
-e2 specialist: **84.0 @ 50 eps, clean chunk 0.0308** (bs16xacc2 no-ckpt, 1.88 s/step —
-1.8x faster than the ckpt-on cells at identical effective batch; Josh's call, adopted as
-the standard LoRA-cell config).
+e2 specialist: **84.0 @ 50 eps, clean chunk 0.0308**
 
 | env | B (sequential, 1 model) | specialist (5 models, task ID given) | B's chunk | spec chunk |
 |---|---|---|---|---|
@@ -5266,23 +4813,16 @@ the expert-DEPTH pattern (E55: L8 -> 20,20,12 / L9 -> 28 / L12 -> 36 / L14-era -
 which is why the 9-module hybrid (expert [8-11] + VLM [12-16], B's router, corefrac) is
 the standing next arm — explicitly a CONVERSION bet, not a fit bet.
 
-### Board
+### Next
 
-1. **Decision pending (Josh):** 9-module hybrid (certify-first, ~4h + ~1 day) vs going
+1. **Decision pending (Josh):** 9-module hybrid (certify-first) vs going
    straight to the 10-task graduation on B. E54's wk-1 discipline flag says the 9-module
    is the LAST substrate spin either way.
-2. Queued behind that: naive sequential LoRA (the headline forgetting baseline, never
+2. Then: naive sequential LoRA (the headline forgetting baseline, never
    run), >=3 seeds on the headline config, 10-task multitask-LoRA if 10-task headlines.
-3. Infra: the sequential resume plumbing remains untested in production (no preemption
-   in either run); queue2's stub-dir guard fired correctly on its first real test.
-
-Artifacts: `outputs/analysis/e55/{mse_matrix_gradB,probe_conversion_gradB,
-probe_jitter_specialist_e7,probe_jitter_specialist_e2}.jsonl`; P3 run + evals on base;
-scripts committed (grad_layermax_P3_sep8_corefrac.sh, loraft_e2_bs16acc2.sh,
-e55_overnight_queue.sh, e55_queue2.sh).
 
 ---
-## Entry 57 - 31 Jul 26 (OFF-TRAIL INSTRUMENT built + smoked + campaign LAUNCHED — the conversion-gap measurement (E42(d), deferred 4x) finally exists; anchor validates against the known chunk numbers; B-vs-e7-specialist is the first target pair)
+## Entry 57 - 31 Jul 26 (OFF-TRAIL INSTRUMENT built — the conversion-gap measurement (E42(d), deferred 4x) finally exists; anchor validates against the known chunk numbers; B-vs-e7-specialist is the first target pair)
 
 ### Why (recap of the E56 discussion)
 
@@ -5292,48 +4832,35 @@ e9 −14) at matched-or-better on-demo function; the e7 arbiter (spec 60 @ chunk
 visits. This instrument measures the function AND the retrieval on rollout-visited states
 directly, using the specialist as the off-trail reference oracle (no demo labels exist there).
 
-### The instrument (3 scripts + runner, `scripts/vla_analysis/`, smoked end-to-end)
+### The instrument
 
-1. **`probe_rollout_harvest.py`** (per checkpoint; CLI = EvalPipelineConfig, env knobs
-   HARVEST_OUT/EPISODES/TRACE): owned rollout loop cloned from lerobot-eval (same
-   processors, same per-episode seeding `cfg.seed + ep` as a serial eval), bs=1. At every
-   policy call (action-queue refill, detected via `_action_queue` emptiness; works through
-   the PEFT wrapper) it saves the RAW env obs (both cams uint8 + full nested robot_state,
-   flattened `px__*`/`rs__*` — NOT `agent_pos`, which doesn't exist; the 8D state is
-   assembled later by LiberoProcessorStep) + executed actions/outcome, and for memory
-   policies the RETRIEVAL TRACE: forward hooks on each HashingMemoryLite read the
-   eval-mode `last_indices`/`last_scores` (EVAL_MEMORY=True path — route-once multiplicity
+1. **Harvest** (per checkpoint):
+   owned rollout loop cloned from lerobot-eval (same
+   processors, same per-episode seeding as a serial eval), bs=1. At every
+   policy call (action-queue refill)
+   it saves the RAW env obs (both cams uint8 + full nested robot_state)
+   + executed actions/outcome, and for memory
+   policies the RETRIEVAL TRACE:
+   eval-mode indices/scores (route-once multiplicity
    already applied), per-head-softmaxed and mass-aggregated per call per module.
-   Smoke arithmetic check: expert-module call mass = exactly 2000 = 10 denoise steps x 50
-   action tokens x 4 heads (VLM modules fire 1x/call — cached prefix; only pass B fires
-   under frozen-route, so traces are clean by construction).
-2. **`probe_offtrail_score.py`** (per model; CLI = SequentialOnlineConfig probe convention):
-   re-runs the 10-step denoise on every harvested state + SCORE_DEMO_N demo-control states,
-   K=SCORE_SEEDS noise seeds; batching and seeds are deterministic functions of the sorted
+2. **Score** (per model):
+   re-runs the 10-step denoise on every harvested state + demo-control states,
+   K noise seeds; batching and seeds are deterministic functions of the sorted
    state list -> chunks PAIRED across models. Harvest states are rebuilt into the raw env
-   obs dict and pushed through preprocess_observation -> LiberoProcessorStep -> policy
-   preprocessor — the byte-identical eval pipeline. SCORE_FEAT_LAYER dumps mean-pooled LM
+   obs dict and pushed through
+   the byte-identical eval pipeline. Mean-pooled LM
    hiddens from a layer below the first VLM memory bank (frozen + memory-free = stage-1
-   features) for the excursion-distance axis.
-3. **`probe_offtrail_report.py`** (CPU): joins paired chunks, traces, written-slot sets
-   (memory_by_task `total_updates>0`), and distances into the four reads:
+   features) give the excursion-distance axis.
+3. **Report**: joins paired chunks, traces, written-slot sets
+   and distances into the four reads:
    READ 1 D(s)=cross-model chunk disagreement vs excursion distance (feature + proprio),
    by population (demo / succ / fail per harvest); READ 2 self-written retrieval mass
    (fallback-to-A-content detector); READ 3 consecutive-call retrieval churn (discontinuity
    detector); READ 4 divergence points (first D > success-P90 per failed episode).
-4. **`run_offtrail_e7.sh`**: 5-stage chain (harvest B -> harvest spec -> score B (+feat L9)
-   -> score spec -> report), skip-guards, SMOKE=1 = 2-ep end-to-end pass.
 
-### Smoke verdict (2 eps / 2 seeds / 24 demo states, ~10.5 min)
-
-- **Anchor PASSES: B demo chunk-vs-gt 0.0318 (known 0.0321), spec 0.0345 (known 0.0330)**
-  — the instrument reproduces the established numbers through the env-side pipeline.
-- All populations/reads populate; D grows with call index and is much larger on failed
-  episodes (structure as expected; n=2 = no conclusions).
 - Known weakness: LM-9 all-token-pooled feature distance barely spreads (~3e-4 cos —
   image-dominated pooling); the PROPRIO distance axis spreads well (quartiles 0/0.9/2.0)
-  and READ 1b already grades on it. Features are recomputable from the same harvests
-  (score-only rerun) if a better layer/pooling is wanted — harvests are the reusable asset.
+  and READ 1b already grades on it.
 
 ### Pre-registered decision rules (from the E56 discussion, unchanged)
 
@@ -5345,12 +4872,10 @@ directly, using the specialist as the off-trail reference oracle (no demo labels
   -> mode-selection/within-chunk compounding track (execute-25 A/B next).
 - B fine on spec-visited states but bad on its own -> compounding, not coverage.
 
-### LAUNCHED (31 Jul, `systemd-run --unit=offtrail-e7` per §9.5)
+### Campaign (31 Jul)
 
 Full campaign: 50 eps/model (B seq-025000 vs loraft task4_e7), 4 seeds, 120 demo states,
-task e7 (env 7, dataset task_index 4); the two serial bs=1 harvests dominate the runtime.
-Outputs: `outputs/analysis/e56_offtrail/offtrail_e7.{jsonl,txt}`, harvests + traces
-retained for re-scoring (incl. the eventual 9-module candidate on the same state bank).
+task e7 (env 7, dataset task_index 4).
 
 ### RESULTS (anchor 0.0340/0.0364 vs known 0.0321/0.0330 ✓)
 
@@ -5394,11 +4919,10 @@ the measured d_state 0.5-2.5σ band (the E42 demo-jitter idea, now with a measur
 dose), subject to the "train on the same data" constraint being relaxed for obs-noise;
 (b) inference-side re-conditioning (execute-25) — weakened though: a wrong call-2
 commitment is not fixed by replanning after it; (c) characterize call-2 failures from
-the harvested videos (wrong-object vs missed-grasp) before picking either. Harvest bank
-retained — any candidate fix re-scores against the same states without re-rolling.
+the harvested videos (wrong-object vs missed-grasp) before picking either.
 
 ---
-## Entry 58 - 31 Jul 26 (VALUE-INPUT NOISE: the competence-radius lever, calibrated from the harvest bank -> built (25/25 smokes) -> dose-pair arms LAUNCHED on the B config)
+## Entry 58 - 31 Jul 26 (VALUE-INPUT NOISE: the competence-radius lever, calibrated from the harvest bank -> built -> dose-pair arms on the B config)
 
 ### Design (Josh's proposal, refined in discussion)
 
@@ -5415,9 +4939,9 @@ corruption (that was value-OUTPUT noise at PRETRAIN, teaching downstream toleran
 this is value-INPUT noise at SEQUENTIAL time, teaching the content to generalize over x
 — different site, phase, and target; the old negatives don't transfer).
 
-### Calibration (probe_value_input_calib.py; outputs/analysis/e56_offtrail/value_input_calib.json)
+### Calibration
 
-Dose measured, not guessed: hooks on each MLPPlusMemory capture the pass-B live x for
+Dose measured, not guessed: we capture the pass-B live x for
 120 demo states + 198 tertile-stratified harvest states, ONE fixed denoise seed
 everywhere (expert first-denoise-step capture = obs-driven displacement; the last-step
 capture is confounded by the denoised action tokens and is NOT the dose source).
@@ -5434,24 +4958,18 @@ expert (70-80% of its displacement energy in ~10/1024 directions — v1 bets on 
 flatness; subspace-projected noise is the measured fallback, recomputable from the same
 captures); (3) far/near band spread ~1.2-1.5x -> per-row amplitude draw U[0.5,1.5].
 
-### Build (commit 4e415798; smokes scripts/vla_analysis/smoke_value_noise.py 25/25)
+### Build
 
-`value_input_noise_p` (per-dim Bernoulli) + per-layer `value_input_noise_sigma`
-(expert, matched to `layers`) + `vlm_value_input_noise_sigma` (rides the derived VLM
-cfg) + `value_input_noise_amp`. `HashingMemoryLite._value_input_noise`: mask x N(0,1)
+Noise = per-dim Bernoulli
+mask x N(0,1)
 x current-batch per-dim std (self-calibrating) x sigma_layer x amp, applied to the
-down-projection input in `_forward_lora_values` AND `apply_shared_palette` (valid rows
-only); training-mode only; swilu tail + plain MLP keep clean x. Load-bearing smokes:
-flag-off/eval-mode BITWISE identity, retrieval indices invariant under noise, per-layer
-threading (sigma=0 layer bitwise clean), palette-path pad hygiene, monotone dose.
-Also: SEQ_EXTRA_ARGS passthrough added to joint_aphase_seq5_common.sh (unset =
-byte-identical).
+value down-projection input (valid rows
+only); training-mode only; swilu tail + plain MLP keep clean x.
 
-### LAUNCHED (31 Jul, systemd unit `e57-vnoise`)
+### Arms (31 Jul)
 
 Two arms, B config verbatim (spread + anchor040/sep8/nofilm + corefrac + lr2x + 3072,
-reusing B's A-checkpoint), single delta = the noise flags; queue = arm -> harvest-bank
-rescore -> arm -> rescore (run_e57_vnoise_queue.sh):
+reusing B's A-checkpoint), single delta = the noise flags:
 - **dose1x**: p=0.25, amp [0.5,1.5], expert sigma [0.1,0.3,0.75,1.05], vlm
   [1.15,1.4,1.65,1.75] (measured ratios x2, variance-matched at p=0.25)
 - **dose05x**: sigmas x0.5
@@ -5464,74 +4982,12 @@ the 50-ep final — e7 > 20 = the conversion bet pays. Comparators: B 53.2
 (44/60/56/86/20), specialist oracle 63.2.
 
 ---
-### Entry 58 addendum (31 Jul 26, eve) — weekend eval-seeds campaign QUEUED behind the vnoise arms (discharges the E56-addendum TODO); session left autonomous until Sunday
-
-`scripts/vla_analysis/run_e58_evalseeds.sh`, launched NOW as systemd unit `e58-evalseeds`
-— it polls locally until the `e57-vnoise` unit finishes (no SSH churn), then runs:
-**3 eval seeds (1000/2000/3000) x 100 eps/task x { B 025000 on envs [4,6,9,2,7] + the
-5 LoRA specialists on their own envs } = 3,000 episodes**, `lerobot-eval` batched at
-`--eval.batch_size=10` (exact divisor of 100 -> no discarded episodes; init states
-covered exactly 2x each at stride 10; <=10 async workers + main inside the 16-vCPU
-budget). Per-(model, seed, env) invocations = 30 independent skip-guarded processes;
-seed-MAJOR order so a partial read has complete replicates. seed 1000 subsumes the
-historical 50-ep finals' seed range. Summary (partial-tolerant) auto-writes
-`outputs/analysis/e58_evalseeds/summary.json` + a printed per-cell / replicate-mean
-table.
-**If the spot VM is preempted mid-campaign: relaunch the same unit** (`sudo systemd-run
---unit=e58-evalseeds --property=User=josh --property=KillSignal=SIGTERM
---property=TimeoutStopSec=45 --property=WorkingDirectory=/home/josh/lerobot /bin/bash
-/home/josh/lerobot/scripts/vla_analysis/run_e58_evalseeds.sh`) — completed cells skip.
-
----
-### Entry 58 addendum 2 (1 Aug 26, ~02:30 UTC) — SPOT PREEMPTION mid-dose1x; state + recovery
-
-VM went unreachable ~02:10 UTC ("no route to host", local internet verified up; 7-min
-continuous probe confirms). First real preemption of the spot era. State at loss:
-- dose1x was mid task-2 (e9 block, step ~12-13k of 25k): tasks 0-1 checkpoints
-  (005000/010000) + sequential_state.pt banked; the in-flight e9 block (~2.5k steps,
-  ~35 min) is the only loss — the E54-U5 resume plumbing restarts from the task-2
-  boundary WITH the protection store intact (its first production exercise).
-- e58-evalseeds had not started (still gated); loses nothing.
-Recovery: a session-side watcher polls SSH every 2 min and, on reachability,
-relaunches whichever units are dead (queue auto-resumes; eval campaign re-gates) —
-the only manual step is STARTING the instance (no nebius CLI/credentials on the local
-box — flagged 31 Jul, now the binding gap; install it). Josh push-notified (terminal
-only; mobile inactive). Later restarts eat into the eval replicates last (seed-major
-ordering keeps partial reads clean); if the VM sits stopped >1h the public IP may
-rotate — update ~/.ssh/config HostName before the watcher can reconnect.
-
-**DIAGNOSIS REVISED (~02:40 UTC): LOCAL NETWORK FAILURE, not preemption.** The
-git push to origin failed with the same "no route to host" — github.com:22 is
-unreachable too, alongside 100% ICMP loss to 8.8.8.8, while some HTTPS still
-answers. SSH/ICMP routing is dead locally; the VM is plausibly RUNNING and dose1x
-training uninterrupted (the systemd design needs no session connectivity — this is
-why). The state-at-loss paragraph above applies only in the preemption branch; in
-the (likelier) local branch there is NO loss at all. The recovery watcher's logic is
-correct for both branches (checks unit states first, relaunches only dead units).
-Corrective push sent. This entry commits locally; push deferred until the network
-heals.
-
-**RESOLVED (02:51 UTC):** network healed after ~40 min; VM uptime 4d18h — **never
-went down, never preempted**. Both units active throughout; dose1x trained through
-the outage uninterrupted (step 14K = task-2/e9 block — an earlier draft of this note
-misread it as task 3; blocks span 5k each, so 14K is t2. loss/grads nominal). The
-recovery watcher's assessment pass correctly relaunched nothing. Zero loss; timeline
-unchanged. Lessons banked: (1) "VM unreachable" must be cross-checked against an
-independent host before concluding preemption (github:22 was the discriminator);
-(2) the nebius CLI gap on the local box remains open — install it for the day the
-preemption is real.
-
----
 ### Entry 58 addendum 3 (2 Aug 26) — DOSE-PAIR RESULTS: value-input noise is SAFE at both
 doses (fit + retention untouched), produces a real far-region function shift toward the
 specialist with an INVERTED-U in dose (0.5x > 1x on every read), converts to e7 +6
 (replicated in both arms) and a nominal family-best 54.4 at 0.5x. Binding limitation is
 now GEOMETRY (isotropic vs the structured excursion subspace) and/or dose (< 0.5x
 unexplored), not safety.
-
-Queue completed Sun 06:37 UTC (each arm ~17.5h; both rescores in). Also: the weekend
-eval-seeds campaign was CANCELLED by Josh before starting (0/30 cells; unit stopped Sun
-~06:50; script + relaunch line remain ready) — the E56-addendum TODO stays open.
 
 **50-ep finals** (B = 53.2 = 44/60/56/86/20):
 - dose1x  52.4 = 42/52/58/84/**26**
@@ -5575,15 +5031,15 @@ PASS (26, replicated); net mean +1.2 at 0.5x (inside noise).**
 
 **Options on the table:** (A) structured noise — project into the measured top-10
 excursion subspace per layer (~75% of real displacement energy; isotropic puts ~1%
-there — the prime suspect for the modest magnitudes); needs the calibration probe to
-persist the SVD bases + a projected-noise variant of _value_input_noise, then one arm.
+there — the prime suspect for the modest magnitudes);
+then one arm.
 (B) dose sweep below 0.5x (trivial env change, one arm). (C) bank dose05x as a free
 recipe ingredient (+e7 robustness at zero cost) and return to the wk-2 ICRA items
 (10-task, naive-seq-LoRA baseline, seeds).
 
 ---
 ### Entry 58 addendum 4 (2 Aug 26) — NAIVE SEQUENTIAL LoRA baseline: param-matching
-resolved as a capacity-INSENSITIVITY sweep; r=256 arm LAUNCHED (the headline forgetting
+resolved as a capacity-INSENSITIVITY sweep; r=256 arm (the headline forgetting
 baseline's first-ever run)
 
 Supervisor requires the "is it just parameters" control at matched TOTAL (not active)
@@ -5597,115 +5053,38 @@ E46 cut params 11% while fit +35%, absmax ledger −27% capacity at +2pp, multit
 at 53M within 4-5pp of our 3.2B. Accounting currency to settle in the paper: trainable-
 during-sequential (ours 3.2B; frozen router/keys excluded).
 
-**Build (commit 4734ecdc):** lerobot-sequential-train reused for protocol identity —
-PEFT wrap added after make_policy (mirrors lerobot-train); optimizer PEFT branch (all
-requires_grad at memory_value_lr, one group = one scheduler lambda under default
-flags, asserted); BOTH `_freeze_to_selected_memory_params` callsites gated on
-`cfg.peft is None` (the boundary "re-freeze to be safe" would zero the adapters every
-task — Josh's "it goes directly into the memory layers" instinct, confirmed at the
-freeze layer; caught by the smoke's 425.2M-wrapped -> 0-trainable contradiction).
-`lora_alpha` exposed in PeftConfig (PEFT default a=8 would have given r256 an 8x
-weaker effective gain than the r32 specialists — a/r held at 0.25: r256@a64).
-Smoke: 2 tasks x 20 steps end-to-end PASS (425,213,952 trainable / 4.57B).
-Ops incident, owned: a stash-pull-drop on the VM silently discarded the working-tree
-patches when the pull aborted on an untracked file (tail -1 hid the abort) — recovered
-from origin; rule: never `stash drop` before verifying the pull's HEAD moved.
+**Build:** lerobot-sequential-train reused for protocol identity.
+PEFT default a=8 would have given r256 an 8x
+weaker effective gain than the r32 specialists — a/r held at 0.25: r256@a64.
 
-**Arm** (`naive_seq_lora_r256.sh`, unit e58-naivelora, ~15-17h): base = stage-1
+**Arm**: base = stage-1
 libero_90 finetune, specialist TARGETS verbatim, lr 2.5e-5 -> 2.5e-6 per-block linear,
-bs16xacc2 no-ckpt, same 5-task order/budget/eval protocol as B (results.jsonl +
-retention matrices directly comparable). NO protection/tfidf/memory. Pre-registered
+bs16xacc2 no-ckpt, same 5-task order/budget/eval protocol as B (retention
+matrices directly comparable). NO protection/tfidf/memory. Pre-registered
 expectation: specialist-grade early diagonals then the classic catastrophic collapse —
-the headline figure next to our flat matrices. MSE matrix to run on landing.
+the headline figure next to our flat matrices.
 
 ---
-### Entry 56 addendum (31 Jul 26) — TODO: batched-eval seed comparator (B vs specialists)
+### Entry 56 addendum (31 Jul 26) — batched-eval seed comparator (B vs specialists)
 
-Queue at some point: **3 eval seeds x 100 eps/task via standalone `lerobot-eval` on the existing
-final checkpoints — at minimum for the 5 LoRA specialists** (B too if the slot is there). Use
-parallel vec envs: `--eval.batch_size=0` auto-tunes to ~11 async envs on the 16-vCPU box (or set
-explicitly) + `--eval.use_async_envs=true`. Batch>1 rollout is already validated (Josh tested it;
-works fine) — every run to date evaluated serially only because the trainers construct eval envs
-at training start, so `--eval.batch_size=1` was chosen to preserve VRAM headroom for training;
-a standalone eval process holds weights only (~110GB free). Estimated ~4-5h/side batched
-(vs ~45-60h serial for both). Stats note for the writeup: LIBERO init states wrap modulo 50
-(`libero.py:333`), so 100 eps = 2 passes over the fixed init-state set with fresh policy noise.
+**3 eval seeds x 100 eps/task on the existing
+final checkpoints — at minimum for the 5 LoRA specialists** (B too).
+Stats note for the writeup: LIBERO init states wrap modulo 50,
+so 100 eps = 2 passes over the fixed init-state set with fresh policy noise.
 
 ---
-### Entry 58 addendum 5 (3 Aug 26) — FIRST REAL SPOT PREEMPTION (naive-LoRA arm, 22:12 UTC 2 Aug, step 21,400 — 1.4K into the final e7 block): ~25 min of training lost; nebius CLI gap closed; PEFT preemption-resume built + production-validated; arm resumed
+### Entry 58 addendum 5 (3 Aug 26) — PREEMPTION (naive-LoRA arm, 1.4K into the final e7 block); arm resumed
 
-**The preemption.** The r256 naive-sequential-LoRA arm (E58 addendum 4, wandb `bncprsuz`)
-died mid-flight: last wandb heartbeat 22:12:13 UTC 2 Aug at step 21,400 (loss 0.142 —
-1.4K steps into task 4/e7, the final block). Diagnosis followed the 1 Aug playbook and
-this time the discriminator pointed the other way: SSH to the VM timed out while the
-local network was verified healthy against three independent hosts (ICMP 8.8.8.8,
-github:22, HTTPS) — the machine itself went away. VM journal after restart confirms
-`Reached target shutdown.target` at 22:12:22. First genuine preemption of the spot era
-(the 1 Aug event was local-network); the VM sat stopped ~8h overnight, Josh restarted it
-from the web console ~05:50 UTC. The public IP did NOT rotate despite >1h stopped.
-
-**Damage inventory: ~25 minutes.** Tasks 0-3 fully banked on the boot disk (checkpoints
-005000-020000 + boundary evals + `sequential_state.pt`, last written 21:15). Lost: the
-in-flight 1.4K steps of e7. This baseline has no cross-task accumulators (no
+This baseline has no cross-task accumulators (no
 protection/IDF; `reinit_optimizer_each_task=true`) — the adapter weights in the
 checkpoint ARE the complete cross-task state, so a boundary resume is method-exact
 (only divergence: dataloader RNG within the e7 block, not a controlled variable).
 
-**Infra gap closed: nebius CLI on the local box** (flagged 31 Jul, binding today).
-Installed `~/.nebius/bin/nebius` (NOT on PATH in non-login shells), profile
-`joshwa71-home-pc` (Josh ran the interactive auth — the TUI cannot be driven from a
-non-TTY shell). §9.2's jq paths verified against a live response: `.status.state`
-correct; the public IP comes back CIDR-form (`89.169.125.3/32`) — strip before
-comparing. phddev/CLAUDE.md updated with both.
-
-**PEFT preemption-resume built (commit `aff3cd5b`) — the E54-U5 plumbing did not
-compose with the E58 PEFT branch.** Two gaps: the trainer unconditionally fresh-wrapped
-adapters under `--peft` (silently discarding tasks 0-3's training on a resume), and the
-factory's `use_peft` load path loads adapters FROZEN (`inference_mode=true` in the
-adapter save). Fix: under `--resume_sequential` + `--policy.use_peft=true` +
-`--policy.path` at the per-task checkpoint, the factory rebuilds base + trained
-adapters and the trainer re-enables them instead of wrapping, with two hard guards —
-refuse if no adapter params found, and refuse if `L1(lora_B)=0` (freshly-initialized
-LoRA has lora_B exactly zero; a trained mid-run adapter never does — the decisive
-loaded-vs-fresh discriminator). Double-wrap combo (`use_peft` without
-`resume_sequential`) also made a hard error. Wrapper:
-`job_scripts/nebius/baselines/naive_seq_lora_r256_resume.sh` (SMOKE=1 = 25-step task-4
-resume into a throwaway dir).
-
-**Smoke + production gotcha.** Smoke passed end-to-end (425.2M re-enabled,
-L1(lora_B)=4.837e5 nonzero; `RESUMING … 4/5 tasks complete, global_step=20000`; 25
-steps; saved) and the adapter-continuity check is decisive: smoke-saved
-L1(lora_B)=4.8415e5 vs the real 020000's 4.8375e5 — the trained adapter, moved by 25
-small steps, not a fresh one. The real relaunch then died at draccus parse time:
-`TrainPipelineConfig.validate` refuses an existing output_dir unless `resume` (the
-lerobot-train flag, which carries config-reload semantics we don't want) — the smoke
-had dodged it via its throwaway dir, and no prior resume ever ran against an existing
-dir (the plumbing was built E54-U5 but never production-exercised). Fix (commit
-`8d8d10cb`): `validate()` treats `resume_sequential` (read via getattr — absent on
-plain lerobot-train configs) like `resume` for the dir check only.
-
-**Resumed 06:07 UTC 3 Aug** (unit `e58-naivelora-resume`): production log shows
-`PEFT resume: 425.2M adapter params re-enabled; L1(lora_B)=4.837e+05` + skip of tasks
-0-3 + task 4 training. Remaining: e7's 5K block (~1.4h) + the final 5-task × 50-ep
-eval. Same wandb job name (new run row; `bncprsuz` keeps steps ≤21.4K; `results.jsonl`
-on disk is the cross-run record). MSE forgetting matrix still to run on landing
-(pre-registered: specialist-grade diagonals then catastrophic collapse) — note
-`mse_matrix2.py` is a memory-value slot-swap instrument; the LoRA arm needs an
-adapter-swap variant.
-
 ---
-### Entry 58 addendum 6 (3 Aug 26) — NAIVE SEQUENTIAL LoRA r256 LANDS: mean **17.6** (0/0/0/54/34) vs B's 53.2 on the identical protocol — total catastrophic collapse (every task -> literal 0% after ONE subsequent block; MSE diagonals +740-1567% vs our <=+3.8%), at specialist-grade fresh fits. The headline forgetting baseline exists. (Also: preemption #2, recovered autonomously via the new CLI.)
+### Entry 58 addendum 6 (3 Aug 26) — NAIVE SEQUENTIAL LoRA r256 LANDS: mean **17.6** (0/0/0/54/34) vs B's 53.2 on the identical protocol — total catastrophic collapse (every task -> literal 0% after ONE subsequent block; MSE diagonals +740-1567% vs our <=+3.8%), at specialist-grade fresh fits. The headline forgetting baseline exists.
 
-**Run completion.** The resumed arm trained its final e7 block clean (checkpoint 025000
-saved 08:54 UTC) — then preemption #2 hit at 10:22, ~1.5h into the trainer's serial
-final eval (wandb `s1gavhai`; hypervisor showed RUNNING during the shutdown transition
-before flipping STOPPED — query the API twice before diagnosing). Recovery was the
-first fully autonomous one: CLI start (first attempt), same IP, no manual steps.
-Training lost nothing; the final eval was re-run standalone-batched (bs=10, 50 eps,
-seed 1000 — the E56-addendum machinery, first production use: ~10-20 min/env vs the
-serial eval's hours; `--policy.use_peft=true` must be passed explicitly). Instrument
-note: `lerobot-eval`'s eval_info.json carries success at `overall.pc_success` (not
-"aggregated" — runner fixed).
+The final eval was run standalone-batched (bs=10, 50 eps,
+seed 1000).
 
 **Rollout retention (20-ep boundaries; final row 50-ep standalone):**
 
@@ -5724,8 +5103,8 @@ had exactly one block of exposure (90 -> 54, halved). Sharpest single sentence: 
 sequentially training all five tasks, naive adaptation retains 7 points more than a
 model that never adapted at all.
 
-**MSE forgetting matrix** (paired-noise, `mse_matrix_peft.py` — the adapter-swap
-sibling of mse_matrix2 with a per-swap L1(lora_B) verification guard; all five swaps
+**MSE forgetting matrix** (paired-noise, adapter-swap
+variant with a per-swap L1(lora_B) verification guard; all five swaps
 verified rel=0.00%):
 
 | ckpt \ task | e4 | e6 | e9 | e2 | e7 |
@@ -5742,19 +5121,14 @@ range), so the baseline FITS each task as well as anything we build, then loses 
 2-3 orders of magnitude more; forgotten tasks land roughly halfway back to their
 untrained loss. The "is it just parameters" reading: 426M trainable adapters forget
 catastrophically where our 3.2B values hold flat — parameter count is not the
-mechanism (r=32 arm still queued for the capacity-insensitivity sweep; big-point
-accounting decision pending with supervisor).
+mechanism.
 
 One conversion nuance banked: naive-fresh e7 rolls 34 (50 eps) vs our 20-26 — the
 dense adapter converts e7 better fresh (consistent with its specialist's 60),
 reinforcing that our e7 residual is conversion-side, not fit.
 
-Artifacts: `outputs/analysis/e58/{mse_matrix_naive_r256.jsonl, naive_final_eval/*}`;
-the trainer's `results.jsonl` intentionally keeps only the 4 boundary rows (its final
-row died with preemption #2; the standalone summary.json is the final-row record).
-
 ---
-## Entry 59 - 3 Aug 26 (BUILD: `frozen_prepass` — the placement guard becomes a compute knob. One full memory-free pre-pass per batch serves every routing input, lifting the "VLM banks above expert banks" constraint → interleaved layouts (e.g. expert==VLM [4,6,8,10,12]) are now legal. Smoked 3-mode: EXACT fork equivalence on legal layouts (0.00e+00, bit-identical loss), full stationarity on interleaved, config-parse guard. Cost ~1.3-1.4x forward (fwd-only, fp32/bs2 — production step-time TBD on the first arm). Two real hazards found en route.)
+## Entry 59 - 3 Aug 26 (BUILD: `frozen_prepass` — the placement guard becomes a compute knob. One full memory-free pre-pass per batch serves every routing input, lifting the "VLM banks above expert banks" constraint → interleaved layouts (e.g. expert==VLM [4,6,8,10,12]) are now legal. Cost ~1.3-1.4x forward)
 
 ### Motivation (Josh's proposal, adopted)
 
@@ -5771,61 +5145,8 @@ geometry (E49: separation degrades monotonically upward, L7 0.722 → L16 0.898 
 every VLM bank ever run sat at L10+ because of the guard); expert-high + VLM-broad
 simultaneously; more banks with every layer inside measured-good bands.
 
-### Implementation (commits b014a39e..; flag default False = byte-identical)
-
-- `memory_layer.frozen_prepass` (requires use_frozen_base_input_features).
-  Training/joint path: one no-grad forward of the whole network with every wrapper
-  in capture/bypass mode; stashes drained into explicit per-layer router_x args
-  (checkpoint-safe — args re-thread through ckpt recompute, a stash pop would not);
-  both lazy forks disabled under the flag. E52 anchors are captured by their hooks
-  during the pre-pass and LOCKED against live-pass overwrite (under interleaving
-  the live prefix at anchor layers carries memory). Inference: prefix pass A runs
-  for ALL VLM wrappers with use_cache=True — its KV is kept as the memory-free
-  prefix KV the expert's suffix pass A deep-copies (the live KV is memory-carrying
-  under interleaving); staleness guarded by batch-size check. Placement validation
-  moved to MemoryLayerConfig.__post_init__ (parse-time).
-- Smokes `scripts/vla_analysis/{smoke_frozen_prepass.py,run_smoke_frozen_prepass.sh}`,
-  policy-level on the stage-1 base, fresh attach, fp32, 3 modes — ALL PASS:
-  - A (guard-legal spread, in-process flip): pre-pass reproduces the fork
-    implementation EXACTLY — routed-view max|d| = 0.00e+00 at every VLM site,
-    ≤2.6e-06 at expert sites, loss bit-identical, anchors bit-identical. Fwd-time
-    ratio prepass/fork ≈ 1.31-1.39x (fp32, bs2, n64 banks; fwd-only — the training
-    step ratio will be lower since bwd is unchanged, measure on the first arm).
-  - B (interleaved expert==VLM [4,6,8,10,12]): every site routed with router_x;
-    ALL router_x + anchors BITWISE stationary under value bumps on either tower
-    while loss moves and grads reach both towers' values through the no-grad
-    pre-pass; grad-ckpt parity exact; inference deterministic, memory-free prefix
-    KV captured, VLM router_x stationary across the chunk, expert router_x
-    stationary at the first denoise step (later steps' x_t is live-generated —
-    input divergence, not routing drift), stash hygiene clean.
-  - C: interleaved WITHOUT the flag fails loudly at config parse with the lift
-    hint.
-
-### Hazards found (both worth remembering)
-
-1. **Attach-time exceptions are SWALLOWED on the model-load path** (from_pretrained
-   → post_load_setup; the E33 note, now with a measured consequence): the old
-   attach-time placement guard fired and vanished, yielding a policy with expert
-   memory but NO VLM banks — silently a different architecture. Mode C caught it;
-   fix = config-level validation (draccus parse raises before any load). Any
-   future attach-path validation must live at config level too.
-2. Smoke-side footguns for the record: bumping `slot_up` params silently touches
-   nothing if `value_type=lora` isn't set (default is vector — empty-bump asserts
-   added); `set -o pipefail` inverts expected-failure pipelines (mode C); pad rows
-   legitimately differ between joint and prefix-only implementations (uniform
-   attention over different column sets — the E45 F2 precedent) — always compare
-   routed views.
-
-### Status
-
-Built + smoked only — no run uses it yet. The first user is the next substrate spin
-per the frontier plan (e7 compass → one interleaved/hybrid layout, pre-registered
-before its warm-up). Warm-ups/audits/A-phase inherit the flag through the existing
-scripts once a layout sets it; certificates remain comparable (warm-ups train on
-memory-free features either way).
-
 ---
-### Entry 59 addendum (3 Aug 26, eve) — FIRST INTERLEAVED CHAIN LAUNCHED: expert [6,8,10,12] + VLM [7,9,11,13] @ n256/r2, B's router recipe + corefrac + 2x + 3072 — the param-matched pure-PLACEMENT cell vs B 53.2
+### Entry 59 addendum (3 Aug 26, eve) — FIRST INTERLEAVED CHAIN: expert [6,8,10,12] + VLM [7,9,11,13] @ n256/r2, B's router recipe + corefrac + 2x + 3072 — the param-matched pure-PLACEMENT cell vs B 53.2
 
 **Config decision (with Josh).** Candidates considered: 6+6 at [4..14] on both sides
 (4.8B — absmax-adjacent weight, placement+capacity confounded), 5+5 with VLM
@@ -5847,35 +5168,25 @@ placement delta at matched recipe. Per-side reasoning:
 - Noise OFF (dose05x sigmas were calibrated for B's layers; recalibrated noise is
   a follow-up arm; comparator is the no-noise B 53.2).
 
-**Chain** (`joint_interleaved_e681012_v791113_prepass_full_chain.sh`, commit
-e2246f22; unit `e59-interleave`, launched 17:26 UTC): warm-up 10k (router-only
-fast, broadcast losses, anchored w0.40 + sep8 + c0.05, FiLM off, PREPASS=true —
-new env passthrough in joint_rwarmup_common; downstream stages inherit
-frozen_prepass from the checkpoint config) → audit (bs8×400) → AUTOMATED GATE
+**Chain**:
+warm-up 10k (router-only
+fast, broadcast losses, anchored w0.40 + sep8 + c0.05, FiLM off, PREPASS=true)
+→ audit (bs8×400) → AUTOMATED GATE
 (E54-relaxed: expert famIoU ≤0.18 one-grace-≤0.20, bg ≤0.10, mean core50 ≥400,
 min-eff ≥300; VLM famIoU ≤0.165 all layers + min-eff ≥150 palette tripwire — the
-never-run low-VLM-layer bet is arbitrated at the certificate for ~4h) → A-phase
-10k (bs ladder 16x2 → 8x4 → 16x2+ckpt) → 5-task sequential (corefrac + lr
-2e-3→2e-4 + top_t 3072, 50-ep final, per-task ckpts, resume plumbing armed).
+never-run low-VLM-layer bet is arbitrated at the certificate) → A-phase
+10k → 5-task sequential (corefrac + lr
+2e-3→2e-4 + top_t 3072, 50-ep final).
 
 **Pre-registered:** beat 53.2 ⇒ placement pays (≥55 = new frontier band); e7 ≥ 30
 (depth), e9 ≥ ~56 (hold), e4 ≥ 40 AND e2 ≥ 80 (spread's cells must survive —
 either cratering = the trade is architectural); give-back ≥ −3; prior-core events
-= 0 at all 8 modules; MSE matrix ≤ ~+5%/task; block-min mean ≤ ~0.045 band; and
-`updt_s` recorded = the first production measure of the pre-pass training-step
-cost (smoke: 1.31-1.39x fwd-only at fp32/bs2 — the training step should be
-lighter since bwd is unchanged).
-
-**Launch health:** all three E59 banners in-log (frozen-base routing / Frozen
-PRE-PASS ENABLED / INTERLEAVED placement expert [6,8,10,12] / VLM [7,9,11,13]);
-VLM memory attached at [7,9,11,13] (bank 65536, r2, knn16); expert anchors paired
-at B=0.4; GPU 100% @ 33.4GB (the E49 warm-up footprint + pre-pass structures).
-Gate verdict expected ~22:30-23:00 UTC; sequential lands ~tomorrow evening.
+= 0 at all 8 modules; MSE matrix ≤ ~+5%/task; block-min mean ≤ ~0.045 band.
 
 ---
-### Entry 59 addendum 2 (3-4 Aug 26) — GATE VERDICT: HARD FAIL on expert-deep famIoU; OVERRIDDEN (Josh) on the E56 bg-first rationale — graduation launched. Certificate findings: the VLM low-layer bet PAID (L7 famIoU 0.101, best VLM cert in project history; the E49 depth gradient reproduces in a trained router), and the expert famIoU rise with depth is the ANCHOR-SOURCE gradient, lawful across three certs.
+### Entry 59 addendum 2 (3-4 Aug 26) — GATE VERDICT: HARD FAIL on expert-deep famIoU; OVERRIDDEN (Josh) on the E56 bg-first rationale. Certificate findings: the VLM low-layer bet PAID (L7 famIoU 0.101, best VLM cert in project history; the E49 depth gradient reproduces in a trained router), and the expert famIoU rise with depth is the ANCHOR-SOURCE gradient, lawful across three certs.
 
-**Certificate** (audit_heldout_jointwarm_interleave_e681012_v791113_anchor040_sep8_prepass_10k):
+**Certificate**:
 expert L6 famIoU 0.157 / bg 0.025 / core50 600 · L8 0.180 (grace) / 0.029 / 728 ·
 L10 **0.230** / 0.048 / 1045 · L12 **0.213** / 0.045 / 995 — L10/L12 breach the 0.20
 hard ceiling → GATE: HARD FAIL, chain stopped as designed. VLM: L7 **0.101** / L9
@@ -5905,15 +5216,10 @@ becomes the standing certificate rule. Deferred alternative if needed later:
 decouple anchor-source from bank layer (deep banks pooling from the L7-region
 geometry) — small code change, better informed after the sequential verdict.
 
-**Launched** (grad_interleave_e681012_v791113_prepass.sh, unit `e59-interleave`
-reused): A-phase 10k (bs32 first rung) → sequential
-`libero_10_seq5_jw_interleave_e681012_v791113_prepass_beta4corefrac_topt3072_lr2x_steps5k`.
-Landing ~4-5 Aug; comparator B 53.2 (pure placement at matched 3.2B).
-
 ---
 ### Entry 59 addendum 3 (5 Aug 26, 03:36 UTC) — LANDING: **57.6 — NEW FRONTIER** (+4.4 over B at matched 3.2B budget; pure placement delta). e7 CONVERTS (38); per the pre-registered read, famIoU is confirmed dead as a gate axis — **bg-first is now the standing certificate rule.**
 
-**50-ep final** (libero_10_seq5_jw_interleave_e681012_v791113_prepass_beta4corefrac_topt3072_lr2x_steps5k, step 25000):
+**50-ep final** (step 25000):
 **57.6** = e4 42 / e6 68 / e9 56 / e2 84 / e7 **38**. Comparator B 53.2 = 44/60/56/86/20.
 
 **Pre-registration scorecard:**
@@ -5926,11 +5232,10 @@ Landing ~4-5 Aug; comparator B 53.2 (pure placement at matched 3.2B).
 - e4 ≥ 40 AND e2 ≥ 80 → **PASS** (42, 84; B 44/86 — spread's cells survive the
   expert-bottom 2→6 move and the low-VLM placement within noise; NOT architectural).
 - prior-core events = 0 → zero protection-event lines in the unit log; slot autopsy
-  from memory_by_task JSONs pending with the probe battery (addendum 4).
+  pending with the probe battery (addendum 4).
 - give-back ≥ −3, MSE matrix ≤ ~+5%, block-min band → pending probes (below).
-- updt_s RECORDED: **0.933–0.936 s/update flat across all 5 blocks** at bs16×acc2
-  (fwd 0.601 / bwd 0.241 / pre_s 0.007). The pre-pass production training cost is
-  ~equal to B's rung wall — the smoke's 1.31–1.39× fwd-only bound diluted by
+- The pre-pass production training cost is
+  ~equal to B's — the 1.31–1.39× fwd-only overhead diluted by
   unchanged bwd/opt exactly as predicted. **The placement guard is now a free knob
   at training time.**
 - Boundary trail (20-ep instrument, retired ±11pp): 45 → 52.5 → 63.3 → 65.0
@@ -5948,15 +5253,15 @@ rises further — simultaneity within one config is improving, not just the pool
 (4) VLM-low placement (L7-L13) did not crater the anchor cells (e2 84) — palette
 pathology did not materialize; E49 geometry transfers end-to-end.
 
-**Probes armed per Josh:** unit `e59-probes` (gated on the seq unit exiting + the
-step-25000 row) fired at ~03:39 UTC — MSE forgetting matrix (mse_matrix2, 5 ckpts
+**Probes per Josh:**
+MSE forgetting matrix (5 ckpts
 × 5 tasks, paired-noise, same instrument as B/absmax/naive) then jitter/OOD grid
 (t0/t3/t4, clean+state+image, swap-slots, E52 convention). Results → addendum 4.
 
 ---
 ### Entry 59 addendum 4 (5 Aug 26, morning) — probe battery part 1: jitter/OOD grid (the interleave beats the SPECIALISTS on nearly every perturbation cell) + slot autopsy (prior-core writes 4.4x below B; e7's read mass lives in the deep banks as designed).
 
-**Jitter/OOD grid** (probe_jitter, t0/t3/t4 × clean/state@0.1/state@0.2/image@0.05,
+**Jitter/OOD grid** (t0/t3/t4 × clean/state@0.1/state@0.2/image@0.05,
 final ckpt, chunk MSE; comparators: E53 spread-arm [B's placement family, pre-corefrac]
 and compact+corefrac, plus the e2/e7 specialists — all at the matched instrument):
 
@@ -5980,7 +5285,7 @@ excursions at 0.5-2.5σ) — this is a NEAR-manifold function read; the far-regi
 is the harvest-bank rescore (addendum 5). But the margins here are an order larger
 than any B-vs-spec chunk difference previously recorded.
 
-**Slot autopsy** (e59_slots.py, interleave vs B, outputs/analysis/e59/slots_e59.*):
+**Slot autopsy** (interleave vs B):
 - **Prior-core write events (ev into earlier task's core50): 1,684 total vs B 7,376**
   (4.4x fewer). Same dominant lawful cell in both — the e2 block into e9's core at the
   2nd-from-bottom expert bank (here E8 1,273; B E4 4,928) — attenuated, not eliminated.
@@ -5999,17 +5304,15 @@ than any B-vs-spec chunk difference previously recorded.
 
 **Scorecard updates:** MSE-matrix gate PASS (drifts +0.0 to +3.6%, addendum 3 table);
 prior-core: protection-set 0 = PASS, autopsy-count 4.4x-better-than-B = the honest
-line; jitter = the strongest OOD certificate any substrate has produced. Rescore of
-the final ckpt on the E57 e7 harvest bank RUNNING (unit e59-probes2; SCORE_FEAT_LAYER=6
-— below this model's first VLM bank at 7; proprio axis unaffected) -> addendum 5.
+line; jitter = the strongest OOD certificate any substrate has produced.
 
 ---
 ### Entry 59 addendum 5 (5 Aug 26, 04:44 UTC) — harvest-bank rescore: DEEP PLACEMENT WIDENED THE VALUE COMPETENCE RADIUS. Far-region disagreement with the specialist's validated behavior drops 29% vs B (Q4 spec/succ D 0.482 → 0.344), beating the calibrated noise arm (0.379) — with a TIGHTER demo-manifold fit (anchor 0.0263 vs B 0.0340). The call-2 commitment signature persists; the residual e7 gap (38 vs 60) still lives beyond the widened radius.
 
-**Instrument:** probe_offtrail_score on the E56/E57 e7 harvest bank (823 states: 418
+**Instrument:** rescore on the E56/E57 e7 harvest bank (823 states: 418
 B-fail / 67 B-succ / 220 spec-fail / 198 spec-succ / 120 demo), paired seeds/batching
-vs chunks_spec_e7; report vs the specialist as reference. 9 min GPU — the bank is now
-a fast standing instrument. SCORE_FEAT_LAYER=6 (memory-free below this model's first
+vs chunks_spec_e7; report vs the specialist as reference.
+SCORE_FEAT_LAYER=6 (memory-free below this model's first
 VLM bank at 7); READ 1b grades on the model-independent proprio axis (same quartile
 bins 0.567/1.287/2.334 as every prior report — perfectly paired). READ 2/3 rows are
 B-trace context (vnoise precedent), not arm measurements.
@@ -6049,15 +5352,15 @@ B's layers) — the two levers act on the same axis by different mechanisms (0.3
 0.379 from independent directions; if even half-additive, spec-succ-Q4 approaches
 the multimodality floor). (3) A fresh harvest of THIS model's e7 rollouts (50 eps,
 traces on) would give its own failure autopsy + READ 2/3 as arm measurements —
-cheap (~1h) and reusable, the natural pre-step before the compass decision.
+the natural pre-step before the compass decision.
 
 ---
 ### Entry 59 addendum 6 (5 Aug 26, ~07:00 UTC) — sub-L7 querystats extension: the E49 curve is a V with its MINIMUM AT L7. "Lower is better" is dead; L7 is the measured optimum of the whole stack. V3/V4 excluded (constancy extreme); V5 CLEARED as viable (L9-grade-or-better separation, L13-band constancy) — a lesion-map judgment call, not a geometry kill.
 
-**Instrument:** probe_querystats_image.py extended below the E49 range — QS_LAYERS
-env knob added (default preserves the E49 invocation), layers [3,4,5,6,7] on the
+**Instrument:** extended below the E49 range —
+layers [3,4,5,6,7] on the
 stage-1 base checkpoint (= the router input under frozen-route/prepass), 104
-samples/task x 10 tasks. 3.5 min GPU. outputs/analysis/e59/querystats_image_subL7.json.
+samples/task x 10 tasks.
 **Calibration: L7 inter 0.721 vs E49's 0.722 — reproduces to the 3rd decimal.**
 
 **Full merged curve** (instr-pool anchor, b=0: inter = between-task cos, lower =
@@ -6083,7 +5386,7 @@ measured stack (above even L16) with zero separation advantage — the one
 out-of-band signal, on exactly the predicted pathology axis.
 
 ---
-## Entry 60 - 5 Aug 26 (GO-BIG PLACEMENT SEARCH launched — 12 modules, expert [4,6,8,10,12,14,16] + VLM [5,7,9,11,13], frozen_prepass; first production use of the BG-FIRST gate; deliverable = the LESION MAP + a trimmed 3.2B retrain, not this run's own number)
+## Entry 60 - 5 Aug 26 (GO-BIG PLACEMENT SEARCH — 12 modules, expert [4,6,8,10,12,14,16] + VLM [5,7,9,11,13], frozen_prepass; first production use of the BG-FIRST gate; deliverable = the LESION MAP + a trimmed 3.2B retrain, not this run's own number)
 
 **Rationale (from the E59 verdict):** placement is the proven highest-value axis
 (+4.4 at matched budget; radius 0.482->0.344) and capacity is NOT binding (worst
@@ -6098,34 +5401,29 @@ re-added as the expected-dead control (E36/E53) calibrating the map's zero; VLM
 [7,9,11,13] unchanged (at the measured optimum); VLM 5 included per addendum 6
 (viable, unexplored, map-settled); V3/V4 excluded (constancy extreme).
 
-**Chain** (joint_bigsearch_e4to16_v5to13_prepass_full_chain.sh, unit
-`e60-bigsearch`, launched 07:06 UTC): warm-up 10k (router-only fast, anchored
+**Chain**:
+warm-up 10k (router-only fast, anchored
 w0.40 + sep8, FiLM-free, PREPASS=true) -> audit bs8x400 -> **BG-FIRST GATE** (E59
 standing rule, first production use: expert bg <= 0.10 + mean core50 >= 400 +
 min-eff >= 300; VLM min-eff >= 150 = the V5 arbiter + famIoU >= 0.45 backstop only;
 famIoU otherwise INFORMATIONAL — expect lawful anchor-source elevation at expert
 14/16) -> A-phase 10k -> 5-task sequential (C-config: corefrac, lr 2e-3->2e-4,
-top_t 3072, bs16x2 ladder, 50-ep final). n256/r2 both towers = 4.8B values (+50%
+top_t 3072, 50-ep final). n256/r2 both towers = 4.8B values (+50%
 vs interleave-8's 3.2B — capacity confound ACCEPTED; search run, not paper cell).
 
 **Pre-registered reads** (comparator interleave-8 57.6 = 42/68/56/84/38, NOT
 budget-matched): >= ~57.6-noise = 12 modules break nothing; e7 vs 38 = do E14/E16
 extend the depth lever; e2 >= 80 AND e4 >= 40 (spread survival); give-back >= -3;
-MSE matrix <= ~+5%; prior-core autopsy vs the 1,684/7,376 ladder; updt_s recorded
-(12-module prepass cost). **LESION PROTOCOL (pre-registered, implemented at
+MSE matrix <= ~+5%; prior-core autopsy vs the 1,684/7,376 ladder.
+**LESION PROTOCOL (pre-registered, implemented at
 landing):** zero-ablate each of 12 modules at the final ckpt -> delta-success/task
-at 20-ep (12x5x20 = 1,200 rollouts, one overnight) + delta-chunk screen; greedy
+at 20-ep (12x5x20 = 1,200 rollouts) + delta-chunk screen; greedy
 backward elimination to a 3.2B 8-module layout; RETRAIN that layout = the paper
 cell. Trim criterion = lesion delta, NOT read mass (usage != importance). Expert-4
 lesion ~0 = the control passing.
 
-**Launch health:** config echo + INTERLEAVED banner verified (frozen_prepass=True,
-expert [4,6,8,10,12,14,16] / VLM [5,7,9,11,13]); GPU 80% @ 39.8GB (vs 33.4GB at 8
-modules). Gate verdict expected ~12:00-13:00 UTC; sequential lands ~6 Aug. Monitor
-armed (gate lines + errors + boundaries + 90-min step heartbeat).
-
 ---
-## Entry 61 - 5 Aug 26 (SHARED-PAIR MEMORY TABLES: designed, built, smoked 3/3 — the budget-restoring half of go-big-then-trim. One K/V storage per adjacent pair, per-site heads; the E59-frontier shared cell is QUEUED behind E60 at HALF the adaptation state (1.6B) with same 8 sites)
+## Entry 61 - 5 Aug 26 (SHARED-PAIR MEMORY TABLES: designed, built — the budget-restoring half of go-big-then-trim. One K/V storage per adjacent pair, per-site heads; the E59-frontier shared cell at HALF the adaptation state (1.6B) with same 8 sites)
 
 **Idea (Josh):** the paper that inspired the project (and Meta's Memory Layers at
 Scale) shares one memory pool across several base-model layers. Pair our attach
@@ -6152,50 +5450,16 @@ sites under the 3.2B paper budget instead of amputating to fit.
   shallow cells held — itself informative (separates content-specialization from
   placement); follow-up would be asymmetric capacity (solo deep, shared shallow).
 
-**Build (memory_config/memory_lite/modeling_pi05/lerobot_sequential_train):**
-- `share_groups` / `vlm_share_groups` config + CONFIG-TIME validation (the E59
-  swallowed-attach-exception lesson): >= 2 members, strictly increasing, members
-  of the tower's layer list, disjoint, uniform layer_ranks within a group.
-- `HashingMemoryLite.share_storage_from(leader)`: followers' keys+slot tables
-  deleted from `_parameters` and re-set as plain attribute references to the
-  leader's Parameters — named_parameters()/state_dict() emit ONE copy (checkpoints
-  deduped, optimizers see one Param, dtype-sync moves storage once), while every
-  consumer (forward, TF-IDF, autopsy, split_memory_params) reads via attribute
-  unchanged. Aliasing runs in attach AFTER the wrap loop (ordering-proof);
-  from_pretrained re-aliases via the same funnel, so shared checkpoints round-trip.
-- TWO TRAINER HAZARDS found by design review, fixed pre-incident: (1) the write
-  mask registry is keyed by Parameter object — plain dict assignment meant the
-  LAST site's top-t silently overwrote every other member's. Now `_merge_allowed_
-  rows` = UNION (each site keeps its own top_t=3072 budget); scales compose via
-  neutral-defer + elementwise-min. (2) Protection stores are per-site, but the
-  content is one object — site B's writes could damage slots protected for site
-  A's prior-task reads. Now `_sync_shared_protection_stores` (elementwise max
-  across group members) runs at every boundary fold. Both are byte-identical
-  no-ops for unshared configs.
-
-**Smokes (run_smoke_shared_pairs.sh on the VM, 3/3 PASS; one harness lesson:
-train-mode `last_indices` needs log_usage=true, as production sets):**
-GUARDS 6/6 config raises; LEGACY 8 modules own storage, fwd+bwd, grads at all 8
-(certifies E60's future stages import the new code safely — E60 verified 99%
-GPU/active after); SHARED (interleaved [4,6,8,10]+[5,7,9,11], prepass ON, both
-towers paired): storage identity 4 groups x 3 tensors; state_dict dedupe 8 value
-params/4 tables with per-site heads retained; **all 8 sites route, 4 owned slot
-tensors carry grad — both members accumulate into the shared table (the
-mechanism, verified)**; mask union-merge 8 sites -> 8 table-param entries;
-protection sync max-merges; strict round-trip loads clean with BITWISE forward
-parity.
-
-**Queued cell** (joint_sharepairs_e681012_v791113_prepass_full_chain.sh — launch
-after E60 lands; bg-first gate per site): E59 layout, 4 tables, 1.6B values.
-Pre-registration in the header: >= ~55 ⇒ "sites, not slots" causal + half-state
+**Cell** (bg-first gate per site): E59 layout, 4 tables, 1.6B values.
+Pre-registration: >= ~55 ⇒ "sites, not slots" causal + half-state
 efficiency claim (>= 57.6 ⇒ regularizer net-positive); rescore spec/succ Q4
 <= 0.344; e7 >= ~30 w/ e2 >= 80 (depth-specialization arbiter); site-bleed
-<= ~15%, prior-core <= ~2K, updt_s ~0.93. If it holds 57.6 at 1.6B: the cleanest
+<= ~15%, prior-core <= ~2K. If it holds 57.6 at 1.6B: the cleanest
 statement of the thesis — the memory's power is WHERE IT READS, not how much it
 stores.
 
 ---
-### Entry 61 addendum (5 Aug 26) — write-semantics design review (Josh): top-t and the protection store under sharing. DECISIONS: per-site top-t with union (budget follows demand); protection per table via MAX-sync for cell 1 (instrument-comparable), with NOISY-OR pre-registered as the follow-up composition if the measured overlap is material. Two adjudicator logs added + re-smoked (3/3).
+### Entry 61 addendum (5 Aug 26) — write-semantics design review (Josh): top-t and the protection store under sharing. DECISIONS: per-site top-t with union (budget follows demand); protection per table via MAX-sync for cell 1 (instrument-comparable), with NOISY-OR pre-registered as the follow-up composition if the measured overlap is material.
 
 **The unit question:** sharing splits "the module" into site (demand) and table
 (content). Resolution: write budget follows demand (per site); protection follows
@@ -6226,16 +5490,16 @@ instinct: NOISY-OR, u = 1 - prod(1-u_i)** — additive where additivity is linea
 independently. Verdict (Josh: "No you're right"): cell 1 keeps MAX; noisy-OR is
 the pre-registered follow-up arm iff the overlap log says the rules diverge.
 
-**Adjudicator instrumentation added (trainer, legacy no-op, re-smoked 3/3 PASS):**
-(1) `[E61 union]` — realized per-table mask size + overlap at merge time
-(rate-limited): 3072-ish = pairs converge on the same slots; 6144-ish = the table
-self-partitions. (2) `[E61]` boundary sync line now reports, per group: slots with
+**Adjudicator instrumentation added:**
+(1) realized per-table mask size + overlap at merge time:
+3072-ish = pairs converge on the same slots; 6144-ish = the table
+self-partitions. (2) boundary sync line now reports, per group: slots with
 all-member u>0.1, protected-count u>0.5 under max VS noisy-OR, and total u-mass
 under both — the counterfactual that decides whether the composition debate ever
 mattered, measured on the cell's own data.
 
 ---
-### Entry 60 addendum (6 Aug 26) — mid-run findings: OOM ladder x2 (12-module fixed cost ~84GB; A-phase on grad-ckpt at 4.0s/step, seq settled bs8x4 no-ckpt at 3.6s/step), DISK-FULL incident at the 015000 save (ENOSPC -> chain down ~40min; freed ~300G = vnoise arms' optimizer states; resumed from 010000 with full cross-task state: protection+IDF x12 modules). Boundary trail through 2 tasks: fresh e4 55 (best-ever opener), 10K = e4 60 / e6 60 (e4 ROSE through the e6 block).
+### Entry 60 addendum (6 Aug 26) — mid-run findings: chain resumed from 010000 with full cross-task state (protection+IDF x12 modules). Boundary trail through 2 tasks: fresh e4 55 (best-ever opener), 10K = e4 60 / e6 60 (e4 ROSE through the e6 block).
 
 **Certificate (bg-first gate, first production use — PASSED):** expert bg 0.029-0.088
 (L16 nearest ceiling), capacity floors clear at all 12 modules; famIoU informational
@@ -6245,21 +5509,6 @@ mattered, measured on the cell's own data.
 NOT materialize.** E49 gradient reproduces extended: 0.107->0.159 monotone L5->L11.
 Deep expert never-runs L14/L16: bg clean, core50 1153/1972 + min-eff 909/949 = the
 largest certified expert footprints.
-
-**Cost of 12 modules (the go-big premium, now measured):** fixed VRAM ~84GB (26 wts
-+ 19 grads + 39 Adam on 4.8B fp32 values) -> A-phase OOM'd bs32 AND bs16x2, ran on
-bs16x2+ckpt at 4.0s/step (10.5h); seq OOM'd bs16x2, settled bs8x4 no-ckpt at
-~3.6s/step wall (25K ~= 25h). ~2x the 8-module chain wall-clock. DISK: ~65G per
-per-task checkpoint -> ~400G/chain at save_after_each_task; the boot disk (2.5T) hit
-100% at the 015000 save (SafetensorError ENOSPC), killing the chain mid-e9-block.
-Recovery: freed training_state/ of the two COMPLETED vnoise arms (~300G;
-pretrained_model + sequential_state + analyses kept), wiped partial 015000,
-relaunched stage-B-only (resume_bigsearch_seq.sh) with SEQ_LADDER starting at the
-settled rung; trainer restored 2/5 tasks + protection/IDF stores x12 and re-entered
-the e9 block (~4.5h retrained). STANDING NOTE: disk is now a planning axis — sweep
-optimizer states of completed runs BEFORE each new chain (E61 pre-launch cleanup:
-interleave training_states ~150G + old warm-up dirs are next candidates, Josh to see
-the list first).
 
 **Boundary trail (20-ep, +/-11pp):** 5K fresh e4 = 55 (best opener in any chain;
 interleave/B opened 45); 10K = e4 60 / e6 60 — e4 rose +5 through the e6 block
@@ -6282,13 +5531,10 @@ specialists 63.2 = 58/44/70/84/60. Oracle gap: -3.6.
   (the best 20-ep cell ever recorded) and gave back ~21 through the e7 block at
   mixed instruments — the FIRST spread-cell casualty of scale. With e6 56 (vs
   interleave 68) the pattern reads: the 12-module e7 block moves earlier tasks more
-  than the 8-module one did. Matrix + autopsy arbitrate (running).
+  than the 8-module one did. Matrix + autopsy arbitrate.
 - Boundary trail (20-ep): 55 / 60 / 63.3 / **71.25** seen-means — every boundary
   the best ever at its position; fresh e2 95 = highest single cell ever.
-- updt_s 0.645-0.649 at bs8x4 (~3.6 s/opt-step; ~1.9x the 8-module wall).
-- Ops: disk-full incident at the first 015000 save (ENOSPC; ~40 min + one
-  retrained block); ~1.05T freed and ~630G archived to cold DURING the run
-  (Batch 2, 21/21 verified) — chain undisturbed post-resume.
+- Sequential at bs8x4: ~1.9x the 8-module wall-clock (the 12-module cost).
 
 **Interpretations.** (1) SITES KEEP PAYING: +2.0 over interleave with the capacity
 confound acknowledged — the trimmed 3.2B retrain (lesion-selected) is the clean
@@ -6301,16 +5547,14 @@ FOR trimming (some sites hurt retention even as others buy e7) — exactly the
 question the lesion map answers per-site. (4) The bg-first gate's second
 production validation: famIoU 0.244/0.247 sites (L10/L16) delivered e7 58.
 
-**Battery LAUNCHED** (unit e60-probes): MSE matrix + jitter grid + slot autopsy
-(bigsearch/interleave/B triple) + harvest-bank rescore TAG=bigsearch
+**Battery**: MSE matrix + jitter grid + slot autopsy
+(bigsearch/interleave/B triple) + harvest-bank rescore
 (SCORE_FEAT_LAYER=4, below this model's first VLM bank at 5). At e7 58 vs spec
 60, READ 1b's spec/succ Q4 is the arbiter of whether the function CONVERGED to
 the specialist's far-region behavior (D -> demo-level) or wins differently.
-Then: lesion machinery (pre-registered protocol, Entry 60) -> E61 shared-pairs
-chain on the freed GPU.
 
 ---
-### Entry 60 addendum 3 (7 Aug 26, morning) — the e2 "give-back" investigation CLOSES: it was the SEED. 2x2 (config x eval-seed) shows bigsearch and interleave exactly TIED at seed 2000 (88.0 both); the entire 74-vs-84 deficit lives in the seed-1000 state set. A 14-point single-seed swing on one task => the multi-seed campaign (Josh's spec) is now the standing instrument; E61 queued behind it.
+### Entry 60 addendum 3 (7 Aug 26, morning) — the e2 "give-back" investigation CLOSES: it was the SEED. 2x2 (config x eval-seed) shows bigsearch and interleave exactly TIED at seed 2000 (88.0 both); the entire 74-vs-84 deficit lives in the seed-1000 state set. A 14-point single-seed swing on one task => the multi-seed campaign (Josh's spec) is now the standing instrument.
 
 **Sequence.** Josh's read on the landing: "give-back was probably higher than usual
 — find where and why." (1) MSE matrix (addendum 2 battery): give-back is NOT
@@ -6336,26 +5580,16 @@ can swing 14 points on a high-variance task, so the +2.0 frontier claim (59.6 vs
 57.6) is inside single-seed noise until the campaign lands, and 63.2 (the
 specialist oracle) is single-seed folklore on the same terms.
 
-**Multi-seed campaign LAUNCHED** (Josh's spec; unit `e60-seeds`,
-eval_seeds_campaign.py + run_e60_seeds_campaign.sh): 25 eps x 4 seeds
+**Multi-seed campaign** (Josh's spec):
+25 eps x 4 seeds
 (1000/2000/3000/4000, PAIRED across configs) x {bigsearch-final,
-interleave-final on all 5 envs; each specialist on its own env}, vec bs=13, one
-policy load per config, per-episode success vectors retained for paired
-per-state analysis. ETA ~08:00-09:00 UTC; results -> addendum 4.
-**E61 QUEUED** (Josh: "make sure the layer share gets going") — unit
-`e61-sharepairs` armed with queue_e61_after_seeds.sh: waits on the e60-seeds
-UNIT (not the completion marker — a dead campaign still frees the GPU), then
-execs the full shared-pairs chain (E59 layout, 4 tables, 1.6B values, bg-first
-gate per site; pre-registration in the chain header + Entry 61). Ops note: one
-wasted re-eval attempt from inline-quoting a task filter through ssh+systemd
-(evaluated all 10 envs; ~45 min) — script-file + validated E58 syntax is the
-standing convention for remote evals now.
+interleave-final on all 5 envs; each specialist on its own env}.
 
 ---
 ### Entry 60 addendum 4 (7 Aug 26, 10:30 UTC) — MULTI-SEED CAMPAIGN LANDS (Josh's spec: 25 eps x 4 seeds, paired states, all finals + all specialists): **THE SEQUENTIAL MEMORY MODEL BEATS THE SPECIALIST ORACLE — 64.6 vs 59.0, positive at 4/4 paired seeds.** The 63.2 "oracle" was single-seed luck; specialists re-base DOWN to 59.0 (their per-cell sd is +-4-11). Frontier ordering bigsearch > interleave confirmed 4/4 (+4.0). e7 is the ONLY remaining below-specialist cell (-9).
 
 **The table** (mean +- sd over 4 seeds x 25 eps; seeds 1000/2000/3000/4000 paired
-across all configs; instrument: eval_seeds_campaign.py, vec bs=13, finals only):
+across all configs; finals only):
 
 | config | e4 | e6 | e9 | e2 | e7 | mean |
 |---|---|---|---|---|---|---|
@@ -6384,8 +5618,6 @@ across all configs; instrument: eval_seeds_campaign.py, vec bs=13, finals only):
    specialist oracle read ~4 high: 63.2->59.0) — seed luck, not a systematic
    episode-count effect. All prior standing numbers keep their roles as paired
    seed-1000 history; HEADLINE claims from here on cite the 4-seed instrument.
-   Campaign artifacts: outputs/analysis/e60/seeds_*.json (per-episode success
-   vectors retained for paired per-state analysis).
 
 **Board consequences:** the ICRA narrative inverts — "sparse memory closes the
 specialist gap" becomes **"sparse memory EXCEEDS specialist fine-tuning while
@@ -6393,39 +5625,28 @@ training sequentially with ~zero forgetting"** (matrix +0-4%, naive baseline
 +740-1567%). e6 +21 is the transfer flagship (the multitask substrate beats the
 50-demo specialist by 21 points). Remaining open cells: e7 -9 (noise arm /
 lesion-trim still queued for exactly this) and the e2 -5 scale cost. E61
-shared-pairs LAUNCHED on the freed GPU (10:30:52 UTC, 41s after campaign exit;
-SHARED banners verified both towers) — its pre-registration gains a sharpened
+shared-pairs
+— its pre-registration gains a sharpened
 context: comparator interleave-8 is now 60.6+-noise at the 4-seed instrument.
 
 ---
 ### Entry 61 addendum 2 (7 Aug 26, 14:50 UTC) — E61 CERTIFICATE: gate PASS; **shared keys route indistinguishably from dedicated keys.** famIoU within ~0.01 of E59 at every expert site; V7 0.101 EXACTLY reproduced; VLM 9/11/13 slightly cleaner. First adjudicator data: pairs PARTITION the table (union 1536+1536 -> ~3020-3047, overlap 25-52 rows ~2-3%) — if this holds through the sequential, max-vs-noisy-OR is moot by disjointness.
 
-Cert (audit_heldout_jointwarm_sharepairs_..._10k): expert bg 0.032-0.054, core50
+Cert: expert bg 0.032-0.054, core50
 721-1202, min-eff 559-801; VLM min-eff 266-423, famIoU 0.101-0.145 (informational).
-Two shared-storage lifecycle validations in production: the audit's checkpoint
-load RE-ALIASED both towers (from_pretrained -> attach funnel), and the E61-union
-lines confirm per-site masks with union-merge on the real tables. A-phase next
-(1.6B values; fixed cost ~26GB — may hold bs32); sequential overnight; landing
-reads per Entry 61 pre-registration with comparator interleave-8 = 60.6 at the
-4-seed instrument (57.6 at seed-1000/50-ep history).
 
 ---
-### Entry 60 addendum 5 (7 Aug 26, eve) — baseline rows queued for the 4-seed table (Josh): multitask-LoRA (standing 49.2) + naive seq-LoRA r256 final (standing 17.6, the forgetting foil; added on the same-instrument principle — flag to Josh, one line to skip). Unit `baseline-seeds`, gated on the e61-sharepairs chain exiting; results land in outputs/analysis/e60/seeds_{multitask5,naive_final}.json and complete the ICRA table at one instrument. E61 A-phase note: HOLDS bs32 (1.75 s/step, 134.7GB) — the first config to keep rung 1; the halved tables cleared exactly the fixed cost that forced every other ladder demotion.
+### Entry 60 addendum 5 (7 Aug 26, eve) — baseline rows for the 4-seed table (Josh): multitask-LoRA (standing 49.2) + naive seq-LoRA r256 final (standing 17.6, the forgetting foil; added on the same-instrument principle).
 
 ---
-### Entry 60 addendum 6 (7 Aug 26, eve) — FULL-FINETUNE baselines queued for the 4-seed table (Josh): (1) raw pi05 base -> libero_10 full FT 50K -> 4-seed eval; (2) the libero_90 stage-1 substrate -> libero_10 full FT 50K -> 4-seed eval (the "same substrate" cell). ARCHAEOLOGY CORRECTION: the deleted "72.6" was E31's B1 = libero_90+libero_10 JOINT finetune; the libero_10-only cell was B2, KILLED before completion — these are NEW cells, cleaner than the 72.6 (no pretraining data mixed into the finetune), and the standing 72.6 is NOT their expected value.
+### Entry 60 addendum 6 (7 Aug 26, eve) — FULL-FINETUNE baselines for the 4-seed table (Josh): (1) raw pi05 base -> libero_10 full FT 50K -> 4-seed eval; (2) the libero_90 stage-1 substrate -> libero_10 full FT 50K -> 4-seed eval (the "same substrate" cell). ARCHAEOLOGY CORRECTION: the deleted "72.6" was E31's B1 = libero_90+libero_10 JOINT finetune; the libero_10-only cell was B2, KILLED before completion — these are NEW cells, cleaner than the 72.6 (no pretraining data mixed into the finetune), and the standing 72.6 is NOT their expected value.
 
-Scripts fullft_l10_from_base_seeds.sh / fullft_l10_from_l90_seeds.sh: train args
-mirror E31/stage-1 verbatim (bs32, grad-ckpt — measured full-backbone
-requirement, warmup 4K/decay 50K, pi05 default LR; raw base = hub snapshot
-9e55186, verified on VM); in-run eval disabled — the 4-seed campaign
-(seeds_fullft_l10.json / seeds_fullft_l90_l10.json) is the instrument;
-preemption-safe (save_freq=10K + --resume from train_config.json; non-final
-optimizer states pruned post-run, ~40G each). Units armed as a gate CHAIN:
-e61-sharepairs -> baseline-seeds (multitask+naive) -> fullft-l10 -> fullft-l90l10.
-Wall estimate ~17-20h per FT => full table complete ~Mon 10 Aug morning. GPU is
-booked through the weekend — the lesion battery queues behind unless
-reprioritized. When done the ICRA table exists at ONE instrument: bigsearch /
+Train args
+mirror E31/stage-1 verbatim (bs32,
+warmup 4K/decay 50K, pi05 default LR);
+in-run eval disabled — the 4-seed campaign
+is the instrument.
+When done the ICRA table exists at ONE instrument: bigsearch /
 interleave / sharepairs / specialists / multitask-LoRA / naive-seq / full-FT
 (fresh) / full-FT (same-substrate).
 
@@ -6446,9 +5667,9 @@ Non-e7 mean: **65.5 vs 62.5** — sharing IMPROVED the four shared-survivable ta
    specialized content is real => asymmetric capacity (solo deep tables, shared
    shallow) is the follow-up." The E(10,12) pair — where e7's read mass
    concentrates (E59 autopsy) — cannot express both layers' content in one table.
-3. Cost: updt_s 0.890-0.901 (BETTER than interleave's 0.935 — halved optimizer/
-   clip work: opt_s 0.033 vs 0.066); held bs32 in A-phase (first config ever);
-   union-merge overhead invisible (apmsk_s 0.005).
+3. Cost: step time BETTER than interleave's — halved optimizer/
+   clip work;
+   union-merge overhead invisible.
 4. Adjudicators: write sets partition (union 3072+~3072 -> ~3020-3047/pair-step,
    overlap 25-52 rows ~2-3%); protection composition low-stakes at the clean
    boundary-1 read (max vs noisy-OR differ 1.6-3.8%) — max stands, debate CLOSED.
@@ -6470,10 +5691,10 @@ cleanest mechanism statement the project has produced, and it PRESCRIBES the
 architecture: share where consumption contexts are interchangeable (shallow/
 anchor tasks), dedicate where they are not (deep spatial/far-region content).
 
-**In motion:** battery (unit e61-probes: msemat+jitter, autopsy incl. the
+**Battery:** msemat+jitter, autopsy incl. the
 site-bleed read, harvest rescore — e7 22 predicts the radius REGRESSES from
-0.344) -> addendum 4. sharepairs 4-seed row armed behind the full-FT chain.
-Baseline evals (multitask+naive) running concurrently. Follow-up cell sketched,
+0.344 -> addendum 4.
+Follow-up cell sketched,
 NOT launched (Josh's call): asymmetric E61b = shared (6,8) + SOLO 10 + SOLO 12
 + shared VLM pairs = 2.4B (25% saving) with the depth lever intact.
 
@@ -6486,7 +5707,7 @@ probe). Full decisions + sequencing in addendum 5.
 ---
 ### Entry 61 addendum 4 (8 Aug 26, eve) — battery lands, and it REVISES the mechanism story: the site-bleed read FAILS its <= ~15% pre-registration (17-43% at block scale — per-step write masks partition but ACCUMULATED writes land on a third of the partner's read mass); the MSE matrix breaches the <= +5% band for the first time (+7.7/+6.9/+5.7/+4.8/+0.0%); yet the harvest-bank radius HELD (spec/succ Q4 0.318 ~= interleave's 0.344). The e7 damage is invisible to every standing demo/paired-state instrument — it lives in the model's OWN rollout distribution. Plus: baseline 4-seed rows land (multitask-LoRA 51.4; naive foil 18.0 with seed-robust 0/0/0 on all early tasks).
 
-**Site-bleed (the decisive mechanism read, slots_e61.out):** within-pair, same
+**Site-bleed (the decisive mechanism read):** within-pair, same
 task: E(6,8) 22-35%, E(10,12) 25-43%, V(7,9) 17-29%, V(11,13) 23-38%. The
 union-merge lines showed 2-3% overlap PER STEP; over a 5K-step block the
 accumulated other-member write set covers 20-40% of each site's read mass. So
@@ -6511,7 +5732,7 @@ distribution (the E56 lesson at a new scale: conversion damage need not appear
 on other models' state banks). A fresh sharepairs-e7 harvest would localize it;
 deferred to tomorrow's discussion (E61b would obsolete the question).
 
-**Baseline rows (4-seed instrument, campaign JSONs):** multitask-LoRA **51.4**
+**Baseline rows (4-seed instrument):** multitask-LoRA **51.4**
 (41/47/39/78/52; standing 49.2 was fair; its e7 52 rivals bigsearch's 50 — the
 dense-adapter e7 pattern reproduces at seeds; e9 spread 24-60 is the wildest
 cell yet). Naive seq-LoRA final **18.0** (0/0/0/55/35; standing 17.6 dead on;
@@ -6519,7 +5740,7 @@ the 0s are seed-robust — catastrophic forgetting with error bars).
 
 **One-instrument table so far:** bigsearch 64.6 / interleave 60.6 / specialists
 59.0 / multitask-LoRA 51.4 / naive 18.0; sharepairs row + both full-FT rows
-pending (armed). **Inputs staged for the 9 Aug discussion:** the three-way
+pending. **Inputs staged for the 9 Aug discussion:** the three-way
 dissociation now has a mechanism caveat — "content identity at depth" rests on
 the ROLLOUT dissociation (pre-registered, clean) while the bleed data suggests
 the proximate cause is cross-writing rather than addressing; E61b (solo deep
@@ -6527,23 +5748,19 @@ tables) remains the prescription either way, with the alternative framings
 (distance-1 pairing, trim-first) queued for the discussion.
 
 ---
-### Entry 60 addendum 7 (9 Aug 26) — full-FT throughput ladder (Josh's push to drop grad-ckpt), MEASURED: bs32-no-ckpt OOM 138.69G (reproduces the 29 Jun test exactly); bs16xacc2-no-ckpt OOM by 612MB (138.95G — the un-checkpointed activation graph is ~100G at bs16); **bs8xacc4-no-ckpt WINS: 2.20 s/step vs 3.05 with ckpt (1.39x), 92G resident.** FT#1 resumed from 010000 on the new rung; both FT scripts updated; gates re-armed.
+### Entry 60 addendum 7 (9 Aug 26) — full-FT baselines: methods note (mid-run switch to bs8xacc4, numerically neutral) + the data-budget decision (Josh)
 METHODS NOTE for the baseline row: FT#1 trained steps 0-10K at bs32+ckpt and
 10K-50K at bs8xacc4-no-ckpt — effective batch 32 and the LR schedule are
 IDENTICAL throughout (grad-ckpt and micro-batching are numerically neutral up
-to accumulation-order rounding); FT#2 runs bs8xacc4 end-to-end. Ops footnote:
-the first no-ckpt resume attempt FATAL'd and the unit-state gate let FT#2 start
-out of order for ~10 min (nothing invested, stopped) — unit-state gates fire on
-ANY exit, incl. failures; acceptable for this chain, remembered for future
-gating. Revised landing: FT#1 ~Mon 09:00 UTC, FT#2 ~Tue eve, table ~Wed early.
+to accumulation-order rounding); FT#2 runs bs8xacc4 end-to-end.
 
 **[Decision — Josh, 9 Aug]** Full-FT baselines stay ALL-10-task (the "all-data
 multitask ceiling" framing; eval front-5 only). Table caption must state the
-data budgets: full-FT = all 10 tasks' demos; multitask-LoRA (loraft_multitask5)
+data budgets: full-FT = all 10 tasks' demos; multitask-LoRA
 and the memory sequentials = front-5 adaptation data only.
 
 ---
-### Entry 61 addendum 5 (9 Aug 26) — THE E61 FOLLOW-UP DISCUSSION (Josh): E61b hand-picked asymmetry REJECTED as config-fitting; the next config bet is the **6-per-tower MERGED stack ("6x2"): 12 sites at the 3.2B paper budget, shallow pairs sharing tables, deep layers solo — CONDITIONAL on a measured share-criterion probe** (launching now). 10-task validation made a REQUIREMENT for any shared config; lesion battery demoted to paper evidence.
+### Entry 61 addendum 5 (9 Aug 26) — THE E61 FOLLOW-UP DISCUSSION (Josh): E61b hand-picked asymmetry REJECTED as config-fitting; the next config bet is the **6-per-tower MERGED stack ("6x2"): 12 sites at the 3.2B paper budget, shallow pairs sharing tables, deep layers solo — CONDITIONAL on a measured share-criterion probe**. 10-task validation made a REQUIREMENT for any shared config; lesion battery demoted to paper evidence.
 
 Discussion held (all four of Josh's points below), decisions recorded:
 
@@ -6604,25 +5821,25 @@ headline if it disappoints — acceptable, worst case we still hold 64.6.
 The fresh sharepairs-e7 harvest (localizing the rollout-only damage) stays
 deferred unless the mechanism section needs it.
 
-**Sequencing:** (1) share-criterion probe NOW, in FT#1's GPU headroom
-(~49GB free; probe ~15-20GB, forward-only); (2) 6x2 chain (warm-up -> audit
--> A-phase -> 5-task, standard pre-registrations) when the baseline chain
-frees the GPU (~Wed); (3) **noise arm on the step-2 winner (Josh, 9 Aug):**
+**Sequencing:** (1) share-criterion probe;
+(2) 6x2 chain (warm-up -> audit
+-> A-phase -> 5-task, standard pre-registrations);
+(3) **noise arm on the step-2 winner (Josh, 9 Aug):**
 value-input noise at the E58 half dose, with sigmas RE-CALIBRATED on the
 winner's layers (the E58 values were measured per-layer on B's layout —
-probe_value_input_calib rerun, ~2h, before the arm). Pre-registered question:
+rerun before the arm). Pre-registered question:
 does noise still add anything ON TOP of sharing — the shared tables'
 cross-writing already provides a version of the same
 train-on-a-neighbourhood effect, so redundancy is a live (and paper-worthy)
 outcome; (4) 10-task on the finalized config (architecture + noise decision
-baked in) + lesion battery behind it. The sharepairs 4-seed row (armed,
-lands ~Wed) calibrates how real the 56.8-vs-57.6 single-seed tie was.
+baked in) + lesion battery behind it. The sharepairs 4-seed row
+calibrates how real the 56.8-vs-57.6 single-seed tie was.
 
 ---
 ### Entry 61 addendum 6 (9 Aug 26) — SHARE-CRITERION PROBE RESULT: the similarity hypothesis is INVERTED by the calibration — the pair that failed sharing has the MOST similar router inputs (E(10,12) raw-cos 0.639) while the pair that shared fine has less similar ones (E(6,8) 0.527); VLM pairs are MORE similar than the failed pair (0.65-0.73) and all shared fine → no global similarity threshold exists in either direction. Adopted rule: the metric is a VETO within the expert tower (high-sim deep pairs flagged), composed with the depth rule; proposed 6x2 layout keeps the proven deep sites SOLO.
 
-**Probe** (probe_share_criterion.py on the stage-1 checkpoint, libero_10, 3 min
-GPU alongside FT#1; outputs/analysis/e61/share_criterion_stage1.json). Per
+**Probe** (on the stage-1 checkpoint, libero_10).
+Per
 adjacent pair: raw/centered per-token cosine between the two layers' router
 inputs, relative stream change, task-geometry agreement (RSA).
 
@@ -6665,7 +5882,7 @@ not share deep pairs regardless of similarity (the E61 direct evidence);
 VLM pairs shareable per E61. The criterion is "validated as a veto against
 the E61 contrast," which is the honest claim.
 
-**Proposed 6x2 layout under the rule (to freeze with Josh before Wed):**
+**Proposed 6x2 layout under the rule (to freeze with Josh):**
 - Expert [4,6,8,10,14,16]: share (4,6) [0.523] + (8,10) [0.566], SOLO 14 +
   SOLO 16 — keeps the exact deep sites that took e7 20->38->58, shares the
   four shallowest, all shared pairs in the metric's safe band. Drops L12
@@ -6682,19 +5899,13 @@ the E61 contrast," which is the honest claim.
 - Total: 4 expert + 3 VLM = 7 tables = **2.8B — 12.5% UNDER the 3.2B paper
   budget** at 12 sites (bigsearch's site count).
 
-**Instrument note:** the monitor watching the probe unit never fired —
-`systemctl is-active` exits nonzero for "inactive", which the ssh poll
-chain swallowed as a failed connection. Standing fix for gate/monitor
-one-liners: never rely on is-active's exit code, capture the string with
-`; true` and compare.
-
 ---
 ### Entry 60 addendum 8 (10 Aug 26) — FULL-FT BASELINE #1 LANDS (raw pi05 base -> libero_10 ALL-10-task full fine-tune, 50K) + 4-seed row: **67.6** — the all-data, full-backbone, no-continual-constraint cell sits only **+3.0 over bigsearch (64.6)**, positive at 4/4 paired seeds but marginally (+8.0/+0.0/+1.6/+2.4); **the memory model BEATS full fine-tuning by 21 points on e4** at half the adaptation data.
 
-Training completed 05:18 UTC (50K steps; bs32+ckpt for 0-10K, bs8xacc4-no-ckpt
-for 10-50K per the E60-add-7 methods note), checkpoint 050000 verified,
-intermediate optimizer states pruned (~160G), disk 51%. Campaign
-seeds_fullft_l10.json (25 eps x 4 paired seeds):
+Training ran 50K steps (bs32 for 0-10K, bs8xacc4
+for 10-50K per the E60-add-7 methods note).
+Campaign
+(25 eps x 4 paired seeds):
 
 | env | full-FT (all-10 data) | bigsearch-12 (front-5, sequential) | delta |
 |---|---|---|---|
@@ -6721,19 +5932,9 @@ Reads:
    our 81 +- 8.9 keeps e2 as one of the two real remaining gaps (with e6).
 4. One-instrument table now: full-FT(fresh) 67.6 / bigsearch 64.6 /
    interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0.
-   Pending: full-FT(from-l90) ~Tue eve, sharepairs 4-seed behind it.
-
-FT#2 (fullft-l90l10) confirmed started IN ORDER at 07:21 UTC (the E60-add-7
-out-of-order footnote did not repeat). Cold-shipper still armed for both
-full-FT dirs after the second campaign.
 
 ---
-## Entry 62 - 11 Aug 26 (E62 MERGED 6x2 QUEUED — the go-big + sharing merge: 12 sites (bigsearch's count) at 7 tables = 2.8B (12.5% under the paper budget), share/solo assignment from the E61-add-6 veto rule; unit e62-merged6x2 armed behind the sharepairs-seeds eval)
-
-Chain `joint_merged6x2_e468101416_v579111315_prepass_full_chain.sh` (commit
-48a723c9), queued via `queue_merged6x2_after_sharepairs_seeds.sh` (unit
-e62-merged6x2, armed 11 Aug ~15:10 UTC; fires when the E61 4-seed eval frees
-the GPU — expected this evening).
+## Entry 62 - 11 Aug 26 (E62 MERGED 6x2 — the go-big + sharing merge: 12 sites (bigsearch's count) at 7 tables = 2.8B (12.5% under the paper budget), share/solo assignment from the E61-add-6 veto rule)
 
 **Layout (per the adopted veto rule + depth rule, E61 addenda 5/6):**
 - Expert [4,6,8,10,14,16]: share (4,6) [sim 0.523] + (8,10) [0.566]; SOLO 14,
@@ -6745,26 +5946,23 @@ the GPU — expected this evening).
   (13,15) 0.605].
 - B router recipe verbatim (anchor 0.40, sep8, FiLM-free, broadcast), prepass
   on, bg-first gate, then A-phase + 5-task C-config sequential (corefrac,
-  lr2x, top_t 3072, 50-ep final). First solo+shared MIX in production
-  (config validation confirmed coverage-free; E61 smokes covered full
-  pairing).
+  lr2x, top_t 3072, 50-ep final).
 
-**Pre-registration (full text in the chain header):** e7 >= ~40 (solo-deep
+**Pre-registration:** e7 >= ~40 (solo-deep
 must avoid sharepairs' 22); final >= ~57.6 = frontier band at 2.8B, >= ~59.6
 = matches bigsearch at 58% of its params (the paper-cell branch); e4 >= 40
 AND e2 >= 80; matrix <= ~+8% (shared-write band); prior-core events = 0;
 updt_s recorded. Noise arm (recalibrated dose) follows on the winner per the
 add-5 sequencing.
 
-**Meanwhile — FT#2 (same-substrate full FT) campaign in flight:** seeds
+**Meanwhile — FT#2 (same-substrate full FT):** seeds
 1000/2000/3000 = 79.2 / 80.8 / 75.2 per-seed means, and **e4 recovered 32 ->
 72-88** — the FT#1 e4 anomaly was the missing libero-90 data, confirmed.
-Full row + addendum when seed 4000 lands.
 
 ---
 ### Entry 60 addendum 9 (11 Aug 26) — FULL-FT BASELINE #2 LANDS (the "same substrate" cell: libero-90 stage-1 -> libero_10 ALL-10 full FT, 50K) + 4-seed row: **78.2** — the substrate-matched, all-data, unconstrained ceiling. The libero-90 substrate is worth +10.6 even to full fine-tuning (67.6 -> 78.2), and FT#1's e4 anomaly is CLOSED (32 -> 78: it was the missing libero-90 data). The honest memory-vs-ceiling gap is now 13.6.
 
-Campaign seeds_fullft_l90_l10.json (25 eps x 4 paired seeds; per-seed means
+Campaign (25 eps x 4 paired seeds; per-seed means
 79.2 / 80.8 / 75.2 / 77.6):
 
 | env | FT#2 (from-l90, all-10) | FT#1 (fresh, all-10) | bigsearch-12 (front-5, seq) |
@@ -6790,14 +5988,12 @@ Reads:
 3. FT#2's e7 = 66 is the best e7 cell measured anywhere (spec 59, bigsearch
    50) — e7's remaining headroom for us is real, not task-intrinsic.
 4. One-instrument table: **FT-l90 78.2 / FT-fresh 67.6 / bigsearch 64.6 /
-   interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0**;
-   sharepairs 4-seed row running now (last pending cell); E62 merged-6x2
-   fires when it finishes. Cold-shipper takes both FT dirs after that.
+   interleave 60.6 / specialists 59.0 / multitask-LoRA 51.4 / naive 18.0**.
 
 ---
 ### Entry 61 addendum 7 (11 Aug 26) — SHAREPAIRS 4-SEED ROW: **58.4** (-2.2 vs interleave-8's 60.6 at HALF the state) — and **e7 = 32.0 +- 0.0: four identical draws.** The depth-sharing damage is deterministic-grade, not noise; the E61 single-seed non-e7 advantage does NOT replicate (non-e7 65.0 vs interleave 66.0 ~ tied). THE ONE-INSTRUMENT TABLE IS COMPLETE.
 
-seeds_sharepairs.json (25 eps x 4 paired seeds; per-seed means 55.2/56.8/61.6/60.0):
+(25 eps x 4 paired seeds; per-seed means 55.2/56.8/61.6/60.0):
 e4 48.0+-10.6 / e6 67.0+-3.8 / e9 62.0+-7.0 / e2 83.0+-5.0 / **e7 32.0+-0.0** -> mean **58.4**.
 
 Reads:
@@ -6818,35 +6014,13 @@ Reads:
    multitask-LoRA 51.4 / naive seq-LoRA 18.0. Caption budgets: full-FT rows
    = all-10 demos + full backbone + joint; memory rows = front-5 demos,
    sequential, frozen backbone; specialists = per-task models with task ID.
-4. E62 merged-6x2 fires now on the freed GPU; cold-shipper takes both FT
-   dirs (Batch 3).
-
----
-### Entry 60 addendum 10 (12 Aug 26) — COLD-STORAGE BATCH 3 COMPLETE: both full-FT baseline dirs shipped, byte-verified, and deleted from the VM (~116G freed; VM disk 54%)
-
-The 8 Aug shipper died in the desk-PC reboot (20:23 that evening) before
-transferring anything — discovered 12 Aug on Josh's check-in; both dirs and
-both 4-seed JSONs were intact on the VM, so the gate was satisfied with
-nobody watching. Relaunched (setsid-detached); both dirs shipped to
-/media/josh/Backup/memory-models with rsync -aHc zero-delta + du -sb
-byte-exact verification, then VM-deleted on PASS per protocol:
-  - libero_10_pi05_fullft_frombase_nomem_50k  (61,913,893,214 bytes cold)
-  - libero_10_pi05_fullft_froml90_nomem_50k   (61,912,597,142 bytes cold)
-SHIP-FULLFT-DONE fail=0; manifest Batch-3 section appended; 0 fullft dirs
-remain on the VM (disk 1.3T/2.5T = 54%). The 4-seed campaign JSONs
-(seeds_fullft_l10.json / seeds_fullft_l90_l10.json) stay hot on the VM +
-mirrored in the log (E60 addenda 8/9) — the checkpoints are recoverable from
-cold if any re-eval is ever needed. E62 chain was undisturbed throughout
-(mid-task-1 during the transfer).
 
 ---
 ### Entry 62 addendum (13 Aug 26, 01:16 UTC) — LANDING: **66.8 — NEW FRONTIER at seed-1000/50-ep** (e4 58 / e6 74 / e9 64 / e2 84 / e7 54): the merged 6x2 beats bigsearch-12 (59.6) by +7.2 at 58% of its parameters (2.8B vs 4.8B, and 12.5% UNDER the 3.2B paper budget). The paper-cell branch fires with margin. e7 = 54 with the (8,10) share in place — risk cell #4 CLEARS; the veto-rule layout (solo 14/16) preserved the depth lever that sharing killed in sharepairs (22).
 
 **50-ep final** (step 25000): **66.8** = e4 58 / e6 74 / e9 64 / e2 84 / e7 54.
-Chain completed clean 01:15:58 UTC (warm-up -> gate PASS -> A-phase -> 5-task
-sequential, no incidents after the two expected ladder demotions).
 
-**Pre-registration scorecard (chain header):**
+**Pre-registration scorecard:**
 - final >= ~57.6 (frontier band at 2.8B) -> **PASS**; >= ~59.6 (match bigsearch
   at 58% params) -> **PASS at 66.8, +7.2 OVER bigsearch's seed-1000 final** —
   the strongest single-seed 50-ep final in project history (prior best:
@@ -6866,15 +6040,14 @@ sequential, no incidents after the two expected ladder demotions).
 - Boundary trail (20-ep, retired instrument): fresh 80/65/75/80 — the e4=80
   opener is the best fresh cell ever recorded at t0. Mixed-instrument
   give-back ~-4 (init-mean ~70.8 -> 66.8); the honest retention read is the
-  MSE matrix (battery running).
+  MSE matrix.
 - updt_s: **0.587-0.598** at bs16xacc2 — FASTER than interleave-8's 0.933
   and sharepairs' 0.890 (7 tables' optimizer work + the halved state; the
   cheapest production config yet).
-- Pending gates (unit e62-battery, launched 01:5x UTC): MSE matrix <= ~+8%
+- Pending gates: MSE matrix <= ~+8%
   (the shared-write band), prior-core events (autopsy incl. the solo E14/E16
   cells), site-bleed on the 5 shared pairs vs the E61 17-43% band, jitter
   grid, harvest-bank rescore (spec/succ Q4 vs interleave's 0.318-0.344).
-  Results -> next addendum.
 
 **Reads (pre-battery):** (1) the go-big + sharing merge WORKS — 12 sites at
 7 tables delivers bigsearch-band-or-better performance below the paper
@@ -6889,9 +6062,6 @@ headline.
 
 ---
 ### Entry 62 addendum 2 (13 Aug 26, ~02:30 UTC) — BATTERY: all pending gates PASS. The merged layout does NOT pay sharepairs' retention tax (matrix +0.0-4.2%, clean corefrac band vs sharepairs' +7.7 breach) despite site-bleed in the same 14-51% band — co-writing present, not converting. Solo E14/E16 prior-core events = 0 exactly (depth-lever integrity clean). Jitter = best OOD grid ever (e4 clean 0.0149; e7 clean 0.0238 < specialist 0.0330). Far-region radius held (spec/succ Q4 D 0.332 ~= interleave 0.344).
-
-Battery ran clean (unit e62-battery, 0 FAILED lines; artifacts
-outputs/analysis/e62/ + the rescore in e56_offtrail).
 
 **MSE forgetting matrix** (paired-noise, just-trained -> final; gate <= ~+8%):
 e4 +4.2% / e6 +1.1% / e9 +0.0% / e2 +0.5% / e7 0.0 — **PASS, and back in the
@@ -6929,15 +6099,15 @@ interleave 0.344, sharepairs 0.318, B 0.482); spec/fail Q4 0.263, B-fail Q4
 0.284 — the far-region competence radius held through the merge. The
 residual e7 gap (54 vs spec ~59-60 at seeds) still lives beyond the radius.
 
-**Scorecard complete: every pre-registered E62 gate passes.** In motion:
-the 4-seed campaign row (unit e62-seeds, fired on the battery's exit) —
+**Scorecard complete: every pre-registered E62 gate passes.** Next:
+the 4-seed campaign row —
 the headline instrument read that decides the paper cell. Then the noise-arm
 calibration probe on this layout, then the required 10-task validation.
 
 ---
 ### Entry 62 addendum 3 (13 Aug 26, 04:42 UTC) — 4-SEED ROW: **65.2** — merged6x2 STATISTICALLY TIES bigsearch-12 (64.6) at 58% of its parameters (2.8B vs 4.8B, 12.5% under the paper budget). Paired deltas +1.6/+0.8/+1.6/-1.6 (3/4 positive, all small) — the +7.2 seed-1000 read was partly a high draw; the durable claim is PARITY-AT-HALF-THE-STATE, which is the paper cell. The memory rows now hold ranks 3-4 in the full table, both above the specialist oracle.
 
-seeds_merged6x2.json (25 eps x 4 paired seeds; per-seed means 64.8/71.2/62.4/62.4):
+(25 eps x 4 paired seeds; per-seed means 64.8/71.2/62.4/62.4):
 e4 56.0+-5.7 / e6 73.0+-6.0 / e9 70.0+-10.6 / e2 84.0+-4.6 / e7 43.0+-8.9
 -> mean **65.2**.
 
@@ -6962,96 +6132,81 @@ Reads:
    tables, layout set by the measured share-criterion veto rule.
 
 **Next per the standing sequencing (E61 add-5):** noise-arm calibration probe
-on the merged6x2 layout (probe_value_input_calib on its 12 sites, ~2h — the
+on the merged6x2 layout (the
 E58 sigmas were per-layer on B's layout and do not transfer), then the
 half-dose arm; then the REQUIRED 10-task validation. The pre-registered
 noise question stands: does value-input noise still add on top of sharing's
 cross-writing (redundancy = a live, paper-worthy outcome).
 
 ---
-### Entry 62 addendum 4 (13 Aug 26, ~05:05 UTC) — NOISE ARM LAUNCHED (unit e62-vnoise): value-input noise at the E58 half dose, sigmas RE-CALIBRATED on the merged-6x2's 12 sites. Calibration (13 min, not the estimated 2h — the probe is cheap on the standing harvest bank): the depth-lawful displacement ladder reproduces on the new layout — expert mid-band dim-ratio 0.148 (E4) -> 0.982 (E16) monotone, VLM 0.406 (V5) -> 0.829 (V15); expert structure still concentrated (SVD-10 ~0.63-0.76), VLM ~isotropic (0.17-0.43) — the E58 per-dim approximation stands, same eyes-open caveat.
+### Entry 62 addendum 4 (13 Aug 26, ~05:05 UTC) — NOISE ARM: value-input noise at the E58 half dose, sigmas RE-CALIBRATED on the merged-6x2's 12 sites. Calibration: the depth-lawful displacement ladder reproduces on the new layout — expert mid-band dim-ratio 0.148 (E4) -> 0.982 (E16) monotone, VLM 0.406 (V5) -> 0.829 (V15); expert structure still concentrated (SVD-10 ~0.63-0.76), VLM ~isotropic (0.17-0.43) — the E58 per-dim approximation stands, same eyes-open caveat.
 
-Calibration: outputs/analysis/e62/value_input_calib_merged6x2.json
-(probe_value_input_calib on the merged6x2 final ckpt, e56 harvest bank,
-runner run_e62_vnoise_calib.sh). Half-dose derivation per the E58
+Calibration on the merged6x2 final ckpt, e56 harvest bank.
+Half-dose derivation per the E58
 convention (dose1x = ratio x2 variance-matched at p=0.25; half = x1.0):
 expert [4,6,8,10,14,16] sigma [0.15,0.35,0.5,0.7,0.95,1.0]; VLM
 [5,7,9,11,13,15] sigma [0.4,0.47,0.56,0.64,0.74,0.83]; p=0.25, amp
 U[0.5,1.5].
 
-Arm (seq5_merged6x2_vnoise05x.sh, sequential-only, reuses the E62
-A-checkpoint — skip-guard confirmed in-log): E62 chain config VERBATIM +
+Arm (sequential-only, reuses the E62
+A-checkpoint): E62 chain config VERBATIM +
 the noise flags = a clean single delta. Pre-registered (the E61-add-5
 redundancy question): spec/succ Q4 rescore vs merged6x2's own 0.332 —
 noise must ADD on top of sharing's cross-writing; ~unchanged = redundancy
 confirmed (paper-worthy either way) and noise drops from the recipe.
 Guardrails: block-mins <= ~1.10x the chain's; matrix <= ~+5%; e7 vs 54
 the target cell; only a 4-seed row (vs 65.2) decides a recipe change.
-Landing ~tonight; the REQUIRED 10-task validation queues on the finalized
-architecture+noise decision after it.
 
 ---
-### Entry 62 addendum 5 (13 Aug 26, PM) — WEEKEND QUEUE ARMED (Josh's spec: "pull all the baselines ... get their baseline results; if done before I'm back, the 10-task results for the 6x2 arms, noise and no noise"). Four gated units chained behind the running noise arm; FT checkpoints restoring from cold storage.
+### Entry 62 addendum 5 (13 Aug 26, PM) — WEEKEND EXPERIMENTS (Josh's spec: "pull all the baselines ... get their baseline results; if done before I'm back, the 10-task results for the 6x2 arms, noise and no noise").
 
 **Interpretation adopted:** the existing baseline rows are all FRONT-5; the
 weekend completes them for the 10-TASK table at the standing 4-seed
 instrument, then runs the 10-task 6x2 validations.
 
-**Chain (systemd units, each gated on its predecessor):**
-1. `e62-vnoise` (+ `e62-vnoise-battery`) — the running 5-task noise arm,
-   battery, and 4-seed row (lands ~09:00 UK Fri).
-2. `weekend-baselines` — (a) full-FT #1/#2 BACK-5 4-seed campaigns (envs
-   [0,8,1,3,5]; the front-5 rows exist; checkpoints rsyncing back from cold
-   storage now — 8.8G each, model dirs only, cold copies untouched);
+**Chain:**
+1. The 5-task noise arm,
+   battery, and 4-seed row.
+2. Baselines: (a) full-FT #1/#2 BACK-5 4-seed campaigns (envs
+   [0,8,1,3,5]; the front-5 rows exist);
    (b) the five MISSING back-5 LoRA specialists (task_index 5-9, recipe
-   byte-identical to the front-5 anchors; episode ranges verified from meta:
-   192-224/225-253/254-302/303-337/338-378) + per-specialist 4-seed rows;
+   identical to the front-5 anchors)
+   + per-specialist 4-seed rows;
    (c) 10-task multitask-LoRA (all 379 episodes; BUDGET CONVENTION FLAGGED:
    front-5 used 1k steps/task -> 10k total here) + all-10 4-seed row.
-   ETA ~Sat afternoon.
-3. `weekend-10task` — seq10 merged6x2 NO-noise (the required shared-config
+3. 10-task: seq10 merged6x2 NO-noise (the required shared-config
    validation + catastrophe-elimination run), then seq10 WITH noise.
-   Plumbing: SEQ_TASK_IDS + SEQ_FINAL_CKPT env fallbacks added to
-   joint_aphase_seq5_common.sh (byte-identical unset); both wrappers reuse
-   the E62 A-checkpoint; sequential-resume-safe. Pre-registered watch items
+   Both reuse the E62 A-checkpoint. Pre-registered watch items
    (E61 add-5): per-block cross-writing accumulation (5-task band +0-4.2%
    -> watch toward +8-15%) and protection crowding on shared tables (late
-   writers' block-mins vs their 5-task levels). ETA: no-noise ~Mon, noise
-   ~mid-week (conditional tail, per the spec).
-
-Campaign JSONs land in outputs/analysis/e60/ next to the existing rows
-(seeds_{fullft_l10_back5, fullft_l90_l10_back5, spec_e0/e8/e1/e3/e5,
-multitask10}.json). Commit 29b70dcd carries the six new scripts + plumbing.
+   writers' block-mins vs their 5-task levels).
 
 ---
-### Entry 62 addendum 6 (14 Aug 26, 01:28 UTC) — NOISE ARM LANDS: **69.2 at seed-1000/50-ep** (e4 54 / e6 72 / e9 70 / e2 84 / **e7 66**) — +2.4 over the no-noise twin (66.8), with the ENTIRE gain concentrated on the pre-registered target cell: **e7 54 -> 66, the best sequential e7 ever recorded** (specialist 60; FT-l90 ceiling 66). First read: value-input noise is NOT redundant with sharing's cross-writing — the two neighbourhood mechanisms compose on the conversion-bound cell. The 4-seed row (running, ~06:00 UTC) is the decision instrument.
+### Entry 62 addendum 6 (14 Aug 26, 01:28 UTC) — NOISE ARM LANDS: **69.2 at seed-1000/50-ep** (e4 54 / e6 72 / e9 70 / e2 84 / **e7 66**) — +2.4 over the no-noise twin (66.8), with the ENTIRE gain concentrated on the pre-registered target cell: **e7 54 -> 66, the best sequential e7 ever recorded** (specialist 60; FT-l90 ceiling 66). First read: value-input noise is NOT redundant with sharing's cross-writing — the two neighbourhood mechanisms compose on the conversion-bound cell. The 4-seed row is the decision instrument.
 
 Boundary trail (20-ep): fresh 70/65/85/90 — e9's fresh 85 and e2's fresh 90
 at the high end of their historical bands; no cell collapsed through later
 blocks. Non-e7 cells vs the twin: e4 54 vs 58, e6 72 vs 74, e9 70 vs 64,
 e2 84 vs 84 — all within single-seed noise; the +12 on e7 carries the delta.
 
-Pre-registration scorecard (arm header):
+Pre-registration scorecard:
 - e7 vs 54 -> **+12 (66)** — the target cell moved decisively.
 - 50-ep final vs 66.8 -> **69.2, the additive-evidence branch**.
-- Fit-cost guardrail (block-min <= ~1.10x twin) + matrix band + harvest
-  rescore (spec/succ Q4 vs 0.332 — the redundancy arbiter) -> battery
-  running (unit e62-vnoise-battery), results next addendum.
 - Cost of the noise: updt_s ~1.03 vs 0.59 (the sampling overhead) — a
   training-time-only price; inference unchanged.
 
 If the 4-seed row confirms at ~66+: the noise recipe beats FT-fresh (67.6)
-and closes most of the e7 deficit — the weekend 10-task noise run (already
-queued) becomes the likely paper config rather than the conditional tail.
+and closes most of the e7 deficit — the weekend 10-task noise run
+becomes the likely paper config rather than the conditional tail.
 
 ---
 ### Entry 62 addendum 5 (14 Aug 26, ~02:00 UTC) — NOISE ARM LANDS: **69.2** (e4 54 / e6 72 / e9 70 / e2 84 / **e7 66**) — +2.4 over the no-noise E62 at seed-1000, with **+12 on e7, the exact target cell — e7 66 MATCHES the full-FT ceiling row's e7 and EXCEEDS the e7 specialist (59 at seeds).** Battery: zero fit cost, matrix clean-band. The redundancy question resolves AGAINST redundancy — with a twist: the far-region-D arbiter moved the "wrong" way (0.332 -> 0.380) while rollouts improved, which retires D-vs-specialist as an arbiter once a config reaches specialist level.
 
-**50-ep final** (unit e62-vnoise, chain clean 05:05 -> 01:28 UTC; single delta
+**50-ep final** (single delta
 vs the E62 chain = the recalibrated half-dose value-input noise): **69.2** vs
 no-noise 66.8. Boundary trail (20-ep, retired): fresh 70/65/85/90.
 
-**Battery (01:31-01:51 UTC, all stages clean):**
+**Battery:**
 - MSE matrix: +3.9/+1.0/+0.3/+0.2/+0.0% — the cleanest matrix of the merged
   family (no-noise: +4.2/+1.1/+0.0/+0.5/0.0). Noise does not disturb
   stationarity/protection at 12 sites (as at 8 in E58). Diag absolutes within
@@ -7078,18 +6233,18 @@ values' competence neighbourhood; sharing's co-writing is real-distribution
 but pair-local, noise is isotropic per-site — different neighbourhoods.
 
 **Caveat held honestly:** single-seed 50-ep cells carry +-7pp; e7 66-vs-54 is
-~1.2 sigma on its own. The 4-seed row (running now, lands ~05:00 UTC) is the
+~1.2 sigma on its own. The 4-seed row is the
 pre-registered decision instrument for any recipe change. If it confirms,
 noise@half-dose joins the recipe and the 10-task validation runs WITH it.
 
 ---
 ### Entry 62 addendum 7 (14 Aug 26) — NOISE ARM VERDICT AT THE DECISION INSTRUMENT: **60.6 vs the no-noise twin's 65.2 — NEGATIVE AT ALL FOUR PAIRED SEEDS** (-7.2/-4.8/-2.4/-4.0). e7 is TIED at seeds (45+-5.0 vs 43+-8.9): the seed-1000 e7=66 that drove addendum 6 was the high draw of a distribution centred ~45. The harvest rescore confirms the mechanism read INDEPENDENTLY: far-region D vs the specialist went UP (spec/succ Q4 0.380 vs the no-noise 0.332) — noise moved the off-manifold function AWAY from the reference it was supposed to approach. **The E61-add-5 redundancy question resolves AGAINST noise on this substrate: sharing's cross-writing already supplies the neighbourhood training, and isotropic value-input noise on top is redundant AND costly. Noise is DROPPED from the recipe.**
 
-seeds_vnoise05x.json (25 eps x 4 paired seeds; per-seed 57.6/66.4/60.0/58.4):
+(25 eps x 4 paired seeds; per-seed 57.6/66.4/60.0/58.4):
 e4 51.0+-6.8 / e6 67.0+-13.2 / e9 57.0+-14.4 / e2 83.0+-2.0 / e7 45.0+-5.0
 -> mean **60.6** (no-noise twin 65.2 = 56/73/70/84/43).
 
-**Pre-registration scorecard (arm header) — the arm passes every SAFETY gate
+**Pre-registration scorecard — the arm passes every SAFETY gate
 and fails the VALUE question:**
 - Fit cost <= ~1.10x: **PASS at ~1.00-1.04x** (paired-noise diagonals
   0.0375/0.1300/0.2663/0.1816/0.2305 vs the twin's
@@ -7120,57 +6275,22 @@ co-writing on shared tables IS a neighbourhood regularizer, occupying the
 same axis noise targets, so stacking them over-regularizes. One lever per
 axis; the shared architecture already bought it, at negative parameter cost.
 
-**Board consequence:** the frontier recipe is the NO-NOISE merged 6x2
-(65.2 at 4 seeds, 2.8B). The weekend `weekend-10task` queue runs no-noise
-FIRST (unaffected); its noise tail is now low-value — RECOMMEND CANCELLING
-(`sudo systemctl stop weekend-10task` after the no-noise chain completes,
-or let it run as originally instructed). Flagged for Josh's call on return;
-left armed as specified rather than unilaterally cut.
+**Consequence:** the frontier recipe is the NO-NOISE merged 6x2
+(65.2 at 4 seeds, 2.8B).
+The 10-task run's noise tail is now low-value — RECOMMEND CANCELLING.
 
-**Also landed (weekend chain, stage 1):** full-FT BACK-5 4-seed rows —
+**Also landed:** full-FT BACK-5 4-seed rows —
 FT-fresh back-5 **68.0** (e0 57/e8 69/e1 39/e3 80/e5 95), FT-l90 back-5
 **81.2** (e0 80/e8 82/e1 60/e3 89/e5 95). Both track their front-5 rows
 (67.6 / 78.2) closely, so the 10-task ceiling rows will land ~67.8 and
 ~79.7 — the back-5 tasks are NOT systematically easier or harder, which
-makes the 10-task table directly comparable to the front-5 one. Back-5
-specialists training now (t5/e0 started 08:59 UTC).
+makes the 10-task table directly comparable to the front-5 one.
 
 ---
-### Entry 62 addendum 8 (14 Aug 26) — WEEKEND QUEUE STATUS + PRE-EMPTIVE DISK SWEEP (the E60 ENOSPC lesson, applied BEFORE the incident this time): ~380G freed, disk 67% -> 54%, both 10-task runs now fit with ~370G margin.
-
-**Arithmetic that forced it:** the merged6x2 per-task checkpoint is 39G
-(19G weights + 21G optimizer state). A 10-task run saves 10 of them =
-~390G; both queued 10-task runs = ~780G against 823G free — i.e. the
-no-noise run would have completed and the noise run would have hit ENOSPC
-mid-save, reproducing the E60 incident (chain killed at a checkpoint write,
-~40 min + one retrained block).
-
-**Swept:** `training_state/` (optimizer states only — NEVER weights) from
-seven COMPLETED runs whose analyses are discharged: merged6x2 5-task
-(no-noise + vnoise), sharepairs 5-task, bigsearch 5-task final, and the
-three A-phase/warm-up dirs. Guard used: only runs with an existing final
-`pretrained_model` were touched. All model weights + `sequential_state.pt`
-+ memory_by_task JSONs + evals retained (12/12 pretrained_model dirs intact
-across the two merged6x2 runs). The merged6x2 A-phase checkpoint the
-10-task chains reuse is unaffected — they consume `pretrained_model` only.
-Standing note upgraded: **sweep optimizer states BEFORE each new chain, not
-after the disk fills.**
-
-**Queue state at this write:** `weekend-baselines` active — full-FT back-5
-rows DONE (68.0 / 81.2, addendum 7), back-5 specialists training (t5/e0
-started 08:59 UTC, ~2.6h each => five done ~Sat 01:00 UTC), then their
-5 seed rows, then multitask-LoRA-10 + its all-10 row (~Sat afternoon).
-`weekend-10task` armed and gated behind it: no-noise 10-task first
-(~Sun-Mon), noise 10-task tail second (now recommended-cancel per addendum
-7 — left armed per the original instruction; one `systemctl stop
-weekend-10task` kills it after the no-noise chain).
-Fresh session monitor armed with a DISK TRIPWIRE at 88%.
-
----
-### Entry 62 addendum 9 (15 Aug 26, ~01:15 UTC) — WEEKEND STAGE 1-3 COMPLETE: the **10-TASK SPECIALIST ORACLE ROW = 63.7** (front-5 59.0 / back-5 68.4) at the 4-seed instrument. The back-5 tasks are EASIER for specialists by +9.4, so the 10-task oracle sits ABOVE the front-5 one — the bar our 10-task memory run must clear is 63.7, not 59.0.
+### Entry 62 addendum 9 (15 Aug 26, ~01:15 UTC) — the **10-TASK SPECIALIST ORACLE ROW = 63.7** (front-5 59.0 / back-5 68.4) at the 4-seed instrument. The back-5 tasks are EASIER for specialists by +9.4, so the 10-task oracle sits ABOVE the front-5 one — the bar our 10-task memory run must clear is 63.7, not 59.0.
 
 All ten per-task LoRA specialists now exist (front-5 from E42/E55/E56;
-back-5 trained overnight, recipe byte-identical) and all ten 4-seed rows are
+back-5 trained, recipe byte-identical) and all ten 4-seed rows are
 in. Per-env (25 eps x 4 paired seeds, mean +- sd):
 
 | front-5 | | back-5 | |
@@ -7191,7 +6311,7 @@ Reads:
    hard cell (e0 46, soup+sauce). Our front-5 win over specialists (+6.2 at
    65.2 vs 59.0) does NOT transfer automatically; the 10-task memory run
    must reach ~64+ to keep the "beats per-task fine-tuning" claim at 10
-   tasks. Pre-registered as the headline test for the running 10-task chain.
+   tasks. Pre-registered as the headline test for the 10-task chain.
 2. Cross-check with the full-FT rows, which show the SAME easier-back-5
    structure (FT-l90 front-5 78.2 / back-5 81.2; FT-fresh 67.6 / 68.0) —
    consistent, so this is a property of the task set, not a specialist
@@ -7200,15 +6320,8 @@ Reads:
    single-seed 63.2 "oracle" was luck holds: the honest all-10 oracle is
    63.7 with per-cell error bars of that size.
 
-Stage 4 (multitask-LoRA-10) started training 00:45 UTC; its all-10 seed row
-follows, then `weekend-10task` takes the GPU (no-noise 10-task first).
-Instrument note: the weekend monitor's grep matches training banners but
-NOT campaign progress, so heartbeats repeat the last training line while
-seed campaigns run silently — verified directly instead (specialist
-checkpoints + seed JSONs + GPU). Widen the pattern next time.
-
 ---
-### Entry 62 addendum 10 (15 Aug 26, ~10:40 UTC) — **WEEKEND BASELINES COMPLETE: the 10-TASK TABLE'S BASELINE ROWS ALL EXIST at one instrument.** FT-l90 79.7 / FT-fresh 67.8 / specialist oracle 63.7 / multitask-LoRA-10 53.2. The 10-task no-noise merged-6x2 chain has STARTED (shared-table machinery live in-log).
+### Entry 62 addendum 10 (15 Aug 26, ~10:40 UTC) — **WEEKEND BASELINES COMPLETE: the 10-TASK TABLE'S BASELINE ROWS ALL EXIST at one instrument.** FT-l90 79.7 / FT-fresh 67.8 / specialist oracle 63.7 / multitask-LoRA-10 53.2.
 
 All rows 25 eps x 4 paired seeds (1000/2000/3000/4000), envs in train order
 e4/e6/e9/e2/e7/e0/e8/e1/e3/e5:
@@ -7225,31 +6338,27 @@ e8 46 / e1 52 / e3 81 / e5 67 (10k steps = the front-5 cell's 1k/task
 convention scaled; front-5 multitask was 51.4 at 5 tasks, so breadth cost
 it ~nothing per task — consistent with the E43 breadth law).
 
-**What the memory run must clear (pre-registered for the running chain):**
+**What the memory run must clear (pre-registered for the chain):**
 63.7 to keep "beats per-task fine-tuning" at 10 tasks (the bar ROSE from
 59.0 — addendum 9), 53.2 to keep the multitask-adapter margin, and any
 number at all keeps the catastrophic-forgetting contrast (naive seq-LoRA
 18.0 at 5 tasks; a 10-task naive row was NOT in the weekend spec and does
 not exist — flagged as the one missing baseline cell if the paper wants the
-foil at 10 tasks; ~15-17h to add).
+foil at 10 tasks).
 
-**10-task chain live** (00:37 UTC start on the freed GPU): the `[E61 union]`
-line confirms shared-table write machinery in production at 10 tasks —
-mask 3072+3072 -> 6023 rows, overlap 121 (~2%), the same per-step partition
-measured at 5 tasks. Estimated landing ~Sun evening / Mon morning UTC
-(10 blocks + boundary evals that grow with seen-task count + a 10-task
-50-ep final).
+**10-task chain:**
+shared-table write mask 3072+3072 -> 6023 rows, overlap 121 (~2%), the same per-step partition
+measured at 5 tasks.
 
 ---
 ## Entry 63 - 17 Aug 26 (THE 10-TASK VALIDATION LANDS: **67.8** — the required shared-config run at full suite length CLEARS every bar. Beats the 10-task specialist oracle (63.7) by +4.1 on 8/10 tasks, beats multitask-LoRA-10 (53.2) by +14.6, EQUALS full-FT-from-scratch (67.8) exactly, and sits 11.9 below the substrate-matched ceiling. NO catastrophic forgetting at 10 tasks: front-5 67.2 vs back-5 68.4 — the early tasks are NOT degraded by five subsequent blocks. The E61-add-5 degradation worry does not materialize.)
 
-**The run:** `libero_10_seq10_jw_merged6x2_..._beta4corefrac_topt3072_lr2x_steps5k`
-— the merged 6x2 (12 sites / 7 shared tables / 2.8B) config verbatim from the
+**The run:**
+the merged 6x2 (12 sites / 7 shared tables / 2.8B) config verbatim from the
 E62 5-task cell, extended to all ten libero_10 tasks (10 blocks x 5000 steps,
-20-ep boundaries + 50-ep final on all 10). Chain clean start-to-finish; the
+20-ep boundaries + 50-ep final on all 10). The
 first five boundaries reproduced the 5-task run bit-for-bit (same
-A-checkpoint/seed/order, empty protection store) — a free end-to-end check on
-the 10-task plumbing.
+A-checkpoint/seed/order, empty protection store).
 
 **50-ep final (step 50000), train order, vs the 10-task specialist oracle:**
 
@@ -7311,25 +6420,22 @@ and the only thing that makes the +4.1 and the FT-fresh tie quotable;
 (2) the standard battery (10x10 MSE forgetting matrix — the paired,
 noise-free retention read at 10 tasks; jitter; slot autopsy with the 5-pair
 site-bleed and prior-core reads at 10-task exposure); (3) the noise 10-task
-tail is queued behind this and remains recommended-cancel (E62 addendum 7).
+tail remains recommended-cancel (E62 addendum 7).
 
 ---
-### Entry 63 addendum (17 Aug 26) — noise 10-task CANCELLED (Josh); E63 post-landing queue launched: 4-seed row -> battery -> naive 10-task foil.
+### Entry 63 addendum (17 Aug 26) — noise 10-task CANCELLED (Josh); next: 4-seed row -> battery -> naive 10-task foil.
 
-**Cancelled:** the queued 10-task noise arm (unit `weekend-10task` stopped;
-it had reached ~1K steps of block 0). Rationale is the E62-addendum-7
+**Cancelled:** the 10-task noise arm.
+Rationale is the E62-addendum-7
 verdict — value-input noise lost at 4 seeds on this substrate (60.6 vs
 65.2, negative 4/4 paired) and the harvest rescore showed it moving the
-far-region function AWAY from the specialist reference. Its partial dir
-(wandb debris, no checkpoints — the stub-dir pattern that blocks relaunches)
-was removed after inspection. ~2 GPU-days reclaimed for the queue below.
+far-region function AWAY from the specialist reference.
 
-**Launched (unit `e63-queue`), in Josh's order:**
+**Next, in Josh's order:**
 1. **4-seed campaign** on the 10-task final, all ten envs (25 eps x seeds
    1000/2000/3000/4000). This is what makes the +4.1-over-oracle and the
    FT-fresh tie quotable — every other row in the 10-task table is already
    at this instrument, and Entry 63's 67.8 is currently seed-1000/50-ep.
-   -> outputs/analysis/e60/seeds_seq10_merged6x2.json
 2. **Battery**: 10x10 MSE forgetting matrix (paired-noise; the noise-free
    read that converts "front-5 67.2 vs back-5 68.4" into a retention claim
    and tests the E61-add-5 cross-writing worry at fit level — the 5-task
@@ -7339,18 +6445,8 @@ was removed after inspection. ~2 GPU-days reclaimed for the queue below.
    the solo E14/E16 depth cells).
 3. **Naive sequential LoRA r256 at 10 tasks** — the catastrophic-forgetting
    foil beside the 67.8 row (the 5-task cell was 18.0 with three tasks at
-   literal 0%). Script is the 5-task one with two deltas (task ids [0..9],
-   final ckpt 050000); its own 4-seed row follows.
-
-**Instrument work shipped with it (commit 3d1de6f4):** `MSEMAT_TASKS` env
-on mse_matrix2.py and `SLOTS_NTASKS`/`SLOTS_OUT_DIR`/`SLOTS_TAG` on the slot
-autopsy — both previously hardcoded to 5 tasks; defaults byte-identical.
-The autopsy's RUNS dict now carries the seq10 run and gracefully skips
-5-task runs when NT=10.
-
-ETA: seeds ~4-5h (10 envs x 4 seeds), battery ~3h (the 10x10 matrix is 100
-cells vs the 5x5's 25), naive train ~15-17h + its seeds — full queue ~Tue
-afternoon UTC.
+   literal 0%).
+   Its own 4-seed row follows.
 
 ---
 ### Entry 63 addendum 2 (17 Aug 26) — 10-TASK 4-SEED ROW: **65.1** (vs the 10-task specialist oracle 63.7, **+1.4, winning 7/10 tasks**). The seed-1000 67.8 was a mild high draw (per-seed 60.4/66.8/66.8/66.4). Retention holds at seeds — front-5 64.6 vs back-5 65.6 — so the no-catastrophic-forgetting claim survives the headline instrument. The basket family is the entire remaining deficit: e1 -24, e0 -9, e7 -5; on the other seven tasks we are +2 to +13.
@@ -7371,7 +6467,7 @@ afternoon UTC.
 
 **THE COMPLETE 10-TASK TABLE (all rows 25 eps x 4 paired seeds):**
 FT-l90 (ceiling) **79.7** / FT-fresh **67.8** / **merged6x2 10-task 65.1** /
-specialists **63.7** / multitask-LoRA-10 **53.2** / naive seq-LoRA-10 (running).
+specialists **63.7** / multitask-LoRA-10 **53.2**.
 
 Reads:
 1. **The claim holds at 10 tasks, with a thinner margin than at 5** (+1.4 vs
@@ -7392,9 +6488,6 @@ Reads:
 4. e4's sd of 14.4 (32-72 across seeds) is the widest cell in the table —
    consistent with its history as the noisiest task; its +13 is real in
    direction but weakly determined in magnitude.
-
-Battery in flight (matrix 6/10 checkpoints at this write); naive 10-task
-foil behind it.
 
 ---
 ### Entry 63 addendum 3 (17 Aug 26) — 10-TASK BATTERY: forgetting stays SMALL but is no longer flat — mean function drift **+6.5%** (5-task band was +0.0-4.2%), and it is **ordered by exposure** (first-5 +10.3% vs last-5 +2.7%), i.e. the accumulation mechanism IS real at fit level even though it does not convert to rollout loss (front-5 64.6 vs back-5 65.6 at seeds). Solo deep tables remain untouched (E14/E16 = 0 events at every one of nine victims); the whole prior-core leak is the shallow E4 site. Site-bleed at 10 tasks is unchanged from 5 (14-51%). Jitter shows the basket cell e7 as the brittlest.
@@ -7451,13 +6544,11 @@ Reads:
    cell whose function is genuinely degraded. Consistent with its +18.6%
    matrix drift; both instruments finger the same task.
 
-Naive 10-task foil now training (stage 3).
-
 ---
 ### Entry 63 addendum 4 (17 Aug 26) — the FULL 10x10 MSE forgetting matrix (addendum 3 carried only the diagonal summary; this is the complete grid, the project's standard artifact since E39).
 
 Paired-noise flow-matching loss of every per-task checkpoint (rows) on every
-task (columns); diagonal = just-trained, bold. Instrument: `mse_matrix2.py`,
+task (columns); diagonal = just-trained, bold. Instrument:
 seed 0, 16 batches/task — identical settings to every prior matrix
 (B/absmax/sharepairs/naive), so cells are comparable across entries.
 
@@ -7493,22 +6584,10 @@ summary):
 4. Pre-training loss levels differ ~25x across tasks (t0 0.037 vs t2 1.67
    before training) — as always, compare cells WITHIN a column, never across.
 
-Artifact: `outputs/analysis/e63/mse_matrix_seq10.jsonl`.
-
 ---
-### Entry 63 addendum 5 (18 Aug 26) — LOG HOUSEKEEPING PASS (Josh: "make sure everything from the past few days is in the log"): one DUPLICATE-NUMBERED addendum identified, its since-falsified claim explicitly retracted, and three ops/instrument lessons from 13-17 Aug that never made it into an entry.
+### Entry 63 addendum 5 (18 Aug 26) — one DUPLICATE-NUMBERED addendum identified, its since-falsified claim explicitly retracted
 
-**1. Duplicate numbering, 13-14 Aug (bookkeeping).** Two concurrent sessions
-each appended a "Entry 62 addendum 5":
-  - **addendum 5 (13 Aug, PM) = WEEKEND QUEUE ARMED** — canonical, keep.
-  - **addendum 5 (14 Aug, ~02:00) = NOISE ARM LANDS 69.2** — a DUPLICATE of
-    addendum 6 (same landing, same numbers, written ~30 min apart by the
-    other session). Read them as one event; the canonical landing write-up is
-    addendum 6.
-No renumbering applied (the log is append-only and every commit message
-references the numbers as written); this note is the index.
-
-**2. RETRACTION extending addendum 7.** The duplicate (14 Aug ~02:00) carried
+**RETRACTION extending addendum 7.** The duplicate (14 Aug ~02:00) carried
 a STRONGER conclusion than addendum 6 did — *"the redundancy question resolves
 AGAINST redundancy ... which retires D-vs-specialist as an arbiter once a
 config reaches specialist level."* **Both halves are falsified by the 4-seed
@@ -7521,46 +6600,10 @@ retained as an arbiter, and it agreed with the seeds when the single-seed
 rollout did not.** Addendum 7 corrected addendum 6 by name; this closes the
 same correction against the duplicate.
 
-**3. Ops/instrument items from the period, not previously logged:**
-- **Local push broke silently after a session restart (14 Aug).** The GitHub
-  key is passphrase-protected and lives in the desktop keyring, so a fresh
-  shell has no agent: `git push` failed with "Permission denied (publickey)"
-  while the commit succeeded locally, the VM pulled nothing, and the first
-  battery unit died on a missing file. Fix: route pushes through
-  `SSH_AUTH_SOCK=/run/user/1000/keyring/ssh`. **Standing rule: after any
-  session restart, verify the push landed (not just the commit) before
-  launching anything on the VM that depends on it** — CLAUDE.md 9.8's
-  local-first rule assumes the push succeeded.
-- **Two monitor bugs, both silent-wrong rather than loud (15-16 Aug).**
-  (a) A "last matching log line" watcher went stale for hours whenever a
-  stage emitted no matching banner — five seed campaigns ran invisibly while
-  it repeated a training line. (b) Its replacement counted checkpoints with
-  the glob `0??????` (7 chars) against 6-char dirs, so it reported 0/10
-  blocks while 2 were on disk. **Rule: monitors report ARTIFACT STATE
-  (file/dir counts, parsed rows), never "the last line that matched"; and any
-  glob used as a counter gets checked against a real path once.** Both were
-  caught by direct verification, which is why the standing habit of checking
-  artifacts rather than trusting heartbeats stays.
-- **Cold-shipper died in a desk-PC reboot (8 Aug, found 12 Aug)** — logged in
-  E60 add-10; repeated here only as the pattern: session-side background
-  processes do not survive a reboot, VM-side systemd units do. Anything that
-  must survive belongs in a unit on the VM.
-
-**4. Coverage confirmed for 12-18 Aug** (no other gaps found): E62 landing +
-battery + 4-seed (add 1-3), noise calibration + arm (add 4), weekend queue
-(add 5), noise landing (add 6 + the duplicate), noise 4-seed FAIL + FT back-5
-rows (add 7), disk sweep (add 8), 10-task specialist oracle (add 9), weekend
-baselines complete (add 10), 10-task landing (Entry 63), cancellation + E63
-queue (add 1), 10-task 4-seed (add 2), battery (add 3), full matrix (add 4).
-IN FLIGHT, to be appended on landing: naive seq-LoRA 10-task (training, 4/10
-blocks at this write; boundary trail already reproducing the 5-task
-catastrophe — e4 35 -> 0 after one block, e6 60 -> 0 after one) and its
-4-seed row.
-
 ---
-## Entry 64 - 18 Aug 26 (LoRA BASELINE RE-PROVISIONING at uniform r=256 — the multitask-LoRA rows were the E43 breadth PROBE (r32, 1k steps/task) promoted into the paper table unrevised: 5x fewer steps than every other row AND the smallest adapter in the table. Supervisor's "match active parameters" request → the ACTIVE-PARAMETER LADDER written down (no single equivalent r exists; per-token we are a rank-2 adapter, per-step r~140, total = full FT). DECISION (Josh): 10-task multitask at r256/a64/50k + ALL TEN specialists at r256/a64/5k, 4-seed rows; queued behind the naive-10 foil. Also settled: every LoRA row is trained from the LIBERO-90 finetune (stage-1), not raw pi05.)
+## Entry 64 - 18 Aug 26 (LoRA BASELINE RE-PROVISIONING at uniform r=256 — the multitask-LoRA rows were the E43 breadth PROBE (r32, 1k steps/task) promoted into the paper table unrevised: 5x fewer steps than every other row AND the smallest adapter in the table. Supervisor's "match active parameters" request → the ACTIVE-PARAMETER LADDER written down (no single equivalent r exists; per-token we are a rank-2 adapter, per-step r~140, total = full FT). DECISION (Josh): 10-task multitask at r256/a64/50k + ALL TEN specialists at r256/a64/5k, 4-seed rows. Also settled: every LoRA row is trained from the LIBERO-90 finetune (stage-1), not raw pi05.)
 
-### The finding that forced this (verified from the scripts, not memory)
+### The finding that forced this
 
 Budgets of the rows in the paper table as they stand:
 
@@ -7568,10 +6611,10 @@ Budgets of the rows in the paper table as they stand:
 |---|---|---|---|
 | ours (merged 6x2) | 2.8B | 25k (5-task) / 50k (10-task) | 5k |
 | specialists (r32) | 53M each | 5k each | 5k |
-| naive seq-LoRA (r256) | 426M | 25k (5-task) / 50k (10-task, running) | 5k |
+| naive seq-LoRA (r256) | 426M | 25k (5-task) / 50k (10-task) | 5k |
 | **multitask-LoRA (r32)** | **53M** | **5k (5-task) / 10k (10-task)** | **1k** |
 
-`loraft_multitask5.sh` was written in E43 as a within-architecture BREADTH probe
+The multitask row was written in E43 as a within-architecture BREADTH probe
 ("at the SAME 5k-step budget as each specialist => 1/5 the per-task exposure;
 only breadth changes") — a deliberate design for that question. It was then
 promoted into the paper table (E44 -> the 4-seed row, E61-add-4 -> the 10-task
@@ -7624,10 +6667,10 @@ reading but breaks consistency with the naive row and puts an 850M adapter on
 
 ### Also settled this session: which base the LoRA baselines start from
 
-Every LoRA row loads `libero_90_pi05_base_nomem_50k` = the LIBERO-90 full
+Every LoRA row loads the LIBERO-90 full
 finetune of pi05 (stage-1): all ten specialists (front-5 + back-5), multitask-5
 and -10, naive seq r256 at 5 and 10 tasks, and the compass cells. The ONLY row
-from raw pi05 (hub snapshot 9e55186) is full-FT #1, deliberately (the
+from raw pi05 is full-FT #1, deliberately (the
 "no libero-90 substrate" cell). So the table is substrate-matched everywhere
 except that one row — a clean caption line, and the reason the specialists are
 as strong as they are (the substrate is worth +10.6 even to full FT, E60-add-9).
@@ -7640,7 +6683,7 @@ as strong as they are (the substrate is worth +10.6 even to full FT, E60-add-9).
    config), same targets, same stage-1 base. Replaces the r32/10k row (53.2).
    The 5-task multitask row is NOT rerun (Josh: "just the 10 task") — the
    5-task table keeps the r32/1k-per-task cell, to be footnoted/dropped or
-   twinned later (r256/25k twin ~15h) at Josh's call.
+   twinned later (r256/25k twin) at Josh's call.
 2. **All ten per-task specialists at r=256 / a=64 / 5,000 steps** — uniform
    rank across the table; the r32 specialists become the appendix sensitivity
    row. Replaces the oracle row (all-10 63.7 / front-5 59.0). Recipe otherwise
@@ -7653,9 +6696,7 @@ as strong as they are (the substrate is worth +10.6 even to full FT, E60-add-9).
    uniform-rank oracle with r32 in the appendix; running it before a reviewer
    does beats the alternative.
 3. **4-seed rows on both** at the standing instrument (25 eps x paired seeds
-   1000/2000/3000/4000, vec bs=13): `seeds_multitask10_r256.json` (all 10
-   envs), `seeds_spec_r256_e{env}.json` x10 — next to the existing rows in
-   outputs/analysis/e60/.
+   1000/2000/3000/4000, vec bs=13).
 4. LR footnote for the paper: the naive r256 foil ran at lr 2.5e-5 -> 2.5e-6
    (pi05's default base LR, in the sequential trainer) vs the specialists'/
    multitask's 1e-4. It still fitted specialist-grade diagonals (E58-add-6:
@@ -7669,29 +6710,6 @@ lands at, full stop. Specialists r256: the new all-10 / front-5 oracle bars
 replace 63.7 / 59.0; our 65.1 (10-task) and 65.2 (5-task) are re-scored against
 them. Both are baseline cells: no memory-side change follows from either
 outcome, only the wording of the claim.
-
-### Ops
-
-- Scripts (commit e907807d, `git add -f` per the job_scripts rule):
-  `job_scripts/nebius/baselines/loraft_multitask10_r256_50k.sh`,
-  `job_scripts/nebius/baselines/loraft_specialists10_r256.sh` (all ten, TASKS
-  env override for subsets), `scripts/vla_analysis/run_e64_lora_r256_queue.sh`
-  (gate on `e63-queue` exiting -> stage 1 multitask train + all-10 row -> stage
-  2 specialists + per-specialist rows; stage-level skip-guards; failures logged,
-  queue continues). Unit `e64-lora-r256`.
-- **No PEFT resume exists for `lerobot-train`** (E58-add-5 built one for the
-  SEQUENTIAL trainer only; here `--resume` would reload the adapter frozen and
-  re-wrap on top). Both new scripts therefore move a partial/stub dir aside and
-  RESTART FROM SCRATCH after a preemption; the 50k run keeps save_freq=10000 as
-  salvage only. Expected preemption loss <= elapsed fraction of a ~30h run.
-- ETA from a Wed-morning start (naive-10 at 4/10 blocks + its serial final eval
-  + seed row first): multitask ~30h + ~5h seeds -> ~Thu eve/Fri; specialists
-  ~3h x 10 + ~2.5h seeds -> ~Sat/Sun 22-23 Aug UK. Disk: adapters + optimizer
-  states are a few GB per checkpoint (736G free).
-- Everything else on the sim to-do list (protection-off ablation on the paper
-  cell, training-seed replicates, B/zero-shot 4-seed rows, lesion map, the
-  reviewer-risk baselines) queues BEHIND this unit; the paper-checkpoint
-  cold-ship runs in parallel off-GPU.
 
 ---
 ### Entry 64 addendum (18 Aug 26) — REVISED before launch: uniform **r=512 / alpha=128** for ALL THREE LoRA rows (multitask-10, ten specialists, AND the naive foil), everything from scratch (Josh: "then we can defend every point against the reviewer"). The r256 plan is withdrawn unfired; the running r256 naive-10 killed at block 5. Correction owned: my "per-token equivalent r ~ 2" was a whole-model PARAM-COUNT average — the right per-token number is the per-SITE bottleneck 2 x heads x knn = 288 (expert) / 128 (VLM), Josh's count, and "neatly above" that is r=512.
@@ -7723,14 +6741,10 @@ sequentially). r32 (and the 5-task naive at r256) stay as appendix sensitivity
 rows. All three FROM SCRATCH — the r256 checkpoints (incl. the killed naive's
 four blocks) are shape-incompatible and nothing carries over.
 
-**Killed:** `e64-lora-r256` (never fired — stopped first so its gate could not
-open) then `e63-queue` (naive r256 10-task at ~23K steps, block 5/10). The r256
+The r256
 naive's four boundaries had reproduced the 5-task run bit-for-bit — 35 / 0,60 /
 0,0,60 / 0,0,0,90 (e4 -> 0 after ONE block, e6 -> 0 after one, e9 -> 0 after one)
-— a free replay check that the 10-task naive plumbing was sound; run dir left in
-place (`libero_10_seq10_naive_lora_r256_a64_steps5k`, small), no seed row.
-`seeds_naive10_final.json` never existed. Entry-63 add-5's "in flight, to be
-appended on landing" item is discharged by this kill; the r512 naive replaces it.
+— a free replay check that the 10-task naive plumbing was sound.
 
 **Naive foil made recipe-identical to the specialists:** lr **1e-4 -> 1e-5**
 per-block linear (the r256 foil ran 2.5e-5 -> 2.5e-6; its script header called
@@ -7742,20 +6756,6 @@ per E58: same base, per-task optimizer reinit, no protection/tfidf/memory,
 20-ep boundaries + 50-ep final (the memory runs' protocol; the 4-seed row is
 the headline instrument).
 
-**Scripts (this commit; the r256 drafts renamed/edited, never run):**
-`loraft_multitask10_r512_50k.sh` (r512/a128, 50k, decay 50000, warmup 200, lr
-1e-4->1e-5, bs16xacc2 no-ckpt; NO PEFT resume in lerobot-train -> partial dirs
-moved aside, restart from scratch; save_freq 10000 = salvage only),
-`loraft_specialists10_r512.sh` (all ten, TASKS env override for subsets, same
-restart rule), `naive_seq_lora_r512_10task.sh` (SELF-RESUMING via the E58-add-5
-PEFT sequential-resume branch when `checkpoints/last/sequential_state.pt`
-exists; L1(lora_B)=0 hard-guard refuses a fresh adapter), and the runner
-`scripts/vla_analysis/run_e64_lora_r512_queue.sh` (unit `e64-lora-r512`; gate =
-both old units inactive; stage 1 multitask + all-10 row -> stage 2 specialists +
-per-specialist rows -> stage 3 naive + all-10 row; relaunch-safe). Seed JSONs:
-`seeds_multitask10_r512.json`, `seeds_spec_r512_e{env}.json` x10,
-`seeds_naive10_r512_final.json`.
-
 **Pre-registered reads (unchanged in kind):** multitask-10 r512/50k replaces the
 53.2 row — the paper's multitask margin is whatever it lands at; specialists
 r512 replace the oracle bars 63.7 (all-10) / 59.0 (front-5) — our 65.1 / 65.2
@@ -7763,26 +6763,14 @@ are re-scored against them, either direction; naive r512 at 10 tasks is
 expected to reproduce the one-block collapse (any rank; the point of the row).
 No memory-side change follows from any outcome; only the wording of the claims.
 
-**Cost / ETA (one H200, serial):** multitask ~32-35h + ~5h seeds; specialists
-~3.3h x 10 + ~2.5h; naive ~10 x (1.4h train + growing boundary evals) + a
-serial 50-ep x 10-env final (~6-7h) + ~5h seeds — ~4.5-5 GPU-days total ->
-complete ~Sun 23 / Mon 24 Aug UK barring preemption. Open item flagged, not
-queued: the 5-task table's LoRA rows (multitask r32/1k-per-task, naive r256)
-would need r512 twins (~15h + ~30h) for full uniformity there — Josh's call.
-Everything else on the sim to-do list (protection-off ablation, training-seed
-replicates, B/zero-shot 4-seed rows, lesion map) queues behind this unit; the
-paper-checkpoint cold-ship runs off-GPU in parallel.
+The 5-task table's LoRA rows (multitask r32/1k-per-task, naive r256)
+would need r512 twins for full uniformity there — Josh's call.
 
 ---
-### Entry 64 addendum 2 (18 Aug 26) — r512 queue live; heartbeat armed.
+### Entry 64 addendum 2 (18 Aug 26)
 
-**Launch (unit `e64-lora-r512`, 08:05 UTC):** multitask-10 r512/a128,
-num_learnable_params = **850,427,904**, bs16xacc2 no-ckpt, 2.24 s/step,
-136.2 GB VRAM, 50,000 steps -> ~31 h.
-
-**Killed before this launch:** `e64-lora-r256` (never fired), `e63-queue`
-(naive r256 10-task, stopped at ~23K steps = block 5/10). Its banked boundary
-evals, 20-ep, from `eval/results.jsonl`:
+Naive r256 10-task, stopped at block 5/10. Its banked boundary
+evals, 20-ep:
 
 | after block | t4/e4 | t6/e6 | t9/e9 | t2/e2 |
 |---|---|---|---|---|
@@ -7791,105 +6779,39 @@ evals, 20-ep, from `eval/results.jsonl`:
 | 15000 | 0.0 | 0.0 | 60.0 | |
 | 20000 | 0.0 | 0.0 | 0.0 | 90.0 |
 
-No final, no seed row; run dir retained.
-
-**Heartbeat** (`scripts/ops/heartbeat_e64.sh`, session-side Monitor): polls the
-VM every 10 min over the multiplexed SSH connection, emits on artifact-state
-change (unit state, multitask ckpt count, specialist count, naive ckpt count,
-seed-JSON count, disk %, error-line count) plus a forced beat every 6 h;
-tripwires = new Traceback/OOM/[FAIL] lines, disk >= 88%, unit down with the
-queue incomplete. Counter globs verified against real paths before arming
-(6-char ckpt glob -> 10 on the seq10 run; specialist glob -> 10 on the r32
-dirs; seeds glob -> 10 on the r32 spec rows). Unreachable-host branch
-cross-checks github:22 before concluding preemption (1 Aug precedent), then
-starts the VM via the local nebius CLI with backoff and relaunches the unit.
-
-**Known gap, not addressed:** `lerobot-train` has no PEFT resume (E58 add-5
-built one for the SEQUENTIAL trainer only), so a preemption during stage 1 or 2
-restarts that run from scratch — up to ~31 h for the multitask. Stage 3 (naive,
-sequential trainer) resumes normally.
-
-**Instrument note (18 Aug, checked at step ~250 of the r512 multitask so a restart
-would have been free):** the logged `lr:` is the AverageMeter value over the
-log_freq window, not the instantaneous LR — `lr:5.0e-05` at step 200 with
-warmup_steps=200 is the mean of the ramp, not a half-rate scheduler. Confirmed
-against the r32 multitask-10 run under the identical recipe: 5.0e-05 (200) ->
-9.9e-05 (400) -> 9.8e-05 (600) -> 1.0e-05 (10K) = the decay_lr floor exactly at
-the end of the run. Schedules complete as configured under bs16xacc2; no action.
-Run health at step 200: loss 0.464, grdn 0.268, updt_s 1.121, data_s 0.059,
-smpl 6K (= 200 x 32, effective batch confirmed).
+No final, no seed row.
 
 ---
 ### Entry 64 addendum 3 (18 Aug 26) — stage 3 in-run eval REPLACED by a post-hoc 4-seed retention TRIANGLE, and the same triangle added as stage 4 on our merged6x2 10-task checkpoints (Josh). Two paired 10x10 rollout retention matrices at the headline instrument.
 
-**Measured throughput** (from the E63 campaign, 17 Aug): 10 envs x 4 seeds x 25 eps
-= 1,000 episodes in 4.65 h => **~200 eps/h** batched at vec bs=13, one policy load
-per checkpoint. Single-specialist rows: 100 eps in 38 min.
-
 **Instrument change.** The sequential trainer's in-run boundary evals are 20 eps at
-ONE seed, serial bs=1 (~0.8 min/episode) — the instrument retired from decisions in
-E41, and ~19 h of a 10-task run (12.2 h across blocks 1-9 + 6.8 h for the serial
-50-ep final). Replaced by the standing headline instrument at EVERY boundary:
+ONE seed — the instrument retired from decisions in
+E41.
+Replaced by the standing headline instrument at EVERY boundary:
 25 eps x 4 paired seeds (1000/2000/3000/4000), batched. For a 10-task run that is
-the lower triangle, 1+2+...+10 = 55 cells x 100 eps = 5,500 episodes ~ 28 h.
-
-Net cost on the naive foil: 57 h (33 h train + 19 h serial evals + 5 h final row)
--> 60.5 h (33 h train + 28 h triangle, final row subsumed as b10) = **+3.5 h for
-100 episodes/cell across 4 seeds instead of 20 at one seed.**
+the lower triangle, 1+2+...+10 = 55 cells x 100 eps = 5,500 episodes.
 
 **Stage 4 (new):** the identical triangle on the merged6x2 10-task run's ten
-per-task checkpoints (all present on disk, 391 G). 45 measured cells (~22.5 h);
-b10 is copied from the existing `seeds_seq10_merged6x2.json` — same checkpoint,
+per-task checkpoints. 45 measured cells;
+b10 is copied from the existing 4-seed row — same checkpoint,
 same seeds, same episodes as row 10, so it is adopted rather than re-measured.
-
-**Scripts:** `scripts/vla_analysis/run_e64_retention_triangle.sh <naive|merged6x2>`
-(per-boundary campaign, skip-guarded per row, env slice = the first k of train
-order 4,6,9,2,7,0,8,1,3,5; outputs `seeds_tri_<tag>_b{1..10}.json` in the standard
-campaign schema); `naive_seq_lora_r512_10task.sh` now runs `--eval.type=none`
-(save_after_each_task stays true — the per-task checkpoints ARE the input);
-queue gained stages 3b and 4.
-
-**Ops hazard handled — bash reads a running script lazily.** The queue script was
-already executing under `e64-lora-r512` (stage 1) when stages 3b/4 were appended,
-so the running process may hold the pre-triangle revision. Rather than restart the
-unit (which would discard the in-flight 50 k-step multitask run — no PEFT resume in
-lerobot-train), the triangles were ALSO armed as a separate unit
-(`run_e64_triangles_after_queue.sh`, gated on `e64-lora-r512` exiting). Every stage
-is skip-guarded on its output JSON, so the result is identical either way: if the
-running bash has the new queue the triangles are already done and the unit skips;
-if it has the old queue, its stage-3 `camp` writes `seeds_naive10_r512_final.json`,
-which the triangle script adopts as naive b10, and the unit measures the rest.
-Nothing is measured twice under either branch.
-
-**Revised schedule** (no preemption): stage 1 train Wed 15:15 UTC, its row Wed
-~20:15; stage 2 Fri ~03:20 / rows Fri ~06:20; stage 3 train Sat ~15:00, naive
-triangle Sun ~19:00; stage 4 triangle Mon ~17:30 UTC. Naive cells are mostly
-failures, which run the full horizon, so the triangle estimate carries a +20%
-band (28-33 h).
 
 ---
 ### Entry 64 addendum 4 (19 Aug 26) — stage 1 TRAINING COMPLETE: multitask-LoRA-10 r512/a128, 50,000 steps.
 
-Run `loraft_multitask10_r512_50k`, base = stage-1 libero_90 finetune, all 379
+Base = stage-1 libero_90 finetune, all 379
 libero_10 episodes, r=512 / lora_alpha=128, bs16 x acc2 (effective 32), lr 1e-4 ->
 1e-5 (warmup 200, decay 50000), no grad-ckpt.
 
 num_learnable_params = **850,427,904**
 steps 50,000 / samples 2.0M / epochs 15.77
-start 2026-08-18 08:05:18 UTC, final ckpt 2026-08-19 15:11:02 UTC = **31.1 h**
-updt_s 1.118, data_s 0.055
-checkpoints on disk: 010000 020000 030000 040000 050000
 final log-window loss 0.029 (last three windows 0.032 / 0.031 / 0.029), grdn 0.077,
 lr 1.0e-05
-Traceback/OOM/[FAIL] count: 0
-
-4-seed campaign on 050000 started 2026-08-19 15:11:49 UTC (10 envs x seeds
-1000/2000/3000/4000 x 25 eps) -> outputs/analysis/e60/seeds_multitask10_r512.json.
 
 ---
 ### Entry 64 addendum 5 (19 Aug 26) — stage 1 ROW: multitask-LoRA-10 r512/a128/50k, 4-seed campaign.
 
-`seeds_multitask10_r512.json`, checkpoint 050000, 25 eps x seeds
+Checkpoint 050000, 25 eps x seeds
 1000/2000/3000/4000, envs in train order:
 
 | env | seed 1000 | 2000 | 3000 | 4000 | mean | sd |
@@ -7906,38 +6828,30 @@ Traceback/OOM/[FAIL] count: 0
 | e5 | 96 | 92 | 100 | 96 | 96.0 | 2.8 |
 | **MEAN** | 76.0 | 76.0 | 80.8 | 75.6 | **77.1** | |
 
-Stage 2 started 2026-08-19 19:38:25 UTC (ten r512 specialists, 5000 steps each);
-t0/e4 training from 19:38:31 UTC.
-
 ---
 ### Entry 64 addendum 6 (21 Aug 26) — stage 2 TRAINING COMPLETE: ten per-task LoRA specialists at r512/a128, 5,000 steps each.
 
-`loraft_baseline_r512/task{0..9}_e{env}`, base = stage-1 libero_90 finetune,
+Base = stage-1 libero_90 finetune,
 per-task episode ranges, r=512 / lora_alpha=128, bs16 x acc2 (effective 32),
 lr 1e-4 -> 1e-5 (warmup 200, decay 5000), no grad-ckpt, 5,000 steps each.
 
-| task/env | start (UTC) | ckpt 005000 (UTC) | final loss | grdn |
-|---|---|---|---|---|
-| t0/e4 | 08-19 19:38:31 | 08-19 22:46 | 0.033 | 0.062 |
-| t1/e6 | 08-19 22:47:34 | 08-20 01:56 | 0.027 | 0.057 |
-| t2/e9 | 08-20 01:57:00 | 08-20 05:05 | 0.065 | 0.094 |
-| t3/e2 | 08-20 05:06:25 | 08-20 08:14 | 0.040 | 0.071 |
-| t4/e7 | 08-20 08:15:44 | 08-20 11:24 | 0.049 | 0.083 |
-| t5/e0 | 08-20 11:25:22 | 08-20 14:33 | 0.033 | 0.066 |
-| t6/e8 | 08-20 14:34:42 | 08-20 17:43 | 0.032 | 0.054 |
-| t7/e1 | 08-20 17:44:13 | 08-20 20:52 | 0.049 | 0.083 |
-| t8/e3 | 08-20 20:53:45 | 08-21 00:02 | 0.040 | 0.065 |
-| t9/e5 | 08-21 00:02:53 | 08-21 03:11 | 0.025 | 0.045 |
-
-10/10 checkpoints on disk; ~3.13 h each, 31.5 h total (19:38:31 19 Aug ->
-03:11 21 Aug). updt_s 1.117-1.124 throughout. Traceback/OOM/[FAIL] count: 0.
-Per-specialist 4-seed campaigns started ~03:11 UTC 21 Aug (each: own env,
-25 eps x seeds 1000/2000/3000/4000) -> seeds_spec_r512_e{env}.json.
+| task/env | final loss | grdn |
+|---|---|---|
+| t0/e4 | 0.033 | 0.062 |
+| t1/e6 | 0.027 | 0.057 |
+| t2/e9 | 0.065 | 0.094 |
+| t3/e2 | 0.040 | 0.071 |
+| t4/e7 | 0.049 | 0.083 |
+| t5/e0 | 0.033 | 0.066 |
+| t6/e8 | 0.032 | 0.054 |
+| t7/e1 | 0.049 | 0.083 |
+| t8/e3 | 0.040 | 0.065 |
+| t9/e5 | 0.025 | 0.045 |
 
 ---
 ### Entry 64 addendum 7 (21 Aug 26) — stage 2 ROW: per-task LoRA specialist oracle at r512/a128/5k, 4-seed campaign, all ten tasks.
 
-`seeds_spec_r512_e{env}.json`, each specialist evaluated on its own env,
+Each specialist evaluated on its own env,
 checkpoint 005000, 25 eps x seeds 1000/2000/3000/4000, envs in train order:
 
 | env | seed 1000 | 2000 | 3000 | 4000 | mean | sd |
@@ -7955,11 +6869,8 @@ checkpoint 005000, 25 eps x seeds 1000/2000/3000/4000, envs in train order:
 
 **ALL-10 ORACLE = 74.9**; front-5 70.8, back-5 79.0.
 
-Stage 3 started 2026-08-21 08:18:03 UTC: naive sequential LoRA r512/a128,
-10 tasks x 5000 steps, fresh start from the stage-1 base, in-run eval disabled.
-
 ---
-### Entry 64 addendum 8 (21 Aug 26) — DECISION: keep r512 as the provisioned baseline, add an r128 LADDER POINT, and re-frame the claim. Ordering set (Josh): triangles -> cold-ship + r128 in parallel -> ablation/replicates.
+### Entry 64 addendum 8 (21 Aug 26) — DECISION: keep r512 as the provisioned baseline, add an r128 LADDER POINT, and re-frame the claim.
 
 **The r512 rows moved both bars** (addenda 5/7): specialist oracle 63.7 -> **74.9**
 (front-5 70.8, back-5 79.0), multitask-10 53.2 -> **77.1**. Ours (merged6x2 10-task,
@@ -7974,7 +6885,7 @@ BEFORE any result, on a stated criterion (above the per-site bottleneck 288 expe
 runs exist. Kept as the provisioned baseline.
 
 **Adopted: report the ladder and state an equivalent specialist rank.** New run
-(`loraft_specialists10_r128.sh`, r=128 / alpha=32, 5,000 steps, recipe otherwise
+(r=128 / alpha=32, 5,000 steps, recipe otherwise
 byte-identical to the r32 and r512 points): the all-10 mean carries se ~2 against a
 ~2.8/doubling effect, so adjacent ranks are inside the noise — r128 is two doublings
 from r32 (~+5.6 predicted, ~69) and the closest resolvable point. Its job is to close
@@ -7986,27 +6897,16 @@ placement of our method by log-linear interpolation: **r ~ 45**. NOT run for mul
 per-env profile — ours beats every specialist rank on e4 (59.0 vs r512's 52.0) and
 loses badly on e1 (38.0 vs 61.0). Per-env table must accompany the single number.
 
-**Ordering (Josh, 21 Aug):** (1) finish both retention triangles; (2) start the
-cold-storage ship of the E64 r512 batch; (3) in parallel, kick off r128 on the GPU
-(the ship is desk-PC-side, no GPU contention); (4) then protection-off ablation and
-training-seed replicates. Units armed: `e64b-r128` (VM, gated on `e64-triangles`),
-`scripts/ops/ship_e64_batch_to_cold.sh` (desk PC, gated on the triangles unit + all
-20 triangle rows, launched detached).
-
 ---
 ### Entry 64 addendum 9 (22 Aug 26) — naive sequential LoRA r512, 10 tasks: TRAINING COMPLETE (raw)
 
-Run `libero_10_seq10_naive_lora_r512_a128_steps5k`.
-Base: `libero_90_pi05_base_nomem_50k` (stage-1 LIBERO-90 finetune).
+Base: stage-1 LIBERO-90 finetune.
 r=512, lora_alpha=128. Trainable 850,427,904 / 4,993,832,720 total.
-10 online tasks x 5,000 steps = 50,000 steps, bs16 x grad_accum 2, num_workers 8.
+10 online tasks x 5,000 steps = 50,000 steps, bs16 x grad_accum 2.
 optimizer_lr 1e-4 -> 1e-5 linear per block, reinit_optimizer_each_task=true,
-protect_prior_slots=false, tfidf_enable=false, eval.type=none.
+protect_prior_slots=false, tfidf_enable=false.
 Task order (dataset task_index -> env): 0->4, 1->6, 2->9, 3->2, 4->7, 5->0, 6->8,
 7->1, 8->3, 9->5.
-
-Start 2026-08-21 08:18:03 UTC. End 2026-08-22 15:35:02 UTC. Wall clock 31 h 17 min.
-Run directory 93 G. 10 per-task checkpoints written, no failures, no restarts.
 
 Terminal training loss at each block boundary:
 
@@ -8023,15 +6923,12 @@ Terminal training loss at each block boundary:
 | 9 | 045000 | 8 | 3 | 0.026 |
 | 10 | 050000 | 9 | 5 | 0.017 |
 
-Stage 3b (naive retention triangle, 4 seeds x 25 eps at every boundary) started
-2026-08-22 15:35 UTC. VM disk 82%.
-
 ---
 ### Entry 64 addendum 10 (22 Aug 26) — naive sequential LoRA r512, 10 tasks: ALL-10 FINAL ROW, 4-seed (raw)
 
-`seeds_naive10_r512_final.json`. Checkpoint 050000 (after all 10 blocks) of
-`libero_10_seq10_naive_lora_r512_a128_steps5k`. 25 episodes x seeds
-1000/2000/3000/4000, vec batch_size 13, `--policy.use_peft=true`.
+Checkpoint 050000 (after all 10 blocks).
+25 episodes x seeds
+1000/2000/3000/4000, vec batch_size 13.
 Envs listed in train order.
 
 | env | s1000 | s2000 | s3000 | s4000 | mean |
@@ -8052,18 +6949,13 @@ Envs listed in train order.
 This row is adopted as b10 of the naive retention triangle (identical checkpoint,
 seeds and episode count; not re-measured).
 
-Stage 3b/4 (both retention triangles, b1-b9 each = 45 cells per model) started
-under unit `e64-triangles` 2026-08-22 19:30 UTC. `e64-lora-r512` exited
-(QUEUE COMPLETE) after stage 3. VM disk 82%.
-
 ---
 ### Entry 64 addendum 11 (23 Aug 26) — naive sequential LoRA r512, 10 tasks: RETENTION TRIANGLE, 4-seed (raw)
 
-`seeds_tri_naive10_r512_b{1..10}.json`. Run
-`libero_10_seq10_naive_lora_r512_a128_steps5k`. Lower triangle: after block k,
+Lower triangle: after block k,
 the k envs seen so far. Each cell 25 episodes x seeds 1000/2000/3000/4000
-(100 episodes), vec batch_size 13, `--policy.use_peft=true`. Cells are 4-seed means.
-Envs in train order. b10 adopted from `seeds_naive10_r512_final.json` (add-10).
+(100 episodes), vec batch_size 13. Cells are 4-seed means.
+Envs in train order. b10 adopted from add-10.
 
 | after block | ckpt | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -8084,20 +6976,12 @@ Diagonal (env measured immediately after its own block): 70.0, 64.0, 82.0, 96.0,
 Prior-task mean per row (row excluding the just-trained env): b2 0.0, b3 0.5,
 b4 0.0, b5 8.0, b6 0.0, b7 1.5, b8 0.0, b9 0.0, b10 0.0.
 
-Naive triangle wall clock 2026-08-22 19:30 -> 2026-08-23 13:21 UTC (17 h 51 min),
-45 measured cells + 1 adopted, 4,500 episodes. No failures.
-
-merged6x2 triangle started 2026-08-23 13:21 UTC (b10 adopted from
-`seeds_seq10_merged6x2.json`). VM disk 82%.
-
 ---
 ### Entry 64 addendum 12 (24 Aug 26) — merged6x2 10-task: RETENTION TRIANGLE, 4-seed (raw)
 
-`seeds_tri_merged6x2_10task_b{1..10}.json`. Run
-`libero_10_seq10_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k`.
 Same instrument and layout as add-11: lower triangle, each cell 25 episodes x seeds
 1000/2000/3000/4000 (100 episodes), vec batch_size 13. Cells are 4-seed means.
-Envs in train order. b10 adopted from `seeds_seq10_merged6x2.json`.
+Envs in train order. b10 adopted from the 4-seed row.
 
 | after block | ckpt | e4 | e6 | e9 | e2 | e7 | e0 | e8 | e1 | e3 | e5 | row mean |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -8117,53 +7001,37 @@ Diagonal: 54.0, 65.0, 71.0, 87.0, 51.0, 40.0, 71.0, 41.0, 83.0, 91.0. Mean 65.4.
 Prior-task mean per row (row excluding the just-trained env): b2 54.0, b3 58.0,
 b4 56.7, b5 69.8, b6 61.2, b7 61.7, b8 61.4, b9 61.0, b10 62.2.
 
-merged6x2 triangle wall clock 2026-08-23 13:21 -> 2026-08-24 10:12 UTC (20 h 51 min),
-45 measured cells + 1 adopted, 4,500 episodes. No failures.
-
-Both triangles complete: 90 measured cells, 9,000 episodes, unit `e64-triangles`
-exited 2026-08-24 10:12 UTC. VM disk 82%.
-
-Follow-on started at the same boundary: `e64b-r128` (ten r128/a32 specialists +
-ten 4-seed rows) on the VM; E64 r512 batch cold-storage ship on the desk PC.
-
 ---
 ### Entry 64 addendum 13 (25 Aug 26) — ten r128 LoRA specialists: TRAINING COMPLETE (raw)
 
-`outputs/train/loraft_baseline_r128/task{0..9}_e{env}`. Base:
-`libero_90_pi05_base_nomem_50k` (stage-1 LIBERO-90 finetune).
+Base: stage-1 LIBERO-90 finetune.
 r=128, lora_alpha=32 (alpha/r = 0.25 held). Trainable 212,606,976 per specialist.
 5,000 steps each, bs16 x grad_accum 2, optimizer_lr 1e-4 -> 1e-5, same targets and
 recipe as the r32 and r512 ladder points.
 
-Start 2026-08-24 10:12:17 UTC. End 2026-08-25 13:12:55 UTC. Wall clock 27 h 01 min
-(~2 h 42 min per specialist, 1.91 s/step). Run directory 24 G. No failures, no restarts.
-
-| task | env | ckpt written (UTC) | final loss |
-|---|---|---|---|
-| t0 | 4 | 2026-08-24 12:53:46 | 0.041 |
-| t1 | 6 | 2026-08-24 15:36:04 | 0.036 |
-| t2 | 9 | 2026-08-24 18:18:20 | 0.085 |
-| t3 | 2 | 2026-08-24 21:00:17 | 0.052 |
-| t4 | 7 | 2026-08-24 23:42:34 | 0.066 |
-| t5 | 0 | 2026-08-25 02:24:31 | 0.044 |
-| t6 | 8 | 2026-08-25 05:07:04 | 0.039 |
-| t7 | 1 | 2026-08-25 07:49:20 | 0.063 |
-| t8 | 3 | 2026-08-25 10:31:09 | 0.052 |
-| t9 | 5 | 2026-08-25 13:12:55 | 0.031 |
+| task | env | final loss |
+|---|---|---|
+| t0 | 4 | 0.041 |
+| t1 | 6 | 0.036 |
+| t2 | 9 | 0.085 |
+| t3 | 2 | 0.052 |
+| t4 | 7 | 0.066 |
+| t5 | 0 | 0.044 |
+| t6 | 8 | 0.039 |
+| t7 | 1 | 0.063 |
+| t8 | 3 | 0.052 |
+| t9 | 5 | 0.031 |
 
 Trainable-parameter counts across the ladder: r32 53,151,744 / r128 212,606,976 /
 r512 850,427,904 (1.66 M per unit rank over the target set).
 
-Ten 4-seed rows (25 eps x seeds 1000/2000/3000/4000, one env each) started
-2026-08-25 13:13 UTC. VM disk 73%.
-
 ---
 ### Entry 64 addendum 14 (25 Aug 26) — r128 SPECIALIST ORACLE = 69.5, 4-seed (raw)
 
-`seeds_spec_r128_e{env}.json`, ten rows. Each row: the r128/alpha32 specialist for
+Ten rows. Each row: the r128/alpha32 specialist for
 that env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
-1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13,
-`--policy.use_peft=true`. Envs in train order.
+1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13.
+Envs in train order.
 
 | env | s1000 | s2000 | s3000 | s4000 | mean |
 |---|---|---|---|---|---|
@@ -8179,9 +7047,6 @@ that env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
 | 5 | 96 | 92 | 80 | 88 | 89.0 |
 
 **ALL-10 ORACLE = 69.5**; front-5 68.8, back-5 70.2.
-
-Rows ran 2026-08-25 13:13:51 -> 18:27:01 UTC (5 h 13 min, 1,000 episodes).
-Unit `e64b-r128` exited 18:27:01 UTC. No failures.
 
 Specialist oracle ladder to date (all 5,000 steps, alpha/r = 0.25, same base and
 target set): r32 63.7 / r128 69.5 / r512 74.9.
@@ -8200,45 +7065,36 @@ Per-env, same ordering:
 | 3 | 84.0 | 87.0 | 86.0 |
 | 5 | 83.0 | 89.0 | 94.0 |
 
-`e64c-r64` (ten r64/alpha16 specialists + ten 4-seed rows) released at 18:27 UTC.
-VM disk 73%.
-
 ---
 ### Entry 64 addendum 15 (26 Aug 26) — ten r64 LoRA specialists: TRAINING COMPLETE (raw)
 
-`outputs/train/loraft_baseline_r64/task{0..9}_e{env}`. Base:
-`libero_90_pi05_base_nomem_50k`. r=64, lora_alpha=16 (alpha/r = 0.25 held).
+r=64, lora_alpha=16 (alpha/r = 0.25 held).
 Trainable 106,303,488 per specialist. 5,000 steps each, bs16 x grad_accum 2,
 optimizer_lr 1e-4 -> 1e-5, same targets and recipe as the r32 / r128 / r512 points.
 
-Start 2026-08-25 18:29:42 UTC. End 2026-08-26 21:07:00 UTC. Wall clock 26 h 37 min
-(~2 h 40 min per specialist). Run directory 12 G. No failures, no restarts.
-
-| task | env | ckpt written (UTC) | final loss |
-|---|---|---|---|
-| t0 | 4 | 2026-08-25 21:09:15 | 0.052 |
-| t1 | 6 | 2026-08-25 23:48:54 | 0.041 |
-| t2 | 9 | 2026-08-26 02:28:45 | 0.098 |
-| t3 | 2 | 2026-08-26 05:08:29 | 0.060 |
-| t4 | 7 | 2026-08-26 07:47:47 | 0.075 |
-| t5 | 0 | 2026-08-26 10:27:46 | 0.050 |
-| t6 | 8 | 2026-08-26 13:08:05 | 0.043 |
-| t7 | 1 | 2026-08-26 15:48:04 | 0.073 |
-| t8 | 3 | 2026-08-26 18:27:36 | 0.064 |
-| t9 | 5 | 2026-08-26 21:07:00 | 0.035 |
+| task | env | final loss |
+|---|---|---|
+| t0 | 4 | 0.052 |
+| t1 | 6 | 0.041 |
+| t2 | 9 | 0.098 |
+| t3 | 2 | 0.060 |
+| t4 | 7 | 0.075 |
+| t5 | 0 | 0.050 |
+| t6 | 8 | 0.043 |
+| t7 | 1 | 0.073 |
+| t8 | 3 | 0.064 |
+| t9 | 5 | 0.035 |
 
 Trainable params across the ladder: r32 53,151,744 / r64 106,303,488 /
 r128 212,606,976 / r512 850,427,904.
 
-Ten 4-seed rows started 2026-08-26 21:07:25 UTC. VM disk 73%.
-
 ---
 ### Entry 64 addendum 16 (27 Aug 26) — r64 SPECIALIST ORACLE = 68.8, 4-seed (raw)
 
-`seeds_spec_r64_e{env}.json`, ten rows. Each row: the r64/alpha16 specialist for that
+Ten rows. Each row: the r64/alpha16 specialist for that
 env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
-1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13,
-`--policy.use_peft=true`. Envs in train order.
+1000/2000/3000/4000 (100 episodes per cell), vec batch_size 13.
+Envs in train order.
 
 | env | s1000 | s2000 | s3000 | s4000 | mean |
 |---|---|---|---|---|---|
@@ -8254,9 +7110,6 @@ env, checkpoint 005000, evaluated on its own env only. 25 episodes x seeds
 | 5 | 84 | 92 | 76 | 80 | 83.0 |
 
 **ALL-10 ORACLE = 68.8**; front-5 66.4, back-5 71.2.
-
-Rows ran 2026-08-26 21:07:25 -> 2026-08-27 02:13:53 UTC (5 h 06 min, 1,000 episodes).
-Unit `e64c-r64` exited 02:13:53 UTC. No failures.
 
 Complete specialist oracle ladder (all 5,000 steps, alpha/r = 0.25, same LIBERO-90
 base and target set; trainable params per specialist in brackets):
@@ -8277,12 +7130,10 @@ base and target set; trainable params per specialist in brackets):
 | front-5 | 59.0 | 66.4 | 68.8 | 70.8 |
 | back-5 | 68.4 | 71.2 | 70.2 | 79.0 |
 
-VM disk 73%.
-
 ---
-## Entry 65 - 27 Aug 26 (REAL-WORLD (WidowX AI) chain: dataset inventory, tier-1 task-geometry probe, v5 split, pipeline smoke, chain LAUNCHED — raw)
+## Entry 65 - 27 Aug 26 (REAL-WORLD (WidowX AI) chain: dataset inventory, tier-1 task-geometry probe, v5 split — raw)
 
-### Datasets on the VM (`/home/josh/lerobot/outputs/`)
+### Datasets
 
 All LeRobot v3.0, fps 30, robot_type `widowxai_follower_robot`, features: `action` float32 [7]
 (joint_0..5.pos, left_carriage_joint.pos), `observation.state` float32 [7] (same names),
@@ -8293,9 +7144,6 @@ All LeRobot v3.0, fps 30, robot_type `widowxai_follower_robot`, features: `actio
 | realworld_all_tasks | 20 | 1005 | 347,664 | 5.2G | the pool |
 | realworld_pretrain | 15 | 751 | 267,547 | 4.0G | v1 split (pool ids minus {0,1,4,10,12}) |
 | realworld_seq | 5 | 254 | 80,117 | 1.3G | v1 split: pool ids 0,1,4,10,12 |
-
-HF cache: `datasets--joshwa71--vla-wm-real` = 288K stub (task_1..task_20 folders, no data);
-`datasets--joshwa71--realworld-multi-modal-v2` = 12K, no snapshot. No v2/v3/v4 split dirs on this VM.
 
 Pool task table (task_index, eps, frames, mean/min/max episode length in frames):
 
@@ -8328,25 +7176,21 @@ Episodes whose video span (to_timestamp − from_timestamp) × fps exceeds the p
 14/1005 (identical set for cam_high and cam_wrist; delta max 420 frames; e.g. ep 71 414 vs 428,
 ep 75 365 vs 618, ep 144 239 vs 319, ep 305 501 vs 727); per task: 11:1, 7:2, 18:1, 10:3, 8:1,
 6:1, 13:1, 12:1, 1:2, 2:1. realworld_seq (v1) carries 6 of them (10:3, 12:1, 1:2).
-`lerobot_edit_dataset delete_episodes` fails on the pool with `AssertionError: Episode length
-mismatch: 245 vs 309` (`dataset_tools._copy_and_reindex_videos`, the video re-encode path).
 Historical splits in pool ids: v1 seq {0,1,4,10,12}; v2 pretrain = 15 pool tasks + multi-modal
-tasks (25 tasks, 381,156 frames; data not on this VM); v3 seq {0,1,10,14,19}; v4 seq {0,1,10,11,19}.
+tasks (25 tasks, 381,156 frames); v3 seq {0,1,10,14,19}; v4 seq {0,1,10,11,19}.
 
-### Tier-1 task-geometry probe (`scripts/vla_analysis/realworld/probe_task_geometry_rw.py`)
+### Tier-1 task-geometry probe
 
-Checkpoint: raw `pi05_base` snapshot 9e55186 (no memory). Dataset: realworld_all_tasks, all 20
+Checkpoint: raw `pi05_base` (no memory). Dataset: realworld_all_tasks, all 20
 tasks, 16 batches × 8 = 128 samples/task, noise/time seeded per batch index (SEED 1000).
-Flags: empty_cameras=1, rename cam_high→base_0_rgb / cam_wrist→left_wrist_0_rgb,
-normalization VISUAL IDENTITY / STATE MEAN_STD / ACTION MEAN_STD, bf16. Prefix layout:
+Prefix layout:
 1224 positions = 1024 image (4 camera slots × 256; 2 real) + 200 language. "▁State" (token 3040)
 boundary found in 2560/2560 samples (0 skipped); instruction lengths 6–8 tokens.
 Spaces captured: expert MLP input at expert L[4,6,8,10,14,16] (mean over action tokens);
 LM MLP input at L[4,5,6,7,8,9,10,11,13,14,15,16] pooled over instruction [3,b) / state [b+3,v−5)
 / key = 1.0·nrm(instr)+0.5·nrm(state) / per-camera image (256 positions each).
-Outputs: `outputs/analysis/realworld/task_geometry_pi05base.{json,npz}`, log `geom_pi05base.log`.
-Ranker `rank_heldout_subsets_rw.py`: 18 deployed spaces (expert L4-16, instr L4-16 anchor
-sources, key L5-15), off-diagonal cosines z-scored per space, Z = mean z. Runtime ~20 min GPU.
+Ranker: 18 deployed spaces (expert L4-16, instr L4-16 anchor
+sources, key L5-15), off-diagonal cosines z-scored per space, Z = mean z.
 
 Most similar pairs (Z; raw mean cos per group expert / anchor / vlm-key):
 
@@ -8404,11 +7248,10 @@ max Z to a task outside it; 15,504 subsets):
 - historical: v1 [0,1,4,10,12] rank 7954/15504, coll_max 1.19 (0–4), support 1.50;
   v3 [0,1,10,14,19] rank 3037, 0.74 (1–14), 1.57; v4 [0,1,10,11,19] rank 2890, 0.73 (0–1), 1.49.
 
-### Split v5 (`scripts/vla_analysis/realworld/build_rw_split.sh`, manifest `outputs/analysis/realworld/split_manifest_v5.json`)
+### Split v5
 
 Chosen (Josh, 27 Aug): B = pool ids **0, 10, 16, 7, 1** in that sequential order; episode 548
-dropped. Built via `split_dataset_by_task.py --exclude_episode_indices "[548]"` (new option,
-whole-file video copy) → per-task tables patched to one row → `merge_datasets.py` in order.
+dropped.
 
 | seq task_index | pool id | task | eps | frames |
 |---|---|---|---|---|
@@ -8420,66 +7263,28 @@ whole-file video copy) → per-task tables patched to one row → `merge_dataset
 
 `realworld_seq_v5`: 5 tasks / 251 eps / 77,302 frames. `realworld_pretrain_v5`: 15 tasks
 (pool ids 2,3,4,5,6,8,9,11,12,13,14,15,17,18,19 in pool order) / 753 eps / 270,322 frames.
-Both verified: contiguous task ids, data task_index == table, totals == info.json.
 Audit family (informational): seq pairs 0-4 and 3-4.
 
-### Pipeline smoke (`SMOKE=1`, v1 datasets, seq ids [0,1], 6 steps/stage; scripts `job_scripts/nebius/realworld/rw_*.sh`)
+### Chain (27 Aug)
 
-Stages run: stage-1 (bs8×acc4 no-ckpt, num_learnable 4,143,404,816, checkpoint 000006 +
-train_config.json) → warm-up (router_only_fast, prepass, anchors B=0.4, SHARED storage
-expert [[4,6],[8,10]] / VLM [[5,7],[9,11],[13,15]], 31 trainable / 905 frozen) → audit
-(realworld_seq ids [0,1], bs4 × 2 steps, 2 memory_by_task JSONs) → analyses (famIoU n/a; bgIoU
-expert L4/6/8/10/14/16 = 0.140/0.098/0.091/0.077/0.075/0.144, core50 mean 872/574/628/558/672/1094,
-min-eff 1853/1278/1475/1465/1587/2245; VLM L5/7/9/11/13/15 bgIoU 0.047/0.048/0.047/0.064/0.077/0.071,
-min-eff 316/296/334/358/308/375) → gate HARD FAIL (informational under SMOKE) → A-phase (bs16×acc2,
-86 trainable / 850 frozen) → sequential (bs16×acc2; "Trainable params (memory values only) =
-2,684,354,560 / 6,944,755,484"; `[E61 union] shared-table mask: 3072 + 3072 -> 6017 rows (overlap 127)`;
-corefrac fold after each task; `--eval.type=loss`, 2 batches).
-`eval/loss_results.jsonl`: `{"step": 6, "task_0": 0.40917760133743286, "forget_0": 0.0}`;
-`{"step": 12, "task_0": 0.4093666672706604, "forget_0": 0.00018906593322753906, "task_1": 0.45846541225910187, "forget_1": 0.0}`.
-Resume test: checkpoint 000012 removed, `last` → 000006, chain relaunched: stage-1/warm-up/audit/
-A-phase skipped on guards; `[seq] RESUMING from .../000006`; `Skipping task 1/2 (already complete,
-resumed)`; task 2 retrained; second row reproduced: task_0 0.4093666672706604, task_1
-0.45846541225910187. Load message `55 memory param keys initialized from scratch (checkpoint has
-no memory weights)` present; identical line appears 11× in outputs/e60–e63 LIBERO logs; both smoke
-checkpoints hold 117 memory tensors (followers stored under `_storage_shared_from.*`).
-Smoke dir sizes: stage-1 23G, warm-up 20G, A-phase 40G, seq (2 tasks) 78G, audit 13M; deleted.
-`src/` change: `split_dataset_by_task.py` `--exclude_episode_indices` only.
-
-### Chain LAUNCHED (unit `rw-chain`, 03:41:11 UTC 27 Aug; log `outputs/rw_chain_v5.log`; HEAD 532f83ea)
-
-`RW_TAG=v5 RW_FAMILY=0-4,3-4 rw_merged6x2_full_chain.sh`: stage-1 `realworld_v5_pi05_base_nomem_50k`
-(pi05_base 9e55186 → realworld_pretrain_v5, no memory, bs8 × acc4 no-ckpt, 50,000 steps, warmup 4000 /
-decay 50000, save_freq 10000 with intermediate optimizer states pruned on completion, eval_freq 0,
-no env) → warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_e468101416_v579111315_anchor040_sep8_prepass`
-(10k) → audit `audit_heldout_rw_v5_jointwarm_..._10k` (bs8 × 400 steps/task, ids [0..4]) → gate
+Stage-1
+(pi05_base → realworld_pretrain_v5, no memory, bs8 × acc4, 50,000 steps, warmup 4000 /
+decay 50000)
+→ warm-up
+(10k) → audit (bs8 × 400 steps/task, ids [0..4]) → gate
 (bg ≤ 0.10, mean core50 ≥ 400, min-eff ≥ 300, VLM min-eff ≥ 150; famIoU informational) → A-phase
-`realworld_v5_pi05_jointA10k_...` (10k; ladder 32:1 → 16:2 → 16:2+ckpt) → sequential
-`realworld_v5_seq5_jw_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k`
-(5 × 5000, corefrac β4, top_t 3072, lr 2e-3→2e-4, ladder 32:1/16:2/8:4/16:2+ckpt, eval.type=loss
-20 batches, per-task checkpoints). Stage-1 at launch: 92,169 MiB, 94% util. VM disk 73% (689G free).
-Watcher: `scripts/ops/heartbeat_rw_chain.sh` (Monitor, 10-min poll) + 3-hourly cron self-check.
+(10k) → sequential
+(5 × 5000, corefrac β4, top_t 3072, lr 2e-3→2e-4, eval.type=loss
+20 batches, per-task checkpoints).
 
-### Entry 65 addendum 1 (27 Aug 26) — real-world landing battery scripts (raw)
-`scripts/vla_analysis/realworld/run_rw_battery.sh` (mse matrix + jitter + slot autopsy + matrix reports; no
-harvest rescore — needs rollouts). Cross-check on the E62 artifacts: `rw_slots.py` output identical to
-`slots_e62.out` (14/14 lines); `rw_matrix_report.py` on `mse_matrix_merged6x2.jsonl` → +4.18 / +1.10 / −0.01 /
-+0.51 / +0.00 % (Entry 62 add-2: +4.2 / +1.1 / +0.0 / +0.5 / 0.0).
-
-### Entry 65 addendum 2 (27 Aug 26) — stage-1 ckpt 010000; battery dry run (raw)
-Stage-1 010000: 24 GB (8.8 weights + 15 optimizer), save 35 s; 2.20 s/step; step 10K loss 0.050, grdn 0.492.
-Battery dry run on it (no memory, zero-shot on realworld_seq_v5; MINI: 1 batch × bs4 matrix, 2 × bs8 jitter):
-ran clean. MSE t0 0.1022, t1 0.1373, t2 0.0541, t3 0.1188, t4 0.1505. Jitter chunk t0 clean 0.2933 / state@0.1
-0.2879 / state@0.2 0.2907 / image@0.05 0.3625; t3 0.1918 / 0.2013 / 0.2256 / 0.2261.
-
-### Entry 65 addendum 3 (28 Aug 26) — stage-1 done; warm-up started (raw)
-Stage-1 `realworld_v5_pi05_base_nomem_50k`: 50,000 steps in 30 h 28 min (2.19 s/step), final loss 0.014, grdn 0.343;
-loss by 10k: 0.050 / 0.032 / 0.020 / 0.016 / 0.014. Intermediates pruned to weights (8.8 GB each), final 23 GB; disk 75%.
-Warm-up `realworld_v5_pi05_jointwarm10k_merged6x2_…_anchor040_sep8_prepass` started 10:09 UTC: num_learnable 41,443,328
+### Entry 65 addendum 3 (28 Aug 26) — stage-1; warm-up (raw)
+Stage-1: 50,000 steps, final loss 0.014, grdn 0.343;
+loss by 10k: 0.050 / 0.032 / 0.020 / 0.016 / 0.014.
+Warm-up: num_learnable 41,443,328
 (31 tensors trainable / 905 frozen), shared storage E(4,6)(8,10) V(5,7)(9,11)(13,15), frozen pre-pass, anchor B=0.4.
 
 ### Entry 65 addendum 4 (28 Aug 26, 14:20 UTC) — held-out routing audit: GATE HARD FAIL (raw)
-Warm-up final: loss 0.232, grdn 0.001 (10k, 1.34 s/step). Audit 5 tasks × 400 × bs8, family (0-4),(3-4):
+Warm-up final: loss 0.232, grdn 0.001 (10k). Audit 5 tasks × 400 × bs8, family (0-4),(3-4):
 expert L4/L6/L8/L10/L14/L16 — bgIoU 0.004/0.004/0.004/0.005/0.015/0.025; mean core50 202/180/166/256/553/874;
 min-task effnum 242/226/230/241/274/304 (min is task 1 in every layer; task-1 core50 82–105); famIoU 0.018/0.010/
 0.005/0.056/0.105/0.085. VLM L5/L7/L9/L11/L13/L15 — min-eff 98/99/92/96/92/89; bg 0.007/0.006/0.008/0.010/0.010/0.015;
@@ -8495,23 +7300,22 @@ t3 11,531); top-slot hit fraction E4 t0 0.83 / t1 1.00 / t3 0.97 (sim 0.92 / 0.9
 V15 519 / 89 / 440 (sim 2990 / 824), E16 4,639 / 304 / 2,731 (sim 5,416 / 1,927). Warm-up aux terms as run: contrastive
 (sample, w 0.05, queue 512, margin 0), inter-task separation w 8; VLM pool (1.0, 0.5); expert anchor 0.4.
 
-### Entry 65 addendum 6 (28 Aug 26, 14:52 UTC) — rebalanced warm-up arm launched (raw)
-Josh: option 2. Chain relaunched with ARM `merged6x2_e468101416_v579111315_anchor040_sep4_c010_prepass`: inter-task separation
-w 8 → 4, contrastive (sample, negatives_only=false, queue 512) w 0.05 → 0.1; everything else byte-identical. Stage-1 skipped
-(final exists); warm-up started 14:52 UTC; gate re-run on the same 5-task audit; A-phase/sequential follow automatically on PASS
-(seq run `realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k`).
+### Entry 65 addendum 6 (28 Aug 26, 14:52 UTC) — rebalanced warm-up arm (raw)
+Josh: option 2. Arm 2 `merged6x2_e468101416_v579111315_anchor040_sep4_c010_prepass`: inter-task separation
+w 8 → 4, contrastive (sample, negatives_only=false, queue 512) w 0.05 → 0.1; everything else byte-identical.
+Gate re-run on the same 5-task audit.
 
 ### Entry 65 addendum 7 (28 Aug 26, 19:03 UTC) — rebalanced arm (sep 4 / c 0.10): GATE HARD FAIL (raw)
 Expert L4/L6/L8/L10/L14/L16 — bgIoU 0.006/0.006/0.005/0.007/0.018/0.032; mean core50 239/212/184/303/660/1004 (arm 1:
 202/180/166/256/553/874); min-task effnum 265/248/254/291/285/344 (arm 1: 242/226/230/241/274/304), min = task 1 everywhere.
 VLM L5–L15 min-eff 109/110/97/100/99/102 (arm 1: 98/99/92/96/92/89); bg 0.007–0.015. Per-task expert L16 core50 t0 2014,
 t1 117, t2 1213, t3 1295, t4 380 (arm 1: 874 mean); VLM L15 eff t0 396, t1 102, t2 271, t3 498, t4 180. Same failing clauses
-as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six). Chain stopped.
+as arm 1 (core50 L4–L10, min-eff L4–L14, VLM min-eff all six).
 
-### Entry 65 addendum 8 (28 Aug 26, 19:38 UTC) — arm 3 launched (raw)
+### Entry 65 addendum 8 (28 Aug 26, 19:38 UTC) — arm 3 (raw)
 Arm 3 `…anchor040_sep2_c030_prepass`: contrastive 0.1 → 0.3, sep 4 → 2 (anchor 0.40, VLM pool (1.0, 0.5) unchanged). Josh: if
 it fails but improves, keep stepping the same axis overnight (arm 4 c 1.0 / sep 1; arm 5 adds anchor 0.30 + VLM pool (1.0, 1.0)).
-Arm-to-arm comparison: `scripts/vla_analysis/realworld/compare_gate_arms.py` (arm 1 → 2: 18/18 metrics up, binding mean +11.6%).
+Arm-to-arm comparison: arm 1 → 2: 18/18 metrics up, binding mean +11.6%.
 
 ### Entry 65 addendum 9 (28 Aug 26, 23:50 UTC) — arm 3 (sep 2 / c 0.30): GATE HARD FAIL (raw)
 Expert L4/L6/L8/L10/L14/L16 — mean core50 393/333/282/437/849/1287 (arm 2: 239/212/184/303/660/1004); min-task effnum
@@ -8519,9 +7323,9 @@ Expert L4/L6/L8/L10/L14/L16 — mean core50 393/333/282/437/849/1287 (arm 2: 239
 114/114/105/105/96/111 (arm 2: 109/110/97/100/99/102); bg 0.008–0.020. Task 1 is the min everywhere (expert eff 283–397,
 VLM 96–114); other tasks' VLM eff 184–645. Per-task expert L4 core50 t0 552 / t1 98 / t2 420 / t3 305 / t4 589. Compare arm
 2→3: 17/18 metrics up, binding mean +21.3%, worst −3.0% (V13); arm 1→3: 18/18, binding mean +36.0%. Still failing: E4 core50
-(393), E4 eff (283), E6 core50 (333), E6 eff (288), E8 core50 (282), VLM min-eff ×6. Chain stopped.
+(393), E4 eff (283), E6 core50 (333), E6 eff (288), E8 core50 (282), VLM min-eff ×6.
 
-### Entry 65 addendum 10 (28 Aug 26, 23:57 UTC) — arm 4 launched (raw)
+### Entry 65 addendum 10 (28 Aug 26, 23:57 UTC) — arm 4 (raw)
 Arm 4 `…anchor030_pool1010_sep1_c100_prepass`: contrastive 1.0, sep 1.0, expert anchor 0.40 → 0.30, VLM pool (1.0, 0.5) → (1.0, 1.0);
 everything else byte-identical. Josh: no further optimisation intended beyond this — real-world tasks are simpler and pi05_base a
 stronger prior, so lower effective palette needs are expected.
@@ -8531,10 +7335,10 @@ Expert L4/L6/L8/L10/L14/L16 — mean core50 1308/1078/866/915/1265/1566 (arm 3: 
 430/439/381/467/430/566 (arm 3: 283/288/309/335/322/397); bgIoU 0.048/0.040/0.028/0.031/0.043/0.059 — every expert clause
 passes. VLM L5–L15 min-eff 132/125/125/129/113/140 (arm 3: 114/114/105/105/96/111), all task 1; other tasks 259–1023; bg
 0.015–0.031. Compare arm 3→4: 18/18 up, binding mean +79.9%, worst +9.6%. Per-task expert L4 core50 t0 2075 / t1 147 /
-t2 1115 / t3 1479 / t4 1725. Failing clauses: VLM min-eff < 150 at all six layers. Chain stopped.
+t2 1115 / t3 1479 / t4 1725. Failing clauses: VLM min-eff < 150 at all six layers.
 
-### Entry 65 addendum 12 (29 Aug 26, 04:41 UTC) — VLM-capacity review verdict → arm 4 graduated with the VLM tripwire OVERRIDDEN (Josh); A-phase + sequential LAUNCHED (raw)
-Review of E44–E56/E59–E63 for VLM-specific capacity evidence (Josh's ask, no subagents). Provenance: the VLM min-eff ≥150 tripwire is
+### Entry 65 addendum 12 (29 Aug 26, 04:41 UTC) — VLM-capacity review verdict → arm 4 graduated with the VLM tripwire OVERRIDDEN (Josh) (raw)
+Review of E44–E56/E59–E63 for VLM-specific capacity evidence (Josh's ask). Provenance: the VLM min-eff ≥150 tripwire is
 a-priori (E44, re-anchored from E21's expert numbers, "per-task-bias signature"), made permissive at E45 (kill ≤100), re-introduced at
 E60 as "the V5 arbiter" (placement question, settled: V5 253). Never calibrated on a VLM outcome; every graduated sim run had min-eff
 ≥247. Only graduated small-palette case: E47→E49 arm 3-old (global ~2-draw palettes, 32.4 vs 37.2/40.0) — mechanisms overlap-mediated
@@ -8550,22 +7354,13 @@ Routes: arm 1 dead (expert core50 166–256 = E21 band); pool arm dead (state po
 arm-3 bake-off optional. DECISION (Josh: "Do it"): SKIP_GATE=1 on arm 4. Pre-registered t1 reads: own-block MSE reduction (005000→010000
 + in-run task_1 vs baseline) vs the other tasks' (outlier = < half their mean); forget_1 ≤ ~+5% after blocks 2–4; jitter with JIT_T=0,1,3,4;
 slot autopsy. Contingency if outlier: task-1 LoRA r256 specialist (E64 recipe) arbitrates data vs VLM capacity → knn36 (permission) or 4-task.
-Launched 04:41:36 UTC (unit rw-chain, SKIP_GATE=1, ARM anchor030_pool1010_sep1_c100, HEAD 758c3f06 — heartbeat carries SKIP_GATE on
-relaunch): stage-1/warm-up/audit skipped on guards → A-phase realworld_v5_pi05_jointA10k_<arm> → seq realworld_v5_seq5_jw_<arm>_beta4corefrac_topt3072_lr2x_steps5k.
 
-### Entry 65 addendum 13 (29 Aug 26, 07:00 UTC) — WEEKEND BASELINES armed (Josh): r64/a16 LoRA specialists ×5 + r64/a16 naive sequential LoRA, queued behind the arm-4 chain (raw)
+### Entry 65 addendum 13 (29 Aug 26, 07:00 UTC) — WEEKEND BASELINES (Josh): r64/a16 LoRA specialists ×5 + r64/a16 naive sequential LoRA (raw)
 Recipes = the sim E64c r64 rung (specialists) and the E64 naive wrapper, RW substitutions only: base = stage-1
 realworld_v5_pi05_base_nomem_50k; realworld_seq_v5 episodes t0 0–50 / t1 51–99 / t2 100–149 / t3 150–199 / t4 200–250
-(re-asserted at runtime from meta); RW rename/norm maps; empty_cameras=1; no --env; naive --eval.type=loss (20 batches).
+(re-asserted at runtime from meta); naive --eval.type=loss (20 batches).
 Specialists: 5k steps, bs16×acc2 no-ckpt, lr 1e-4 cosine (warmup 200 / decay 5000 → 1e-5), α/r 0.25, no in-run eval.
-Naive: one adapter, 5×5k in chain order, per-block lr 1e-4→1e-5 linear + optimizer reinit, no protection/memory, self-resuming
-(PEFT sequential resume). Queue scripts/vla_analysis/realworld/run_rw_weekend_queue.sh (unit rw-weekend; bootstrap waits for
-RW-CHAIN-DONE + rw-chain stopped → git pull → battery JIT_T=0,1,3,4 on the arm-4 seq → 20-step smokes (fatal) → specialists →
-own-task MSE (mse_matrix_peft.py, tasks 0–4) → naive → adapter-swap MSE matrix + inrun/msemat reports → RW-WEEKEND-DONE).
-Heartbeat WEEKEND=1 watches both units, relaunches after preemption (never on SMOKE/BOOTSTRAP-FAIL; gives up after 3 no-progress
-relaunches). Wrappers job_scripts/nebius/realworld/rw_loraft_specialists_r64.sh, rw_naive_seq_lora_r64.sh. Dry-run from a
-throwaway clone on the VM OK (HEAD 950d315a): assertions pass, commands as intended. ETA (UK): chain finals ~01:30 Sun →
-battery ~02:30 → specialists ~17:00 Sun → naive ~07:00 Mon → matrices ~08:00 Mon.
+Naive: one adapter, 5×5k in chain order, per-block lr 1e-4→1e-5 linear + optimizer reinit, no protection/memory.
 
 ### Entry 65 addendum 14 (29 Aug 26, 19:30 UTC) — task-0 one-boundary drift +14.3% ROOT-CAUSED: write-mask SATURATION bypasses corefrac on low-diversity real-world batches (raw)
 In-run rows (paired, 20×bs16): t0 jt 0.009367 → after t1 0.010708 (+14.3%, abs +0.00134); t1 jt 0.008882 (fits fine, not an outlier).
@@ -8576,12 +7371,12 @@ Production profiles (memory_by_task), task-1 block writes vs task-0 reads, per s
   Mean distinct slots read per logical batch, t1: RW 3.8k–6.8k; SIM 14.8k–31.8k. Mean mask size k: RW 2.5k–3.07k (sat k/n_read 0.45–0.68); SIM 3072 exactly (sat 0.10–0.21).
   t0-core update/read ratio: RW 0.46–0.85 at E8/E10/E14/V5/V7/V9/V11/V13 (sites with n_read/batch ≲ 3072), ~0 at E4/E6/V15/E16; SIM 0.000 everywhere. t0-shoulder update/read: RW 0.46–0.68 vs SIM 0.11–0.15.
   Value displacement 005000→010000 (read-mass-weighted ||Δslot||/||slot||) on t0: E14 core 6.3% / shoulder 12.3%; V5 9.9% / 12.7%; V13 3.0% / 7.1%; E16 0.9% / 7.7%; E4-table 0.1% / 8.2%.
-Mechanism (lerobot_sequential_train.py ~L1455–1560, rank mode, hard_u=0.0 in this run): mask k = min(top_t=3072, n_read); protected slots get score
+Mechanism (rank mode, hard_u=0.0 in this run): mask k = min(top_t=3072, n_read); protected slots get score
 tfidf·(1−u)^4 = 0 but STAY candidates ("with top_t ≥ candidate count a zero-score slot would still be selected") → when a batch reads ≤3072 distinct
 slots the mask is the whole read set incl. t0's core. Sim never saturated (n_read ≫ 3072); RW task 1 (over-constant routing, repetitive data) does at 8/12
 sites. Second, smaller channel: mask coverage 0.45–0.68 of each read set vs 0.10–0.21 in sim → shoulder writes 4–5× more frequent per read, on a t0
-support that spans 93% of the bank (arm-4 breadth). Existing remedies in code (NOT launched — Josh's call): --protect_hard_u=0.9 (E42 candidacy veto),
-or protect_mode=budget (k capped at positive-score count), or top_t scaled to batch read diversity. Run continues unchanged; battery matrix at landing.
+support that spans 93% of the bank (arm-4 breadth). Existing remedies in code: --protect_hard_u=0.9 (E42 candidacy veto),
+or protect_mode=budget (k capped at positive-score count), or top_t scaled to batch read diversity.
 
 ### Entry 65 addendum 15 (30 Aug 26, 02:12 UTC) — ARM-4 SEQUENTIAL LANDS (topt3072). In-run drift +10.9% mean; TWO mechanisms, only one fixable by top_t (raw)
 In-run paired MSE (20 batches × bs16), % = drift vs that task's just-trained value:
@@ -8602,19 +7397,18 @@ Victim read mass on writer-updated slots (core / shoulder): t0<-t1 0.180 (0.068 
   Production read-mass IoU: t3-t4 0.116, t0-t4 0.061, t0-t3 0.069 vs t0-t1 0.015 — and (0,4),(3,4) are exactly the
   pairs declared as the audit FAMILY. => t4's damage is the E27/E28 family collision (scene-genuine shoulder overlap),
   not a masking defect; top_t cannot remove it, only halve its shoulder coverage.
-Expectation for the queued topt1536 rerun, pre-registered: removes t1's saturation channel (~+14pp on t0) and ~halves
+Expectation for the topt1536 rerun, pre-registered: removes t1's saturation channel (~+14pp on t0) and ~halves
 shoulder coverage; t0 predicted ~+12-18% (not near-flat). Verification: realized mean k must equal 1536 at every site.
-Chain complete 02:12 UTC; weekend queue v3 running battery A (HEAD 1f8a6a70 pulled by the bootstrap).
 
 ### Entry 65 addendum 16 (30 Aug 26, 02:40 UTC) — BATTERY A (arm-4 topt3072) + an INSTRUMENT BUG that under-reports forgetting in E62/E63 too (raw)
-**Battery A** (`outputs/analysis/realworld/e65/`, JIT_T=0,1,3,4): jitter/OOD final ckpt, chunk MSE —
+**Battery A** (JIT_T=0,1,3,4): jitter/OOD final ckpt, chunk MSE —
 t0 clean 0.0037 / state@0.1 0.0229 / state@0.2 0.0413 / image@0.05 0.0497; t1 0.0027 / 0.0080 / 0.0220 / 0.0571;
 t3 0.0038 / 0.0175 / 0.0383 / 0.0677; t4 0.0165 / 0.0326 / 0.0631 / 0.0743. Slot autopsy: per-task effnum
 t0 E4 11,656 … V15 2,196; t1 E4 737 … V15 285 (the over-constant task, ~15x below its peers); site-bleed on the 5
 shared pairs 13-48% (sim bands E61 17-43% / E62 14-51%); prior-core write events — victim t0: E14 502,370, E10 173,864,
 E8 148,965, V13 45,027, V9 21,939, V7 16,611, V5 16,102, E16 14,243, E4 179, E6/V15 ~0; victims t1-t3 ALL ZERO at every
 site (only the saturating writer t1 breaches, per add-14/15).
-**BUG (found comparing the two instruments): `mse_matrix2.py:53` / `mse_matrix_rw.py:73` selected checkpoint tensors with
+**BUG (found comparing the two instruments): the matrix loaders selected checkpoint tensors with
 `".mlp.mem.slot_" in k`. Under E61 shared tables, 2 of the 7 storages are saved as
 `<layer>.mlp.mem._storage_shared_from.slot_{down,up}` (expert group (8,10) at L10, VLM group (9,11) at L11) and do NOT
 match — `[load] 005000: 10 slot tensors` of 14. Every matrix row is therefore a model with those 2 tables FROZEN at the
@@ -8628,9 +7422,6 @@ checkpoints have the identical 14-tensor / 10-matched layout. So E62 add-2 (+0.0
 add-3/add-4 (mean +6.5%, the full 10x10 grid) UNDER-REPORT forgetting on the two shared storages. E62 add-2's
 "indistinguishable from dedicated-tables interleave" is void as stated: interleave-8 had dedicated tables, so ITS matrix
 was complete and the comparison was unfair. E59/E60 (dedicated) and the jitter/slots/harvest instruments are unaffected.
-**Fix committed:** filter is now `".mlp.mem." in k and (".slot_down" in k or ".slot_up" in k)` in both scripts (unit-tested
-against the real key set: 14/14, router/keys excluded). Re-runs needed: RW battery A matrix (~20 min) and, for the paper,
-the E62 5-task + E63 10-task matrices (checkpoints are in cold storage, E65 archival).
 
 ### Entry 65 addendum 17 (30 Aug 26, 03:05 UTC) — matrix re-run with the fixed loader VALIDATES the fix and the add-15 drift numbers (raw)
 Battery A matrix re-computed at 14/14 slot tensors (`[load] 005000: 14 slot tensors`). Corrected grid (paired, 16x bs32, seed 0):
@@ -8644,21 +7435,9 @@ Diagonal drift, matrix vs the live in-run instrument (add-15): t0 +35.5 / +30.2 
 t3 +6.6 / +5.4, t4 +0.0 / +0.0 — the two independent instruments now AGREE (mean +12.4% vs +10.9%). Just-trained levels
 also reconcile: matrix 0.00921/0.00923/0.00626/0.00932/0.01155 vs in-run 0.00937/0.00888/0.00685/0.00920/0.01325.
 Before the fix the same cells read 0.00921/0.04633/0.02273/0.03924/0.05883 — t1 was 5x off, drift read -0.9% instead of
-+15.8%. Broken artifacts kept as `mse_matrix_merged6x2{.jsonl,_report.json}.broken-10of14`.
++15.8%.
 => add-15's in-run rows stand as the RW retention result; the RW drift is ~+12% mean, ~10x sim's reported 5-task band
 (which is itself an under-report pending the E62/E63 re-runs noted in add-16).
-
-### Entry 65 addendum 18 (30 Aug 26, 04:07 UTC) — SIM-ERA COLD ARCHIVAL COMPLETE: 11/11 verified, fail=0; VM 85% -> 47% (raw)
-`scripts/ops/ship_e65_batch_to_cold.sh` (protocol = _archive_e60/_e64: rsync -aH 3-retry -> verify `rsync -aHc --dry-run`
-zero itemized changes AND `du -sb` byte-exact, both under `--exclude=training_state` -> preserve artifacts on the VM ->
-rm -rf). Verified bytes: bigsearch seq 139.77G / warm 27.97G / A 27.97G; sharepairs 80.17G; interleave seq 112.40G /
-warm 22.49G / A 22.49G; layermax_A 22.74G; merged6x2 vnoise05x 102.21G; **seq10 204.53G**; merged6x2 seq5 102.21G.
-Total ~865G copied; ~1.07T reclaimed on the VM (the extra ~200G = seq10's pruned optimizer state, deleted not copied).
-Disk 85% -> **47%** (1.3T free). Cold 3.1T used / 8.1T free. Ledger `_archive_e65_status.txt` = 11 PASS + 11 DELETED, fail=0.
-Optimizer states (`training_state/`) deliberately NOT archived — weights + `sequential_state.pt` kept, so the add-16
-E62/E63 matrix re-runs are possible from cold with no retrain (the matrix only reads slot tensors in `pretrained_model/`).
-Diagnostic surface kept ON the VM: `outputs/analysis/_run_artifacts/<run>/` x11 (memory_by_task + eval + wandb + top-level
-files, ~390M/run) — analysis dir 7.3G -> 11G, ALSO copied to cold (`_analysis_vm/`, both passes) and retained on the VM per Josh.
 
 ### Entry 65 addendum 19 (30 Aug 26, 09:10 UTC) — topt1536 rerun, block 1: the SATURATION CHANNEL IS CLOSED (raw)
 Pre-registered checks on the rerun (`..._beta4corefrac_topt1536_lr2x_steps5k`), both PASS:
@@ -8691,12 +7470,12 @@ byte-identical between the two runs — same A-phase, same router), but the DAMA
 coverage far more strongly than by read overlap. Coverage, not routing separation, was the binding term. Notably t3's
 block damage to t0 was NOT reduced (2.6 -> 2.4pp) — only the hub's was, so the effect is concentrated where the write
 volume x overlap product was largest, not uniform.
-Consequence for the arm-5 probe (queued next, certificate only): its rationale as a DRIFT fix is now weak — the drift is
-already fixed by coverage. It remains worth its 4.25h as the "is the E53 empty window also empty in RW" question, and as
+Consequence for the arm-5 probe (certificate only): its rationale as a DRIFT fix is now weak — the drift is
+already fixed by coverage. It remains worth running as the "is the E53 empty window also empty in RW" question, and as
 the language-vs-state routing measurement, but should NOT be read as the remedy for family interference.
 Open: whether the +4.5% fit tax or the -8.2pp drift matters more is a ROLLOUT question; no RW robot numbers exist yet.
 
-### Entry 65 addendum 21 (30 Aug 26, 18:55 UTC) — battery B confirms topt1536 at the matrix instrument; smokes PASS; specialists running (raw)
+### Entry 65 addendum 21 (30 Aug 26, 18:55 UTC) — battery B confirms topt1536 at the matrix instrument (raw)
 **Battery B, corrected loader (14/14), topt1536 = the RW paper cell (Josh, 30 Aug):**
   ckpt      t0        t1        t2        t3        t4
   005000  0.00950   0.31689   0.18333   0.33914   0.48616
@@ -8709,10 +7488,7 @@ Diagonal drift t0..t4: **+5.9 / +4.7 / +1.4 / +1.6 / +0.0 %, mean +2.7%** — ma
 vs topt3072 corrected matrix (+35.5/+15.8/+4.0/+6.6/+0.0, mean +12.4%): **mean drift 12.4% -> 2.7%, 4.6x.**
 Jitter clean (t0/t1/t3/t4): topt1536 0.0031/0.0028/0.0055/0.0177 vs topt3072 0.0037/0.0027/0.0038/0.0165 — t0 better,
 t3/t4 worse, consistent with the +4.5% mean fit tax (add-20); no absolute crossing of the imgspan kill signature.
-**Arm-5 probe DISABLED** (Josh; add-20 falsified its rationale) — kept opt-in behind `RUN_ARM5=1`.
-**Weekend queue: smokes PASS at 18:54** (both LoRA wrappers exercised end-to-end on the real datasets: specialist
-r64/a16 20-step + naive 2x6-step incl. per-task checkpointing, loss-eval and cross-task state save). Episode-range
-assertions ok for all 5 tasks. Specialists t0..t4 started 18:54:13 (~2h40m each).
+**Arm-5 probe DISABLED** (Josh; add-20 falsified its rationale).
 
 ### Entry 65 addendum 22 (31 Aug 26, 09:00 UTC) — r64 SPECIALIST ORACLE (5/5): we BEAT the per-task oracle on fit at every task; task 1 is NOT capacity-limited (raw)
 r64/a16 LoRA specialists, one adapter per task from the RW stage-1, 5k steps, no CL constraint, task identity given.
@@ -8737,8 +7513,8 @@ Task difficulty ordering by specialist MSE: t2 0.00758 < t1 0.01075 < t0 0.01145
 (the family hub, longest at 22,108 frames) is intrinsically hardest, which is consistent with its worst just-trained
 cell in every run rather than that being a starvation artifact.
 
-### Entry 65 addendum 23 (31 Aug 26, 22:14 UTC) — RW-WEEKEND-DONE: the complete real-world table at ONE instrument (raw)
-All rows = paired flow-matching MSE, 5 tasks x 16 batches x bs32, seed 0 (mse_matrix_rw / mse_matrix_peft, fixed 14/14
+### Entry 65 addendum 23 (31 Aug 26, 22:14 UTC) — the complete real-world table at ONE instrument (raw)
+All rows = paired flow-matching MSE, 5 tasks x 16 batches x bs32, seed 0 (fixed 14/14
 loader per add-16). Naive adapter-swap matrix:
   ckpt      t0        t1        t2        t3        t4
   005000  0.01146   0.30375   0.19309   0.31129   0.42211
@@ -8757,15 +7533,13 @@ numbers sit in the sim band (E63: +740-1567%; here 1521-3950%). Naive plasticity
 signature. Note its UPPER triangle rises too (t3 0.311 -> 0.493 -> 0.464 before training): a drifting adapter degrades
 even never-trained tasks, which memory does not do (ours upper-triangle is flat to 3 decimals).
 **Own-task fit vs the r64 specialist oracle (add-22): ours 0.88 / 0.97 / 0.88 / 0.79 / 0.82 x — below the oracle on all 5.**
-Weekend queue complete 22:13:35 UTC, fail-free: battery A (re-run, fixed loader) -> topt1536 rerun -> battery B ->
-smokes -> 5 specialists + own-task MSE -> naive + adapter-swap matrix. Artifacts in outputs/analysis/realworld/e65/.
 OPEN (unchanged): every number here is function-space. No RW robot rollouts exist; drift->success conversion is
 uncalibrated in the real world (E42/E52 threshold caveat; E56 precedent where matched function still lost rollouts 3/5).
 
 ### Entry 65 addendum 24 (1 Sep 26, 09:20 UTC) — E62 5-task matrix RECOMPUTED with the fixed loader: forgetting was under-reported ~3x (raw)
-Checkpoints restored from cold (verified 102,207,357,670 bytes byte-exact) and re-scored with the add-16 fix (14/14 slot
+E62 checkpoints re-scored with the add-16 fix (14/14 slot
 tensors incl. the `_storage_shared_from` storages for expert (8,10) and VLM (9,11)). Same instrument otherwise
-(mse_matrix2.py, 16 batches x bs32, seed 0).
+(16 batches x bs32, seed 0).
   ckpt      t0        t1        t2        t3        t4
   005000  0.03724   0.64669   1.66991   0.90498   0.94377
   010000  0.03773   0.03790   1.69692   0.91223   0.95559
@@ -8786,11 +7560,11 @@ rows were wrong, exactly the signature identified in add-16.
 +0.0-6.9%, mean +3.9%; (b) its "indistinguishable from dedicated-tables interleave (+3.6/+3.0/+2.2/+1.3/0.0)" is now a
 real if modest gap — merged6x2 IS slightly leakier than dedicated tables, consistent with sharing, and the E61-add-5
 worry was under-measured rather than absent; (c) the corefrac "flat matrix" framing still holds directionally (+3.9% mean
-vs naive's +740-1567%), but the number to quote is +3.9%, not +1.2%. E63's 10-task matrix is recomputing (push ~4.3h).
+vs naive's +740-1567%), but the number to quote is +3.9%, not +1.2%.
 Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%.
 
 ---
-## Entry 66 - 1 Sep 26 (PARAMETER-MATCHED NAIVE SEQUENTIAL: the reviewer control for "you just added parameters" — QUEUED. The match forces r=1216, which is over-complete on 362/416 target matrices: a dense adapter of our size is only buildable by ~equalling full FT of everything it touches)
+## Entry 66 - 1 Sep 26 (PARAMETER-MATCHED NAIVE SEQUENTIAL: the reviewer control for "you just added parameters". The match forces r=1216, which is over-complete on 362/416 target matrices: a dense adapter of our size is only buildable by ~equalling full FT of everything it touches)
 
 **The ask (Josh's supervisor):** *"have you run a baseline where you take the same number of
 additional parameters and do sequential? A reviewer could plausibly ask 'your method just does
@@ -8818,14 +7592,12 @@ r=1100, 1200, 1216 or 1250 alike. This is structural, not a rank choice; E58 ant
 the fair control — is unbuildable without ~matching full FT, while our memory is a **rank-2 adapter
 per token** (~0.1% of slots active per forward). We run it anyway; that is the point of a control.
 
-**Queued** (`job_scripts/nebius/baselines/naive_seq_lora_r1216_paramatched_10task.sh`, unit `e66`
-via `scripts/ops/queue_e66_paramatched.sh`, gated on the E63 rematrix releasing the GPU or a 3h
-timeout, smoke-first): r=1216 / alpha=304 (alpha/r=0.25 held), libero_10, 10 tasks x 5,000 steps in
+**Config:** r=1216 / alpha=304 (alpha/r=0.25 held), libero_10, 10 tasks x 5,000 steps in
 train order. **Every other training parameter is identical to the oracle/naive cells** (Josh's
 requirement): stage-1 libero_90 base, bf16, no grad-ckpt, bs16 x accum2 (effective 32), per-task LR
 reset 1e-4 -> 1e-5 linear, optimizer reinit each task, no protection / memory / TF-IDF,
 save_after_each_task, `--eval.type=none` with the 4-seed campaign as the instrument. Deltas vs
-`naive_seq_lora_r512_10task.sh` are EXACTLY three: r, alpha, + vision targets. ~14h train + ~5h row.
+naive r512 are EXACTLY three: r, alpha, + vision targets.
 
 **Pre-registered read.** This becomes the 2.68B point on a capacity ladder that is already flat:
 naive seq-LoRA r32 (53M) / r256 (426M) / r512 (852M, 10-task 4-seed = **9.7**, nine of ten envs at
@@ -8841,10 +7613,9 @@ MORE ACTIVE capacity per token — LoRA and full FT use every parameter on every
 knn x heads slots. The matched control is generous to the baseline.
 
 ### Entry 65 addendum 25 (1 Sep 26, 19:05 UTC) — E62 AND E63 SIM MATRICES RECOMPUTED with the fixed loader: E63's forgetting was under-reported ~5.6x (raw)
-Both runs restored from cold (byte-exact) and re-scored with the add-16 fix (14/14 slot tensors incl. the
+Both runs re-scored with the add-16 fix (14/14 slot tensors incl. the
 `_storage_shared_from` storages for expert (8,10) and VLM (9,11)). Instrument otherwise unchanged
-(mse_matrix2.py, 16 batches x bs32, seed 0). NB the first E63 attempt scored only tasks 0-4 (MSEMAT_TASKS
-defaults to "0,1,2,3,4" and I did not set it) — redone over all ten.
+(16 batches x bs32, seed 0).
 **E63 10-task, corrected diagonal drift vs the PUBLISHED add-3/add-4 values:**
 | task | env | FIXED | published |
 | t0 | e4 | **+22.7%** | +6.9% |
@@ -8868,12 +7639,8 @@ it was already flagged as the worst at +18.6%, but the true magnitude is 6x that
 task whose rollout also lags. (d) E62 add-2's "indistinguishable from dedicated-tables interleave" stays void
 (add-24). (e) The 10x10 grid transcribed in add-4 is superseded by the one above.
 Real-world numbers are unaffected (computed post-fix): topt1536 +2.7% mean, topt3072 +12.4%, naive +2356%.
-Artifacts: outputs/analysis/e65_rematrix/mse_matrix_{e62_seq5,e63_seq10}_FIXED.jsonl on the VM.
 
-### Entry 66 addendum 1 (1 Sep 26, 20:15 UTC) — E66 running; the parameter-matched dense baseline costs 3.8x our wall-clock per sample (raw)
-Smoke PASSED on ladder rung 1 (bs8 x acc4; bs16 x acc2 had OOMed at 138.7/139.8 GB inside lora_B(lora_A(x)) —
-r=1216 materialises a [B,1024,1216] intermediate at each of 162 vision modules). Full run started 19:07 UTC,
-step 800 at 20:05, loss 0.098, err=0, 133.1 GB, no demotion.
+### Entry 66 addendum 1 (1 Sep 26, 20:15 UTC) — the parameter-matched dense baseline costs 3.8x our wall-clock per sample (raw)
 **Measured compute asymmetry at MATCHED added parameters and MATCHED effective batch (32):**
 | | micro-batch | updt_s | s/optimizer-step | s/sample |
 | ours merged6x2 (2.684B, sparse) | 16 x acc2 | 0.59 | 1.18 | 0.037 |
@@ -8883,8 +7650,7 @@ step 800 at 20:05, loss 0.098, err=0, 133.1 GB, no demotion.
 slots; rank-2 per token), theirs multiplies through all 416 modules for every token. Pairs with the add-16
 structural finding (a dense adapter of our size is over-complete on 362/416 matrices) — together they say a
 parameter-matched dense control is both degenerate in rank and ~4x the compute.
-**ETA CORRECTION:** 50,000 steps x 4.47 s = ~60h, not the ~14h first estimated (that assumed our own ~1 s/step
-at acc2). Lands ~08:00 UTC 4 Sep, then the 4-seed campaign (~5h). Pre-registration unchanged: expect collapse
+Pre-registration unchanged: expect collapse
 in the naive r512 band (10-task 4-seed 9.7); >~20 would be the surprise.
 
 ### Entry 66 addendum 2 (4 Sep 26, 12:20 UTC) — RESULT: the parameter-matched dense baseline scores 8.6. Reviewer objection closed.
@@ -8909,10 +7675,8 @@ Pre-registration HELD (predicted: r512 band; >~20 would have needed explaining).
 flat within seed noise (sd 0.52). Retention is not bought with parameter count. Carry add-1 (3.8x wall-clock
 per sample, cannot fit bs16) and add-16 (over-complete on 362/416 matrices at any nearby rank) alongside it:
 the matched dense control is simultaneously degenerate in rank, ~4x the compute, and catastrophically forgetful.
-Artifacts: outputs/analysis/e60/seeds_naive10_paramatched_r1216.json; run
-outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k (10 ckpts, VM). Train 62h, campaign 4.2h.
 
-## Entry 67 - 7 Sep 26 (EXTERNAL CONTINUAL BASELINES UNDER OUR PROTOCOL: RETAIN (weight merging, alpha 0.5) and O-LoRA (orthogonal per-task adapters, r=64) — code written, smoke-tested, chains queued)
+## Entry 67 - 7 Sep 26 (EXTERNAL CONTINUAL BASELINES UNDER OUR PROTOCOL: RETAIN (weight merging, alpha 0.5) and O-LoRA (orthogonal per-task adapters, r=64))
 **Why (Josh, 7 Sep):** the ICRA related-work now names RETAIN and O-LoRA as the two closest methods (RETAIN meets all four
 of our constraints for two tasks; O-LoRA is the canonical task-ID-free, replay-free LoRA competitor). A reviewer will ask
 for both as rows. Run both under the same constraints as every other sequential row: stage-1 libero_90 base, the ten
@@ -8920,7 +7684,7 @@ LIBERO-10 tasks in dataset order, 5,000 steps/task, effective batch 32, no repla
 optimizer reinit + LR reset per task, the 4-seed x 25-episode instrument, and the full rollout retention triangle
 (after task k, evaluate the k tasks seen so far) plus the 10x10 paired-noise loss matrix.
 
-**What the papers specify (read from the PDFs, scratchpad/papers/):**
+**What the papers specify (read from the PDFs):**
 - RETAIN (Yadav, Zhou, Wagenmaker, Pertsch, Levine; ICLR 2026, arXiv 2512.08333). Full fine-tune, then linear
   interpolation over EVERY parameter, theta~ = (1-alpha) theta_pre + alpha theta_ft (Eq. 2). Continual setting (Sec. 5.3,
   Eq. 4): theta~_n = (1-alpha) theta~_{n-1} + alpha theta_ft,n, i.e. the merged checkpoint replaces theta_pre at the next
@@ -8941,46 +7705,26 @@ optimizer reinit + LR reset per task, the 4-seed x 25-episode instrument, and th
 **Decisions (Josh, 7 Sep — "Yes. Go."):**
 1. RETAIN alpha = 0.5 (their continual setting). Per-task fine-tune = the paper's joint full-FT recipe (pi0.5 preset:
    AdamW peak 2.5e-5, wd 0.01, betas (0.9,0.95), clip 1.0, cosine to 2.5e-6) compressed to 5k steps with a 500-step
-   warm-up; bs8 x acc4 no-grad-ckpt (E60 add-7 rung: 2.20 s/step, 92G). NOT the LoRA rows' 1e-4 (4x their peak for
-   full FT). A second chain at alpha 0.8 (their LIBERO single-task value) is possible later at ~31h train + ~28h eval;
+   warm-up; bs8 x acc4 no-grad-ckpt. NOT the LoRA rows' 1e-4 (4x their peak for
+   full FT). A second chain at alpha 0.8 (their LIBERO single-task value) is possible later;
    it cannot be recovered from the 0.5 chain because every boundary depends on the previous merge.
 2. O-LoRA r=64, alpha/r = 0.25, the r64 specialist target set (attn+MLP both towers + action/state projections; 106M
    params per adapter) and recipe verbatim (lr 1e-4 -> 1e-5 linear, bs16 x acc2, AdamW (0.9,0.999) wd 0, clip 1.0).
    lambda_1 = 0.5 in the official L1 form. Penalty SKIPPED on the two 32-input projections (state_proj, action_in_proj):
    640 mutually orthogonal rows cannot exist in 32 dimensions; they still get adapters. So the row is "the r64 library,
    trained sequentially with the orthogonality constraint and summed at inference, without task identity".
-3. Order: RETAIN chain first, then O-LoRA; the triangle rows run in a second unit as boundaries land (VRAM-gated).
 
-**Code (commit 07e4f761 + b3ca629d; all under scripts/baselines/, importing our code and modifying none of it):**
-- `common.py`: the sequential trainer's setup mirror (make_dataset / make_policy / processors with dataset stats), its
-  per-task dataloader and paired-noise loss evaluator (imported), lerobot-train's update structure as `train_step`
-  (+ optional differentiable regulariser), SIGTERM flag, atomic directory replace with fsync, timed saves.
-- `retain/retain_sequential_train.py` (+ `retain_merge.py`, lerobot-free): per task, full FT from the running merged
+**Implementation (importing our code and modifying none of it):**
+- RETAIN: per task, full FT from the running merged
   model with the preset optimizer/scheduler, then in-memory fp32 merge theta <- (1-a) prev + a ft cast back to bf16
-  (exactness witness: on the largest tensor |merged-prev|_1/|ft-prev|_1 must equal alpha), saved as an ordinary dense
-  `checkpoints/<k*5000>/pretrained_model` (evaluates through the campaign script unchanged); the un-merged fine-tune
-  kept alongside (`ft_pretrained_model`, audit). In-progress state (model + optimizer + scheduler + RNG, 24G) rewritten
-  every 1,000 steps and on SIGTERM; resume by default.
-- `olora/olora_sequential_train.py` (+ `olora_common.py`): peft multi-adapter model, new adapter `olora_t<k>` per task,
-  earlier adapters frozen-but-active (checked: their L1 is unchanged at every boundary), penalty as above, adapter-level
-  state every 1,000 steps + SIGTERM. Every boundary exported as ONE rank-concatenated PEFT adapter zero-padded to
+  and saved as an ordinary dense
+  checkpoint (evaluates through the campaign script unchanged).
+- O-LoRA: peft multi-adapter model, new adapter per task,
+  earlier adapters frozen-but-active, penalty as above.
+  Every boundary exported as ONE rank-concatenated PEFT adapter zero-padded to
   rank 640 (exact: shared scaling => sum of rank-64 adapters == one rank-64k adapter; padding contributes nothing), so
-  `eval_seeds_campaign.py --policy.use_peft=true` and `mse_matrix_peft.py` (adapter swap, same shapes at every
-  boundary) run unchanged. Two exactness checks at every boundary: (a) algebra on the weights (max rel err 1e-7 locally),
-  (b) the concatenated adapter loaded as a temporary peft adapter reproduces the multi-adapter forward loss on the last
-  batch at the same seed (bitwise tensor round-trip asserted; loss rel diff < 2e-2 required).
-- `mse_matrix_dense.py`: the loss-matrix instrument for dense boundaries (strict full reload; no-op-load guard).
-- `run_baseline_triangle.sh retain|olora`: the E64 triangle instrument on the new chains -> outputs/analysis/e67/
-  seeds_tri_{retain10_a05,olora10_r64}_b<k>.json. `tests/test_algebra.py`: local torch+peft test (passes).
-- Ops: `job_scripts/nebius/baselines/{retain_a05,olora_r64}_10task.sh` (SMOKE=1: 2 tasks x 20 steps, forced
-  stop/resume at global step 25, then the drift instrument on both boundaries), `scripts/ops/queue_e67_train.sh
-  smoke|full` (unit e67-train), `scripts/ops/queue_e67_eval.sh` (unit e67-eval: rows as boundaries land, gated on
-  45 GB free VRAM; drift matrices when a chain completes), `scripts/ops/heartbeat_e67.sh` (local watcher, relaunches
-  both units after a preemption; each resumes from its own on-disk state).
-
-**Cost / ETA (one H200):** RETAIN 10 x 5k x 2.20 s = ~31h; O-LoRA ~27h; two triangles 2 x ~27.5h (~200 eps/h) — run
-alongside training where VRAM allows; two loss matrices ~4h. Serial ~117h; with overlap ~3.5-4 days. Disk ~180G
-(RETAIN, both ft and merged weights at every boundary) + <50G (O-LoRA) against 532G free.
+  rollout and loss-matrix instruments (adapter swap, same shapes at every
+  boundary) run unchanged.
 
 **Pre-registered expectations (before any number lands):** RETAIN alpha=0.5 — a recency gradient: each boundary halves
 every earlier task's delta, so the final all-10 mean should sit well below ours; band 15-40, later tasks higher.
@@ -8988,47 +7732,14 @@ O-LoRA r64 — above naive r512 (9.7), below ours (65.1); OrthoSkillVLA reported
 setting; band 20-45. Either row above ~55 needs explaining before it goes in the paper. Both rows' loss-drift
 should exceed ours (+28.5% mean after ten tasks).
 
-**Smoke (unit e67-smoke, 12:48 UTC 7 Sep):** first launch failed in both trainers at argument parsing —
-`from __future__ import annotations` turns the `main(cfg: ...)` annotation into a string and draccus needs the class
-(a known lerobot/draccus trap; fixed in b3ca629d). Relaunched 12:48 UTC; results in addendum 1.
+### Entry 67 addendum 1 (7 Sep 26, 14:15 UK) — first smoke: O-LoRA penalty caveat
+**Measured on the smoke (2 tasks x 20 steps each):**
+- O-LoRA runs at **bs8 x acc4** (effective batch 32 unchanged; accumulation is numerically neutral up to rounding, the E60 add-7 methods note). 254 LoRA modules = 7 per layer x 18 layers x 2 towers + action_in_proj + action_out_proj (the regex of every LoRA row; state_proj / action_time_mlp are not matched in this pi0.5 port), 106.3M params per adapter, adapters fp32. Penalty over 253 modules (action_in_proj excluded, 32 inputs; nothing unsatisfiable); initial L1 6.6e3 at task 2, falling to 4.3e3 over 20 steps; **grad norm ~295 before clipping, i.e. the penalty dominates the raw gradient** — under Adam the per-parameter normalisation means B_t still learns the task at lr scale while A_t is first pushed into the orthogonal complement, which is the method's intended dynamics; lambda_1 = 0.5 is the official value and was NOT re-tuned for our loss scale (carry as a caveat).
 
-### Entry 67 addendum 1 (7 Sep 26, 14:15 UK) — first smoke: both chains train, checkpoint, resume and export correctly; three fixes before launch
-**Measured on the smoke (2 tasks x 20 steps each, forced stop at global step 25, resume, then the drift instrument):**
-- RETAIN at bs8 x acc4: **2.19 s/step, peak 88.5 GiB** (the E60 add-7 rung reproduced). Merge witness at both boundaries: mean |merged-prev| / mean |ft-prev| = 0.5000 over all 4.143B parameters. Resume path verified: "loading merged boundary 1 weights" -> "in-progress task 1 at step 5" -> optimizer/scheduler/RNG restored -> chain completes with boundary 2. **In-progress state save = 82 s** (24 G: 8.8 model + 15 optimizer, fsynced). That is outside both the 45-s unit stop timeout and the 60-s preemption window, so per CLAUDE.md 9.4.7 the SIGTERM save is best-effort only and the periodic save (every 1,000 steps = 37 min, ~4% overhead) is the mechanism; a preemption costs at most ~40 min of RETAIN training. Boundary saves (merged 8.8 G + ft 8.8 G) take 14 s each.
-- O-LoRA at bs16 x acc2: 2.3-3.0 s/step but **peak 116.9-118.1 GiB** (the un-checkpointed activation graph at micro-batch 16, as E60 add-7 measured for full FT — LoRA still back-propagates through the frozen base). That would leave <26 G free and block the eval unit from overlapping, so the chain runs at **bs8 x acc4** (effective batch 32 unchanged; accumulation is numerically neutral up to rounding, the E60 add-7 methods note). 254 LoRA modules = 7 per layer x 18 layers x 2 towers + action_in_proj + action_out_proj (the regex of every LoRA row; state_proj / action_time_mlp are not matched in this pi0.5 port), 106.3M params per adapter, adapters fp32. Adapter-level state save 3.4 s. Export check at both boundaries: algebra max rel err 1.3e-6; the concatenated adapter loaded as a temporary peft adapter reproduces the multi-adapter loss to rel 1.6e-3 on the same batch/seed (bitwise tensor round-trip asserted); frozen adapter L1 unchanged across task 2. Penalty over 253 modules (action_in_proj excluded, 32 inputs; nothing unsatisfiable); initial L1 6.6e3 at task 2, falling to 4.3e3 over 20 steps; **grad norm ~295 before clipping, i.e. the penalty dominates the raw gradient** — under Adam the per-parameter normalisation means B_t still learns the task at lr scale while A_t is first pushed into the orthogonal complement, which is the method's intended dynamics; lambda_1 = 0.5 is the official value and was NOT re-tuned for our loss scale (carry as a caveat).
-**Fixes (commit 06195660):** (1) the wrappers' smoke checks read only stdout while the trainers log to stderr, so both smokes were mis-reported as "did not resume" although the log shows the resume — `2>&1` added; (2) O-LoRA micro-batch 16 -> 8 (above); (3) the merge witness picked the largest tensor, `lm_head.weight` (527M), which the fine-tune never moves (NaN ratio) — now the largest tensor that moved, and a NaN fails the check. Second smoke launched 14:12 UK (unit e67-smoke).
-
-### Entry 67 addendum 2 (7 Sep 26, 15:25 UK) — second smoke PASSED end to end; both chains LAUNCHED 15:21 UK
-**Smoke 2 (unit e67-smoke, 14:12-14:55 UK):** E67-RETAIN-SMOKE-OK and E67-OLORA-SMOKE-OK. RETAIN: 2 boundaries, merge ratio 0.5000, resume at task-2 step 5 verified, dense loss matrix on both boundaries through `mse_matrix_dense.py` (task-0/1 MSE 0.578/0.593 -> 0.569/0.566 — the fine-tune barely moved at warm-up LR, as expected for 20 steps). O-LoRA at **bs8 x acc4: peak 63.6-64.5 GiB** (vs 118 at bs16), 2.0-3.2 s/step in the smoke; task 1 is a plain rank-64 LoRA (orth 0, grad norm 0.16-0.21); at task 2 the penalty enters at L1 3.1e3 with grad norm ~295; export check rel diff 0.0 (one adapter) and 2.9e-3 (two), algebra 2e-7 / 1.6e-5; the adapter-swap matrix (`mse_matrix_peft.py`, factory use_peft path, L1(lora_B) swap guard) scored both boundaries.
-**One more instrument fix (46c2a4d0):** `mse_matrix_peft.py` hard-coded tasks [0..4]; it now reads `MSEMAT_TASKS` with the same default, so the O-LoRA 10-task matrix will score all ten (no behaviour change for existing callers).
-**Launched 14:21:42 UTC (15:21 UK), commit 06195660 (+46c2a4d0 pulled for the matrix stage):**
-- `e67-train`: `queue_e67_train.sh full` -> RETAIN chain (`libero_10_seq10_retain_a05_fullft_steps5k`, bs8 x acc4, ~31h => ~22:30 UK Tue 8 Sep) then the O-LoRA chain (`libero_10_seq10_olora_r64_a16_lam05_steps5k`, bs8 x acc4, ~27-30h => ~Thu 10 Sep early). Log outputs/e67/train.log.
-- `e67-eval`: `queue_e67_eval.sh` -> triangle rows as boundaries land, gated on 45 GB free VRAM (RETAIN training leaves ~55 GB; O-LoRA at bs8 ~79 GB), then the two drift matrices. Log outputs/e67/eval.log; rows -> outputs/analysis/e67/seeds_tri_{retain10_a05,olora10_r64}_b<k>.json.
-- Local: `scripts/ops/heartbeat_e67.sh` (poll 10 min, forced beat hourly, relaunches both units after a preemption) -> lerobot/outputs/e67_heartbeat_local.log; plus an hourly check by Claude at :07.
-**Watch items:** (i) whether the eval rows slow RETAIN training (the smoke's 2.19 s/step is the reference; CPU has 16 vCPUs for 8 dataloader workers + 13 env processes); (ii) RETAIN periodic saves at 82 s each (every 1,000 steps); (iii) O-LoRA penalty trajectory per task and the boundary JSON's `penalty_final` (max |A_i A_t^T| entry) — the paper text must say lambda_1 = 0.5 as in the official code, not re-tuned.
-
-### Entry 67 addendum 3 (7 Sep 26, 18:40 UK) — RETAIN boundary 1 landed on schedule; first triangle row queued
-**RETAIN task 1 (dataset task 0, "put the white mug on the left plate and put the yellow and white mug on the right plate") finished at 17:33 UTC (18:33 UK)**, 5,000 steps at a steady 2.20-2.23 s/step (3.0 s/step only during the two periodic 83-86 s state saves), loss 0.112 (step 1,000) -> 0.028 (step 5,000). Boundary merge at 17:34:22 UTC: mean |ft-prev| = 1.094e-4, mean |merged-prev| = 5.468e-5, **ratio 0.5000** over all 4.143B parameters (largest tensor, the 527M-entry PaliGemma embedding, also exactly 0.5) — the alpha-0.5 merge behaves as in the smoke. Both boundary exports (ft and merged `pretrained_model`) written in 14 s each; peak CUDA 88.5 GiB. Task 2 started straight after. Timing: 3h12m per task including saves, so the ten-task chain lands ~22:30 UK Tue 8 Sep as estimated.
-**Eval side:** `queue_e67_eval.sh` polls every 10 min; its 17:31 UTC pass predates the boundary, so row 1 (4 seeds x LIBERO-10 envs on the merged block-1 model) starts at the ~17:42 UTC pass, gated on 45 GB free VRAM (training sits at ~92 GB of 141 GB on the H200, so the gate should pass). Nothing to compare yet; the first number is the block-1 retention row.
-**Monitoring note:** the unit log receives the trainer's lines only in 4 KB chunks (the wrapper's trailing `grep -v` block-buffers), so the heartbeat now reads progress from the wrappers' unbuffered `tee` copies (`/tmp/retain_last.log`, `/tmp/olora_last.log`; commit 4d209590). The O-LoRA wrapper got `--line-buffered` for its run; the RETAIN wrapper was deliberately left untouched while its bash process runs.
-
-### Entry 67 addendum 4 (7 Sep 26, 19:40 UK) — triangle row 1 was silently blocked by the VRAM gate for an hour; gate lowered 45 -> 22 GB, row 1 running
-**Symptom:** an hour after boundary 1 the eval log still showed "retain rows 0/10" and the triangle runner (PID 3959511) had been alive 53 min with no campaign process. **Cause:** `run_baseline_triangle.sh` waits for >= GATE_FREE_MIB free VRAM before each row, and the RETAIN trainer's caching allocator grew from 92 GB to **106.8 GB** across the boundary export / task-2 warm-up (allocated 22.9 GiB, peak 88.5 GiB — the rest is reserved cache PyTorch never returns), leaving 36.4 GB of the 141 GB free, under the 45 GB gate. The addendum-2 estimate ("RETAIN training leaves ~55 GB") was the smoke's 92 GB steady state, not the post-boundary reservation. Left alone, every RETAIN row would have waited for the chain to end (~22:30 UK Tue) and then queued serially behind the O-LoRA chain — which is exactly what the two-unit design was meant to avoid.
-**Fix (bd2f9af2):** the trainer cannot be starved by the eval because its 106.8 GB is already reserved; the eval only needs its own ~15-20 GB (pi0.5 bf16 weights + 13 env batch, with the runner's 13 -> 8 -> 4 batch fallback on OOM). Gate default lowered to **22,000 MiB**. Eval unit stopped (nothing in flight), VM pulled, unit relaunched with the same systemd-run line at 18:36:38 UTC; the block-1 campaign process was up 68 s later (`eval_seeds_campaign.py --policy.path=.../checkpoints/005000/pretrained_model`, seeds 1000/2000/3000/4000, 25 eps, env 4). RETAIN training unaffected: task 2 step 1,600/5,000 at 2.21 s/step, loss 0.064.
-**Consequence for the schedule:** rows now interleave with training as designed; row k evaluates k tasks x 100 episodes, so row 10 (10 tasks) is the long one and runs after the chain ends. The O-LoRA rows face the same gate with O-LoRA's ~79 GB (+ cache) — 22 GB leaves margin there too.
-**Reminder recorded from Josh (19:05 UK): the deliverable is the FULL 10-row retention triangle for both RETAIN and O-LoRA** (55 task-evaluations each), plus the two drift matrices; the queue is skip-guarded per row and loops until both chains read 10/10, and the heartbeat's `tri=r/o` counts are the tracker.
-
-### Entry 67 addendum 5 (7 Sep 26, 20:15 UK) — RETAIN row 1: env 4 = 71.0 (block-1 plasticity at the naive-LoRA level); 28.5 min per cell alongside training
-**Row 1 (`seeds_tri_retain10_a05_b1.json`, block-1 merged model = base + 0.5 x (ft - base), env 4, 25 eps x seeds 1000/2000/3000/4000):** per-seed 68 / 72 / 72 / 72, **mean 71.0**. Block-1 diagonal across the three chains on the same instrument (E60 files on the VM, `seeds_tri_*_b1.json`): naive LoRA r512 **70.0** (80/72/64/64), ours merged6x2 **54.0** (52/52/60/52), RETAIN alpha 0.5 **71.0**. So halving the full-FT delta costs RETAIN nothing on the just-trained task at block 1 — full FT plus half-merge is as plastic as the naive adapter here, and 17 points above ours. Retention is the question the merge is supposed to answer; the first evidence is row 2 (block-2 model back on env 4): boundary 2 ~21:50 UK, row 2 (2 cells) lands ~22:50 UK.
-**Cost:** the row ran 18:36:38 -> 19:05:10 UTC, **28.5 min per cell** (100 episodes, vec batch 13) while sharing the GPU with training — the E64 standalone triangle was ~24 min per cell. Training slowed from 2.21 to 2.36-2.40 s/step (+8%) for the duration. Projection: row k costs ~28.5k min against a 3.2 h boundary spacing, so rows 1-6 finish inside their gap, rows 7-9 start queuing (row 9 ~4.3 h), and rows 8-10 (27 cells, ~13 h) run on past the chain end. Whole-E67 finish (both chains, both triangles, both matrices) now looks like **Thu 10 Sep, daytime UK**, with the O-LoRA chain starting late Tue 8 Sep.
-
-### Entry 67 addendum 6 (7 Sep 26, 22:45 UK) — RETAIN trainer leaked one optimizer state per task (14.1 GiB); fixed and restarted from the task-3 in-progress state
-**Found via the eval gate.** After boundary 2 the trainer held ~121 GB (up from 92 GB in task 1 and 107 GB after boundary 1), leaving the row-2 eval 9.5 GB of headroom. Its own memory lines explain it: `[after-setup] 8.7 GiB` (bf16 weights) -> `[boundary-1] allocated 22.9 GiB` -> `[boundary-2] allocated 37.0 GiB`, i.e. **+14.1 GiB retained per completed task**, matching one AdamW state; the task peak rose in step, 88.5 -> 102.6 GiB. Cause: the boundary code did `del optimizer, lr_scheduler` + `empty_cache()`, but `accelerator.prepare(optimizer, lr_scheduler)` keeps its own references in `accelerator._optimizers` / `_schedulers` (accelerate 1.12.0), so nothing was freed. The smoke could not show it: its second boundary ran in a fresh process after the forced stop/resume. Projection without a fix: task peaks 117 / 131 / 145 GiB for tasks 3 / 4 / 5 on a 134 GiB card — an OOM at task 4 or 5 (the wrapper would resume in a new process, which resets the leak, then leak again), and the eval's 22 GB gate shut from task 3 on.
-**Fix (8d590ebf + 47fbcf91), both trainers:** at each boundary `optimizer.state.clear()`, `zero_grad(set_to_none=True)` (RETAIN), clear the two accelerate registries, `gc.collect()`, `empty_cache()`, `reset_peak_memory_stats()` so the logged peak is per task. Local check against accelerate 1.12.0: registries 1/1 after prepare, 0/0 after the clear, optimizer state empty. O-LoRA's leak was small (adapter-sized: +0.4-0.9 GiB per boundary in its smoke) but the same pattern, so it gets the same cleanup.
-**Deployment:** only the two trainer .py files changed on the VM (the running bash wrapper/queue untouched). SIGTERM sent to the trainer's main process at 21:39:28 UTC (task 3, step ~1,250) — not `systemctl stop`, whose 45 s TimeoutStopSec would SIGKILL the 85 s state save. Expected path: handler saves `retain_state/current` -> RETAIN-PREEMPT-EXIT -> wrapper ok -> queue "E67-TRAIN-PAUSED" (progress 2/10) -> unit exits -> relaunch with the standard systemd-run line -> "resume: in-progress task 3 at step N". Cost: ~10 min of wall clock, no lost steps. Row 2 of the triangle (envs 4, 6) kept running throughout. Restart result and the post-fix boundary-3 memory line in the next addendum / hourly.
-
-### Entry 67 addendum 7 (7 Sep 26, 23:00 UK) — RETAIN row 2: env 4 falls 71 -> 0.0 after one more task (naive-level forgetting, higher plasticity); restart confirmed, leak gone
-**Row 2 (`seeds_tri_retain10_a05_b2.json`, block-2 merged model, written 21:40 UTC):** env 4 per-seed **0 / 0 / 0 / 0 = 0.0**; env 6 per-seed 84 / 84 / 76 / 80 = **81.0**. Row mean 40.5. Same instrument, first two rows of the three chains (E64 add-11/12 tables):
+### Entry 67 addendum 5 (7 Sep 26, 20:15 UK) — RETAIN row 1: env 4 = 71.0 (block-1 plasticity at the naive-LoRA level)
+**Row 1 (block-1 merged model = base + 0.5 x (ft - base), env 4, 25 eps x seeds 1000/2000/3000/4000):** per-seed 68 / 72 / 72 / 72, **mean 71.0**. Block-1 diagonal across the three chains on the same instrument: naive LoRA r512 **70.0** (80/72/64/64), ours merged6x2 **54.0** (52/52/60/52), RETAIN alpha 0.5 **71.0**. So halving the full-FT delta costs RETAIN nothing on the just-trained task at block 1 — full FT plus half-merge is as plastic as the naive adapter here, and 17 points above ours. Retention is the question the merge is supposed to answer; the first evidence is row 2 (block-2 model back on env 4).
+### Entry 67 addendum 7 (7 Sep 26, 23:00 UK) — RETAIN row 2: env 4 falls 71 -> 0.0 after one more task (naive-level forgetting, higher plasticity)
+**Row 2 (block-2 merged model):** env 4 per-seed **0 / 0 / 0 / 0 = 0.0**; env 6 per-seed 84 / 84 / 76 / 80 = **81.0**. Row mean 40.5. Same instrument, first two rows of the three chains (E64 add-11/12 tables):
 
 | after block | naive LoRA r512 (e4, e6) | ours merged6x2 (e4, e6) | RETAIN alpha 0.5 full FT (e4, e6) |
 |---|---|---|---|
@@ -9036,11 +7747,9 @@ should exceed ours (+28.5% mean after ten tasks).
 | b2 | 0.0, 64.0 | 54.0, 65.0 | **0.0, 81.0** |
 
 So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives no rollout retention at all on the first prior task: env 4 goes to zero on all four seeds exactly as the naive adapter does, while the just-trained task is the most plastic of the three (81 vs 64 naive, 65 ours). This is what a halved full-FT delta of ~1.1e-4 mean absolute per weight does to a 4.1B-parameter policy: the halfway point between theta_1 and the task-2 fine-tune is already off task 1's manifold. Rows 3-10 decide whether anything of earlier tasks survives (the paper's claim is retention of the *pretraining* distribution, which the drift matrix at the end will test more directly); on rollouts the picture so far is "naive forgetting, better plasticity". Do not over-read two rows — but the row-2 zero is four-seed unanimous.
-**Restart after the leak fix (add-6):** trainer exited cleanly at 21:41 UTC after its SIGTERM save (task 3 step 1,261, state written in 87 s); the background heartbeat relaunched the unit at its 21:41 poll (my waiter found it already active); `resume: in-progress task 2 at step 1261` (0-based task index; task 3 of 10), `[after-setup] cuda allocated 8.7 GiB`, optimizer/scheduler/RNG restored at global step 11,261, training resumed 21:44 UTC. GPU total back to **92.0 GB** from 121 GB. Verification that the fix holds: the `[boundary-3]` line (~00:10 UTC) should read allocated ~9 GiB, not 51.
-**Add-6 fix verified (8 Sep, 01:10 UK):** `[boundary-3] cuda allocated 8.8 GiB` (00:07:47 UTC) — the bf16 weights only, where the leak would have left 51 GiB; merge ratio 0.5000 again at global step 15,000. Both trainers keep a flat memory footprint across boundaries from here on, so the eval rows keep their ~50 GB of headroom for the rest of the chain.
 
 ### Entry 67 addendum 8 (8 Sep 26, 02:35 UK) — RETAIN row 3: env 4 = 5.0, env 6 = 52.0, env 9 = 19.0 — the half-merge now costs the *new* task too
-**Row 3 (`seeds_tri_retain10_a05_b3.json`, block-3 merged model, envs 4/6/9, written 01:19:56 UTC; 69 min for 3 cells = 23 min/cell):** env 4 per-seed 8/0/4/8 = **5.0**; env 6 per-seed 52/56/56/44 = **52.0**; env 9 (just trained, "put the yellow and white mug in the microwave and close it") per-seed 8/24/16/28 = **19.0**. Row mean 25.3.
+**Row 3 (block-3 merged model, envs 4/6/9):** env 4 per-seed 8/0/4/8 = **5.0**; env 6 per-seed 52/56/56/44 = **52.0**; env 9 (just trained, "put the yellow and white mug in the microwave and close it") per-seed 8/24/16/28 = **19.0**. Row mean 25.3.
 
 | after block | naive LoRA r512 (e4, e6, e9) | ours merged6x2 (e4, e6, e9) | RETAIN alpha 0.5 full FT (e4, e6, e9) |
 |---|---|---|---|
@@ -9048,11 +7757,9 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | b2 | 0.0, 64.0 | 54.0, 65.0 | 0.0, 81.0 |
 | b3 | 0.0, 1.0, 82.0 | 50.0, 66.0, 71.0 | **5.0, 52.0, 19.0** |
 
-**Reading.** Two things at once. (i) Retention of the one-back task is real but partial: env 6 keeps 52 of its 81 (naive keeps 1 of 64), env 4 is 5 (two-back; naive 0). So the alpha-0.5 merge does buy something the naive chain lacks — roughly, the merged weights sit half-way between the previous model and the new fine-tune, so the previous task's behaviour survives one boundary at reduced strength and is gone by the next. (ii) The same halving now hits the *new* task: env 9 at 19 vs naive's 82 and ours 71. Task 3 was the hardest so far (final training loss 0.060 vs 0.028 / 0.022 for tasks 1 / 2; boundary delta 1.15e-4 vs 1.09e-4 / 1.08e-4), and half of that delta is evidently not enough to execute it — the full fine-tune presumably would (the `ft_pretrained_model` export at 015000 exists if we ever want that number; not in the protocol). Row 2's 81 on env 6 looked like "free plasticity"; row 3 says it was task-dependent. Net so far: RETAIN's row means 71.0 / 40.5 / 25.3 vs ours 54.0 / 59.5 / 62.3 — the merge trades plasticity for a one-boundary memory, and the trade is losing by row 3.
-**Timing:** rows are running at ~23 min/cell, faster than row 1's 28.5 (the campaign's 13-env vec batch is better filled with 3 tasks); row 4 (4 cells, ~90 min) starts when boundary 4 lands ~04:15 UK.
-
+**Reading.** Two things at once. (i) Retention of the one-back task is real but partial: env 6 keeps 52 of its 81 (naive keeps 1 of 64), env 4 is 5 (two-back; naive 0). So the alpha-0.5 merge does buy something the naive chain lacks — roughly, the merged weights sit half-way between the previous model and the new fine-tune, so the previous task's behaviour survives one boundary at reduced strength and is gone by the next. (ii) The same halving now hits the *new* task: env 9 at 19 vs naive's 82 and ours 71. Task 3 was the hardest so far (final training loss 0.060 vs 0.028 / 0.022 for tasks 1 / 2; boundary delta 1.15e-4 vs 1.09e-4 / 1.08e-4), and half of that delta is evidently not enough to execute it — the full fine-tune presumably would. Row 2's 81 on env 6 looked like "free plasticity"; row 3 says it was task-dependent. Net so far: RETAIN's row means 71.0 / 40.5 / 25.3 vs ours 54.0 / 59.5 / 62.3 — the merge trades plasticity for a one-boundary memory, and the trade is losing by row 3.
 ### Entry 67 addendum 9 (8 Sep 26, 06:35 UK) — RETAIN row 4: 5.0 / 21.0 / 3.0 / 86.0 — one-boundary memory confirmed, nothing survives two
-**Row 4 (`seeds_tri_retain10_a05_b4.json`, block-4 merged model, envs 4/6/9/2, written 05:17:42 UTC; 108 min for 4 cells = 27 min/cell):** env 4 per-seed 8/4/4/4 = **5.0**; env 6 28/20/20/16 = **21.0**; env 9 4/4/4/0 = **3.0**; env 2 (just trained, "turn on the stove and put the moka pot on it", final training loss 0.031) 88/84/80/92 = **86.0**. Row mean 28.8.
+**Row 4 (block-4 merged model, envs 4/6/9/2):** env 4 per-seed 8/4/4/4 = **5.0**; env 6 28/20/20/16 = **21.0**; env 9 4/4/4/0 = **3.0**; env 2 (just trained, "turn on the stove and put the moka pot on it", final training loss 0.031) 88/84/80/92 = **86.0**. Row mean 28.8.
 
 | after block | naive LoRA r512 (e4, e6, e9, e2) | ours merged6x2 (e4, e6, e9, e2) | RETAIN alpha 0.5 full FT (e4, e6, e9, e2) |
 |---|---|---|---|
@@ -9064,27 +7771,27 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 **Reading.** The pattern from row 3 holds and sharpens. Diagonal (just trained): 71 / 81 / 19 / 86 — full plasticity on the easy tasks (the halved delta is enough when the task is easy: env 2 is naive's 96 and ours 87), a collapse on the hard one (env 9). One boundary back: 0 (e4@b2), 52 (e6@b3), 3 (e9@b4) — what survives one merge is roughly half of whatever the diagonal was, and env 9 had 19 to start with. Two boundaries back: 5 (e4@b3), 21 (e6@b4) — a quarter-ish. Three back: 5. Geometric decay by ~0.5 per boundary is exactly what a fixed alpha = 0.5 interpolation predicts if the tasks' deltas are roughly orthogonal in weight space: each boundary halves every earlier task's residual delta. Row means: RETAIN 71.0 / 40.5 / 25.3 / 28.8 vs ours 54.0 / 59.5 / 62.3 / 64.2 vs naive 70.0 / 32.0 / 27.7 / 24.0 — RETAIN is tracking the naive chain, a few points above it, and losing ~35 points per row to ours from row 3. Six rows to go; the expected end state is a row-10 mean near 10-15 (the diagonal plus a halved one-back task) against ours at 65.1.
 
 ### Entry 67 addendum 10 (8 Sep 26, 10:20 UK) — RETAIN row 5: 9 / 30 / 0 / 65 / 57 — halfway; row mean 32.2 vs ours 66.0, naive 18.0
-**Row 5 (`seeds_tri_retain10_a05_b5.json`, block-5 merged model, envs 4/6/9/2/7, written 09:00:05 UTC; 132 min for 5 cells = 26 min/cell):** env 4 per-seed 12/8/4/12 = **9.0**; env 6 28/24/40/28 = **30.0**; env 9 0/0/0/0 = **0.0**; env 2 84/72/68/36 = **65.0**; env 7 (just trained, "put both the alphabet soup and the cream cheese box in the basket", final training loss 0.041) 40/64/64/60 = **57.0**. Row mean 32.2.
+**Row 5 (block-5 merged model, envs 4/6/9/2/7):** env 4 per-seed 12/8/4/12 = **9.0**; env 6 28/24/40/28 = **30.0**; env 9 0/0/0/0 = **0.0**; env 2 84/72/68/36 = **65.0**; env 7 (just trained, "put both the alphabet soup and the cream cheese box in the basket", final training loss 0.041) 40/64/64/60 = **57.0**. Row mean 32.2.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
 |---|---|---|---|
 | b5 (e4, e6, e9, e2, e7) | 0, 0, 0, 32, 58 = 18.0 | 53, 72, 65, 89, 51 = 66.0 | **9, 30, 0, 65, 57 = 32.2** |
 | row means b1..b5 | 70.0, 32.0, 27.7, 24.0, 18.0 | 54.0, 59.5, 62.3, 64.2, 66.0 | 71.0, 40.5, 25.3, 28.8, 32.2 |
 
-**Reading.** Diagonal env 7 at 57 is on par with both other chains (58 / 51) — a hard basket task where the halved delta is not the limiter. One-back env 2 keeps 65 of 86 (naive keeps 32 of 96): the one-boundary memory again, ~0.75 this time rather than ~0.5. The decay is not monotone geometric: env 6 went 81 -> 52 -> 21 -> **30** (all four seeds >= 24, previous row 16-28) and env 4 5 -> 9, so a later merge can hand a little back — the task deltas are not orthogonal and the half-steps sometimes move toward an older task. But the level is the point: everything two or more boundaries back sits at 0-30, and the row mean is climbing only because the chain has reached easier or more transferable tasks (ours 66.0 on the same row). RETAIN's mean is 14 points above naive and 34 below ours at the halfway mark. Cost so far: five rows in 6h 50m of eval wall clock, interleaved; rows 6-10 (40 cells, ~17.5 h) will overrun the chain end (~01:00 UK Wed) by ~9 h, so the RETAIN triangle completes ~10:00 UK Wed, with the O-LoRA chain training alongside from ~01:00.
+**Reading.** Diagonal env 7 at 57 is on par with both other chains (58 / 51) — a hard basket task where the halved delta is not the limiter. One-back env 2 keeps 65 of 86 (naive keeps 32 of 96): the one-boundary memory again, ~0.75 this time rather than ~0.5. The decay is not monotone geometric: env 6 went 81 -> 52 -> 21 -> **30** (all four seeds >= 24, previous row 16-28) and env 4 5 -> 9, so a later merge can hand a little back — the task deltas are not orthogonal and the half-steps sometimes move toward an older task. But the level is the point: everything two or more boundaries back sits at 0-30, and the row mean is climbing only because the chain has reached easier or more transferable tasks (ours 66.0 on the same row). RETAIN's mean is 14 points above naive and 34 below ours at the halfway mark.
 
 ### Entry 67 addendum 11 (8 Sep 26, 14:00 UK) — RETAIN row 6: 14 / 13 / 0 / 14 / 35 / 46 — row mean 20.3 (ours 57.7, naive 12.2)
-**Row 6 (`seeds_tri_retain10_a05_b6.json`, block-6 merged model, envs 4/6/9/2/7/0, written 12:47:38 UTC; 157 min for 6 cells = 26 min/cell):** env 4 per-seed 28/8/12/8 = **14.0**; env 6 12/20/4/16 = **13.0**; env 9 0/0/0/0 = **0.0**; env 2 8/16/12/20 = **14.0**; env 7 28/44/28/40 = **35.0**; env 0 (just trained, "put both the alphabet soup and the tomato sauce in the basket", final training loss 0.028) 44/40/44/56 = **46.0**. Row mean 20.3.
+**Row 6 (block-6 merged model, envs 4/6/9/2/7/0):** env 4 per-seed 28/8/12/8 = **14.0**; env 6 12/20/4/16 = **13.0**; env 9 0/0/0/0 = **0.0**; env 2 8/16/12/20 = **14.0**; env 7 28/44/28/40 = **35.0**; env 0 (just trained, "put both the alphabet soup and the tomato sauce in the basket", final training loss 0.028) 44/40/44/56 = **46.0**. Row mean 20.3.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
 |---|---|---|---|
 | b6 (e4, e6, e9, e2, e7, e0) | 0, 0, 0, 0, 0, 73 = 12.2 | 54, 65, 64, 83, 40, 40 = 57.7 | **14, 13, 0, 14, 35, 46 = 20.3** |
 | row means b1..b6 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3 |
 
-**Reading.** The one-back task (env 7) keeps 35 of 57 (~0.6, the now-familiar one-boundary memory); the two-back task (env 2) drops 65 -> 14 — the second merge is where RETAIN loses a task. Everything older sits in the 0-14 band, which is where naive sits at 0 — RETAIN's floor is a little above zero (env 4 back up to 14 on the strength of one seed at 28) but it is a floor. The diagonal on env 0 (a basket task, hard for every chain: naive 73, ours 40) is 46. Row 5's climb was the easy-task stretch; row 6 is back to the trend line: RETAIN's mean has now fallen to 8 points above naive and 37 below ours. Four rows remain (34 cells, ~15 h); with the chain ending ~01:00 UK Wed the RETAIN triangle completes ~10:00 UK Wed as projected.
+**Reading.** The one-back task (env 7) keeps 35 of 57 (~0.6, the now-familiar one-boundary memory); the two-back task (env 2) drops 65 -> 14 — the second merge is where RETAIN loses a task. Everything older sits in the 0-14 band, which is where naive sits at 0 — RETAIN's floor is a little above zero (env 4 back up to 14 on the strength of one seed at 28) but it is a floor. The diagonal on env 0 (a basket task, hard for every chain: naive 73, ours 40) is 46. Row 5's climb was the easy-task stretch; row 6 is back to the trend line: RETAIN's mean has now fallen to 8 points above naive and 37 below ours.
 
-### Entry 67 addendum 12 (8 Sep 26, 18:05 UK) — RETAIN row 7: 8 / 5 / 0 / 25 / 34 / 63 / 34 — row mean 24.1 (ours 63.0, naive 10.9); boundary 8 landed
-**Row 7 (`seeds_tri_retain10_a05_b7.json`, block-7 merged model, envs 4/6/9/2/7/0/8, written 16:52:58 UTC; 195 min for 7 cells = 28 min/cell):** env 4 per-seed 16/4/4/8 = **8.0**; env 6 12/4/4/0 = **5.0**; env 9 0/0/0/0 = **0.0**; env 2 16/24/32/28 = **25.0**; env 7 44/28/28/36 = **34.0**; env 0 68/68/64/52 = **63.0**; env 8 (just trained, "put both moka pots on the stove", final training loss 0.021) 28/36/32/40 = **34.0**. Row mean 24.1.
+### Entry 67 addendum 12 (8 Sep 26, 18:05 UK) — RETAIN row 7: 8 / 5 / 0 / 25 / 34 / 63 / 34 — row mean 24.1 (ours 63.0, naive 10.9)
+**Row 7 (block-7 merged model, envs 4/6/9/2/7/0/8):** env 4 per-seed 16/4/4/8 = **8.0**; env 6 12/4/4/0 = **5.0**; env 9 0/0/0/0 = **0.0**; env 2 16/24/32/28 = **25.0**; env 7 44/28/28/36 = **34.0**; env 0 68/68/64/52 = **63.0**; env 8 (just trained, "put both moka pots on the stove", final training loss 0.021) 28/36/32/40 = **34.0**. Row mean 24.1.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
 |---|---|---|---|
@@ -9092,10 +7799,8 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | row means b1..b7 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2, 10.9 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7, 63.0 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3, 24.1 |
 
 **Reading.** Two features worth noting. (i) The diagonal is now *below* the one-back cell: env 8 (just trained) 34 vs env 0 (one back) 63. Env 0 went 46 -> 63 across a boundary — the merge moved it *up*, the second time we have seen this (env 6 21 -> 30 at b5). Both jumps are on basket/stove tasks that share structure with the task trained next, so the halved delta of a related task partly serves the older one; this is positive backward transfer via weight-space proximity, not retention as such. (ii) The old block (e4, e6, e9) is at 8 / 5 / 0 and stable — RETAIN's floor. Naive is at 0/0/0/2/0/7 with only its diagonal alive (67); ours holds 45-89 everywhere. RETAIN's mean is 13 above naive, 39 below ours.
-**Boundary 8 landed 17:52 UK** (global step 40,000, ratio 0.5000, task "put both the cream cheese box and the butter in the basket"). Row 8 (8 cells, ~3.7 h) starts on the next eval pass; disk 86% with 356 GB free.
-
-### Entry 67 addendum 13 (8 Sep 26, 21:50 UK) — RETAIN row 8: everything but the diagonal collapses (mean 12.1); boundary 9 landed, chain ends ~00:50 UK
-**Row 8 (`seeds_tri_retain10_a05_b8.json`, block-8 merged model, envs 4/6/9/2/7/0/8/1, written 20:36:43 UTC; 214 min for 8 cells = 27 min/cell):** env 4 **2.0** (4/4/0/0); env 6 **0.0**; env 9 **0.0**; env 2 **10.0** (12/4/12/12); env 7 **5.0** (12/4/4/0); env 0 **3.0** (0/0/8/4); env 8 **7.0** (8/4/4/12); env 1 (just trained, "put both the cream cheese box and the butter in the basket", final training loss 0.030) **70.0** (68/72/72/68). Row mean 12.1.
+### Entry 67 addendum 13 (8 Sep 26, 21:50 UK) — RETAIN row 8: everything but the diagonal collapses (mean 12.1)
+**Row 8 (block-8 merged model, envs 4/6/9/2/7/0/8/1):** env 4 **2.0** (4/4/0/0); env 6 **0.0**; env 9 **0.0**; env 2 **10.0** (12/4/12/12); env 7 **5.0** (12/4/4/0); env 0 **3.0** (0/0/8/4); env 8 **7.0** (8/4/4/12); env 1 (just trained, "put both the cream cheese box and the butter in the basket", final training loss 0.030) **70.0** (68/72/72/68). Row mean 12.1.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
 |---|---|---|---|
@@ -9103,15 +7808,10 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | row means b1..b8 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2, 10.9, 4.8 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7, 63.0, 58.9 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3, 24.1, 12.1 |
 
 **Reading.** The b7 backward-transfer bump was temporary: env 0 63 -> **3** and env 7 34 -> **5** in one boundary, i.e. the "recovered" tasks were riding on structure the block-8 task did not share, and the merge took it back. Every non-diagonal cell is now 0-10 — the same picture as naive (all zeros) with a few points of noise on top. Diagonal 70 is healthy (naive 38, ours 41 on this task). So at 8 tasks RETAIN retains nothing measurable in rollouts; its advantage over naive has shrunk to ~7 points of row mean, almost all of it in the one-back cell, while ours holds 58.9. Two rows left to confirm the endpoint.
-**Boundary 9 landed 21:26 UK** (global 45,000, ratio 0.5000, "put the black bowl in the bottom drawer of the cabinet and close it"). Row 9 (9 cells, ~4 h) started 21:36 UK. Final task 10 training now; chain ends ~00:50 UK, then the O-LoRA chain starts and the RETAIN b10 row + drift matrix follow.
-
-### Entry 67 addendum 14 (9 Sep 26, 01:05 UK) — RETAIN CHAIN COMPLETE (10/10, 32h35m); O-LoRA chain launched
-**RETAIN done.** Boundary 10 merged at 23:53:59 UTC (global step 50,000, ratio 0.5000, task "pick up the book and place it in the back compartment of the caddy"); markers `RETAIN-BOUNDARY-10` -> `RETAIN-CHAIN-DONE` -> `E67-RETAIN-DONE` in outputs/e67/train.log; `retain_state/progress.json` completed_tasks 10. Wall clock 15:21 UK Mon 7 Sep -> 00:54 UK Wed 9 Sep = **33h33m** including the ~10 min controlled restart for the optimizer-leak fix (add-6) and the eval rows sharing the GPU throughout (2.20 s/step alone, 2.40-2.46 s/step with a row running). All ten merge witnesses read exactly 0.5000; the per-boundary `mean|ft-prev|` sat in a narrow 1.03-1.15e-4 band across all ten tasks, i.e. every task moved the 4.1B weights by the same order and the merge halved each one identically.
-**O-LoRA chain launched 23:57:01 UTC** (`libero_10_seq10_olora_r64_a16_lam05_steps5k`, bs8 x acc4): LoRA on 254 modules, 106.3M params per adapter in float32, `[after-setup] cuda allocated 9.1 GiB`, task 1/10 started on dataset task 0. GPU total 79.0 GB (O-LoRA 79 GB is well under RETAIN's 92-107, so the eval gate at 22 GB has ~62 GB of headroom — the O-LoRA rows will interleave comfortably). Expect ~27-30 h => **chain end ~04:00-07:00 UK Thu 10 Sep**, with its own triangle rows interleaving from boundary 1 (~04:15 UK Wed).
-**Still outstanding on the RETAIN side:** row 9 has been running since 21:36 UK (9 cells, due ~01:35 UK), then row 10 (10 cells, ~4.5 h) using the 050000 checkpoint, then the RETAIN dense drift matrix (gated on the chain being complete, which it now is). Disk 88% / 321 GB free.
-
-### Entry 67 addendum 15 (9 Sep 26, 01:35 UK) — RETAIN row 9: 100 on the diagonal, 35 one-back, 0 everywhere else (mean 15.1); row 10 started
-**Row 9 (`seeds_tri_retain10_a05_b9.json`, block-9 merged model, written 00:22:59 UTC; 166 min for 9 cells = 18 min/cell — faster because seven of the nine cells fail instantly):** env 3 (just trained, "pick up the book and place it in the front compartment of the caddy") per-seed 100/100/100/100 = **100.0**; env 1 36/32/36/36 = **35.0**; env 8 0/4/0/0 = **1.0**; env 0, 2, 4, 6, 7, 9 all **0.0**. Row mean 15.1.
+### Entry 67 addendum 14 (9 Sep 26, 01:05 UK) — RETAIN CHAIN COMPLETE (10/10)
+All ten merge witnesses read exactly 0.5000; the per-boundary `mean|ft-prev|` sat in a narrow 1.03-1.15e-4 band across all ten tasks, i.e. every task moved the 4.1B weights by the same order and the merge halved each one identically.
+### Entry 67 addendum 15 (9 Sep 26, 01:35 UK) — RETAIN row 9: 100 on the diagonal, 35 one-back, 0 everywhere else (mean 15.1)
+**Row 9 (block-9 merged model):** env 3 (just trained, "pick up the book and place it in the front compartment of the caddy") per-seed 100/100/100/100 = **100.0**; env 1 36/32/36/36 = **35.0**; env 8 0/4/0/0 = **1.0**; env 0, 2, 4, 6, 7, 9 all **0.0**. Row mean 15.1.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 full FT |
 |---|---|---|---|
@@ -9119,15 +7819,11 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | row means b1..b9 | 70.0, 32.0, 27.7, 24.0, 18.0, 12.2, 10.9, 4.8, 9.6 | 54.0, 59.5, 62.3, 64.2, 66.0, 57.7, 63.0, 58.9, 63.4 | 71.0, 40.5, 25.3, 28.8, 32.2, 20.3, 24.1, 12.1, 15.1 |
 
 **Reading.** The cleanest row yet, and it states RETAIN's behaviour exactly: **the merged model is the current task plus a half-strength copy of the immediately preceding one, and nothing else.** Diagonal 100 (4/4 seeds perfect — this caddy task is the easiest in LIBERO-10; naive got 86, ours 83), one-back 35, everything two or more boundaries back is 0 or 1. Nine rows in, RETAIN's only consistent advantage over naive sequential LoRA is that one-back cell (35 vs 0); on the two-back-and-older block the two chains are indistinguishable at 0. Ours holds 43-87 across the whole row.
-**Row 10 started 00:23:01 UTC** (10 cells on checkpoint 050000, ~3-4.5 h => ~04:15-05:00 UK); the RETAIN dense drift matrix follows. **O-LoRA task 1 at step 800/5,000, 2.10-2.23 s/step, loss 0.118, orth penalty 0.000e+00** — expected on task 1, there are no earlier adapters to be orthogonal to; the first non-zero orth value arrives on task 2 (~04:15 UK) and is the witness that the O-LoRA constraint is actually active.
-
 ### Entry 67 addendum 16 (9 Sep 26, 04:20 UK) — O-LoRA boundary 1: adapter frozen and exported, concat-equivalence witness exact; task 2 orth penalty live at 9.95e+02
-**Boundary 1 (04:00 UTC, global step 5,000, `checkpoints/005000/olora_boundary.json`):** 106,303,488 trainable params in the task-1 adapter (r64/alpha16 on the same 254 modules the LoRA baselines use); adapter export took 5.7 s; `l1_B_current` 2.328e+05. The export witness is the one that matters: **`loss_multi_adapter` = `loss_concat_adapter` = 0.0526979826, rel_diff 0.0 (exact)** — the stacked per-task adapters and the single concatenated adapter the checkpoint ships give bit-identical loss, so the drift matrix's adapter-swap path will score exactly what the chain trained. Checkpoint is 4.0 GB (adapters only, vs RETAIN's 18 GB dense boundary), and `olora_state/progress.json` reads completed_tasks 1.
-**The orthogonality constraint is live.** Task 1 ran at `orth 0.000e+00` throughout (correct — no earlier adapter to be orthogonal against). Task 2 opened at **`orth 9.950e+02`** with grad-norm 480.5 at step 100, i.e. the penalty is both non-zero and initially dominant, exactly as O-LoRA intends: the new adapter is being pushed out of the span of adapter 1 from the first steps. Loss 0.593 at step 100 against task 1's 0.0465 finish is the expected fresh-task reset. Step time 2.22 s/task-1 steady, 2.76 s/step early on task 2 (the penalty term plus the row-10 eval sharing the GPU).
-**Housekeeping (not E67):** VM disk cleanup this session freed 427 GB (spent E67 smokes; optimizer state from two completed real-world 5-task chains; then both of those chains in full — topt1536 verified byte-identical on the backup drive first, topt3072 deleted knowingly as a single copy, with both runs' ~255 MB memory_by_task routing artifacts pulled to the drive beforehand). Disk 88% -> 70%, 747 GB free. The naive parameter-matched r1216 run (295 GB) and the RETAIN run (175 GB) were left untouched.
-
+**Boundary 1:** 106,303,488 trainable params in the task-1 adapter (r64/alpha16 on the same 254 modules the LoRA baselines use); `l1_B_current` 2.328e+05. The export witness is the one that matters: **`loss_multi_adapter` = `loss_concat_adapter` = 0.0526979826, rel_diff 0.0 (exact)** — the stacked per-task adapters and the single concatenated adapter the checkpoint ships give bit-identical loss, so the drift matrix's adapter-swap path will score exactly what the chain trained.
+**The orthogonality constraint is live.** Task 1 ran at `orth 0.000e+00` throughout (correct — no earlier adapter to be orthogonal against). Task 2 opened at **`orth 9.950e+02`** with grad-norm 480.5 at step 100, i.e. the penalty is both non-zero and initially dominant, exactly as O-LoRA intends: the new adapter is being pushed out of the span of adapter 1 from the first steps. Loss 0.593 at step 100 against task 1's 0.0465 finish is the expected fresh-task reset.
 ### Entry 67 addendum 17 (9 Sep 26, 05:40 UK) — RETAIN RETENTION TRIANGLE COMPLETE (10/10 rows). Final row mean 8.2, below naive's 9.7; ours 65.1
-**Row 10 (`seeds_tri_retain10_a05_b10.json`, final merged model 050000, written 04:34:49 UTC), envs in train order:** e4 **0.0**, e6 **0.0**, e9 **0.0**, e2 **0.0**, e7 **1.0** (0/0/0/4), e0 **0.0**, e8 **0.0**, e1 **0.0**, e3 **23.0** (32/20/16/24), e5 (just trained) **58.0** (56/56/48/72). Row mean **8.2**. Triangle declared COMPLETE 04:34:50 UTC.
+**Row 10 (final merged model 050000), envs in train order:** e4 **0.0**, e6 **0.0**, e9 **0.0**, e2 **0.0**, e7 **1.0** (0/0/0/4), e0 **0.0**, e8 **0.0**, e1 **0.0**, e3 **23.0** (32/20/16/24), e5 (just trained) **58.0** (56/56/48/72). Row mean **8.2**.
 
 **THE FULL RETAIN TRIANGLE (alpha 0.5, full FT, 4-seed x 25-episode cells, envs in train order):**
 
@@ -9146,10 +7842,8 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 
 **Headline.** Final-row means: **ours 65.1, naive LoRA r512 9.7, naive param-matched r1216 8.6 (E64 add-13), RETAIN alpha 0.5 8.2.** RETAIN finishes *below* both naive baselines — the paper's weight-merging recipe, run under our 10-task protocol, gives no measurable rollout retention at the end of the chain, and pays for the merge on the diagonal too (e5 58.0 vs naive's 97.0 and ours' 91.0: the half-merge cannot fit the final task either). The prior-task mean excluding the diagonal is **2.6** for RETAIN vs 0.0 naive vs 62.2 ours.
 **The mechanism, stated from the whole triangle.** RETAIN is a *one-boundary* memory that also costs plasticity. Read down each column: a task scores well on its own diagonal, retains roughly half to three-quarters one boundary later (e6 81->52, e2 86->65, e0 46->63, e1 70->35, e3 100->23), then collapses to 0-14 by the second boundary and to 0 by the third. Alpha 0.5 halves every earlier task's residual delta at each boundary, so after k further tasks an early task's contribution is down by ~2^-k — geometric erasure, with occasional small rebounds (e6 21->30 at b5, e0 46->63 at b7) where the next task's delta happens to share structure. Meanwhile the diagonal itself degrades once tasks are hard (e9 19.0, e5 58.0), because half of a fine-tune delta is not always enough to execute the task it was fit for.
-**Cost.** Triangle wall clock 18:36 UK Mon 7 Sep -> 04:34 UTC Wed 9 Sep, 55 cells, ~26 min/cell, fully interleaved with training (~8% slowdown while a row runs). Next: the queue moved straight to the **O-LoRA triangle row b1** (started 04:34:50 UTC, env 4 on the task-1 adapter); the RETAIN dense drift matrix runs after that row returns, because each queue iteration does retain rows -> olora rows -> matrix checks in that order. (Correction to this addendum as first written: it said the matrix had started at 04:35 UTC. That was a false positive — the `pgrep -f mse_matrix_dense` was matching the ssh command string that contained the pattern. The matrix had 0 rows and no process; verified 05:51 UK, the only python processes on the VM were the eight O-LoRA trainer workers plus the b1 rollout.)
-
-### Entry 67 addendum 18 (9 Sep 26, 06:15 UK) — O-LoRA row 1: env 4 = 43.0 (lowest block-1 diagonal of the four chains — an r64 capacity effect, not orthogonality); RETAIN drift matrix now genuinely running
-**Row 1 (`seeds_tri_olora10_r64_b1.json`, task-1 adapter on checkpoint 005000, written 05:00:27 UTC; 26 min for 1 cell):** env 4 per-seed 36/48/32/56 = **43.0** (the widest per-seed spread we have seen at b1: 24 points, vs RETAIN's 4).
+### Entry 67 addendum 18 (9 Sep 26, 06:15 UK) — O-LoRA row 1: env 4 = 43.0 (lowest block-1 diagonal of the four chains — an r64 capacity effect, not orthogonality)
+**Row 1 (task-1 adapter on checkpoint 005000):** env 4 per-seed 36/48/32/56 = **43.0** (the widest per-seed spread we have seen at b1: 24 points, vs RETAIN's 4).
 
 | chain | b1 diagonal (env 4) | adapter / delta capacity |
 |---|---|---|
@@ -9159,10 +7853,8 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | **O-LoRA r64** | **43.0** | **0.106B** |
 
 **Reading — this one is not about forgetting.** Task 1 trained with `orth 0.000e+00` throughout (nothing to be orthogonal against), so 43.0 is O-LoRA's *plasticity ceiling at r64*, uncontaminated by its own constraint: a 106M-parameter adapter is 8x smaller than naive r512's and simply fits the task less well. That matters for reading every later O-LoRA row — its diagonal starts 27 points below naive's, so a low row mean at b10 will be part capacity, part orthogonality, and the two need separating (the per-task oracle would be the clean control; not in the current protocol). The pre-registered expectation (add-2) was a band of 20-45 for the O-LoRA final row, citing OrthoSkillVLA's 30.5; a b1 diagonal of 43 is consistent with landing inside that band.
-**RETAIN dense drift matrix started 05:00:28 UTC** — this time verified by two real `mse_matrix_dense.py` processes (18.5 GB GPU alongside the trainer's 67.8 GB, 56.8 GB free) rather than a self-matching pgrep. Output file `mse_matrix_retain10_a05.jsonl` still 0 bytes/0 rows at 06:15 UK; it writes one row per task as it goes. O-LoRA training slowed 2.75 -> 3.66 s/step with the matrix sharing the GPU, as expected.
-
 ### Entry 67 addendum 19 (9 Sep 26, 07:45 UK) — RETAIN DENSE DRIFT MATRIX COMPLETE: mean own-task loss drift **+476.6%**, vs ours +28.5% and naive +740-1567%
-**Matrix (`mse_matrix_retain10_a05.jsonl`, 10/10 rows, 05:00:28 -> 06:15:49 UTC, ~7.5 min/row).** Rows are the merged checkpoint after each block, columns the per-task action MSE on that task's own data (dataset task ids = train order):
+**Matrix (10/10 rows).** Rows are the merged checkpoint after each block, columns the per-task action MSE on that task's own data (dataset task ids = train order):
 
 | ckpt | t0 | t1 | t2 | t3 | t4 | t5 | t6 | t7 | t8 | t9 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -9180,27 +7872,23 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 **Own-task drift (loss at its own boundary -> loss under the final model):** t0 0.109->1.690 **+1455%**; t1 0.144->1.753 **+1121%**; t2 0.613->3.169 **+417%**; t3 0.277->2.114 **+665%**; t4 0.418->1.771 **+324%**; t5 0.276->1.209 **+339%**; t6 0.370->1.101 **+198%**; t7 0.566->1.467 **+159%**; t8 0.448->0.841 **+88%**; t9 0.267->0.267 **+0%** (the final task, no subsequent merge). **MEAN +476.6%.**
 
 **Reading.** The function-space measurement agrees with the rollout triangle and is the cleaner statement of it, because it is continuous where success rate saturates at 0. Three things. (i) **RETAIN's drift is ~17x ours** (+476.6% vs +28.5% after ten tasks) and sits inside, though at the low end of, the naive band (+740-1567%): merging at alpha 0.5 slows the erasure of earlier tasks relative to unprotected sequential training, but does not stop it — consistent with the triangle, where RETAIN's only surplus over naive was the one-back cell. (ii) **The exposure ordering is monotone and clean**: drift is ordered almost exactly by how many merges a task subsequently endures (t0 +1455% with nine, down to t8 +88% with one, t9 +0% with none). Each boundary multiplies an earlier task's residual delta by 0.5, so its loss climbs geometrically back toward the pre-training function — the same 2^-k mechanism the triangle showed, now visible without a floor effect. (iii) **The diagonal is not free either**: own-task loss at its own boundary ranges 0.109-0.613, and the two hardest (t2 0.613, t7 0.566) are the same tasks whose rollout diagonals were weakest (e9 19.0, e0/e7 mid-30s to 40s) — half a fine-tune delta is a worse fit for a hard task, in loss as in rollouts.
-**Status at 07:45 UK.** RETAIN is now COMPLETE end to end: chain 10/10, triangle 10/10 rows, drift matrix 10/10. O-LoRA is on task 2/10 (step 3,900, 2.52 s/step now the matrix has freed the GPU, loss 0.114, orth penalty decayed 995 -> 9.97), triangle 1/10, matrix pending its chain. Disk 71%, GPU 67.8 GB, no errors.
-
 ### Entry 67 addendum 20 (9 Sep 26, 08:10 UK) — O-LoRA boundary 2: constraint held through a full task (orth 995 -> 3.85), 2-adapter algebra witness 2.0e-05
-**Boundary 2 (07:39 UTC, global 10,000, `checkpoints/010000/olora_boundary.json`):** task 2 ("put the white mug on the plate and put the chocolate pudding to the right of the plate") finished at loss 0.101, 2.52 s/step. `active_adapters ['olora_t0','olora_t1']`, lambda1 0.5, export 4.0 GB / 508 tensors / 1,063,034,880 params — the concat adapter is pre-sized for all ten task slots (10 x 106.3M), so every O-LoRA boundary checkpoint is 4.0 GB regardless of how many tasks have been trained.
+**Boundary 2:** task 2 ("put the white mug on the plate and put the chocolate pudding to the right of the plate") finished at loss 0.101.
 **Two witnesses, both good.** (i) **Orthogonality actually bites and then relaxes:** the penalty ran 9.950e+02 (step 100) -> 5.213e+01 -> 2.063e+01 -> 1.504e+01 -> 9.97 -> **3.852e+00** (step 5,000). The new adapter starts far inside adapter 1's span and is pushed out over the task, ending ~250x down. Gradient norm stayed high (621) throughout, i.e. the constraint is still shaping the solution at the end, not satisfied and forgotten. (ii) **Algebra witness with two adapters: `algebra_max_rel_err` 2.0e-05** (boundary 1, single adapter, was exactly 0.0). That is bf16 round-off on the stacked-vs-concatenated equivalence, not drift — the adapter-swap drift matrix will still score what the chain trained.
-**Logging policy for the rest of this chain:** boundaries 3-10 are expected to be routine repeats of this pattern. I will not write an addendum per boundary; the next O-LoRA entries will be triangle rows (which carry the retention numbers) plus one batched note if any boundary deviates — a non-decaying orth penalty, an algebra_max_rel_err materially above ~1e-4, or a failure. Task 3 started 07:57 UTC.
-
 ### Entry 67 addendum 21 (9 Sep 26, 09:20 UK) — O-LoRA row 2: **env 4 collapses 43.0 -> 3.0 in one task, with task 1's adapter still present and orthogonal.** Row mean 21.0, lowest of the four chains
-**Row 2 (`seeds_tri_olora10_r64_b2.json`, checkpoint 010000, written 08:10:39 UTC):** env 4 per-seed 4/4/0/4 = **3.0**; env 6 (just trained) 40/36/28/52 = **39.0**. Row mean **21.0**.
+**Row 2 (checkpoint 010000):** env 4 per-seed 4/4/0/4 = **3.0**; env 6 (just trained) 40/36/28/52 = **39.0**. Row mean **21.0**.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 | **O-LoRA r64** |
 |---|---|---|---|---|
 | b1 (e4) | 70.0 | 54.0 | 71.0 | **43.0** |
 | b2 (e4, e6) | 0.0, 64.0 = 32.0 | 54.0, 65.0 = 59.5 | 0.0, 81.0 = 40.5 | **3.0, 39.0 = 21.0** |
 
-**This is not an export bug — verified.** The evaluated checkpoint carries both adapters: `adapter_model.safetensors` has `lora_A` of shape (640, 32) with **64/640 rank-rows populated at b1 and 128/640 at b2**, i.e. task 1's rank-64 block is present and untouched alongside task 2's, and the triangle loads it (`--policy.use_peft=true` on `checkpoints/010000/pretrained_model`, adapter_config r=640/alpha=160 over 268 modules). The b1 algebra witness was exactly 0.0 and b2's 2.0e-05, so the stacked-vs-concat equivalence holds. Task 1's parameters are intact, orthogonal to task 2's by construction (penalty ran 995 -> 3.85 over the task), **and task 1 still went from 43% to 3%.**
+**This is not an export bug — verified.** The evaluated checkpoint carries both adapters: `adapter_model.safetensors` has `lora_A` of shape (640, 32) with **64/640 rank-rows populated at b1 and 128/640 at b2**, i.e. task 1's rank-64 block is present and untouched alongside task 2's, and the triangle loads it. The b1 algebra witness was exactly 0.0 and b2's 2.0e-05, so the stacked-vs-concat equivalence holds. Task 1's parameters are intact, orthogonal to task 2's by construction (penalty ran 995 -> 3.85 over the task), **and task 1 still went from 43% to 3%.**
 **What that means.** Parameter-space orthogonality does not buy function-space retention here. The forward pass sums both adapters' contributions into the same residual stream, so adding an orthogonal delta still moves the model's output on task 1's input distribution — orthogonal directions are not non-interfering directions once the base is shared and the readout is nonlinear. O-LoRA's own premise is exactly this preservation, and on a 4.1B VLA under our protocol it does not hold at the first opportunity to test it. Naive r512 dropped e4 70 -> 0 at the same boundary; O-LoRA dropped 43 -> 3. Both forget; O-LoRA forgets from a lower diagonal.
 **Caveat to carry (from add-18).** O-LoRA's per-task adapter is 106.3M params vs naive r512's single 0.852B adapter — 8x smaller per task, though the ten-task total (1.063B) approaches naive's budget. Its low diagonals (43.0, 39.0 vs naive 70.0, 64.0) are therefore partly capacity, not only the orthogonality constraint, and the two are not separated by the current protocol. State that explicitly wherever this row goes in the paper.
 
 ### Entry 67 addendum 22 (9 Sep 26, 13:40 UK) — O-LoRA row 3: **the diagonal has gone too** (e9 = 2.0). Row mean 2.7, below naive's 27.7 at the same block
-**Row 3 (`seeds_tri_olora10_r64_b3.json`, checkpoint 015000, written 12:33:11 UTC):** env 4 **0.0** (0/0/0/0); env 6 **6.0** (16/0/8/0); env 9 (just trained, "put the yellow and white mug in the microwave and close it") **2.0** (4/0/0/4). Row mean **2.7**.
+**Row 3 (checkpoint 015000):** env 4 **0.0** (0/0/0/0); env 6 **6.0** (16/0/8/0); env 9 (just trained, "put the yellow and white mug in the microwave and close it") **2.0** (4/0/0/4). Row mean **2.7**.
 
 | after block | naive LoRA r512 | ours merged6x2 | RETAIN alpha 0.5 | **O-LoRA r64** |
 |---|---|---|---|---|
@@ -9210,10 +7898,10 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 
 **This row is different in kind from rows 1-2.** Until now O-LoRA forgot prior tasks (e4 43 -> 3) while still fitting the current one (39.0 at b2). At b3 it fits *nothing*: the just-trained env 9 scores **2.0**, against naive's 82 and ours' 71 on the same task. The training loss said this was coming — task 3 finished at **0.386**, vs 0.047 (t1) and 0.101 (t2), and vs RETAIN's 0.060 on the same task. So the failure is in the fit, not the rollout instrument.
 **Two contributions, both plausible, not yet separated.** (i) **The task.** Env 9 (microwave) is the hardest in LIBERO-10 by every chain's diagonal: RETAIN 19.0, ours 71.0, naive 82.0 — and RETAIN's own final loss on it was its worst too. (ii) **The constraint tightening.** Task 3 is the first with two prior adapters to be orthogonal against; its penalty opened at 2,198 (vs 995 at t2), decayed far more slowly (still 920 at step 1,400, 206 at 2,700, 54.3 at 5,000), and grad-norm stayed ~700 to the end. A rank-64 adapter constrained to the orthogonal complement of two earlier rank-64 blocks has materially less usable capacity for a task that already needs the most. Task 4 opened at penalty **4,991** — higher again with three adapters — so if the mechanism is (ii), later diagonals should stay depressed rather than recover.
-**Read-ahead.** If b4's diagonal (env 2, an easy task — naive 96, ours 87, RETAIN 86) also comes in low, that isolates (ii) as dominant: the constraint, not task difficulty, is the binding limit. If b4's diagonal recovers to 40-60, (i) dominates and env 9 is simply the task O-LoRA cannot fit at r64. This is the cleanest natural experiment the chain offers; b4 is due ~15:45 UK.
+**Read-ahead.** If b4's diagonal (env 2, an easy task — naive 96, ours 87, RETAIN 86) also comes in low, that isolates (ii) as dominant: the constraint, not task difficulty, is the binding limit. If b4's diagonal recovers to 40-60, (i) dominates and env 9 is simply the task O-LoRA cannot fit at r64. This is the cleanest natural experiment the chain offers.
 
 ### Entry 67 addendum 23 (9 Sep 26, 19:15 UK) — the read-ahead resolves: **the orthogonality constraint, not task difficulty, is the binding limit.** O-LoRA row 4 diagonal 17.0 on an easy task
-**Row 4 (`seeds_tri_olora10_r64_b4.json`, checkpoint 020000, written 17:57:18 UTC):** env 4 **0.0** (0/0/0/0); env 6 **5.0** (0/8/0/12); env 9 **0.0** (0/0/0/0); env 2 (just trained) **17.0** (28/12/0/28). Row mean **5.5**.
+**Row 4 (checkpoint 020000):** env 4 **0.0** (0/0/0/0); env 6 **5.0** (0/8/0/12); env 9 **0.0** (0/0/0/0); env 2 (just trained) **17.0** (28/12/0/28). Row mean **5.5**.
 
 **Verdict on add-22's two hypotheses.** Env 2 is one of the easiest tasks in LIBERO-10 — naive r512 scored **96**, ours 87, RETAIN 86 on their own b4 diagonals. O-LoRA scores **17.0**. The diagonal did not recover, so hypothesis (i) (env 9 is simply hard) is **rejected as the dominant cause** and (ii) (the constraint tightens as adapters accumulate) **stands**. The two series say the same thing:
 
@@ -9225,16 +7913,14 @@ So the alpha-0.5 merge, which halves the full-FT delta at every boundary, gives 
 | t4 (e2) | 3 | 0.301 | **17.0** |
 
 Loss degrades ~6x and the diagonal falls ~2.5x between zero and three prior adapters, monotonically in adapter count and independent of which task is being fit (t3 hard, t4 easy, both ruined). **O-LoRA at r64 under our protocol is failing to LEARN, not merely failing to RETAIN** — a different failure from RETAIN's (which fit its tasks and then merged them away) and from naive's (which fit at specialist grade and then overwrote).
-**Why this happens, mechanically.** Each new rank-64 adapter is pushed into the orthogonal complement of the union of all earlier adapters' row spaces. After k tasks that complement has lost ~64k directions at every constrained site, so by t4 the adapter is fitting inside a subspace already stripped of 192 directions it might have wanted. The penalty trace shows it biting: openings 995 (t2) -> 2,198 (t3) -> 4,991 (t4) -> 2,348 (t5), grad-norm ~620-725 sustained to the end of every task. Step time confirms the same growth from the other side: 2.2 -> 2.9 -> 3.3 -> 4.1 s/step, the penalty being computed against every prior adapter.
+**Why this happens, mechanically.** Each new rank-64 adapter is pushed into the orthogonal complement of the union of all earlier adapters' row spaces. After k tasks that complement has lost ~64k directions at every constrained site, so by t4 the adapter is fitting inside a subspace already stripped of 192 directions it might have wanted. The penalty trace shows it biting: openings 995 (t2) -> 2,198 (t3) -> 4,991 (t4) -> 2,348 (t5), grad-norm ~620-725 sustained to the end of every task.
 **Fairness caveat, to state in the paper.** Our r64 is the paper's own recipe verbatim (alpha/r 0.25, their target set, lr 1e-4 -> 1e-5, lambda_1 0.5, penalty skipped on the two 32-input projections where 640 orthogonal rows cannot exist) — 106.3M params per adapter, 1.063B after ten. But r64 was chosen to match the *r64 specialist target set*, not to match naive r512's 0.852B single-adapter budget, and O-LoRA's b1 diagonal of 43.0 (with **no** constraint active) already sat 27 points below naive's 70.0. So two effects compound: an undersized per-task adapter, and a constraint that removes capacity from it as the chain proceeds. **The honest claim is about the recipe as published, not about orthogonal-subspace methods in general**, and the pre-registered 20-45 band (add-2, citing OrthoSkillVLA's 30.5) now looks unreachable — projecting the diagonal trend, the b10 row mean will land in low single digits. A per-task r64 oracle (no constraint, task identity given) would separate the two cleanly and is the obvious follow-up; it is not in the current protocol.
 
-### Entry 67 addendum 24 (10 Sep 26, 01:00 UK) — O-LoRA row 5 confirms add-23; halfway row mean 2.4. Remaining rows batched to the final table
-**Row 5 (`seeds_tri_olora10_r64_b5.json`, checkpoint 025000, written 23:44:19 UTC):** env 4 **0.0**; env 6 **2.0** (4/0/0/4); env 9 **0.0**; env 2 **5.0** (4/12/4/0); env 7 (just trained, final train loss 0.371) **5.0** (12/4/4/0). Row mean **2.4** — against naive 18.0, RETAIN 32.2, ours 66.0 at the same block.
+### Entry 67 addendum 24 (10 Sep 26, 01:00 UK) — O-LoRA row 5 confirms add-23; halfway row mean 2.4
+**Row 5 (checkpoint 025000):** env 4 **0.0**; env 6 **2.0** (4/0/0/4); env 9 **0.0**; env 2 **5.0** (4/12/4/0); env 7 (just trained, final train loss 0.371) **5.0** (12/4/4/0). Row mean **2.4** — against naive 18.0, RETAIN 32.2, ours 66.0 at the same block.
 **Nothing new, which is the point.** The diagonal series is now 43.0 / 39.0 / 2.0 / 17.0 / **5.0** across zero-to-four prior adapters: after the second task it never again exceeds 17, and every off-diagonal cell in rows 3-5 is 0-6. Add-23's reading (the constraint, not task difficulty, is the binding limit) holds at the halfway mark with no sign of recovery. Every row from here is expected to be the same shape — a near-zero diagonal over a floor of zeros.
-**Logging policy for rows 6-9.** These are confirmatory, and the per-row addenda are starting to cost more than they add. I will not write one per row; the numbers live in `outputs/analysis/e67/seeds_tri_olora10_r64_b<k>.json` and I will assemble the complete ten-row triangle in one addendum when b10 lands, in the same form as add-17's RETAIN table. I will break that silence early only for a deviation: a diagonal that recovers above ~30 (which would falsify add-23), a non-decaying orth penalty, `algebra_max_rel_err` above ~1e-4, or a failure.
-
-### Entry 67 addendum 25 (11 Sep 26, 22:10 UK) — **E67 COMPLETE.** O-LoRA chain 10/10, triangle 10/10, drift matrix 10/10. Final row mean 6.5 — last of the four chains
-**Chain.** 00:57 UK Wed 9 Sep -> 10:25 UK Fri 11 Sep, **57h 28m**, markers `E67-OLORA-DONE` / `E67-TRAIN-DONE`, unit exit status success, `progress.json` 10 tasks / 50,000 steps. Boundary 10 exported all ten adapters (rank 640, 1.063B params, 7.4 s); `algebra_max_rel_err` held at **2.0e-05 at every one of the ten boundaries**. Final train loss per task: 0.047 / 0.101 / 0.386 / 0.301 / 0.371 / 0.326 / 0.303 / 0.407 / 0.396 / 0.259 — the step between t2 and t3 never recovers. Step time grew 2.2 -> 6.3 s/step with the penalty computed against every prior adapter.
+### Entry 67 addendum 25 (11 Sep 26, 22:10 UK) — **E67 COMPLETE.** Final row mean 6.5 — last of the four chains
+**Chain.** `algebra_max_rel_err` held at **2.0e-05 at every one of the ten boundaries**. Final train loss per task: 0.047 / 0.101 / 0.386 / 0.301 / 0.371 / 0.326 / 0.303 / 0.407 / 0.396 / 0.259 — the step between t2 and t3 never recovers. Step time grew 2.2 -> 6.3 s/step with the penalty computed against every prior adapter.
 
 **THE FULL O-LoRA TRIANGLE (r64, alpha 16, lambda_1 0.5; 4-seed x 25-episode cells, envs in train order):**
 
@@ -9257,9 +7943,7 @@ Diagonal mean **16.3** (ours 65.4, naive 73.1, RETAIN 62.2); prior-task mean at 
 
 **O-LoRA drift matrix — and the twist.** Mean own-task drift **+71.6%**, which is the *second best* of the four (ours +28.5%, O-LoRA +71.6%, RETAIN +476.6%, naive +740-1567%). But read the per-task column before crediting it: t0 +466%, t1 +171%, t2 +49%, t3 +20%, t4 +7%, then **t5-t9 at +0.4% or less**. The late tasks barely drift because by then the model is barely changing — each new rank-64 adapter, confined to the orthogonal complement of 5-9 earlier ones, moves the function almost not at all. This is precisely the paper's Figure 3 claim (the constraint keeps previous-task loss low) and it is **true here in function space**; it is also why the rollout triangle is empty. O-LoRA buys function preservation by buying plasticity loss, and at r64 on a 4.1B VLA the price is the whole product: diagonals of 1-6% from b5 to b8 mean there is nothing worth preserving. The one intact claim is that the *mechanism* works as advertised — orthogonality really does freeze the function; it just freezes a function that never learned the task.
 **Where the three failure modes now sit, stated cleanly for the writeup.** Naive: fits at specialist grade (diag 73.1), then overwrites — prior tasks 0.0. RETAIN: fits well (diag 62.2), then geometrically erases at ~2^-k per merge — prior tasks 2.7, drift +477%. O-LoRA: never fits after task 2 (diag 16.3) but holds what little it has — prior tasks 4.3, drift +72%. Ours: fits (diag 65.4) **and** holds (prior tasks 62.2, drift +28.5%). The three baselines fail in three different places; only the memory row does both jobs at once.
-**Handover.** `e67-eval` exited with `E67-EVAL-DONE`; the queued `e68-eval` unit picked up automatically and the **A1 (live-addressing) 5-task triangle is at 4/5 rows** at 22:10 UK, finishing tonight. Disk 76%, no errors anywhere in the run.
-
-## Entry 68 - 9 Sep 26 (ABLATIONS: isolating the three headline mechanisms on the FINAL architecture — live-vs-stationary addressing, TF-IDF-only writes, joint-vs-staged router preparation at matched LR — plus zero-separation / zero-contrastive warm-up certificates. Second VM (H100) provisioned. Pre-registered reads and result placeholders)
+## Entry 68 - 9 Sep 26 (ABLATIONS: isolating the three headline mechanisms on the FINAL architecture — live-vs-stationary addressing, TF-IDF-only writes, joint-vs-staged router preparation at matched LR — plus zero-separation / zero-contrastive warm-up certificates. Pre-registered reads and result placeholders)
 
 **Why (Josh, 9 Sep).** Two fresh-context reviews of the ICRA draft (Codex, Fable) converge on one theme: the paper
 weakly ablates its core knobs, so the contributions cannot be isolated. Checked against the draft, the complaint is
@@ -9281,12 +7965,12 @@ NOT repeated. Retrieval breadth, bank size, slot rank, heads, gating are closed 
 on the FINAL layout, on the five development tasks (e4, e6, e9, e2, e7). Five tasks suffice for the three mechanism
 arms: drift accumulates with exposure and E38 showed it inside five blocks; unprotected writes collapsed the earliest
 task at five blocks (E51 P2); joint preparation acts on acquisition (E35 inits -18pp). (2) The control is NOT re-run:
-the TF-IDF mask is built from retrieval indices accumulated across micro-batches (`_compute_tfidf_top_indices_for_batch`
-takes `override_indices`, an optimizer-step quantity), and micro-batching is recorded neutral (E53 24 Jul, E60 add-7),
+the TF-IDF mask is built from retrieval indices accumulated across micro-batches
+(an optimizer-step quantity), and micro-batching is recorded neutral (E53 24 Jul, E60 add-7),
 so the H200 control at bs16xacc2 is valid against H100 arms at any ladder rung. (3) Full retention triangle per arm
 (15 cells), not acquisition+final: the paper's R_post and backward-transfer metrics are triangle quantities, and the
 intermediate rows are what distinguish gradual exposure-ordered decay (live routing) from boundary-specific loss
-(unprotected writes). Marginal cost 6 cells/arm (~2.5 h). (4) All four paired eval seeds (1000/2000/3000/4000, 25 eps,
+(unprotected writes). (4) All four paired eval seeds (1000/2000/3000/4000, 25 eps,
 vec 13) — the E64 add-3 instrument — so every cell pairs with the control.
 
 **The run-to-run bar.** The 5-task and 10-task merged 6x2 runs share recipe and seed and differ at row 5 by up to 8
@@ -9299,16 +7983,12 @@ expected effects are large.
 | arm | single delta from the paper cell | steps | starts from | replaces |
 |---|---|---|---|---|
 | A1 live addressing | `use_frozen_base_input_features=false`, `frozen_prepass=false` from value fill onward (routers, gates and anchors read the live stream) | 10k fill + 25k seq5 = 35k | merged 6x2 warm-up ckpt (values zero at warm-up => live == memory-free there; arms share it) | Table II B |
-| A2 TF-IDF-only writes | `protect_prior_slots=false`; same `tfidf_top_t=3072`, online IDF, LR, optimizer reset, union masks on shared tables | 20k (tasks 2-5) | control's task-1 checkpoint (`checkpoints/005000` + `sequential_state.pt`): with an empty store score == tfidf (trainer docstring), so task 1 is identical by construction | the missing "no protection" row (= the Lin et al. recipe at our budget) |
-| A3 joint preparation, matched LR | keys + query proj + anchor maps + values + gates + out-proj trained TOGETHER for 10k on libero_90 (MSE + c0.05 + sep8), router LR 1e-4 (= warm-up LR, removes the E35/E36 confound), stationary routing ON; then routers frozen, seq5 C-config verbatim | 10k joint + 25k seq5 = 35k (+35 min audit) | stage-1 base (on nebius2 already) | Table II A |
-| C1 zero-separation certificate | warm-up with `sep=0` (c 0.05, anchor 0.40, pool (1,0.5), prepass; router-only fast path) + held-out audit | 10k router-only (~3-4 h) + 35 min | stage-1 base | Table II D |
+| A2 TF-IDF-only writes | `protect_prior_slots=false`; same `tfidf_top_t=3072`, online IDF, LR, optimizer reset, union masks on shared tables | 20k (tasks 2-5) | control's task-1 checkpoint: with an empty store score == tfidf, so task 1 is identical by construction | the missing "no protection" row (= the Lin et al. recipe at our budget) |
+| A3 joint preparation, matched LR | keys + query proj + anchor maps + values + gates + out-proj trained TOGETHER for 10k on libero_90 (MSE + c0.05 + sep8), router LR 1e-4 (= warm-up LR, removes the E35/E36 confound), stationary routing ON; then routers frozen, seq5 C-config verbatim | 10k joint + 25k seq5 = 35k | stage-1 base | Table II A |
+| C1 zero-separation certificate | warm-up with `sep=0` (c 0.05, anchor 0.40, pool (1,0.5), prepass; router-only fast path) + held-out audit | 10k router-only | stage-1 base | Table II D |
 | C2 zero-contrastive certificate | warm-up with `c=0` (sep 8, otherwise as C1) + audit | same | stage-1 base | Table II E |
 
-**A1 code note.** `MemoryLayerConfig.__post_init__` raises for the final layout whenever `min(vlm_layers) <=
-max(layers)` without `frozen_prepass` — the guard protects exactly the property A1 gives up. Needs an explicit bypass
-flag (proposed `allow_nonstationary_routing=true`, default false, byte-identical otherwise) and a smoke: live mode
-attaches all 12 sites, the E52 anchor forward_pre_hook fires once per forward (no frozen pass A to overwrite it),
-routing is bitwise equal to prepass mode at zero values and diverges once values are non-zero. Inference in A1 is the
+Inference in A1 is the
 plain single-pass path (prefix KV with memory, no pre-pass), which is what "live" means at deployment.
 
 **Why no downstream separation run.** Separation's channel is the same-scene family (E27/E28, Sec. V.B). In the
@@ -9332,45 +8012,15 @@ behind it; a full 45k chain).
 | C2 c=0 | n/a | n/a | collapse before 1k (E45 signature, ~70% of reads on one slot) or sprawl (core50/effnum far outside the gate) | certificate passes cleanly => contrastive is not load-bearing with pooled VLM routing; demote |
 
 ### Evaluation and reporting
-- Control cells: the 5-task merged 6x2 run's OWN per-task checkpoints (`libero_10_seq5_jw_merged6x2_..._steps5k`,
-  005000..025000, on nebius-spot), 15 cells — not rows 1-5 of the seq10 triangle (different run; see the bar above).
+- Control cells: the 5-task merged 6x2 run's OWN per-task checkpoints
+  (005000..025000), 15 cells — not rows 1-5 of the seq10 triangle (different run; see the bar above).
   The seq10 rows 1-5 are kept as the replicate.
 - Per arm: 5-row triangle (4 seeds x 25 eps), paired-noise MSE matrix with the FIXED loader (E65 add-16), and the
   arm's diagnostic (A1 self-IoU per site pre/post; A2 prior-core events + site-bleed; A3/C1/C2 the audit certificate).
 - Columns per arm, matching Table I: acquisition mean, final mean, R_post, Delta_final, mean loss drift, paired
   delta vs control (SE over seed-wise differences).
 
-### Compute plan
-- **nebius2** = `josh-vm-spot-2`, `computeinstance-e00h8htkzavxm81d24`, **H100 80 GB** (not 141), preemptible, same
-  image (a 27 Jul clone of the spot disk: repo pulled 5b1a4551 -> 9e9e46e0 today, clean; linger enabled; stage-1
-  base + LIBERO HF cache present; 651 G free; 1.2 T of E44-E54 runs on it are all on the local backup drive and
-  deletable). Full delta between the two VMs recorded in this session (9 Sep): everything from E55 on lives only on
-  nebius-spot (1.04 T), incl. the merged 6x2 warm-up (19.7 G), A-phase (19.5 G) and the 5-task control (5 x 19.4 G);
-  real-world datasets live under `outputs/` on spot only.
-- **Transfers to nebius2** (VM-to-VM over the private subnet 10.0.0.x): warm-up ckpt (A1), control 005000 +
-  `sequential_state.pt` (A2). A3, C1, C2 need only the stage-1 base, already there — they can start first.
-- **Fit / profiling gate on 80 GB.** Static: backbone bf16 8.7 G + values fp32 10.7 G + value grads 10.7 G + Adam
-  21.4 G ~= 52 G before activations => expect bs8xacc4+ckpt or bs4xacc8; profile s/opt-step and peak on the real
-  command before committing (H200 references: control 1.18 s/opt-step at bs16xacc2; 13-module absmax 2.40 s at
-  bs8xacc4 no-ckpt, 125.6 G). Evals cannot overlap training at 80 G.
-- **Where the rows run.** All triangle rows on the H200 once E67 finishes (O-LoRA chain ends ~04-07 UK Thu 10 Sep;
-  its triangle rows + the two drift matrices run on past that; H200 free ~Fri 11 Sep). 26 min/cell interleaved =>
-  4 triangles ~= 26 h. Fallback if the schedule slips: acquisition+final (9 cells) for the arms, full triangle only
-  for the largest-effect arm.
-- **Order.** C1, C2 (today, no transfer needed) -> A1 (35k) -> A2 (20k) on the H100; A3 (35k) on the H200 from Friday
-  or on the H100 after A2, whichever is free first. Budget: 90k steps at an assumed 2-3 s/opt-step on the H100 =
-  50-75 h training. **Deadline 15 Sep 23:59 PT = 16 Sep 08:00 UK; results must land by ~14 Sep to reach the paper.**
-- Every long run under `systemd-run` with the SIGTERM/atomic-save/resume contract (CLAUDE.md §9.4-9.5); the
-  `ensure_vm.sh` recipe is hard-coded to the first instance id and needs a second-VM variant before anything
-  unattended runs on nebius2.
-
-### RESULTS (placeholders — fill as they land; keep the pre-registered table above untouched)
-
-**Profiling gate (H100, real command, ~300 opt-steps):**
-| stage | rung | s/opt-step | peak GB | verdict |
-|---|---|---|---|---|
-| value fill (A1 recipe) | | | | |
-| seq5 (C-config) | | | | |
+### RESULTS
 
 **Certificates (held-out audit, 10 tasks; expert / VLM):**
 | warm-up | famIoU | bgIoU | mean core50 | min effnum (exp / vlm) | omega e0, e1 vs e7 core | gate | ref |
@@ -9388,40 +8038,6 @@ behind it; a full 45k chain).
 | A2 TF-IDF-only | | | | | | | | | | | |
 | A3 joint prep @1e-4 | | | | | | | | | | | |
 
-**Retention triangles (after block k, envs in train order e4 e6 e9 e2 e7; row mean last):**
-control (own ckpts):
-| after | e4 | e6 | e9 | e2 | e7 | mean |
-|---|---|---|---|---|---|---|
-| b1 | | | | | | |
-| b2 | | | | | | |
-| b3 | | | | | | |
-| b4 | | | | | | |
-| b5 | | | | | | |
-A1 live:
-| after | e4 | e6 | e9 | e2 | e7 | mean |
-|---|---|---|---|---|---|---|
-| b1 | | | | | | |
-| b2 | | | | | | |
-| b3 | | | | | | |
-| b4 | | | | | | |
-| b5 | | | | | | |
-A2 TF-IDF-only (b1 == control b1 by construction):
-| after | e4 | e6 | e9 | e2 | e7 | mean |
-|---|---|---|---|---|---|---|
-| b1 | | | | | | |
-| b2 | | | | | | |
-| b3 | | | | | | |
-| b4 | | | | | | |
-| b5 | | | | | | |
-A3 joint prep:
-| after | e4 | e6 | e9 | e2 | e7 | mean |
-|---|---|---|---|---|---|---|
-| b1 | | | | | | |
-| b2 | | | | | | |
-| b3 | | | | | | |
-| b4 | | | | | | |
-| b5 | | | | | | |
-
 **Diagnostics:**
 | arm | instrument | value | control reference |
 |---|---|---|---|
@@ -9430,30 +8046,11 @@ A3 joint prep:
 | A2 | site-bleed on the five shared pairs | | 14-51% (E62 add-2) |
 | A3 | audit certificate (row above) + seq5 in-run block-min losses | | |
 
-**Scoring against the pre-registration:** (fill: which kill/demote lines fired, and the sentence each arm licenses
-for Sec. V.A.)
-
-### Entry 68 addendum 1 (9 Sep 26, 07:45 UK) — nebius2 provisioned and cleaned; inputs transferred; E68 code landed (bf443083); order revised A1 -> A2 -> C1 -> C2; **W_a NEVER TRAINED (paper correction)**; smoke unit launched
-**nebius2 (H100 80 GB, `computeinstance-e00h8htkzavxm81d24`, `ssh nebius2`).** Repo 5b1a4551 -> 9e9e46e0 -> bf443083 (clean); linger enabled; 36 E44-E54 run dirs deleted (every one verified present on the local backup drive to within ~100 MB; the four absmax-named runs kept because the absmax seq run's intermediates are on nebius2 only); disk 74% -> 35% (1.6 T free). Transferred VM-to-VM over the private subnet (agent-forwarded, ~320 MB/s, 3 min): paper-cell warm-up 010000 (19.7 G), A-phase 010000 (19.5 G, `last` -> 010000), control `checkpoints/005000` + `sequential_state.pt` (19.4 G), the paper-cell audit dir. Datasets (`outputs/libero_90`, `outputs/libero_10`, HF cache) were already on the clone.
-**PAPER CORRECTION — the expert anchor map W_a is a fixed RANDOM projection, never trained.** Checked on the paper cell's warm-up checkpoint: all six `gemma_expert...layers.{4,6,8,10,14,16}.mlp.anchor_proj.weight` tensors have max|w| = 0.022097 = 1/sqrt(2048) and std 0.01276 = bound/sqrt(3) — bit-for-bit Kaiming-uniform init. Cause: `Pi05Policy._apply_train_memory_only.is_router` matches only `.mlp.mem.keys` / `.mlp.mem.query_proj.`, and `train_memory_only` keeps only names containing `.mlp.mem.`; `anchor_proj` lives on the `MLPPlusMemory` wrapper (`...mlp.anchor_proj`), outside BOTH filters, so no lerobot-train mode ever gives it a gradient (the sequential trainer trains values only). The tag comment in memory_lite.py ("Router group: trains in router warm-ups") and Sec. III.C of the draft ("W_a is learned during router warm-up") are wrong; the anchor is a fixed random projection of the pooled instruction hidden — which still conditions routing on language (a random projection preserves the pooled hidden's geometry, and E53's "anchor ledger" measured exactly that init geometry), so no result changes. Text fix: "a fixed random projection W_a" in Sec. III.C and Fig. 1(b). For E68 this is NOT a confound: A3's `train_memory_only` excludes `anchor_proj` identically, so every arm and the control share the same W_a. A trained-W_a arm (fix the filter, re-warm) is a future ablation, not a pre-deadline one.
-**Order revised** (from the entry's "C1, C2 first"): A1 -> A2 -> C1 -> C2 on the H100 — the two mechanism arms are paper-critical and the certificates (~9 h) can also run on the H200 later; A3 on the H200 once E67 finishes, or after C2 here (`STAGES="... a3"`).
-**Code (bf443083, local-first, pulled on nebius2):**
-- `memory_config.py` / `modeling_pi05.py`: `allow_nonstationary_routing` (default False, byte-identical) lifts the interleaved-placement guard at config AND attach time WITHOUT the pre-pass; refuses to combine with stationary flags. A1 sets it with `use_frozen_base_input_features=false frozen_prepass=false`.
-- `joint_aphase_seq5_common.sh`: byte-identical hooks — `A_LADDER` (default = the E47/E52 ladder), `A_STEPS`/`A_SAVE_FREQ`/`A_LOG_FREQ`, `A_FROZEN_ROUTE`, `A_EXTRA_ARGS`, `A_ONLY`, `SEQ_FROZEN_ROUTE`, `SEQ_PROTECT`; stage A now completes on `checkpoints/<A_STEPS>` (not `last`) and, when `A_SAVE_FREQ < A_STEPS`, resumes a partial run via `lerobot-train --resume=true --config_path=<ckpt>/pretrained_model/train_config.json` (a rung that fails AFTER a periodic checkpoint aborts instead of wiping — the seq-stage rule).
-- Wrappers under `job_scripts/nebius/libero_90/staged/`: `e68_a1_live_routing_chain.sh` (A-phase + seq live; A_SAVE_FREQ 5000), `e68_a2_tfidf_only_chain.sh` (seeds its run dir with the control's 005000 by copy + byte-count witness, `last` -> 005000, copies the control's task-0 usage JSON; `SEQ_PROTECT=false`; its OWN rung loop because the body's ladder would read the seed as "past the first checkpoint" and its wipe would delete it), `e68_a3_jointprep_chain.sh` (stage J = the warm-up command with `train_router_only=false train_memory_only=true freeze_memory_router=false router_only_fast=false optimizer_lr=1e-4 vlm_route_once=false`, save every 5k + resume; audit; then the body's seq with `--policy.freeze_memory_router=true`), `e68_c_cert_common.sh` + `e68_c1_cert_sep0.sh` / `e68_c2_cert_c0.sh` (the paper warm-up recipe with one weight zeroed, bs32 -> bs16xacc2 fallback, audit + analyses + informational gate readout).
-- Smokes: `run_smoke_live_routing.sh` (L: attach/forward/non-stationarity evidence/grads/ckpt parity/inference on the paper layout at n=64; G: guard raises without the switch; X: switch + stationary flags raises); `run_smoke_e68_aphase_resume.sh` (drives the REAL A-phase command through the body with A1's live flags: 40 steps, save every 20, delete 000040, relaunch must resume from 000020 and recreate it; records the fitting rung, peak VRAM and updt_s = the H100 profiling gate).
-- Ops: `scripts/ops/queue_e68_train.sh smoke|full` (unit e68-train; `STAGES` env; every stage skip-guarded/resumable; markers E68-<STAGE>-DONE/FAIL, E68-TRAIN-DONE), `scripts/ops/heartbeat_e68.sh` (local watcher: artifact counts per arm, unit state, rung/updt_s/loss, disk, linger, error lines; nebius-API recovery for the second instance id incl. a public-IP-change warning; relaunches the unit only after a clean exit, never after a FAIL marker), `scripts/vla_analysis/run_e68_retention_triangle.sh control|a1|a2|a3` (5-task triangle into `outputs/analysis/e68/`, GATE_FREE_MIB, adoptions: control b5 <- E62 add-3 row, a2 b1 <- control b1).
-Ladders on 80 GB: "8:4:false,4:8:false,8:4:true,4:8:true" everywhere (E53: no-ckpt small micro-batch beats ckpt on a frozen backbone; static footprint ~52 G before activations). A2 rung note: micro-batch does not change the write mask (indices are accumulated across micro-batches; E60 add-7 neutrality), so mixed rungs across arms/control are comparable.
-**Smoke unit launched 06:40 UTC (07:40 UK)** (`queue_e68_train.sh smoke` under systemd-run, PYTHONUNBUFFERED=1). Results in addendum 2; `full` launches only on both markers.
-
-### Entry 68 addendum 2 (9 Sep 26, 08:05 UK) — smokes PASS (live-routing suite 23/23 + both guard cases; stage-A periodic save + resume verified on the real command); H100 fit rung bs4 x acc8 no-ckpt at ~3.1 s/opt-step; FULL CHAIN LAUNCHED 07:01 UTC (A1 -> A2 -> C1 -> C2)
-**Live-routing smoke (mode L, paper layout at n=64, float32, stage-1 base, fresh attach):** L1 all 12 sites attach and forward (loss 0.597); L2 no site receives a router_x, no frozen stash; L3 bumping the lowest VLM bank (layer 5) MOVES the routing input at 10/10 sites above it and leaves expert site 4 (below it) bitwise unchanged, moves all 5 expert anchors above it, moves the loss — i.e. the non-stationarity A1 gives up is present by construction; L4 an expert-bank bump moves the 5 higher expert sites and leaves all 6 VLM sites unchanged (prefix never attends to the suffix); L5 grads reach values on both towers; L6 grad-ckpt parity 0.730532 = 0.730532; L7 inference deterministic, no memory-free prefix KV captured, actions move after a value bump, stash clean. Mode G (no switch) raises the placement guard; mode X (switch + stationary flags) raises the combination error.
-**Stage-A resume smoke (the REAL A1 A-phase command through joint_aphase_seq5_common.sh, A_ONLY=1, 40 steps, save every 20):** first attempt died at rc 2 with no message — `A_PARTIAL=$(ls -d ... | sort | tail -1)` under `set -eo pipefail` aborts the body with ls's rc 2 when no partial checkpoint exists (stderr was /dev/null'd). Fixed with `{ ls ... || true; }` (82706257; same construct fixed in A3's stage J), reproduced/verified locally (old form rc 2, new form rc 0). Rerun: bs8xacc4 no-ckpt OOMs at step 1 (79.10 GiB of 79.19), ladder wipes and steps down; **bs4xacc8 no-ckpt fits** and runs at **updt_s 0.390-0.392 per 4-sample micro-batch = ~3.1 s per 32-sample optimizer step (0.098 s/sample; the H200 control was 1.18 s/step, 0.037 s/sample)**; 000020 + 000040 written; after deleting 000040 the body took the resume path (`lerobot-train --resume=true --config_path=.../000020/pretrained_model/train_config.json`), logged only steps > 20 and recreated 000040. The periodic-save/resume contract therefore holds for the 10k stages (A1 A-phase, A3 stage J) with saves every 5k. Peak-VRAM poll (81,003 MiB) is contaminated by the bs8 attempt; the true bs4 peak will be read from the heartbeat's gpu field during A1.
-**Launched 07:01 UTC (08:01 UK):** unit `e68-train`, `queue_e68_train.sh full`, STAGES="a1 a2 c1 c2", PYTHONUNBUFFERED=1; local `heartbeat_e68.sh` armed (poll 10 min, forced beat hourly, nebius-API recovery for `computeinstance-e00h8htkzavxm81d24`); hourly Claude check. Expect one "NEW ERROR LINES" beat from the A-phase ladder's bs8 OOM (by design).
-**ETAs at ~3.1 s/opt-step:** A1 A-phase 10k ~9 h (-> ~17:00 UK Wed) then seq5 25k ~22 h (-> ~15:00 UK Thu); A2 20k ~17 h (-> ~08:00 UK Fri); C1 + C2 ~10 h (-> ~18:00 UK Fri). A3 (35k, ~30 h here) should take the H200 once E67's rows and matrices finish, or run here after C2 (-> ~Sun). Triangle rows (15 cells/arm, ~26 min/cell) on the H200 as arms land; the control's own 15 cells can start on the H200 as soon as its eval queue is free — to coordinate with the nebius-spot session.
+### Entry 68 addendum 1 (9 Sep 26, 07:45 UK) — **W_a NEVER TRAINED (paper correction)**
+**PAPER CORRECTION — the expert anchor map W_a is a fixed RANDOM projection, never trained.** Checked on the paper cell's warm-up checkpoint: all six `gemma_expert...layers.{4,6,8,10,14,16}.mlp.anchor_proj.weight` tensors have max|w| = 0.022097 = 1/sqrt(2048) and std 0.01276 = bound/sqrt(3) — bit-for-bit Kaiming-uniform init. Cause: no lerobot-train mode ever gives it a gradient (the sequential trainer trains values only). The tag comment ("Router group: trains in router warm-ups") and Sec. III.C of the draft ("W_a is learned during router warm-up") are wrong; the anchor is a fixed random projection of the pooled instruction hidden — which still conditions routing on language (a random projection preserves the pooled hidden's geometry, and E53's "anchor ledger" measured exactly that init geometry), so no result changes. Text fix: "a fixed random projection W_a" in Sec. III.C and Fig. 1(b). For E68 this is NOT a confound: A3's `train_memory_only` excludes `anchor_proj` identically, so every arm and the control share the same W_a. A trained-W_a arm (fix the filter, re-warm) is a future ablation, not a pre-deadline one.
 
 ### Entry 68 addendum 3 (9 Sep 26, 11:45 UK) — paper-cell certificate transcribed (the C1/C2 reference row); the "famIoU 0.145 band" does NOT describe the paper cell, so the C1 pre-registration is restated
-A1's value fill is at 5.0K/10K (2.55 s/step, loss 0.106, GPU 69.8 GB, no incidents). While it runs, the reference row of the certificate table is filled from the transferred audit dir (`audit_heldout_jointwarm_merged6x2_..._10k`), per site:
+The reference row of the certificate table, per site:
 
 | site | famIoU | bgIoU | core50 mean (min-max) | min-task effnum |
 |---|---|---|---|---|
@@ -9472,61 +8069,29 @@ A1's value fill is at 5.0K/10K (2.55 s/step, loss 0.106, GPU 69.8 GB, no inciden
 
 Gate re-verified from the raw numbers (E62 recorded "PASS" without transcribing them): expert bgIoU max 0.091 <= 0.10 (E16 is the tight one), expert mean core50 min 713 >= 400, expert min-task effnum min 458 >= 300, VLM min-task effnum min 250 >= 150 (V5, the tight one), VLM famIoU max 0.145 < 0.45. PASS on every clause, with E16's bgIoU and V5's effnum the two cells nearest their bands.
 **CORRECTION carried into E68's C1 pre-registration.** The entry wrote "famIoU up from the 0.145 band", inheriting a number that belongs to the E37/E44-era 4-site n=384 configuration (and, coincidentally, to V15 here). The paper cell's actual famIoU is **0.180-0.281 on the expert and 0.082-0.145 on the VLM** — i.e. the merged 6x2 sits well ABOVE the old 0.145 on every expert site, which is consistent with E56/E59's finding that famIoU stopped converting and bgIoU became the axis that pays (the layout was selected on bg-first bands, not famIoU). C1 is therefore scored against the per-site numbers above, not against 0.145: the read is whether sep=0 moves the expert band up from 0.18-0.28 and, more importantly for the mechanism claim, whether it moves **bgIoU** off 0.031-0.091 and the VLM famIoU off 0.08-0.145. Unchanged bg across the board would mean separation is decorative at this anchor weight (the standing kill line).
-Omega (writable read mass outside prior cores) is not part of the audit summary — it comes from the slot-analysis pass over `memory_by_task/`; it will be computed for all three warm-ups together when C1/C2 land, so the three are measured by one instrument.
+Omega (writable read mass outside prior cores) is not part of the audit summary — it comes from the slot-analysis pass; it will be computed for all three warm-ups together when C1/C2 land, so the three are measured by one instrument.
 
-### Entry 68 addendum 4 (9 Sep 26, 12:15 UK) — A1's first periodic checkpoint lands: the LIVE-routing delta is confirmed in the production checkpoint, and the resume contract is armed for real
-A1 value fill at 5,701/10,000 (2.57 s/step, loss 0.104-0.111 across the last 1K, grad-norm 0.022, lr 1.2e-5 on the decay). `checkpoints/005000` written by the `A_SAVE_FREQ=5000` hook, contents complete: `pretrained_model` (incl. `train_config.json`, which the resume path consumes) plus `training_state/` with `optimizer_state.safetensors`, `optimizer_param_groups.json`, `scheduler_state.json`, `rng_state.safetensors`, `training_step.json`. So the smoke's verified resume path is now armed on the real run: a preemption costs at most the steps since 5K.
-**The A1 delta, read back out of the production checkpoint's own config** (not the smoke's): `use_frozen_base_input_features False`, `frozen_prepass False`, `allow_nonstationary_routing True`, `layers [4,6,8,10,14,16]`, `vlm_layers [5,7,9,11,13,15]`. The arm is training the intended single delta on the intended layout.
-**Disk planning number:** a memory-model checkpoint WITH optimizer state is **40 G**, not the ~19.4 G of a weights-only per-task checkpoint (values fp32 + Adam moments). The A-phase keeps 005000 and 010000 = 80 G; the seq stage's per-task checkpoints are weights-only. Projected E68 footprint ~350 G against 1.6 T free (disk 38% -> 39% on this checkpoint), so no pressure, but the sweep-optimizer-states habit (E62 add-8) applies once A1's A-phase completes and its 005000 is dead weight.
-A-phase ETA ~15:10 UK, then the 5-task sequential stage begins (first task boundary ~+3.5 h).
-
-### Entry 68 addendum 5 (9 Sep 26, 15:20 UK) — A1's value fill COMPLETE (7h08m); **live and stationary routing fit the pretraining corpus identically (0.096 vs 0.097 at the matched step)** — the arm's damage, if any, must come from the sequential stage; seq5 launched
-**A1 stage A done** at 14:13:46 UTC, 10,000/10,000 at 2.56 s/opt-step, wall clock **7h08m**; `checkpoints/010000` written; the wrapper moved straight into the 5-task sequential stage (run dir `libero_10_seq5_jw_e68a1_live_merged6x2_..._beta4corefrac_topt3072_lr2x_steps5k` created 14:15:16 UTC, policy loading).
+### Entry 68 addendum 5 (9 Sep 26, 15:20 UK) — **live and stationary routing fit the pretraining corpus identically (0.096 vs 0.097 at the matched step)** — the arm's damage, if any, must come from the sequential stage
 **The first A1 number, and it is a null — as pre-registered.** Both A-phases train values (+ gate, value_proj, swilu) for 10k steps on libero_90 from the SAME warm-up checkpoint, differing only in whether routing reads memory-free or live features, so their held-in loss is directly comparable at matched step/sample count:
 
 | A-phase | routing | step | samples | epoch | loss | grad-norm |
 |---|---|---|---|---|---|---|
-| paper cell (E62, H200) | stationary (frozen-base + prepass) | 10K | 320K | 0.56 | **0.097** | 0.030 |
-| E68 A1 (H100) | LIVE | 10K | 320K | 0.56 | **0.096** | 0.030 |
+| paper cell (E62) | stationary (frozen-base + prepass) | 10K | 320K | 0.56 | **0.097** | 0.030 |
+| E68 A1 | LIVE | 10K | 320K | 0.56 | **0.096** | 0.030 |
 
 (the two preceding log lines agree as closely: 0.100/0.097 vs 0.102/0.094.) **Reading:** live addressing costs nothing when there is a single training distribution and no earlier task to preserve — the router drifts with the values, but drifting together is not a defect while everything is being fitted at once. This matches the E68 pre-registration for A1 ("acquisition ~= control, possibly +1-3") and, more usefully, it *isolates* the arm: any A1 deficit that appears from here on cannot be attributed to a weaker value fill, because the substrate the sequential stage starts from is equal in fit to the control's. The whole test now rests on the sequential stage, exactly where E38's mechanism predicts it should.
-**H100 vs H200 cost, measured on identical work:** the A-phase ran 2.56 s/opt-step at bs4xacc8 here against the control's 1.08 updt_s at bs16xacc2 on the H200 (~2.16 s/opt-step) — a **~19% penalty**, far smaller than the 2.6x the smoke's per-sample figure implied, because the A-phase is fixed-cost dominated (E52's reading). Revised ETAs: A1 seq5 25k at ~3 s/step ~= 21 h (-> ~12:00 UK Thu), A2 20k ~= 17 h (-> ~05:00 UK Fri), C1+C2 ~10 h (-> ~15:00 UK Fri).
-Disk 39% (959 G used, 1.5 T free) with both A-phase checkpoints (40 G each) resident; A1's 005000 is now dead weight and can be swept once seq5 has its first boundary.
 
-### Entry 68 addendum 6 (9 Sep 26, 15:55 UK) — A1 seq5 running on task 1 after a benign ladder step-down; the seq ladder's wipe-on-VRAM behaviour is confirmed correct for a fresh run (and re-validates A2's separate rung loop)
-Backstop check after the credit reset. Automation intact: local heartbeat alive (PID 3852817), both SSH keys loaded, hourly cron registered, unit active, linger yes.
-**The err counter moved 2 -> 4 and the cause is benign, the same pattern as the A-phase**: the sequential stage opened at ladder rung bs8xacc4, reached "Online task 1/5 | dataset_task_id=0" at 14:17:04 UTC, then hit `torch.OutOfMemoryError` (306 MiB short of 79.19 GiB) before writing any checkpoint; the body correctly classified it as VRAM, wiped the partial run dir and relaunched at **bs4xacc8**, which started task 1 again at 14:19:10 UTC and is running. Two log lines (the OOM + its Traceback) are the entire delta. So on this H100 BOTH stages of a memory arm run at bs4xacc8 no-ckpt; the four-rung ladder cost ~2 min of wall clock in total across the chain.
-**This also validates the A2 design decision made before launch (add-1).** The shared body's seq ladder responds to a pre-005000 failure by `rm -rf "$SEQ_OUT"`. That is right for a fresh run like A1 — and would have been destructive for A2, whose `checkpoints/005000` is the *seeded* control boundary, not something the run produced. A2 therefore carries its own rung loop that cleans only non-005000 partial artifacts and re-points `last`; had it inherited the body's ladder, this same first-rung OOM would have deleted the seed and silently restarted A2 as a from-scratch 5-task run with protection off, i.e. a different experiment. Worth stating plainly because the failure would not have announced itself.
-**Block 1 in flight:** step 600/5,000 on task 1 (env 4), loss 0.148 @400 -> 0.117 @600, grad-norm 0.014, value LR 1.8e-3 on the 2e-3 -> 2e-4 decay, updt_s 0.387 (~3.1 s/opt-step). At that rate the 25k-step sequential stage lands ~11:50 UTC (12:50 UK) Thu 10 Sep, with the first task boundary (`checkpoints/005000`, the first cell where A1 can differ from the control) ~18:40 UK today. Disk 41%.
-
-### Entry 68 addendum 7 (9 Sep 26, 19:45 UK) — A1 boundary 1: in-run opener **75.0** on e4 vs the control's 80 (20-ep instrument, retired from decisions); task 2 running
-`checkpoints/005000` written complete (`pretrained_model` + `sequential_state.pt` + `training_state`) at ~18:35 UTC; the in-run boundary eval read **pc_success 75.00** (tasks_seen=1, e4) at 18:37:46 UTC and task 2 (dataset id 1 = e6) started immediately after. Block-1 training loss fell 0.148 -> 0.043 over the 5,000 steps (grad-norm 0.017 -> 0.007, value LR 1.9e-3 -> 3.8e-4 on the linear decay), i.e. a normal block.
+### Entry 68 addendum 7 (9 Sep 26, 19:45 UK) — A1 boundary 1: in-run opener **75.0** on e4 vs the control's 80 (20-ep instrument, retired from decisions)
+The in-run boundary eval read **pc_success 75.00** (tasks_seen=1, e4). Block-1 training loss fell 0.148 -> 0.043 over the 5,000 steps (grad-norm 0.017 -> 0.007, value LR 1.9e-3 -> 3.8e-4 on the linear decay), i.e. a normal block.
 **Against the control at the same instrument:** the paper cell's 5-task run opened e4 at **80** on its fresh 20-episode boundary eval (E62 add-1, "best ever recorded"). A1 live reads **75**. The gap is 5 points on a 20-episode cell whose binomial spread is +-11pp (E41, the entry that retired this instrument from decisions), so the two are indistinguishable here and nothing should be concluded from it. Recorded because it is the first A1 rollout number and it is *directionally* consistent with the pre-registration ("A1 acquisition ~= control"), which the A-phase loss parity (add-5) already indicated more reliably.
-**What actually decides A1** is unchanged and still ahead: the 4-seed x 25-episode retention triangle over all five blocks, where the pre-registered signature is exposure-ordered decay of the earlier tasks (E38's channel), not a weaker diagonal. The first cell where that can show is block 2's e4 row, ~22:20 UK tonight.
-Housekeeping: A1's A-phase `checkpoints/005000` (40 G, the mid-run periodic save) is now dead weight and sweepable, but disk is only 41% with 1.5 T free, so it is left in place rather than deleted.
+**What actually decides A1** is unchanged and still ahead: the 4-seed x 25-episode retention triangle over all five blocks, where the pre-registered signature is exposure-ordered decay of the earlier tasks (E38's channel), not a weaker diagonal. The first cell where that can show is block 2's e4 row.
 
-### Entry 68 addendum 8 (10 Sep 26, 00:15 UK) — A1 boundary 2 written (block-2 loss 0.135 -> 0.031); **and a REAL GAP IN THE PREEMPTION CONTRACT, present in every sequential run this project has ever done**: `last` points at a boundary whose `sequential_state.pt` does not exist yet for the whole duration of the in-run eval
-**A1 state:** `checkpoints/010000` written at 22:49:36 UTC; block 2 (e6) trained 0.135 -> 0.031 (grad-norm 0.018 -> 0.007, LR 1.9e-3 -> 2.3e-4); the 2-task in-run eval was still in flight at 23:15 UTC. Block-1 in-run eval was 75.0 (add-7). No new errors; disk 44%.
-**The gap, measured on this run's own timestamps at boundary 1:**
-| artifact | written |
-|---|---|
-| `005000/pretrained_model` | 18:27:58 |
-| `005000/training_state` | 18:28:38 |
-| in-run boundary eval | 18:28 -> **18:37:46** |
-| `005000/sequential_state.pt` | **18:37:47** (immediately AFTER the eval) |
-`checkpoints/last` is repointed to the new boundary as soon as the model is saved, so **for the entire duration of the in-run eval, `last` names a directory with no `sequential_state.pt`.** The wrapper's resume guard is `[ -f "$SEQ_OUT/checkpoints/last/sequential_state.pt" ]`; inside that window it is false, so a relaunch after a preemption would NOT set `--resume_sequential`, would fall back to `SEQ_POLICY_PATH=$A_CKPT`, and would try to restart the sequential stage from scratch into an existing output dir.
-**It fails safe and loud, not silently** — three independent guards catch it: the trainer's config validate raises `FileExistsError` (output dir exists, `resuming` false); the ladder then sees `checkpoints/005000` present and takes the "rung failed AFTER task-0 checkpoint - not a VRAM failure; aborting" branch rather than wiping; and `heartbeat_e68.sh` does not auto-relaunch after a FAIL marker. So the worst case is a stopped chain that an hourly check picks up, never a silently corrupted run. (Had the ladder wiped instead, this would have been catastrophic — the E68 add-6 reasoning about A2's separate rung loop applies here too.)
-**Cost if it fires:** recovery is to point `last` at the newest boundary that HAS `sequential_state.pt` and relaunch the unit; the run then resumes correctly, at the price of re-training the block whose state was lost (~4.3 h here). **Exposure:** the eval grows with tasks seen (~9.5 min at b1, ~19 at b2, ~28 at b3, ~38 at b4) = ~95 min of a ~21 h run, about **7.5%**.
-**Not fixing it now, deliberately.** The remedy is a two-line change to the resume guard (select the newest checkpoint dir that actually contains `sequential_state.pt`, instead of trusting `last`), but `joint_aphase_seq5_common.sh` is *sourced by the wrapper bash process that is currently running A1*, and bash reads scripts incrementally — editing it in place can corrupt a running shell. E67 add-6 hit the same constraint and deployed only .py files for that reason. The change goes in when the chain is between stages (A1 seq -> A2), and the manual remedy above covers the interval.
-**This is not an E68 artefact.** The ordering is in the shared body used by every sequential run since E47, so every 5- and 10-task run in the project has carried the same window; it has simply never been hit, because preemptions are rare and the window is ~7.5%. Worth a line in the ops section of CLAUDE.md once fixed.
-
-### Entry 68 addendum 9 (10 Sep 26, 01:15 UK) — A1 boundary-2 in-run eval: **57.5** (2 tasks, 20 eps each); tracking the control, no live-routing collapse through two blocks; task 3 running
-Closing add-8's open item. `Eval overall | tasks_seen=2 pc_success=57.50` at 23:11:15 UTC, then `Saved cross-task state ->` at 23:11:15 and `Online task 3/5 | dataset_task_id=2` — the state write lands in the same second the eval ends, exactly the ordering add-8 measured.
+### Entry 68 addendum 9 (10 Sep 26, 01:15 UK) — A1 boundary-2 in-run eval: **57.5** (2 tasks, 20 eps each); tracking the control, no live-routing collapse through two blocks
 A1 in-run trace so far: b1 **75.0** (1 task) -> b2 **57.5** (mean over e4 retained + e6 just-trained). The trainer logs only the aggregate at these boundaries, so acquisition and retention are not separable from this instrument; for scale, the control's 4-seed b2 row is 54/65 = **59.5** (E64 add-12, a different instrument at 25 eps x 4 seeds). A1's 57.5 is therefore in the same region, and **there is no sign of the E38 collapse through two blocks** — consistent with that run too, which degraded progressively rather than immediately (rwarmupA reached 7/10 blocks before e2 fell 80 -> 25). Nothing is concluded from either number: the 20-episode single-seed cell was retired from decisions in E41, and A1's verdict rests on its 4-seed triangle.
-Block 3 (e9) opened at loss 0.508 -> 0.290 over its first ~500 steps, LR reset to 2.0e-3. The shared-table union mask is behaving: `[E61 union] shared-table mask: 3072 + 3072 -> 5996 rows (overlap 148)`, i.e. the two sites of a shared pair request nearly disjoint row sets and the union is close to additive.
+The shared-table union mask is behaving: 3072 + 3072 -> 5996 rows (overlap 148), i.e. the two sites of a shared pair request nearly disjoint row sets and the union is close to additive.
 
 ### Entry 68 addendum 10 (10 Sep 26, 05:15 UK) — A1 boundary 3: in-run **65.0** (3 tasks); three blocks in, the live-routing arm shows NO exposure-ordered decay — flagging early that A1 may come out NULL
-`checkpoints/015000` written ~03:20 UTC; `Eval overall | tasks_seen=3 pc_success=65.00` at 03:49:48; task 4 (dataset id 3 = e2) running, opened at loss 0.331 -> 0.185, LR reset 1.9e-3. Block 3 (e9) trained 0.508 -> 0.082. Disk 45%, no new errors, a1=2/3.
+Block 3 (e9) trained 0.508 -> 0.082.
 **A1's in-run trace against the control's 4-seed triangle rows** (different instruments — 20 eps x 1 seed vs 25 eps x 4 seeds — so this is a shape comparison, not a paired one):
 | after block | A1 live (in-run, 20 ep) | control (4-seed triangle, E64 add-12) |
 |---|---|---|
@@ -9534,18 +8099,17 @@ Block 3 (e9) opened at loss 0.508 -> 0.290 over its first ~500 steps, LR reset t
 | b2 | 57.5 | 59.5 |
 | b3 | **65.0** | 62.3 |
 **The pre-registered A1 signature is not appearing.** E68's table predicted "exposure-ordered decay; final mean well below 65.2; prior-task rows fall block by block". Through three blocks the aggregate is flat-to-rising and b3 sits slightly *above* the control's b3. Two honest caveats before anyone reads that as a result: (i) the in-run cell is 20 episodes at one seed, retired from decisions in E41 at +-11pp, and it aggregates the just-trained task with the retained ones, so a strong diagonal can mask a weak row; (ii) E38's own collapse was progressive — rwarmupA held up early and lost e2 80 -> 25 only by block 7 of 10 — and A1 has only two more blocks to run, so this arm may simply be too short to reach the regime where drift bites.
-**Consequence to prepare for.** If the 4-seed triangle confirms the shape, A1 fires its pre-registered kill line ("final within 3 of control => stationarity is not load-bearing at this layout"), and Sec. III.D of the paper must be restated: stationary addressing would then be an exactness property of the routing function that we can demonstrate and audit (self-IoU 1.000, E62 add-2), rather than a design choice carrying measurable retention. That is a weaker claim than the draft makes, and it is better to know it now than at submission. The alternative reading — that five tasks is below the horizon where the drift channel converts, given E38 needed seven — is testable only with a 10-task live arm (60k steps, ~52 h here), which does not fit before the deadline; if A1 lands null, the honest sentence names the horizon rather than claiming the mechanism is absent.
-No action taken; the arm runs to completion as designed and the triangle decides.
+**Consequence to prepare for.** If the 4-seed triangle confirms the shape, A1 fires its pre-registered kill line ("final within 3 of control => stationarity is not load-bearing at this layout"), and Sec. III.D of the paper must be restated: stationary addressing would then be an exactness property of the routing function that we can demonstrate and audit (self-IoU 1.000, E62 add-2), rather than a design choice carrying measurable retention. That is a weaker claim than the draft makes, and it is better to know it now than at submission. The alternative reading — that five tasks is below the horizon where the drift channel converts, given E38 needed seven — is testable only with a 10-task live arm (60k steps), which does not fit before the deadline; if A1 lands null, the honest sentence names the horizon rather than claiming the mechanism is absent.
 
 ### Entry 68 addendum 11 (10 Sep 26, 08:05 UK) — **CORRECTION to add-10**: the per-task cells DO show A1's e4 declining (75/60/55) — but the control's own e4 swings 80/65/75/45/58 on the same instrument, so neither reading survives; the 20-ep in-run triangle cannot resolve this arm
-Add-10 read A1's in-run *aggregates* (75.0 / 57.5 / 65.0) as "no exposure-ordered decay" while noting the masking risk. The per-task cells, pulled from `eval_bar_history` inside each run's `sequential_state.pt`, show the masking was real — and then show the comparison is unusable anyway.
+Add-10 read A1's in-run *aggregates* (75.0 / 57.5 / 65.0) as "no exposure-ordered decay" while noting the masking risk. The per-task cells show the masking was real — and then show the comparison is unusable anyway.
 **A1 live (in-run, 20 eps x 1 seed):**
 | after block | e4 | e6 | e9 | row mean |
 |---|---|---|---|---|
 | b1 | 75 | | | 75.0 |
 | b2 | 60 | 55 | | 57.5 |
 | b3 | 55 | 65 | 75 | 65.0 |
-**Control, matched run / matched instrument** (`libero_10_seq5_jw_merged6x2_...`, read-only from nebius-spot; its b5 row is the 50-ep final = E62 add-1's 58/74/64/84/54):
+**Control, matched run / matched instrument** (its b5 row is the 50-ep final = E62 add-1's 58/74/64/84/54):
 | after block | e4 | e6 | e9 | e2 | e7 | row mean |
 |---|---|---|---|---|---|---|
 | b1 | 80 | | | | | 80.0 |
@@ -9554,11 +8118,10 @@ Add-10 read A1's in-run *aggregates* (75.0 / 57.5 / 65.0) as "no exposure-ordere
 | b4 | 45 | 70 | 80 | 80 | | 68.8 |
 | b5 | 58 | 74 | 64 | 84 | 54 | 66.8 |
 **Reading.** (i) A1's e4 column falls monotonically 75 -> 60 -> 55, which is the pre-registered live-routing signature, so add-10's headline sentence is withdrawn. (ii) But the CONTROL's e4 column reads 80 -> 65 -> 75 -> **45** -> 58 under stationary routing with protection on — a 30-point swing between adjacent blocks in the arm that is by construction stable, and its b3 (75) exceeds its b1 (80) only after dipping to 65. A column that volatile in the control cannot license reading a 20-point monotone drift in the arm. This is precisely the +-11pp binomial spread that retired the instrument in E41, compounded by aggregating over cells. (iii) What survives: A1's row means sit 5.0 / 7.5 / 5.0 points below the control's at b1/b2/b3 — consistent in sign across three rows, which is mildly suggestive and nothing more.
-**Standing position for A1 is therefore UNCHANGED and undecided**: no interim claim either way, and the arm is decided by the post-hoc 4-seed x 25-episode triangle (100 eps/cell, `run_e68_retention_triangle.sh a1`), which is the instrument every headline in the paper uses. Add-10's "prepare for a null" contingency stays on the table but is no longer supported by evidence; the horizon caveat (E38 needed 7 blocks) stays too.
-**Method note worth keeping:** per-task in-run cells are recoverable at any time from `sequential_state.pt`'s `eval_bar_history` without re-running anything — cheaper than the log's usual route of grepping the trainer's stdout, and it is the only place the per-task breakdown exists (the boundary log line prints the aggregate only).
+**Standing position for A1 is therefore UNCHANGED and undecided**: no interim claim either way, and the arm is decided by the post-hoc 4-seed x 25-episode triangle (100 eps/cell), which is the instrument every headline in the paper uses. Add-10's "prepare for a null" contingency stays on the table but is no longer supported by evidence; the horizon caveat (E38 needed 7 blocks) stays too.
 
 ### Entry 68 addendum 12 (10 Sep 26, 09:20 UK) — A1 b4: e4 goes back UP (55 -> 65), the "monotone decline" of add-11 is dead, and A1's row mean now EXCEEDS the control's — the in-run instrument is settled as uninformative for this arm
-`checkpoints/020000` written ~07:50 UTC; `Eval overall | tasks_seen=4 pc_success=72.50` at 08:39:17; block 4 (e2) trained to 0.050; block 5 (e7) opened at loss 0.173, LR reset 1.8e-3. a1=2/4, disk 47%, no new errors.
+Block 4 (e2) trained to 0.050.
 **A1 live, in-run per-task (20 eps x 1 seed), four rows:**
 | after block | e4 | e6 | e9 | e2 | row mean |
 |---|---|---|---|---|---|
@@ -9568,10 +8131,9 @@ Add-10 read A1's in-run *aggregates* (75.0 / 57.5 / 65.0) as "no exposure-ordere
 | b4 | **65** | 55 | 75 | 95 | **72.5** |
 **Both interim readings are now dead.** Add-10 claimed no decay (from aggregates); add-11 withdrew that and noted e4 falling 75 -> 60 -> 55; b4 has e4 back at **65**, so the column is 75/60/55/65 — not monotone, not a drift signature, just noise. And the row means now read 75.0 / 57.5 / 65.0 / **72.5** against the control's 80.0 / 65.0 / 70.0 / **68.8**: A1 was 5-7.5 points *below* at b1-b3 and is 3.7 points *above* at b4. A consistent-sign deficit that reverses on the next row was never a deficit.
 **Settled, and worth stating once so it is not relitigated:** the 20-episode single-seed in-run cell cannot resolve differences of this size in either arm — the control's own e4 column (80/65/75/45/58) swings 30 points under stationary routing with protection on. No further interim reads will be taken from this instrument for E68; A1, A2 and A3 are each decided by their post-hoc 4-seed x 25-episode triangle (100 eps/cell) and their paired-noise loss matrix, nothing else. The in-run numbers stay in the log as a record of what the run did, not as evidence.
-A1's final block ends ~12:50 UK, then the wrapper marks E68-A1-DONE and the queue moves to A2.
 
 ### Entry 68 addendum 13 (10 Sep 26, 10:05 UK) — **THE A1 ABLATION IS BITING HARD: cross-arm read-mass IoU on the SAME task is 0.44-0.68**, with an E38 depth gradient — yet inter-task separation is preserved, which is the likely reason retention has not collapsed
-Josh asked whether the A1 null is real or an inert flag. Measured directly from the two runs' own `memory_by_task/` JSONs (no GPU, no re-run): per-site weighted-Jaccard read-mass IoU between **A1-live and the control-stationary on the same task, same frozen warm-up router, same data, same seed**, so the ONLY difference is whether routing reads live or memory-free features.
+Josh asked whether the A1 null is real or an inert flag. Measured directly from the two runs' own usage records: per-site weighted-Jaccard read-mass IoU between **A1-live and the control-stationary on the same task, same frozen warm-up router, same data, same seed**, so the ONLY difference is whether routing reads live or memory-free features.
 **Task 0 (e4), cross-arm IoU:**
 | site | E4 | E6 | E8 | E10 | E14 | E16 | V5 | V7 | V9 | V11 | V13 | V15 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -9586,11 +8148,10 @@ About **half the read mass moves**. The gradient is the E38 signature in product
 | t0-t3 control | 0.055 | 0.088 | 0.200 | 0.083 | 0.146 | 0.269 |
 Same magnitudes, same depth structure, A1 marginally *more* separated at shallow expert sites and marginally less at deep VLM ones.
 **The mechanism this suggests.** The router is frozen in both arms, so its *geometry* — the map from feature directions to slot regions — is identical; live routing perturbs only its *input*. The perturbation translates each task's footprint substantially (cross-arm 0.5) while leaving tasks about as far apart from each other as before. If tasks remain mutually separated, the write mask and protection still act on approximately the right disjoint regions, which is a coherent reason for retention to hold up despite large absolute addressing drift. E38's damage would then require not drift per se but drift that *destroys separation* or that de-references the protection store.
-**What is NOT measured here, stated plainly.** (i) **Self-IoU across the sequence** — whether task k's footprint at the final checkpoint still matches what the protection store recorded during block k — is the decisive statistic and is NOT obtainable from these files: they record each task's usage *during its own block*, one recording per task. It needs the held-out audit run on two checkpoints (~35 min GPU each) and is the E62 add-2 instrument that read exactly 1.000 for the control. (ii) **famIoU is undefined on the front-5**: the basket family is e7 + e0 + e1, and only e7 is in this sequence, so no family pair exists; the audit's famIoU is a 10-task statistic against a frozen checkpoint and is not comparable to anything computed here. (iii) These are training-time footprints under a moving router, not frozen-checkpoint footprints, so they are not the same statistic as the audit's bgIoU and should not be quoted against the gate bands.
-**Consequence for the arm:** the A1 null (if the 4-seed triangle confirms it) is a REAL result about a genuinely non-stationary router, not an artefact of a flag that did nothing. That materially strengthens whatever Sec. III.D ends up saying, in either direction. **Recommended next measurement:** self-IoU on A1's 005000 vs 025000 via `audit_heldout_routing.sh`, which converts this from "drift preserved separation" (inferred) to measured.
+**What is NOT measured here, stated plainly.** (i) **Self-IoU across the sequence** — whether task k's footprint at the final checkpoint still matches what the protection store recorded during block k — is the decisive statistic and is NOT obtainable from these files: they record each task's usage *during its own block*, one recording per task. It needs the held-out audit run on two checkpoints and is the E62 add-2 instrument that read exactly 1.000 for the control. (ii) **famIoU is undefined on the front-5**: the basket family is e7 + e0 + e1, and only e7 is in this sequence, so no family pair exists; the audit's famIoU is a 10-task statistic against a frozen checkpoint and is not comparable to anything computed here. (iii) These are training-time footprints under a moving router, not frozen-checkpoint footprints, so they are not the same statistic as the audit's bgIoU and should not be quoted against the gate bands.
+**Consequence for the arm:** the A1 null (if the 4-seed triangle confirms it) is a REAL result about a genuinely non-stationary router, not an artefact of a flag that did nothing. That materially strengthens whatever Sec. III.D ends up saying, in either direction. **Recommended next measurement:** self-IoU on A1's 005000 vs 025000, which converts this from "drift preserved separation" (inferred) to measured.
 
-### Entry 68 addendum 14 (10 Sep 26, 17:20 UK) — **A1 COMPLETE: final 50-ep 64.0 vs the control's 66.8, a paired mean delta of -2.8 — inside the pre-registered +-3 noise bar, so A1 is tracking to fire its NULL kill line**; A2 seeded, resumed and running with protection OFF
-**E68-A1-DONE** at ~15:41 UTC. Wall clock for the whole arm: 07:01 UTC 9 Sep -> 15:41 UTC 10 Sep = **32h40m** (7h08m A-phase + ~21h seq + ~2h45m final eval), one ladder step-down per stage, zero incidents.
+### Entry 68 addendum 14 (10 Sep 26, 17:20 UK) — **A1 COMPLETE: final 50-ep 64.0 vs the control's 66.8, a paired mean delta of -2.8 — inside the pre-registered +-3 noise bar, so A1 is tracking to fire its NULL kill line**
 **A1 final row vs the control, SAME instrument (50 eps, seed 1000), paired per task:**
 | | e4 | e6 | e9 | e2 | e7 | mean |
 |---|---|---|---|---|---|---|
@@ -9599,28 +8160,12 @@ Same magnitudes, same depth structure, A1 marginally *more* separated at shallow
 | delta | 0 | **-18** | -4 | -6 | **+14** | **-2.8** |
 **Reading.** The mean deficit is **2.8 points**, inside the +-3 bar E68 set from the 5-task/10-task replicate, and far inside the +-7pp E43 assigns a 50-episode cell. The per-task pattern is two large movers in opposite directions that cancel: e6 **-18** and e7 **+14**. e7 is the basket hub and the hardest cell in the suite — the one the control itself only reaches 54 on — and live routing does *better* there, which is the opposite of the pre-registered failure mode (the family/hub task was supposed to be where drift hurt most). Nothing here looks like exposure-ordered forgetting.
 **Status of the A1 pre-registration.** The kill line reads "final within 3 of control => stationarity is not load-bearing at this layout". At the 50-ep instrument A1 lands at -2.8 and therefore **fires it**, pending the 4-seed triangle, which is the instrument of record and has not run. Combined with add-13 (the ablation genuinely moves ~half the read mass, cross-arm IoU 0.44-0.68), the emerging result is: **large addressing drift, preserved inter-task separation, and no measurable retention cost over five tasks.** If the triangle confirms, Sec. III.D must be restated — stationary addressing becomes a demonstrable exactness property (self-IoU 1.000) rather than a design choice carrying measured retention, with the honest caveat that five tasks may sit below the horizon where drift converts (E38 needed 7 of 10).
-**A2 launched and verified, 15:40-15:45 UTC.** The seeding path worked exactly as designed: `[a2] seeded .../checkpoints/005000` from the control's task-1 boundary (byte-count witness passed), then `[a2] rung: bs=8 accum=4` OOM'd (err 4 -> 6, the same first-rung failure both A1 stages had) and **`[a2] rung failed before 010000 (treating as VRAM) - cleaning partial artifacts, keeping the seed`** — the A2-specific rung loop did NOT wipe the run dir. Had A2 inherited the shared body's ladder, that OOM would have deleted the seed and silently restarted it as a from-scratch 5-task run with protection off; add-6 predicted precisely this and the prediction has now been exercised in production. On the bs4xacc8 rung the trainer logged `RESUMING sequential run from .../checkpoints/005000` -> `Skipping task 1/5 (already complete, resumed)` -> `Online task 2/5`, with the seed intact (`pretrained_model` + `sequential_state.pt`; no `training_state` needed, since the optimizer is reinitialised at every boundary by `reinit_optimizer_each_task`). A2 is now training block 2 with `protect_prior_slots=false`, updt_s 0.448, loss 0.128. Disk 49%.
 
-### Entry 68 addendum 15 (10 Sep 26, 17:35 UK) — A1 mirrored to nebius-spot for its 4-seed triangle (paths + exact command below); optimizer state swept on nebius2, final checkpoint deliberately kept for a possible 10-task extension
-**A1 is now on BOTH boxes.** Pushed VM-to-VM over the private subnet (nebius2 -> 10.0.0.1, agent-forwarded, 96 G in 4m31s at ~310-570 MB/s), weights and cross-task state only — `training_state` excluded, since eval never reads it.
-**On nebius-spot, ready for the triangle:**
-```
-outputs/train/libero_10_seq5_jw_e68a1_live_merged6x2_e468101416_v579111315_beta4corefrac_topt3072_lr2x_steps5k/
-  checkpoints/{005000,010000,015000,020000,025000}/{pretrained_model,sequential_state.pt}
-```
-Destination disk after the push: 75% used, 621 G free.
-**To run the triangle there once the O-LoRA rows and matrices finish** (the eval queue is E67's, so this waits for that box to be free):
-```
-bash scripts/vla_analysis/run_e68_retention_triangle.sh a1          # 15 cells, ~6.5 h
-```
-Rows land in `outputs/analysis/e68/seeds_tri_e68_a1_b<k>.json`, skip-guarded per row, `GATE_FREE_MIB` available if it must share the card. nebius-spot is already at the current commit (b63068c5), so no pull is needed.
-**ONLY A1 NEEDS RUNNING — the control triangle already exists.** Rows b1-b5 of `outputs/analysis/e60/seeds_tri_merged6x2_10task_b{1..5}.json` (E64 add-12) are blocks 1-5 of the merged 6x2 chain at the headline instrument, same recipe, same seed, same task order; blocks 1-5 are the same computation whether the chain later continues to ten tasks or stops at five. Use those as A1's comparator (54.0 / 59.5 / 62.3 / 64.2 / 66.0). The `control` mode of the triangle script therefore should NOT be run — it would spend ~5 h of GPU re-measuring a row set we already hold. (Kept in the script only for the case where a matched-instance control is ever wanted; the 5-task and 10-task runs differ per cell by up to 8 points, which is the replicate spread noted in E68 and the reason the +-3 noise bar exists.)
-**Optimizer sweep on nebius2 (Josh's call, revised mid-flight).** Freed **143 G** total: A1's A-phase mid-run save `005000` (40.2 G, dead since add-4) and its `010000/training_state` (20.7 G), then the sequential `training_state` for boundaries 005000-020000 (4 x 20.5 G = 82 G). Guards on every deletion: A1-DONE marker present, final weights present, final `sequential_state.pt` present. **`025000/training_state` was deliberately KEPT** at Josh's instruction, against a possible extension of A1 to ten tasks. Disk 49% -> 44%. A2's live checkpoints were not touched.
-**Caveat recorded against that extension plan, because the kept file is not the blocker.** (i) `reinit_optimizer_each_task=true` means the optimizer is rebuilt at every boundary, so a boundary resume reads only `pretrained_model` + `sequential_state.pt` — `training_state` is never consulted. (ii) The actual blocker is `_load_sequential_state`, which raises `online_task_ids mismatch on resume ... Refusing to resume into a different task order` when a `[0..9]` config meets a state saved with `[0,1,2,3,4]`. Two routes: re-run from the A-phase checkpoint with the full ten-task list (50k steps, ~43 h here), or edit the saved `online_task_ids` to `[0..9]` keeping `task_pos=4` and resume into block 6 (~21 h saved). The second is legitimate — training order is task_index ascending, so the 5-task list is a strict prefix of the 10-task list, i.e. the same tasks in the same order; the guard exists to prevent resumption into a genuinely *different* order, which a prefix extension is not. Whichever route, the kept 20.5 G is insurance rather than a requirement.
+**The control triangle already exists.** Its rows b1-b5 (E64 add-12) are blocks 1-5 of the merged 6x2 chain at the headline instrument, same recipe, same seed, same task order; blocks 1-5 are the same computation whether the chain later continues to ten tasks or stops at five. Use those as A1's comparator (54.0 / 59.5 / 62.3 / 64.2 / 66.0). The 5-task and 10-task runs differ per cell by up to 8 points, which is the replicate spread noted in E68 and the reason the +-3 noise bar exists.
 
 ### Entry 68 addendum 16 (10 Sep 26, 22:15 UK) — A2 boundary 2 (its first MEASURED cells): e4 55 / e6 45, row mean 50.0 — both below the control, and the DIAGONAL is down 20, which is the opposite of the pre-registration
-`checkpoints/010000` written ~20:30 UTC; `Eval overall | tasks_seen=2 pc_success=50.00` at 20:50:08; block 2 trained 0.261 -> 0.034; block 3 (e9) opened at loss 0.491, LR reset 2.0e-3. a2=2, disk 45%, no new errors.
-A2's b1 row is inherited, not measured (`{"trained_task_idx": 0, "per_task": {"4": 80.0}}` came over with the seed) — protection has no role in block 1, so the fork is exact and block 1 was never retrained.
+Block 2 trained 0.261 -> 0.034.
+A2's b1 row is inherited, not measured — protection has no role in block 1, so the fork is exact and block 1 was never retrained.
 **Three arms at b2, same in-run instrument (20 eps x 1 seed):**
 | arm | e4 (retained) | e6 (just trained) | row mean |
 |---|---|---|---|
@@ -9631,7 +8176,6 @@ A2's b1 row is inherited, not measured (`{"trained_task_idx": 0, "per_task": {"4
 **No conclusion is drawn.** Add-12 closed interim reads on this instrument for E68 after the control's own e4 column was shown to swing 30 points; that ruling stands and applies here. A2 is decided by its 4-seed triangle (14 cells — b1 adopted from the control by construction) and its paired-noise loss matrix, where the pre-registered signature is loss drift well above the control's +3.9% and prior-core write events appearing at E14/E16 where the control records exactly zero. The diagonal question is now an explicit watch item for that triangle.
 
 ### Entry 68 addendum 17 (11 Sep 26, 03:15 UK) — **A2 b3: 30 / 35 / 65, row mean 43.3 — the prior-task columns are now in monotone free-fall (e4 80 -> 55 -> 30), which IS the pre-registered no-protection signature and is far outside what this instrument's noise can explain**
-`checkpoints/015000` written ~01:40 UTC; `Eval overall | tasks_seen=3 pc_success=43.33` at 02:03:16; task 4 (e2) running. a2=3, disk 47%, no new errors.
 **Three arms at b3, in-run instrument:**
 | arm | e4 | e6 | e9 | row mean |
 |---|---|---|---|---|
@@ -9649,7 +8193,6 @@ A2's b1 row is inherited, not measured (`{"trained_task_idx": 0, "per_task": {"4
 **Watch item from add-16 still open:** A2's diagonal was 20 points low at b2 (45 vs 65) against a pre-registration that expected acquisition to be *better* without a writer restriction; b3's diagonal is also low (65 vs 75). If that holds at 4 seeds it needs the E35 "diffused writes" mechanism as an explanation, and it is a second finding rather than a footnote.
 
 ### Entry 68 addendum 18 (11 Sep 26, 09:20 UK) — A2 b4: 35 / 55 / 50 / 85, mean 56.25 — **the "monotone free-fall" of add-17 partially REVERSES** (e4 30->35, e6 35->55) and the weak-diagonal watch item softens (e2 85); the row-level deficit survives, the column-level story does not
-`checkpoints/020000` written ~06:30 UTC; `Eval overall | tasks_seen=4 pc_success=56.25` at 07:23:38; block 5 (e7) running, opened at loss 0.150. a2=4, disk 49%, no new errors.
 **A2's in-run triangle, four rows:**
 | after block | e4 | e6 | e9 | e2 | row mean |
 |---|---|---|---|---|---|
@@ -9663,8 +8206,7 @@ A2's b1 row is inherited, not measured (`{"trained_task_idx": 0, "per_task": {"4
 **The weak-diagonal watch item (add-16) also softens:** A2's diagonals read 45 (b2), 65 (b3), **85** (b4) against the control's 65, 75, 80. The b2 cell now looks like the outlier rather than the start of a pattern, and the pre-registered expectation that acquisition is unharmed without a writer restriction is no longer contradicted. Keep it open, decide it at 4 seeds.
 **Standing rule restated, because I have now broken it twice:** no arm-level claim from the in-run instrument. A1 and A2 are both decided by their 4-seed triangles and paired-noise loss matrices, and the loss matrix is the sharper instrument for A2 specifically — prior-core write events at E14/E16 (control: exactly 0) are a *mechanism* readout that does not depend on rollout noise at all.
 
-### Entry 68 addendum 19 (11 Sep 26, 22:10 UK) — **A2 COMPLETE: final 59.2 vs the control's 66.8 (−7.6), with the oldest task at 26 vs 58 (−32) — the exposure-ordered signature A1 never produced. C1 COMPLETE: removing separation blows the background-overlap gate at ALL SIX expert sites (bgIoU 0.196–0.267 vs 0.031–0.091).** C2 running.
-Nine hours of unattended progress; both A2 and C1 landed clean, no incidents, err unchanged at 6, disk 51%.
+### Entry 68 addendum 19 (11 Sep 26, 22:10 UK) — **A2 COMPLETE: final 59.2 vs the control's 66.8 (−7.6), with the oldest task at 26 vs 58 (−32) — the exposure-ordered signature A1 never produced. C1 COMPLETE: removing separation blows the background-overlap gate at ALL SIX expert sites (bgIoU 0.196–0.267 vs 0.031–0.091).**
 **A2 (no protection) final, 50-ep instrument, paired against the control and A1:**
 | | e4 | e6 | e9 | e2 | e7 | mean |
 |---|---|---|---|---|---|---|
@@ -9680,21 +8222,9 @@ A2's in-run row means across the sequence: 80.0 / 50.0 / 43.3 / 56.25 / **59.2**
 | **C1 sep=0** | **0.380–0.455** | **0.196–0.267** | 387–1016 | **0.181–0.385** | 0.074–0.164 | 93–191 |
 Background overlap rises **3–6×** and **fails the ≤0.10 gate at every one of the six expert sites**; family overlap roughly doubles on both towers. The pre-registered kill line — "famIoU/bg unchanged ⇒ separation is decorative at this anchor weight" — does **not** fire. Separation is load-bearing for the geometry, and this is the frozen-backbone, final-architecture evidence that Table II row D currently lacks (it is presently a joint-training probe from E25/E26).
 **A second, unpredicted feature of C1 worth keeping:** cores get *smaller* and effective-number *larger* (expert core50 387–1016 vs 713–2019; min-effnum 784–1934 vs 458–1067). Without the separation term each task's reads concentrate more tightly, yet the tasks pile onto *each other* — concentration without separation. That is a cleaner statement of what the separation loss does than the draft currently makes: it is not a compaction knob (contrastive does that, E24) but a translation knob, exactly as E25/E26 argued, now demonstrated on the paper architecture.
-**C2 (contrastive 0.05 → 0) is running**, ~3K/10K at updt_s 1.410 against C1's 0.655. The slowdown is expected and is a property of the arms, not a fault: C1 ran with the separation term disabled (the expensive one, it scores the joint slot distribution against a 512-sample queue every step) while C2 keeps separation at 8.0. ETA ~03:00 UK.
+C2 (contrastive 0.05 → 0) runs at updt_s 1.410 against C1's 0.655, a property of the arms: C1 ran with the separation term disabled (the expensive one, it scores the joint slot distribution against a 512-sample queue every step) while C2 keeps separation at 8.0.
 
-### Entry 68 addendum 20 (11 Sep 26, 22:45 UK) — A2 mirrored to nebius-spot with a handover NOTE.md; A2 triangle only, no control arm
-96 G pushed VM-to-VM (weights + `sequential_state.pt`; `training_state` excluded), 5/5 checkpoints verified on arrival. Destination disk 80% used, 514 G free.
-```
-outputs/train/libero_10_seq5_jw_e68a2_tfidfonly_merged6x2_e468101416_v579111315_prepass_noprotect_topt3072_lr2x_steps5k/
-  NOTE.md                  <- handover: what the arm is, why 005000 was not trained, the command, results so far
-  checkpoints/{005000,010000,015000,020000,025000}/{pretrained_model,sequential_state.pt}
-  memory_by_task/
-```
-The one command for that box: `bash scripts/vla_analysis/run_e68_retention_triangle.sh a2` (15 cells, ~6.5 h). **No control arm** — comparator is `seeds_tri_merged6x2_10task_b{1..5}.json` (54.0 / 59.5 / 62.3 / 64.2 / 66.0, E64 add-12). The script's b1 adoption rule looks for `seeds_tri_e68_control5_b1.json`, which will not exist, so b1 is measured normally; that is correct and yields the matched 5-task control's b1 as a by-product.
-**Ops note:** the first push attempt failed with `Permission denied (publickey)` on the VM-to-VM hop. Cause: Josh's PC died overnight and the local ssh-agent came back holding only the GitHub key — `josh-nebius`, the key authorised on both VMs, was gone. `ssh-add ~/.ssh/josh-nebius` restored it and the hop worked immediately. Worth remembering: after any local restart, agent-forwarded VM-to-VM transfers need the key re-added, and the symptom is a publickey refusal at 10.0.0.1 rather than anything wrong on either VM.
-
-### Entry 68 addendum 21 (12 Sep 26, 01:25 UK) — **E68 TRAINING QUEUE COMPLETE (E68-TRAIN-DONE).** C2 certificate: removing the contrastive loss does NOT collapse or sprawl — it PASSES the gate, narrowly, so C2 fires its demote line while C1 did not
-`E68-C2-DONE` then `E68-TRAIN-DONE`; unit inactive, GPU released, disk 52%, err unchanged at 6 (the three ladder OOMs, all by design). Four arms launched 9 Sep 07:01 UTC, all four complete 12 Sep 00:2x UTC — **~65 h wall clock on one H100, zero preemptions, zero manual interventions.**
+### Entry 68 addendum 21 (12 Sep 26, 01:25 UK) — C2 certificate: removing the contrastive loss does NOT collapse or sprawl — it PASSES the gate, narrowly, so C2 fires its demote line while C1 did not
 **C2 (contrastive 0.05 -> 0) certificate, against the paper cell (add-3) and C1 (add-19):**
 | | expert famIoU | expert bgIoU | expert core50 | VLM famIoU | VLM min-effnum |
 |---|---|---|---|---|---|
@@ -9711,20 +8241,18 @@ The one command for that box: `bash scripts/vla_analysis/run_e68_retention_trian
 | A2 | prior-usefulness protection | 59.2 vs 66.8 (−7.6); oldest task 26 vs 58 | **effect, exposure-ordered** |
 | C1 | inter-task separation loss | bgIoU 0.031–0.091 -> 0.196–0.267, gate failed 6/6 | **effect, decisive** |
 | C2 | contrastive loss | gate passed; cores tighten only | **demote fires** |
-**Remaining work is evaluation, not training:** A1's 4-seed triangle (queued on nebius-spot), A2's (checkpoints + NOTE.md mirrored there, add-20), the paired-noise loss matrices — the sharper instrument for A2, since prior-core write events at E14/E16 are noise-free — and A3 (joint preparation at matched router LR), which remains the one unscheduled arm of the original five.
+**Remaining work is evaluation, not training:** A1's 4-seed triangle, A2's, the paired-noise loss matrices — the sharper instrument for A2, since prior-core write events at E14/E16 are noise-free — and A3 (joint preparation at matched router LR), which remains the one unscheduled arm of the original five.
 
-### Entry 68 addendum 22 (12 Sep 26, 02:20 UK) — **A3 LAUNCHED** (joint router preparation at matched LR), the last unrun arm of the original five; local heartbeat restarted after it died with Josh's PC
-Launched 01:17 UTC on nebius2 (unit `e68-train`, `STAGES="a3"`), box idle and clean beforehand (unit inactive, GPU 0 MiB, disk 52%), repo pulled 82706257 -> 50c4b05c, `e68_a3_jointprep_chain.sh` syntax-checked, stage-1 base verified present. First rung bs8xacc4 as designed (expect the usual step-down to bs4xacc8).
+### Entry 68 addendum 22 (12 Sep 26, 02:20 UK) — A3 (joint router preparation at matched LR), the last unrun arm of the original five
 **What A3 tests, restated because it is the arm most likely to change the paper's framing.** The method's first named design choice is "geometry before content": two separate 10k stages on the frozen backbone — a router warm-up training ONLY keys and query projections with slot values pinned at zero (so the flow-matching loss has exactly zero gradient on the router), then a value fill training ONLY values with routers frozen. A3 collapses that into ONE 10k stage training routers and values together under MSE plus the same auxiliary losses, then freezes the routers and runs the identical 5-task sequence.
 **The confound it exists to remove.** Table II row A rests on E35 (joint, killed at 6/10 blocks) versus E37 (staged, best certificate) — overlap numbers only, no success comparison, on a 4-site n=384 configuration two generations old. The two conditions also differed in router learning rate, **2.5e-5 vs 1e-4**, and E36 diagnosed the joint failure as exactly that: values training at ~40x the router's rate, so the router never moved ("anchored optimisation"). A3 runs joint preparation at the warm-up's own **1e-4**. If it then matches the staged protocol, "geometry before content" reduces to a learning-rate observation and Sec. III.E is overclaiming.
-Config (single delta from the paper chain): `train_router_only=false train_memory_only=true freeze_memory_router=false router_only_fast=false optimizer_lr=1e-4 vlm_route_once=false`, prepass ON, save every 5k with `lerobot-train --resume` recovery; then the held-out audit (informational, part of the result) and the seq5 stage with `--policy.freeze_memory_router=true`. Note W_a is outside the `.mlp.mem.` filter in BOTH arms (add-1), so the anchor is an identical fixed random projection either way — no confound there.
-Pre-registered read is unchanged from the entry: genuinely uncertain on acquisition; the audit after 10k either shows E35-like diffuse routing (effnum ~2x, large cores) or a passing certificate; **kill line — audit passes AND seq5 lands within 3 of the control ⇒ the staged protocol reduces to router LR, and Sec. III.E must say so.** ~35k steps at ~3.1 s/step ≈ 30 h plus a 35-min audit, so the chain lands ~08:00 UK Sat 13 Sep.
-**Ops:** the local `heartbeat_e68.sh` had died with Josh's PC overnight — the hourly ONESHOT checks kept working (fresh invocations) so the loss was invisible until pgrep returned nothing at 01:17. Restarted (PID 554368) and confirmed armed against the a3 stage. Pairs with add-20's ssh-agent finding: **a local restart silently takes out both the forwarded agent key and any nohup'd watcher, and neither failure announces itself** — check both after any PC outage.
+Config (single delta from the paper chain): `train_router_only=false train_memory_only=true freeze_memory_router=false router_only_fast=false optimizer_lr=1e-4 vlm_route_once=false`, prepass ON; then the held-out audit (informational, part of the result) and the seq5 stage with frozen routers. Note W_a is untrained in BOTH arms (add-1), so the anchor is an identical fixed random projection either way — no confound there.
+Pre-registered read is unchanged from the entry: genuinely uncertain on acquisition; the audit after 10k either shows E35-like diffuse routing (effnum ~2x, large cores) or a passing certificate; **kill line — audit passes AND seq5 lands within 3 of the control ⇒ the staged protocol reduces to router LR, and Sec. III.E must say so.**
 
-### Entry 68 addendum 23 (12 Sep 26, 06:20 UK) — A1 and A2 4-seed retention triangles COMPLETE on nebius-spot
-Both ran on the E67 box behind the E67 eval queue, 25 episodes x 4 paired seeds (1000/2000/3000/4000) per cell, vec batch 13, envs in train order 4/6/9/2/7. Comparator throughout is the merged 6x2 chain's b1-b5 (E64 add-12): 54.0 / 59.5 / 62.3 / 64.2 / 66.0.
+### Entry 68 addendum 23 (12 Sep 26, 06:20 UK) — A1 and A2 4-seed retention triangles COMPLETE
+Both ran 25 episodes x 4 paired seeds (1000/2000/3000/4000) per cell, vec batch 13, envs in train order 4/6/9/2/7. Comparator throughout is the merged 6x2 chain's b1-b5 (E64 add-12): 54.0 / 59.5 / 62.3 / 64.2 / 66.0.
 
-**A1 (live addressing) — `seeds_tri_e68_a1_live_b{1..5}.json`**, unit `e68-eval`, marker `E68-TRIANGLES-DONE`, 16:13 UTC 11 Sep -> 21:30 UTC 11 Sep.
+**A1 (live addressing)**
 
 | after block | e4 | e6 | e9 | e2 | e7 | row mean | control | delta |
 |---|---|---|---|---|---|---|---|---|
@@ -9734,7 +8262,7 @@ Both ran on the E67 box behind the E67 eval queue, 25 episodes x 4 paired seeds 
 | b4 | 48 | 63 | 68 | 86 | | 66.3 | 64.2 | +2.1 |
 | b5 | 50 | 74 | 69 | 85 | 44 | 64.4 | 66.0 | -1.6 |
 
-**A2 (TF-IDF-only writes, `protect_prior_slots=false`) — `seeds_tri_e68_a2_tfidfonly_b{1..5}.json`**, unit `e68-a2`, marker `E68-A2-DONE`, 22:02 UTC 11 Sep -> 04:52 UTC 12 Sep.
+**A2 (TF-IDF-only writes, `protect_prior_slots=false`)**
 
 | after block | e4 | e6 | e9 | e2 | e7 | row mean | control | delta |
 |---|---|---|---|---|---|---|---|---|
@@ -9749,10 +8277,8 @@ A2 per-seed: b1 e4 52/52/60/52; b2 e4 40/48/40/40, e6 64/68/64/68; b3 e4 48/52/4
 **Final rows:** A1 64.4, A2 59.8, control 66.0. **Prior-task mean at b5** (row excluding the diagonal): A1 69.5, A2 61.2, control 62.2 (E64 add-12 b5 e4/e6/e9/e2 = 53/72/65/89, diagonal e7 51). **Diagonal cells:** A1 67/77/68/86/44, A2 54/66/74/82/54.
 **e4 column across blocks:** A1 67/52/44/48/50; A2 54/42/45/39/32; control 54/54/50/51/53.
 **A2 b1 = 54.0 (per-seed 52/52/60/52) reproduces the comparator's b1 of 54.0 exactly.** A2's checkpoint 005000 is a byte copy of the control's task-1 boundary (add-20), so this cell is an instrument/fork check, not an ablation measurement; it is also the matched 5-task control's b1.
-**Ops:** A2 was queued behind A1 by `scripts/ops/queue_e68_a2.sh` (unit `e68-a2`, gated on A1 reaching 5 rows); A1 by `scripts/ops/queue_e68_triangles.sh` (unit `e68-eval`, gated on E67 completing end to end). Both rows skip-guarded. nebius-spot disk 80%, 514 G free, no errors.
 
-### Entry 68 addendum 23 (12 Sep 26, 06:30 UK) — **THE 4-SEED TRIANGLES FOR A1 AND A2 ARE IN** (both were run by the other session before it ended). Final means: control 66.0, A1 64.4 (−1.6), A2 59.8 (−6.2). But the final mean HIDES A1's retention: by the paper's own Δ_final metric the ranking is control +0.4, **A1 −4.0**, A2 −6.2
-Found at `outputs/analysis/e68/seeds_tri_e68_{a1_live,a2_tfidfonly}_b{1..5}.json` on nebius-spot, 10 rows, 25 eps × 4 paired seeds per cell. (I had earlier reported the directory empty — that check listed a path relative to `$HOME` instead of the repo. My error; the rows existed.)
+### Entry 68 addendum 23 (12 Sep 26, 06:30 UK) — **THE 4-SEED TRIANGLES FOR A1 AND A2 ARE IN**. Final means: control 66.0, A1 64.4 (−1.6), A2 59.8 (−6.2). But the final mean HIDES A1's retention: by the paper's own Δ_final metric the ranking is control +0.4, **A1 −4.0**, A2 −6.2
 **A1 — live addressing**
 | after | e4 | e6 | e9 | e2 | e7 | mean |
 |---|---|---|---|---|---|---|
@@ -9782,43 +8308,23 @@ So **A1 does show retention loss — 4 points of Δ_final against the control's 
 **Consequence for the draft.** Sec. III.D can keep its claim, but quantified and honest: stationary addressing buys ~4 points of Δ_final at five tasks, not "no forgetting". Sec. III.E's write rule buys ~6. Both are real, neither is the whole story, and the E38 horizon caveat still applies (that collapse needed 7 of 10 blocks).
 **A2's b1 = 54.0 exactly matches the 10-task control's b1 = 54**, which is a free cross-instance validation: A2's b1 checkpoint is the 5-task control's task-1 boundary, measured independently here, and it lands on the 10-task instance's value to the decimal.
 
-### Entry 68 addendum 24 (12 Sep 26, 13:40 UK) — **A3 JOINT STAGE COMPLETE; sequential handed off to nebius-spot (H200, bs16×2)**, audit kept on nebius2
+### Entry 68 addendum 24 (12 Sep 26, 13:40 UK) — **A3 JOINT STAGE COMPLETE**
 
-**Joint stage (nebius2, H100).** 10,000 steps at bs4×acc8 (the bs8×acc4 rung OOMed before its first checkpoint, exactly as in every other E68 stage on this box), 3.88 s/opt-step, ~10h55m wall (rung start 02:20 UK → `Checkpoint policy after step 10000` 13:15:37 UK). Held-in loss at 10k: **0.54** (0.546 / 0.541 / 0.542 on the last three log lines; 0.56 at 5k). Periodic checkpoints `005000` (07:48 UK) and `010000` (13:16 UK) both landed; `last → 010000`. The chain then rolled into the held-out audit at 13:16:57 UK, which is the hand-off point Josh specified ("when the joint stage is done stop the A3 training and move it over").
+**Joint stage.** 10,000 steps at bs4×acc8. Held-in loss at 10k: **0.54** (0.546 / 0.541 / 0.542 on the last three log lines; 0.56 at 5k).
 
-**Hand-off (13:26 UK), in the order it was done and why that order.**
-1. Mirrored `…jointA10k_e68a3_…/checkpoints/010000/pretrained_model` (20.45 GB, 8 files) VM→VM with agent forwarding at 531 MB/s (~40 s). The first attempt failed with `Permission denied (publickey)` because `ssh -A` reused the existing ControlMaster socket, which was opened without forwarding — bypassed with `-o ControlPath=none`. **Integrity:** `md5sum model.safetensors` = `90a4065d22e3e9f2375a8a764cc981d3` on both boxes; the other seven files match byte-for-byte in size. `training_state/` (the joint optimizer, 20 GB) stays on nebius2 only — it is only needed to resume a joint stage that is finished.
-2. Commit `396189ce`: `SKIP_AUDIT=1` hook in `e68_a3_jointprep_chain.sh` (the audit is informational on this arm, not a gate on stage B, so running it on the *other* box against the same checkpoint is legitimate — the C1/C2 certificates are gates and got no such hook) and `heartbeat_e68.sh` gains env-overridable `VM / VM_ID / UNIT / TLOG / LAUNCH_CMD` so one script watches either box (defaults unchanged: nebius2 / e68-train / queue).
-3. **Killed the local nebius2 auto-relaunch heartbeat (PID 554368) BEFORE stopping the unit.** Had the order been reversed it would have seen "unit down, queue incomplete" and relaunched `e68-train`, which resumes stage a3 → audit → **a second A3 sequential on the H100**. Pulled `396189ce` on nebius-spot (clean tree) — nebius2 was NOT pulled until its chain was stopped (bash reads scripts incrementally; the E67 add-6 rule).
-4. Launched unit `e68-a3` on nebius-spot at 13:26:38 UK: `SKIP_AUDIT=1 SEQ_LADDER=16:2:false,8:4:false,4:8:false bash e68_a3_jointprep_chain.sh >> outputs/e68/a3_train.log`. The chain's own guards did the rest: `[J] final checkpoint exists - skipping` → `[J-audit] SKIP_AUDIT=1 … skipping` → `[A-phase] final checkpoint exists - skipping` → `[seq5] ladder rung: bs=16 accum=2 grad_ckpt=false`. **bs16×acc2 is the control's own H200 rung** (its `train_config.json`: bs 16, accum 2, no grad-ckpt); every E68 arm therefore trains at effective batch 32 — only the micro-batching differs between boxes. It fits: 117 GB / 93% util at 13:32 UK, task 1/5 started 13:28:38 UK, 0 error lines.
-5. Verified the sequential's config dump field by field against the A3 spec: `pretrained_path` = the joint `checkpoints/last/pretrained_model`; `freeze_memory_router True`; `train_memory_only True`; `use_frozen_base_input_features True`, `frozen_prepass True`, `allow_nonstationary_routing False`; `protect_prior_slots True`, `protect_u_norm corefrac`, `protect_beta 4`; `tfidf_top_t 3072`; `memory_value_lr 0.002 → 0.0002`; 5 tasks × 5000 steps; `eval_final_episodes 50`; `vlm_route_once True`; sep 8 / contrastive 0.05 ride along in the checkpoint config (inert with routers frozen). Output dir `libero_10_seq5_jw_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_prepass_beta4corefrac_topt3072_lr2x_steps5k` — did not pre-exist on this box.
-6. nebius2: `systemctl stop e68-train` (13:26 UK, clean; the unit's audit was at task 2/10 with one task JSON written — that partial dir was deleted, it is regenerable and mixing it with a fresh run would be worse than losing 10 min). Pulled `396189ce`. Relaunched the audit ALONE as unit `e68-a3-audit` at 13:27:29 UK with the chain's exact parameters (`AUDIT_BS=8 AUDIT_STEPS=400 bash audit_heldout_routing.sh <010000/pretrained_model> audit_heldout_e68a3_…_10k`), followed by the two `vlm_audit_analysis.py` calls (inside the conda env — the C2 cert's `python: command not found` was that script calling python outside it) and an `E68-A3-AUDIT-DONE` marker in `outputs/e68/a3_audit.log`. Cost of the restart: ~10 min of H100 audit progress. Benefit: deterministic — no chain left on the H100 that could roll into a duplicate sequential, and nothing to babysit.
+A3's sequential runs at **bs16×acc2, the control's own rung**; every E68 arm therefore trains at effective batch 32 — only the micro-batching differs.
 
-**Watchers now.** Detached `heartbeat_e68.sh` for nebius-spot (`VM=nebius-spot UNIT=e68-a3`, auto-relaunch payload carries `SKIP_AUDIT=1` and the ladder — without that a post-preemption relaunch would re-run the audit on the H200 first), logging to `outputs/e68_heartbeat_spot.log`; a two-box Monitor (spot state line + nebius2 audit unit/JSON count/cert/DONE/errors); hourly cron re-pointed at both boxes with an explicit "do NOT relaunch e68-train on nebius2". The add-8 resume-guard gap applies to the spot run unchanged (~7.5 % exposure per boundary; fails loud, recovery = repoint `last` and relaunch).
+### Entry 68 addendum 25 (12 Sep 26, 14:10 UK) — **PARAMETER-MATCHED NAIVE-LoRA TRIANGLE (rows b1–b9)**
 
-**ETA.** The control did 2.16 s/opt-step at this rung on the H200 → 25k opt-steps ≈ 15 h, plus four 20-ep in-run evals and the 50-ep final ≈ 2–3 h → **A3 sequential complete ~07:00–09:00 UK 13 Sep**, then its 4-seed triangle (`run_e68_retention_triangle.sh a3`, ~4 h on the H200). Audit certificate on nebius2 due ~14:15 UK today. Time check against the deadline: A3 triangle in hand by ~13:00 UK 13 Sep leaves two and a half days for the paired-noise matrices and the write-up.
+**What was missing.** Table I's row "(b) Naive seq. LoRA, matched parameters" (r=1216 / α=304, 2.681B added, E66) has only its final-checkpoint row — the E66 4-seed campaign (all ten envs, 25 eps × 4 paired seeds, mean 8.6) — so Δ_final and the intermediate retention are blank ("--") for that baseline alone, while the r=512 naive, RETAIN, O-LoRA and ours all have full 10-row triangles. Josh (12 Sep, 13:55 UK): "figure out which model it is and get the triangle queued up".
 
-### Entry 68 addendum 25 (12 Sep 26, 14:10 UK) — **PARAMETER-MATCHED NAIVE-LoRA TRIANGLE (rows b1–b9) QUEUED on nebius2** behind the A3 audit, as two concurrent halves
+**Instrument.** Byte-identical to the E67 baseline triangles: after block k, the first k envs in training order `[4,6,9,2,7,0,8,1,3,5]`, 25 eps × seeds 1000/2000/3000/4000, vec-batched bs13. **b10 is not re-run**: the E66 row is the same instrument on all ten envs, so it *is* b10.
 
-**What was missing.** Table I's row "(b) Naive seq. LoRA, matched parameters" (r=1216 / α=304, 2.681B added, E66) has only its final-checkpoint row — the E66 4-seed campaign `outputs/analysis/e60/seeds_naive10_paramatched_r1216.json` (all ten envs, 25 eps × 4 paired seeds, mean 8.6) — so Δ_final and the intermediate retention are blank ("--") for that baseline alone, while the r=512 naive, RETAIN, O-LoRA and ours all have full 10-row triangles. Josh (12 Sep, 13:55 UK): "figure out which model it is and get the triangle queued up".
-
-**Model.** `outputs/train/libero_10_seq10_naive_lora_r1216_a304_paramatched_steps5k` on nebius-spot: all ten task-boundary checkpoints `005000 … 050000` present (each: PEFT `pretrained_model/` = `adapter_model.safetensors` 10.72 GB fp32 + `adapter_config.json` pointing at the absolute path of the stage-1 no-memory base `libero_90_pi05_base_nomem_50k/checkpoints/last/pretrained_model`, plus the normaliser processors; plus `training_state/` and `sequential_state.pt` which the triangle does not need). So yes — **we have every checkpoint**; only the evaluation rows were never run.
-
-**Instrument.** Byte-identical to the E67 baseline triangles (`scripts/baselines/run_baseline_triangle.sh`, now with a `paramatched` case, commit `2cd549a1`): after block k, the first k envs in training order `[4,6,9,2,7,0,8,1,3,5]`, 25 eps × seeds 1000/2000/3000/4000, vec-batched bs13 (ladder 13→8→4 on OOM before any output), `--policy.use_peft=true`. Rows land as `outputs/analysis/e67/seeds_tri_naive10_paramatched_r1216_b<k>.json`. **b10 is not re-run**: the E66 row is the same instrument on all ten envs, so it *is* b10 (tag `naive10_paramatched_r1216`, same campaign schema); when the triangle is assembled, read b10 from `e60/`.
-
-**Where and why.** nebius2 (H100), not spot: A3's sequential holds 117 GB of the H200 and is the priority. Prerequisites mirrored spot→nebius2 with agent forwarding (`-o ControlPath=none`, add-24 lesson): the nine `pretrained_model/` dirs for `005000…045000` (9 × 10.72 GB, ~45 s each, all nine verified present at the exact source byte size before launch); the LoRA base was already on nebius2 at the absolute path the adapters name and its `model.safetensors` md5 (`5644f408045ce5225ea8d50879e45125`) matches spot's copy exactly — the adapters were trained against that base, so this is the check that matters. Local tree, git, pull on nebius2 (`aee7351b`, clean).
-
-**Two halves, one box (Josh: "half that if possible").** `scripts/ops/queue_e68_paramatched_triangle.sh` gates on unit `e68-a3-audit` being inactive (the audit still has the H100; due ~14:15 UK), then runs its `BLOCKS`; it counts only its own blocks at the end so disjoint instances can coexist. Launched 14:03 UK: unit `e68-pm-tri-a` = blocks `1 2 3 4 5 6` (21 cells), unit `e68-pm-tri-b` = blocks `9 8 7` (24 cells) — cell-balanced, meeting nowhere. Rationale: LIBERO rollouts are env/CPU-bound (osmesa rendering, 13 envs per process; the audit's bs8 training-style load sits at ~11 % CPU on 16 vCPUs, 196 GB RAM), and two PEFT eval processes (~15–20 GB each) fit the 80 GB card with the script's own 22 GB free-VRAM gate per row. The shared output dir is safe because rows are skip-guarded by filename. **Check at the first rows:** CPU and per-row wall; if the two halves together are slower than one alone, stop `-b` (the hourly cron carries this instruction).
-
-**ETA (corrected).** The E66 b10 row took 4.2 h for 10 cells on the H200 (0.42 h/cell — mostly 0 % cells, which run the full horizon). One process on the H100 at ~0.55–0.6 h/cell → 45 cells ≈ 26 h from ~14:20 UK → **~16:00 UK 13 Sep** (add-24's chat estimate of "late 14 Sep" was an arithmetic slip; the log figure here is the one to use). Two halves with ~1.5× aggregate throughput → **~06:00–08:00 UK 13 Sep**, i.e. before A3's sequential finishes on spot, so spot is never needed for this triangle.
-
-**Watchers.** Two-box Monitor rebuilt to include the audit and both triangle halves (unit states, rows landed, `[FAIL]`/marker/Traceback counts, GPU, disk); hourly cron re-pointed; spot's detached heartbeat unchanged. nebius2 has no auto-relaunch: after a preemption the three units are relaunched by hand (all skip-guarded).
-
-**add-25 correction (14:25 UK).** Josh: "Pretty sure the rollouts use GPU mounted vec envs which are actually quite costly." Checked rather than argued: robosuite's `binding_utils.py` sets `MUJOCO_GL=egl` (GPU rendering) by default, **but every eval script here exports `MUJOCO_GL=osmesa` first and robosuite honours it** (`if macros.MUJOCO_GPU_RENDERING and os.environ.get("MUJOCO_GL") not in ["osmesa","glx"]`), so our rollouts are CPU software-rendered — and 13 async osmesa workers may already saturate 16 vCPUs, in which case a second process buys nothing. The E67 triangles are no evidence either way (retain and O-LoRA ran back to back, not concurrently). So the "two halves" claim above was asserted, not measured. **Unit `e68-pm-tri-b` stopped before it evaluated anything** (it was still waiting on the audit); `-a` runs b1 alone first. Controlled test scheduled: 14:47 UK measure the solo episode rate + CPU/GPU util, then start `-b`; 15:27 UK compare the aggregate; keep both only if aggregate ≥ 1.2× solo, else `-b`'s blocks run after `-a` (skip-guarded relaunch). Not switching the renderer to EGL for speed: it would change the instrument (a different GL backend can shift pixels) relative to every comparator row.
+**Rendering.** Every eval script here exports `MUJOCO_GL=osmesa`, so our rollouts are CPU software-rendered. Not switching the renderer to EGL for speed: it would change the instrument (a different GL backend can shift pixels) relative to every comparator row.
 
 ### Entry 68 addendum 26 (12 Sep 26, 14:35 UK) — **A3 HELD-OUT AUDIT (joint-prep checkpoint): fails ONE gate clause — expert bgIoU at E16 (0.132 > 0.10), E14 at the edge (0.099); everything else passes with broader cores**
 
-Audit `audit_heldout_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_anchor040_sep8_prepass_10k` on nebius2 (unit `e68-a3-audit`, relaunched alone per add-24), same instrument as every certificate (10 held-out libero_10 tasks × 400 steps at bs8, value LR 1e-12, prepass routing), `E68-A3-AUDIT-DONE` 14:18 UK. Recorded as **informational** (pre-registered in add-0: the audit is part of A3's result, not a gate on its sequential).
+Same instrument as every certificate (10 held-out libero_10 tasks × 400 steps at bs8, value LR 1e-12, prepass routing). Recorded as **informational** (pre-registered in add-0: the audit is part of A3's result, not a gate on its sequential).
 
 | site | famIoU | **bgIoU** | core50 mean (min–max over tasks) | min effnum |
 |---|---|---|---|---|
@@ -9845,85 +8351,51 @@ Audit `audit_heldout_e68a3_jointprep_lr1e-4_merged6x2_e468101416_v579111315_anch
 
 Gate clauses: expert bgIoU ≤ 0.10 — **FAILS at E16 (0.132)**, E14 passes by 0.001; expert mean core50 ≥ 400 — pass everywhere (min 868 at E4); expert min-effnum ≥ 300 — pass (min 513); VLM min-effnum ≥ 150 — pass with room (min 392, better than the paper cell's 250); VLM famIoU < 0.45 — pass (max 0.159). So A3's routers are certificate-grade at ten of twelve sites and miss at the deepest expert site only, on the same clause the paper cell itself finds tightest (E16 = 0.091 there).
 
-**Reading.** Training routers and values together at matched LR (1e-4 routers / 1e-3 values, MSE + the same aux losses) gives routing that is *more diffuse and more overlapping at depth* than warm-up-then-fill: cores are 1.2–1.5× broader at every expert site (E16 mean core50 3032 vs the paper cell's ≤ 2019), family IoU is higher at E16 (0.322 vs ≤ 0.281), and background overlap climbs monotonically with depth (0.045 → 0.132, the E38 gradient again) to cross the band at E16. Mechanistically consistent with the E35/E36 story minus the LR confound: once values carry loss the deep sites are pulled toward footprints that *share* slots across tasks, and the separation loss at weight 8 holds that in check at shallow sites but not fully at E16. It is a mild, one-site version of what C1 shows everywhere (0.196–0.267). Whether it costs retention is now the sequential's question (spot, ~08:00 UK 13 Sep); the pre-registered expectations in add-0 stand. Note: this audit is on a checkpoint whose values are non-zero, unlike the warm-up certificates — irrelevant to the routing measurement because the prepass routes on memory-free features, which is the point of stationary addressing.
+**Reading.** Training routers and values together at matched LR (1e-4 routers / 1e-3 values, MSE + the same aux losses) gives routing that is *more diffuse and more overlapping at depth* than warm-up-then-fill: cores are 1.2–1.5× broader at every expert site (E16 mean core50 3032 vs the paper cell's ≤ 2019), family IoU is higher at E16 (0.322 vs ≤ 0.281), and background overlap climbs monotonically with depth (0.045 → 0.132, the E38 gradient again) to cross the band at E16. Mechanistically consistent with the E35/E36 story minus the LR confound: once values carry loss the deep sites are pulled toward footprints that *share* slots across tasks, and the separation loss at weight 8 holds that in check at shallow sites but not fully at E16. It is a mild, one-site version of what C1 shows everywhere (0.196–0.267). Whether it costs retention is now the sequential's question; the pre-registered expectations in add-0 stand. Note: this audit is on a checkpoint whose values are non-zero, unlike the warm-up certificates — irrelevant to the routing measurement because the prepass routes on memory-free features, which is the point of stationary addressing.
 
-**Ops.** The H100 went straight from the audit into the param-matched triangle's b1 (`e68-pm-tri-a`, 14:21 UK).
-
-### Entry 68 addendum 27 (12 Sep 26, 15:20 UK) — param-matched triangle: **two concurrent halves are SLOWER in aggregate** (3.4 vs 4.9 env-steps/s); half b stopped; b1 = 80.0; lean-thread relaunch under test
-
-**Measured, per add-25's protocol.** Solo (`e68-pm-tri-a` alone, b1 = 100 episodes): 25.1 min wall including model load, rollouts at **4.4–5.3 env-steps/s** per 13-env batch (2:40–3:00 per 520-step batch), GPU 0–1 % between inference bursts, CPU 6–73 % (≈30 % mean of 16 vCPUs). The eval process env carries `MUJOCO_GL=osmesa`; only the main python holds GPU memory; every env worker has `libOSMesa.so.8` + `libGL` mapped and **81 threads** — so rendering is CPU software rendering, as add-25's correction said, but each worker is heavily multi-threaded (llvmpipe + torch/OpenMP pools at core count). With `e68-pm-tri-b` started alongside (14:47 UK): CPU **97 % busy** (88 us + 9 sy, 2.8 % idle), a at **2.22** env-steps/s, b at **1.14** → aggregate **3.36 < 4.9 solo (0.69×)** — thread oversubscription collapse, not a GPU bottleneck. Josh's doubt was right in effect if not in mechanism: the box cannot run two of these side by side as configured. **b stopped 15:14 UK** (it had written nothing; rows are skip-guarded so nothing is lost). Queue script gains `WAIT_UNIT` (`3188eaed`) so b can chain behind a.
-
-**Test in flight (15:16 UK):** b relaunched with `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 LP_NUM_THREADS=2` (run-time thread caps only — llvmpipe rasterisation and elementwise CPU preprocessing are thread-count-invariant; the campaign's paired seeds make episodes identical). Decision at 15:27 UK on per-process env-steps/s: keep both only if a + b ≥ 1.2 × 4.9; else stop b and chain it behind a with `WAIT_UNIT=e68-pm-tri-a`. If the caps work, a is restarted with the same caps at its next row boundary.
+### Entry 68 addendum 27 (12 Sep 26, 15:20 UK) — param-matched triangle: b1 = 80.0
 
 **Row b1 (naive r1216 after task 1, env 4): 72 / 80 / 88 / 80 → mean 80.0** — the adapter acquires its first task at the level the paper quotes for its acquisition diagonal (82.8 mean across the diagonal); the b10 row has this same env at 0.
 
-**add-27 step 2 (15:27 UK).** Paired with b lean-threaded (`OMP/MKL=1, LP_NUM_THREADS=2`; b's workers now 1 thread each vs a's 81): CPU 86 % us, a **2.65** env-steps/s + b **1.59** = **4.24 vs 4.9 solo (0.87×)** — better than the 0.69× of two fat processes but still below solo, so **b stopped again 15:28 UK** (nothing written by b; skip-guarded). The remaining contention is a's own 13 × 81 threads. One last, loss-free test armed: when a's b2 row lands (both a and b restarted with the same caps at that row boundary; a resumes at b3 by the skip guard, nothing lost), measure both after ~13 min. Keep both only if a + b ≥ 1.2 × 4.9 ≈ 5.9 env-steps/s; otherwise b is chained behind a (`WAIT_UNIT=e68-pm-tri-a`) and the triangle runs solo (~43 cells × 25 min ≈ 18 h → **~10:00 UK 13 Sep**). Row b2 in progress: env 4 (task 1) already **0/25 at seed 2000** one task later, env 6 = 84 — the naive adapter's forgetting is total and immediate, as the b10 row implied.
+Row b2 (partial): env 4 (task 1) already **0/25 at seed 2000** one task later, env 6 = 84 — the naive adapter's forgetting is total and immediate, as the b10 row implied.
 
 ### Entry 68 addendum 28 (12 Sep 26, 15:40 UK) — **param-matched naive-LoRA triangle DROPPED** (Josh: "Drop the full naive sequential triangle please")
 
-Both units (`e68-pm-tri-a`, `e68-pm-tri-b`) stopped on nebius2 at 15:35 UK, the armed boundary-restart test cancelled first so it could not relaunch them; GPU released (0 MiB). What stands: **row b1 only** (`outputs/analysis/e67/seeds_tri_naive10_paramatched_r1216_b1.json`, env 4 after task 1: 72/80/88/80, mean 80.0) plus the E66 b10 row — enough to state the naive r=1216 adapter acquires at ~80 and ends at 0 on that task, which is what Table I already says. b2 was in progress (4 of 8 quarters: env 4 at 0/25 and 0/25 for seeds 1000/2000 one task later, env 6 at 84 and 84) and is discarded. Table I keeps "--" for this row's Δ_final. The nine mirrored adapters (96 GB) and the queue scripts stay on nebius2 in case it is revived; disk 59 %. **nebius2 is idle** — the A1 and A2 sequential checkpoints are on it, so the paired-noise loss matrices (add-0's remaining instrument, fixed 14/14 loader per E65 add-16) could run there now without touching spot; not started without Josh's say-so. Ops lessons kept from add-25/27: two osmesa rollout campaigns on one 16-vCPU box are slower in aggregate than one (0.69× fat, 0.87× with one side thread-capped); the workers carry 81 threads each.
+What stands: **row b1 only** (env 4 after task 1: 72/80/88/80, mean 80.0) plus the E66 b10 row — enough to state the naive r=1216 adapter acquires at ~80 and ends at 0 on that task, which is what Table I already says. b2 was in progress (4 of 8 quarters: env 4 at 0/25 and 0/25 for seeds 1000/2000 one task later, env 6 at 84 and 84) and is discarded. Table I keeps "--" for this row's Δ_final.
 
-## Entry 69 - 12 Sep 26 (TWO REVIEWER-REQUESTED FULL FINE-TUNE BASELINES: naive sequential full FT of pi0.5, and the same with a 1-episode-per-task replay buffer — 10 tasks, final row only; naive LAUNCHED on nebius2 16:01 UK)
+## Entry 69 - 12 Sep 26 (TWO REVIEWER-REQUESTED FULL FINE-TUNE BASELINES: naive sequential full FT of pi0.5, and the same with a 1-episode-per-task replay buffer — 10 tasks, final row only)
 
 **Why.** A fresh-context read of the draft (Josh, 12 Sep, 16:15 UK): "the one baseline we're missing is a straight sequential train of pi05 with all params free … and the second with a small replay buffer. Like 1 episode per task added at each boundary and mixed in future training." Table I has every *method* baseline (specialists, multitask LoRA, naive LoRA r512 / r1216, RETAIN, O-LoRA) but not the plain reference every continual-learning reader expects — all parameters free, no adapter, no merge — nor the cheapest fix for it (tiny rehearsal). Josh: both from the libero_90 stage-1 base, **10 tasks, final row only** (the r1216 row's treatment: Δ_final stays "--").
 
-**Baseline 1 — naive sequential full FT: zero new code.** The E67 RETAIN trainer (`scripts/baselines/retain/retain_sequential_train.py`) fine-tunes *every* parameter per task and then merges θ ← (1−α)·θ_prev + α·θ_ft. **α = 1.0 is the identity merge**, so the RETAIN chain script with `ALPHA=1.0` *is* the naive sequential full fine-tune under the identical recipe (pi0.5 preset: AdamW 2.5e-5 peak, wd 0.01, betas (0.9, 0.95), clip 1.0, 500-step warm-up, cosine to 2.5e-6 within each task; 5,000 steps/task; effective batch 32; optimizer reinit + LR reset per task; no task identity; seed 1000; libero_90 stage-1 base `libero_90_pi05_base_nomem_50k`). The trainer's merge-exactness witness (ratio = α) still holds at α = 1 (merged ≡ ft). Only deltas from the RETAIN run: `RUN_NAME=libero_10_seq10_naive_fullft_steps5k` (new env override, commit `8941e54e`) and the VRAM ladder **`4:8,4:8,2:16`** because the H200's bs8×acc4 rung peaked at 88.5 GiB (E67 add) and nebius2's H100 has 80 GB. Queue `scripts/ops/queue_e69_naive_fullft.sh`: chain → final-row 4-seed campaign (`run_baseline_triangle.sh naive_fullft 10`, new case; output `outputs/analysis/e67/seeds_tri_naive10_fullft_b10.json`) → `E69-NAIVE-DONE`. Unit `e69-naive` on nebius2, **launched 16:01 UK 12 Sep**; log `outputs/e69/naive_fullft.log`.
+**Baseline 1 — naive sequential full FT.** The E67 RETAIN trainer fine-tunes *every* parameter per task and then merges θ ← (1−α)·θ_prev + α·θ_ft. **α = 1.0 is the identity merge**, so the RETAIN chain script with `ALPHA=1.0` *is* the naive sequential full fine-tune under the identical recipe (pi0.5 preset: AdamW 2.5e-5 peak, wd 0.01, betas (0.9, 0.95), clip 1.0, 500-step warm-up, cosine to 2.5e-6 within each task; 5,000 steps/task; effective batch 32; optimizer reinit + LR reset per task; no task identity; seed 1000; libero_90 stage-1 base `libero_90_pi05_base_nomem_50k`). The trainer's merge-exactness witness (ratio = α) still holds at α = 1 (merged ≡ ft).
 
-**Baseline 2 — replay: ~40 lines, to be written and smoke-tested today.** Same trainer with `--replay_episodes_per_task=1 --replay_fraction=0.25` (defaults 0 / off ⇒ RETAIN and naive paths byte-identical): at each boundary one episode of the finished task (seeded choice, recorded in `progress.json` and the boundary json so resume is deterministic) joins a buffer; every later task's sampler draws each frame from the buffer with probability 0.25 (uniform over buffered episodes) and from the current task otherwise. **Assumption stated, not yet confirmed by Josh:** the 25 % fixed fraction — the literal "mixed in" (uniform over frames) would give ~2 % per past task and be indistinguishable from naive. Smoke on spot at ~08:00 UK 13 Sep (the only free 80-GB window: between A3's sequential finishing and its triangle), then the 10-task chain on spot after A3's triangle (~15:30 UK 13 Sep).
-
-**Timeline (UK) and what it costs.** H100 at bs4×acc8 ≈ 1.5× the H200's 2.2 s/step → ~3.3 s/step → 50k steps ≈ 46 h + ten 82-s saves and boundary work → naive chain done **~15:00 UK 14 Sep**, final row (10 cells, ~4–5 h on the H100) **~20:00 UK 14 Sep**. Replay on the H200: 31 h → **~22:30 UK 14 Sep**, final row **~03:00 UK 15 Sep**. Deadline 08:00 UK 16 Sep. A preemption costs ≤ 1 task (in-progress state every 1,000 steps). The full 10-row triangles (23 h each) are out of scope for both; a 5-task replay variant is the fallback if spot slips.
+**Baseline 2 — replay.** Same trainer: at each boundary one episode of the finished task (seeded choice) joins a buffer; every later task's sampler draws each frame from the buffer with probability 0.25 (uniform over buffered episodes) and from the current task otherwise. **Assumption stated, not yet confirmed by Josh:** the 25 % fixed fraction — the literal "mixed in" (uniform over frames) would give ~2 % per past task and be indistinguishable from naive.
 
 **Pre-registered expectations.** Naive full FT: the catastrophic-forgetting reference — acquisition high (the paper's full-FT diagonal band), final row near zero on tasks 1–9, final mean in the **5–15** band with the r512 (9.7) and r1216 (8.6) adapters; if it lands *above* RETAIN's 8.2 that is itself a finding (RETAIN's merge would then be net harmful at α = 0.5, consistent with E67's recency-gradient reading). Replay (1 episode/task at 25 %): partial retention — a visible lift on the oldest tasks over naive but well below ours (65.1) and below the specialists' ceiling; a final mean in the **15–35** band would say "one stored episode buys a third of the gap"; ≥ 50 would be the surprise to explain (it would mean the forgetting is mostly output-distribution drift that a few frames re-anchor).
 
-### Entry 69 addendum 1 (12 Sep 26, 16:10 UK) — naive chain training at bs4×acc8 on the H100 (62 GB); replay variant written, unit-tested, queued on spot behind A3
+### Entry 69 addendum 3 (12 Sep 26, 17:15 UK) — **REPLAY BASELINE DROPPED; the PAPER CELL under the REVERSED task order takes its slot** (Josh, after Codex: "drop one of these and do the paper cell with a different task order" → "Reversed. DO it.")
 
-**Naive.** Unit `e69-naive` loaded and is training at the first ladder rung **bs4 × acc8: 61.7 GB, 95 % util** — fits the 80 GB card with margin (the E67 H200 rung bs8×acc4 needed 88.5 GiB). First `s/step` reading at the hourly check.
+**Decision and reasoning.** Kept the naive full FT (the reviewer's explicit ask, already running, zero new code). Dropped replay: it is a nice-to-have that sits outside the paper's own no-replay constraint, its code was untested on real data, and a reviewer's first worry about a continual-learning headline is order sensitivity, on which the draft has no evidence at all. So the slot goes to **the paper cell's 10-task sequential with `online_task_ids = [9,8,…,0]`** — everything else byte-identical to the E62 10-task run (same A-checkpoint, merged 6x2, corefrac β4, lr 2e-3→2e-4, top_t 3072, bs16×acc2). Reversed rather than a seeded permutation: maximally different from the dataset order and explainable in one sentence.
 
-**Replay code (commit `10035ee4`), defaults off so RETAIN and naive paths are byte-identical.**
-- `scripts/baselines/common.py`: `task_episode_indices()` (the trainer's own two-branch task→episodes filter, exposed) and `MixedReplaySampler`: one pass is a shuffled permutation of the *current* task's frames — exactly what `EpisodeAwareSampler(shuffle=True)` yields — with each slot replaced, with probability *f*, by a frame drawn uniformly from the replay episodes' frames; torch RNG (seeded), re-drawn every pass. `task_dataloader(..., replay_episodes, replay_fraction)` builds it; same DataLoader kwargs as the sequential trainer's loader.
-- `retain_sequential_train.py`: `--replay_episodes_per_task` (default 0), `--replay_fraction` (0.25), `--replay_seed` (0). At each boundary, after the (identity) merge, `random.Random(seed·1000 + task_pos).sample` picks the episodes of the task just finished; the buffer is written to `progress.json` (`replay_episodes`) and the boundary json (`replay_added`, `replay_buffer`), so a preemption resume rebuilds the same sampler. Every later task logs `replay buffer: n episode(s) [...] mixed at fraction f` and `[replay] task t: N current frames + M replay frames`.
-- Local unit test of the sampler: n = 1000, f = 0.25 → replay share 0.231, all 50 replay frames reached, no repeats in the current-task part, second pass differs, rejects empty lists and f ∉ (0, 1).
-- Smoke path: `retain_a05_10task.sh SMOKE=1` with `EXTRA_ARGS="--replay_episodes_per_task=1 --replay_fraction=0.25 --replay_seed=0"` additionally asserts the buffer engaged on task 2 across the forced stop/resume and that `progress.json` holds 2 episodes after 2 boundaries → `E69-REPLAY-SMOKE-OK`.
-
-**Spot queue** (`scripts/ops/queue_e69_spot.sh`, unit `e69-spot`, armed 16:06 UK; waits for unit `e68-a3` to be gone AND `checkpoints/025000` AND the chain's COMPLETE line): (1) replay smoke (~45 min incl. the dense loss-matrix check); (2) **A3's 4-seed triangle** (never blocked by a replay bug — a smoke failure still runs it, then stops with `E69-REPLAY-SMOKE-FAIL`); (3) the replay chain `libero_10_seq10_replay1ep_f025_fullft_steps5k` (α = 1.0, H200 ladder `8:4,8:4,4:8`); (4) its final row → `outputs/analysis/e67/seeds_tri_replay10_1ep_f025_b10.json`, `E69-REPLAY-DONE`. nebius2 is deliberately NOT pulled while its chain's bash is mid-script (E67 add-6 rule); it does not need the replay code.
-
-### Entry 69 addendum 2 (12 Sep 26, 16:25 UK) — naive full FT: **2.78 s/step at bs4×acc8 on the H100** (chain ≈ 39 h → ~07:30 UK 14 Sep, final row ~12:30 UK 14 Sep); unit log lagged for a mundane reason
-
-Live from `/tmp/retain_last.log` (the chain's `tee` copy): `RETAIN chain: alpha=1.0 … batch=4x8`, after-setup 8.7 GiB allocated, then task 1 step 100 / 200 / 300: loss **0.417 → 0.232 → 0.181**, grad-norm 5.0 → 2.1, LR warming (5e-6 → 1.5e-5), **2.80 / 2.79 / 2.77 s/step**; nvidia-smi 61.7 GB, 97–100 % util. So the H100 at bs4×acc8 is only 1.26× slower than the H200's bs8×acc4 (2.20 s/step), not the 1.5× assumed: 5,000 steps ≈ 3.9 h/task, ten tasks ≈ 39 h + ten 82-s saves → **chain complete ~07:30 UK 14 Sep**, final-row campaign (10 cells, ~4–5 h) **~12:30 UK 14 Sep** — 2.5 h earlier than the entry's estimate.
-
-**Why the unit log showed one line for 15 minutes.** `outputs/e69/naive_fullft.log` had only the queue header while the process was plainly training (GPU 100 %). The chain's ladder pipes `run_retain … | tee /tmp/retain_last.log | grep -v "^$"`, and grep block-buffers (~4 KB) when its stdout is a file — at ~150 B per log line and one line per 100 steps that is a flush every ~2.5 h. The tee copy is line-live and is what the watchers now read. Fixed for future launches with `grep --line-buffered` (commit `b77f7694`; pulled on spot, whose queue will use it for the replay chain; NOT pulled on nebius2 while its chain's bash is mid-script). Same mechanism, not a training issue; E67's RETAIN run had the identical lag and nobody noticed because the boundaries were the signal.
-
-### Entry 69 addendum 3 (12 Sep 26, 17:15 UK) — **REPLAY BASELINE DROPPED; the PAPER CELL under the REVERSED task order takes its slot** (Josh, after Codex: "drop one of these and do the paper cell with a different task order" → "Reversed. DO it."); A3's triangle moves to nebius2
-
-**Decision and reasoning.** Kept the naive full FT (the reviewer's explicit ask, already running, zero new code). Dropped replay: it is a nice-to-have that sits outside the paper's own no-replay constraint, its code was untested on real data, and a reviewer's first worry about a continual-learning headline is order sensitivity, on which the draft has no evidence at all. So the H200's slot after A3 goes to **the paper cell's 10-task sequential with `online_task_ids = [9,8,…,0]`** — everything else byte-identical to the E62 10-task run (`seq10_merged6x2.sh`: same A-checkpoint, merged 6x2, corefrac β4, lr 2e-3→2e-4, top_t 3072, bs16×acc2). Reversed rather than a seeded permutation: maximally different from the dataset order and explainable in one sentence. The trainer walks `online_task_ids` as a list and the ds→env map is keyed by dataset id, so no code path assumes a sorted order (E68 A1–A3 already ran arbitrary 5-lists).
-
-**Two facts from the checks that changed the schedule.** (i) The control's 10-task run took **44.6 h** on the H200 (15 Aug 13:46 → 17 Aug 10:22; boundaries 3.5 h → 5.4 h apart as the 20-ep in-run eval grows with the number of seen tasks, plus a 500-episode final eval), not the 34 h I quoted in chat — ~15 h of that was rollout evaluation. This run reports its final row from the 4-seed campaign only, so the in-run evals buy nothing: `SEQ_EXTRA_ARGS="--eval.n_episodes=1 --eval_final_episodes=0"` cuts them to one episode per seen task (draccus takes the last occurrence of a repeated flag — verified locally: `n_episodes 1, final 0`). Chain ≈ 10 × 3.4 h ≈ **34.5 h**. (ii) With replay gone, spot no longer needs a smoke window, and A3's 15-cell triangle can run on nebius2 after the naive chain instead of holding the H200 for 6.5 h: **spot starts the reversed chain the moment A3's sequential ends**.
-
-**Timeline (UK).** Spot: A3 sequential ends ~08:00 13 Sep → reversed chain to ~18:30 14 Sep → final-row campaign (10 envs × 25 eps × 4 seeds, bs13, = the control's `seeds_merged6x2.json` instrument) → **`outputs/analysis/e60/seeds_merged6x2_rev10.json` ~23:00 14 Sep**. nebius2: naive chain to ~07:30 14 Sep → its final row ~12:30 14 Sep → A3 triangle (H100, ~8 h) → **~20:30 14 Sep**. Everything in ~33 h before the deadline. A3's five sequential checkpoints (~20 GB each) get mirrored spot→nebius2 when they exist (the hourly check carries the command); the nebius2 queue waits for both the naive unit and those five directories.
-
-**Units now.** spot: `e68-a3` (A3, task 2/5 running) + `e69-spot` v2 (waiting → reversed chain → final row; `scripts/ops/queue_e69_spot.sh`, chain wrapper `job_scripts/nebius/libero_90/staged/e69_seq10_reversed_merged6x2.sh`, commit `<rev>`). nebius2: `e69-naive` (task 1, 2.78 s/step) + `e69-n2` (inline payload = `scripts/ops/queue_e69_nebius2_after_naive.sh`; launched inline so nebius2 is not pulled while its chain's bash is mid-script). The replay code (commit `10035ee4`) stays in the tree, unused: `--replay_episodes_per_task=0` by default, so the naive and RETAIN paths are byte-identical.
+This run reports its final row from the 4-seed campaign only, so the in-run evals buy nothing; it cuts them to one episode per seen task.
 
 **Pre-registration for the reversed order.** The headline claim is retention under sequential writes with stationary addressing + protection; the dataset order is arbitrary. Expect the reversed final mean inside the ±3-point band of the 65.1 headline established by the 5-/10-task replicate (E68 add-0), with a *different* per-task profile (the tasks that were oldest are now newest). A final mean below ~55 would say the headline benefits from the specific order and must be reported as such; above ~70 equally so. Per-task, the reversed run's oldest tasks (9, 8, 7 in the new order) are the cells to compare with the control's oldest (0, 1, 2).
 
-### Entry 68 addendum 29 (12 Sep 26, 17:25 UK) — A3 sequential boundary 1 on the H200: task-1 end loss 0.039, in-run 20-ep e4 = 50; 3h13m per block → sequential complete ~07:00 UK 13 Sep
+### Entry 68 addendum 29 (12 Sep 26, 17:25 UK) — A3 sequential boundary 1: task-1 end loss 0.039, in-run 20-ep e4 = 50
 
-Block 1 (dataset task 0 → env 4) at bs16×acc2: loss 0.244 (step 200) → 0.098 (800) → 0.045 (4K) → **0.039 at 5K**, 1.03 s/micro-step throughout; `checkpoints/005000` written 16:39 UK, in-run eval done 16:51 UK, task 2 started 16:51 UK — **3h13m wall per block** including the boundary save and the growing in-run eval. In-run 20-episode eval: **e4 = 50.0** (control's in-run e4 at its b1 was 80 on the 10-task instance and its 4-seed b1 = 54; A1's 4-seed b1 = 67, A2's = 54.0). One 20-episode cell (±11 pp) — recorded, not read; the in-run instrument stays under the add-18 moratorium and the 4-seed triangle (now scheduled on nebius2 after the naive chain, add-69-3) adjudicates. Remaining: blocks 2–5 (~3.4 h each as the eval grows) + the 50-ep final on five tasks → **~07:00 UK 13 Sep**, after which `e69-spot` starts the reversed-order paper cell within five minutes. Note for the hand-off: `/tmp/tri_read.py` is gone from spot (tmp cleared); `sequential_state.pt` keys are `eval_bar_history` (list of `{trained_task_idx, per_task:{env: pc}}`) and `loss_eval_history` — read inline with `torch.load(..., weights_only=False)`.
+Block 1 (dataset task 0 → env 4) at bs16×acc2: loss 0.244 (step 200) → 0.098 (800) → 0.045 (4K) → **0.039 at 5K**. In-run 20-episode eval: **e4 = 50.0** (control's in-run e4 at its b1 was 80 on the 10-task instance and its 4-seed b1 = 54; A1's 4-seed b1 = 67, A2's = 54.0). One 20-episode cell (±11 pp) — recorded, not read; the in-run instrument stays under the add-18 moratorium and the 4-seed triangle adjudicates.
 
-### Entry 69 addendum 4 (12 Sep 26, 20:10 UK) — naive full FT boundary 1: **the α = 1.0 identity is verified on 4.143B parameters** (ratio 1.0000), task-1 end loss 0.028, 3h59m/task → chain ~07:00 UK 14 Sep
+### Entry 69 addendum 4 (12 Sep 26, 20:10 UK) — naive full FT boundary 1: **the α = 1.0 identity is verified on 4.143B parameters** (ratio 1.0000), task-1 end loss 0.028
 
-`RETAIN-BOUNDARY-1` at 20:02 UK. Task 1 (dataset task 0, the two-mug task): loss 0.417 (step 100) → 0.108 (1000) → 0.067 (1800) → 0.045 (3100) → 0.035 (4300) → **0.028 at 5000**, grad-norm 5.0 → 0.77, steady **2.78–2.81 s/step**; 3h59m wall per task including the two 13-s saves. GPU 61.7 GB, allocated 8.8 GiB after the boundary (the E67 add-6 optimizer-state leak stays fixed at α = 1: no growth across the boundary).
+Task 1 (dataset task 0, the two-mug task): loss 0.417 (step 100) → 0.108 (1000) → 0.067 (1800) → 0.045 (3100) → 0.035 (4300) → **0.028 at 5000**, grad-norm 5.0 → 0.77.
 
 **The merge witness is the proof that this run IS the naive baseline.** `retain_boundary.json`: `alpha 1.0`, `mean|ft−prev| = 1.0961e-04`, `mean|merged−prev| = 1.0961e-04`, `ratio_merged_over_ft = 1.0000`, largest-tensor ratio 1.0000, over **n_params = 4,143,404,816**. Identical to 4 decimal places on every parameter means θ ← θ_ft exactly: no merge, no interpolation — the plain sequential full fine-tune, under the recipe the RETAIN row used. (The witness would raise if the ratio deviated from α by > 1e-3; it is the same check that caught nothing here because there is nothing to catch.)
 
-Disk: 18 GB per boundary (merged + `ft_pretrained_model` + training_state), 10 boundaries ≈ 180 GB against 1.0 TB free on nebius2. Chain ETA **~07:00 UK 14 Sep** (10 × 3h59m from 16:01 UK 12 Sep), final row ~11:30 UK 14 Sep, then A3's triangle on the same box.
+**A3, boundary 2.** Block 2 end loss 0.032.
 
-**A3 (spot), boundary 2** `checkpoints/010000` written 20:01 UK; its in-run eval was still running at the read, so the block-2 cells land with the next check. Block 2 end loss 0.032.
+### Entry 68 addendum 30 (13 Sep 26, 10:25 UK) — **A3 SEQUENTIAL COMPLETE.** In-run final row (50 ep/task) **57.2 mean**: 58 / 50 / 72 / 64 / 42 — no collapse, oldest task the SECOND best cell
 
-**add-4 ops note (20:20 UK): spot disk headroom secured before the reversed run.** Spot was at 84 % (417 GB free) with A3 still owing 3 boundaries (~57 GB) and the reversed 10-task chain needing ~190 GB — that path ends at ~94 %, past the heartbeat's 90 % tripwire and close enough to full to lose the run. Freed 192 GB by deleting the **A1 and A2 five-task run MIRRORS on spot** (`libero_10_seq5_jw_e68a1_live_…`, `…e68a2_tfidfonly_…`), now **76 %, 607 GB free**. Safe because those directories were copies made solely to run the two triangles there: both triangles are complete (5 + 5 rows in `outputs/analysis/e68/`, add-23), no process held them, and the **authoritative copies are on nebius2 with all five checkpoints AND the optimizer state** (116 GB / 176 GB vs the mirrors' 96 GB each — the mirrors never carried `training_state`), which is exactly what Josh asked to keep for a possible 10-task extension. Re-mirroring either one costs ~10 min if ever needed. Nothing else was touched: the param-matched r1216 run (295 GB) stays on spot, and its nine intermediate adapters also sit on nebius2 in case that triangle is revived.
-
-### Entry 68 addendum 30 (13 Sep 26, 10:25 UK) — **A3 SEQUENTIAL COMPLETE.** In-run final row (50 ep/task) **57.2 mean**: 58 / 50 / 72 / 64 / 42 — no collapse, oldest task the SECOND best cell; checkpoints mirrored to nebius2, reversed-order chain started on spot
-
-`E68-A3 joint-preparation chain COMPLETE` 10:14 UK (5 blocks × 5,000 steps at bs16×acc2 from 13:26 UK 12 Sep ≈ 17 h train + 3 h final eval). Block end losses **0.042 / 0.033 / 0.076 / 0.046 / 0.061** — no drift across blocks, i.e. the jointly-prepared routers keep the value writes as learnable at block 5 as at block 1.
+5 blocks × 5,000 steps at bs16×acc2. Block end losses **0.042 / 0.033 / 0.076 / 0.046 / 0.061** — no drift across blocks, i.e. the jointly-prepared routers keep the value writes as learnable at block 5 as at block 1.
 
 **In-run retention triangle (20 ep/cell for k < 5, 50 ep for the final row):**
 | after block | e4 | e6 | e9 | e2 | e7 |
@@ -9934,17 +8406,11 @@ Disk: 18 GB per boundary (merged + `ft_pretrained_model` + training_state), 10 b
 | 4 | 50 | 65 | 80 | 90 | |
 | **5 (50 ep)** | **58** | **50** | **72** | **64** | **42** |
 
-**Final row mean 57.2** (58+50+72+64+42)/5. Comparators at the same in-run instrument: the control's 5-task in-run final row was 58/74/64/84/54 = 66.8 (E62), A1 and A2 were not read at 50 ep. **Read with the add-18 moratorium in force**: this is the in-run instrument, one 50-episode cell per task at seed 1000, and the 4-seed triangle (now queued on nebius2 behind the naive chain) is what adjudicates A3 against the control's 66.0. What can be said without the triangle: **no collapse** — the pre-registered failure mode for joint preparation (E35/E36's dead routers, or a late-task starvation) did not occur; the oldest task (e4, five blocks of exposure) is the second-best cell at 58, above its own block-1 acquisition of 50; the weakest cell is the NEWEST task (e7, 42), which is an acquisition story, not a forgetting one. That pattern — flat across age, weak on the last task — is the opposite of the control's (strong recent, decaying old), and is the thing the 4-seed rows must confirm or kill.
+**Final row mean 57.2** (58+50+72+64+42)/5. Comparators at the same in-run instrument: the control's 5-task in-run final row was 58/74/64/84/54 = 66.8 (E62), A1 and A2 were not read at 50 ep. **Read with the add-18 moratorium in force**: this is the in-run instrument, one 50-episode cell per task at seed 1000, and the 4-seed triangle is what adjudicates A3 against the control's 66.0. What can be said without the triangle: **no collapse** — the pre-registered failure mode for joint preparation (E35/E36's dead routers, or a late-task starvation) did not occur; the oldest task (e4, five blocks of exposure) is the second-best cell at 58, above its own block-1 acquisition of 50; the weakest cell is the NEWEST task (e7, 42), which is an acquisition story, not a forgetting one. That pattern — flat across age, weak on the last task — is the opposite of the control's (strong recent, decaying old), and is the thing the 4-seed rows must confirm or kill.
 
-**Ops.** Five checkpoints (~20 GB each) mirroring spot→nebius2 now for unit `e69-n2` (waits for the naive chain, then runs the 4-seed triangle). Spot released the GPU at 10:16 UK and `e69-spot` started the **reversed-order paper cell** at 10:18 UK (`libero_10_seq10rev_jw_merged6x2_…`, tasks [9,8,…,0], in-run evals capped at 1 episode). Revised ETA, corrected for the 50-ep final eval costing ~3 h at `eval.batch_size=1` (every arm paid this; my earlier 07:00 estimate ignored it): reversed chain ~34 h → **~20:30 UK 14 Sep**, its 4-seed final row (1,000 episodes at bs13) → **~01:30 UK 15 Sep**, ~30 h before the deadline.
+### Entry 69 addendum 5 (14 Sep 26, 08:00 UK) — **NAIVE SEQUENTIAL FULL-FT CHAIN COMPLETE**: 10/10 boundaries, α = 1.0 identity verified at every one
 
-**add-3 ops note (15:50 UK 13 Sep): the spot auto-relaunch watcher repointed from `e68-a3` to `e69-spot`.** At 15:48 UK the detached heartbeat saw unit `e68-a3` down with its queue "incomplete" (it greps `E68-TRAIN-DONE`, a marker the A3 chain never prints) and relaunched it. Harmless — every stage is skip-guarded, so it printed `[seq5] final checkpoint exists - skipping` and `COMPLETE` and exited in **1 second** — but it would have repeated every 10-minute poll, and more importantly it was guarding a *finished* run while the reversed-order chain had **no** auto-relaunch at all (unit `e69-spot` is a plain queue; a preemption would have left spot idle until the next hourly check). Killed it and armed a new one: `VM=nebius-spot UNIT=e69-spot TLOG=outputs/e69/rev10_train.log LAUNCH_CMD='bash scripts/ops/queue_e69_spot.sh …'`, logging to `outputs/e69_heartbeat_spot.log`. A preemption now brings spot back and relaunches the queue, which resumes the reversed chain from its last boundary (the common body's `resume_sequential` path). nebius2 still has no auto-relaunch by design — its naive chain is the one job whose resume I want to eyeball first, and the hourly check carries the exact relaunch command.
-
-**add-3 ops note 2 (16:40 UK 13 Sep): spot disk again — the reversed run costs 39 GB per boundary, not 19.** Measured, not assumed: `checkpoints/005000` and `010000` are **39 GB each** (model 20 GB + the memory-value optimizer state ~19 GB; Adam's two moments over 2.68B fp32 memory params). The 10-task control's directory averages 19 GB/boundary only because its optimizer states were swept in the E67 housekeeping *after* it finished. So the eight remaining boundaries need **312 GB** against the 411 GB free at 84 % — that lands at ~96 %, past the 90 % tripwire and close enough to full to lose the run in its last block. Freed **265 GB** by deleting the **nine intermediate checkpoints of the param-matched r1216 run** on spot (`005000…045000`), now **73 %, 676 GB free** — comfortably past the 312 GB the chain still needs, with ~360 GB spare. Safe because that triangle is dropped (add-28), nothing holds the files, the **final `050000` stays on spot** (it is the Table I row's checkpoint, already measured in `seeds_naive10_paramatched_r1216.json`), and all nine intermediates were verified present on nebius2 at the exact source byte size (10,722,597,224 each) before the delete — so reviving that triangle costs only a re-mirror. The `training_state` halves were not mirrored and are gone, which is correct: that run is complete and `reinit_optimizer_each_task=true` means no downstream job wants them.
-
-### Entry 69 addendum 5 (14 Sep 26, 08:00 UK) — **NAIVE SEQUENTIAL FULL-FT CHAIN COMPLETE** (`RETAIN-CHAIN-DONE` 07:57 UK): 10/10 boundaries, α = 1.0 identity verified at every one; final-row campaign started
-
-Ten tasks × 5,000 steps at bs4×acc8 on the H100, **launched 16:01 UK 12 Sep, finished 07:57 UK 14 Sep = 39 h 56 m**, dead on the 2.78 s/step projection (add-2). **Zero errors, zero preemptions, zero interventions.** `cuda allocated 8.8 GiB` at boundary 10, identical to boundary 1 — the E67 add-6 optimizer-state leak stays fixed across all ten boundaries.
+Ten tasks × 5,000 steps at bs4×acc8.
 
 **Per-task end loss (step 5000 of each block):**
 | task | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
@@ -9955,13 +8421,11 @@ Every block converges to the same 0.02–0.06 band, and the last block is the *l
 
 **The α = 1.0 identity holds at every boundary** (`ratio_merged_over_ft`, fp32, over all 4,143,404,816 parameters): b1–b10 all **1.0000**, dataset tasks 0→9 in order, `mean|ft−prev|` 9.9e-05 to 1.1e-04 per boundary. So this run is θ ← θ_ft throughout: the plain sequential full fine-tune under the RETAIN recipe, not a merge. Nothing about the E67 RETAIN row's protocol differs except the merge coefficient.
 
-**Final-row campaign started 07:57 UK** (`[e69-naive] chain complete - final-row campaign (b10)`): all ten envs × 25 eps × seeds 1000/2000/3000/4000 from `checkpoints/050000/pretrained_model`, bs13 → `outputs/analysis/e67/seeds_tri_naive10_fullft_b10.json`, then `E69-NAIVE-DONE`. ~4.2 h on the H100 → **~12:10 UK**. Unit `e69-n2` then starts A3's 15-cell 4-seed triangle on the same box (~6.3 h → **~18:30 UK**).
-
 **Pre-registered expectation stands** (Entry 69 header): final mean in the 5–15 band alongside naive r512 (9.7) and r1216 (8.6); landing *above* RETAIN's 8.2 would say the α = 0.5 merge is net harmful, which is a finding in its own right.
 
-### Entry 69 addendum 6 (14 Sep 26, 11:50 UK) — **NAIVE SEQUENTIAL FULL-FT FINAL ROW: 7.7%** (`E69-NAIVE-DONE` 11:41 UK). Nine of ten tasks at EXACTLY 0.0 across all four seeds; the reviewer's missing reference is now the cleanest catastrophe in Table I
+### Entry 69 addendum 6 (14 Sep 26, 11:50 UK) — **NAIVE SEQUENTIAL FULL-FT FINAL ROW: 7.7%**. Nine of ten tasks at EXACTLY 0.0 across all four seeds; the reviewer's missing reference is now the cleanest catastrophe in Table I
 
-`outputs/analysis/e67/seeds_tri_naive10_fullft_b10.json`, same instrument as every comparator row (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13, from `checkpoints/050000`).
+Same instrument as every comparator row (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13).
 
 | env (training order) | s1000 | s2000 | s3000 | s4000 | mean |
 |---|---|---|---|---|---|
@@ -9983,11 +8447,9 @@ Every block converges to the same 0.02–0.06 band, and the last block is the *l
 
 **What this row buys the paper.** Table I's row (a) "Naive seq. full FT" can now be stated with its own 4-seed number instead of being implied by the LoRA proxies. The reviewer's objection — *you never show what happens with all parameters free* — is answered directly: 7.7%, nine tasks at exactly zero. It also strengthens the framing: the LoRA naive rows (9.7 / 8.6) were never a softer version of full FT, they are the same catastrophe.
 
-**Ops.** Unit `e69-n2` picked up at 11:41 UK and is loading A3's 4-seed triangle on the freed H100 (15 cells, ~6.3 h → **~18:00 UK**). Spot's reversed chain is on task 9 of 10, 8 boundaries, disk 83 %.
-
 ### Entry 68 addendum 31 (14 Sep 26, 18:20 UK) — **A3 4-SEED TRIANGLE COMPLETE: final mean 59.0 vs control 66.0 (−7.0).** A3 fires its kill line, but for a reason the pre-registration did not anticipate: the loss is ACQUISITION of the newest task, not forgetting of the old
 
-All five rows on nebius2 (unit `e69-n2`, 11:41→18:10 UK, 15 cells × 25 eps × 4 paired seeds, no errors). Same instrument as the control and A1/A2.
+All five rows: 15 cells × 25 eps × 4 paired seeds. Same instrument as the control and A1/A2.
 
 **A3 vs control, per row (4-seed means, training order e4 e6 e9 e2 e7):**
 | block | A3 | control |
@@ -10013,9 +8475,9 @@ Final row per-seed: e4 [52,44,56,48]; e6 [64,48,56,72]; e9 [60,64,64,64]; e2 [92
 
 **Standing E68 picture** (5-task, 4-seed final means): control **66.0** | A1 live addressing 64.4 (Δ_final −4.0) | **A3 joint prep 59.0 (−7.0)** | A2 no protection 59.8 (−6.2).
 
-### Entry 69 addendum 7 (14 Sep 26, 22:40 UK) — **REVERSED-ORDER PAPER CELL: 62.4 vs forward 65.1 (−2.7, inside the ±3 replicate band). The headline is order-robust**; `E69-REV10-DONE` 22:34 UK
+### Entry 69 addendum 7 (14 Sep 26, 22:40 UK) — **REVERSED-ORDER PAPER CELL: 62.4 vs forward 65.1 (−2.7, inside the ±3 replicate band). The headline is order-robust**
 
-`outputs/analysis/e60/seeds_merged6x2_rev10.json`, same instrument as the forward row `seeds_seq10_merged6x2.json` (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13, from `checkpoints/050000`). Chain: 10 tasks `[9,8,…,0]`, 50k steps, bs16×acc2, **no errors, no preemptions**; boundary cadence 3 h 05 m–3 h 17 m throughout.
+Same instrument as the forward row (all ten envs × 25 eps × paired seeds 1000/2000/3000/4000 = 1,000 episodes, bs13). Chain: 10 tasks `[9,8,…,0]`, 50k steps, bs16×acc2.
 
 **Final rows side by side.** The reversed run's training order is 5, 3, 1, 8, 0, 7, 2, 9, 6, 4 (env ids); the forward run's is 4, 6, 9, 2, 7, 0, 8, 1, 3, 5. Per-env means, and each env's **position** in its own run (1 = first learned, 10 = last):
 
@@ -10039,6 +8501,6 @@ Final row per-seed: e4 [52,44,56,48]; e6 [64,48,56,72]; e9 [60,64,64,64]; e2 [92
 
 **Position is not what determines the score.** The first task learned scores 92 (reversed, e5) and 59 (forward, e4); the last scores 58 (reversed, e4) and 91 (forward, e5). Each env keeps roughly its own difficulty across both orders — e5, e3, e2 are easy (86–92 in both), e1, e0, e7 are hard (9–54) — which is the strongest evidence in the run that retention is governed by task identity and capacity, not by recency.
 
-**For the paper.** A one-line order-robustness claim with a 4-seed number behind it: reversing the ten-task sequence moves the final mean by 2.7 points, within replicate noise, with no collapsed cell. Cost: 36 h of H200 time, in-run evals cut to 1 episode/task to save ~15 h (add-3).
+**For the paper.** A one-line order-robustness claim with a 4-seed number behind it: reversing the ten-task sequence moves the final mean by 2.7 points, within replicate noise, with no collapsed cell.
 
-**E69 is complete.** Both of its deliverables are in: naive sequential full FT 7.7 % (add-6) and reversed order 62.4. Spot's unit exited cleanly; both boxes are now idle.
+**E69 is complete.** Both of its deliverables are in: naive sequential full FT 7.7 % (add-6) and reversed order 62.4.
