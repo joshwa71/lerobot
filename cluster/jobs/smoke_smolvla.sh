@@ -31,6 +31,9 @@ EOF
 TRAIN_ARGS=(
     --policy.path=lerobot/smolvla_base
     --dataset.repo_id=HuggingFaceVLA/libero
+    # explicit root: without it, lerobot treats an `hf download --local-dir` copy as a legacy
+    # mirror and tries to re-fetch it from the hub, which fails offline
+    --dataset.root="$HF_LEROBOT_HOME/HuggingFaceVLA/libero"
     --dataset.episodes="[0,1,2,3,4,5,6,7]"
     --batch_size=8 --num_workers=2
     --log_freq=20 --save_freq=100 --eval_freq=0
