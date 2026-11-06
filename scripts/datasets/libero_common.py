@@ -66,9 +66,13 @@ def repaired_source(src_root: Path, work_root: Path) -> Path:
 
     import pandas as pd
 
+    marker = work_root / ".repaired_source"
     if work_root.exists():
-        raise FileExistsError(f"{work_root} exists; remove it to rebuild the repaired source")
+        if not marker.exists():
+            raise FileExistsError(f"{work_root} exists and is not a repaired source; remove it")
+        shutil.rmtree(work_root)  # our own meta copy + symlinks (rmtree unlinks symlinks, not targets)
     work_root.mkdir(parents=True)
+    marker.touch()
     shutil.copytree(src_root / "meta", work_root / "meta")
     for d in ("data", "videos"):
         if (src_root / d).exists():
@@ -128,14 +132,20 @@ def hub_revision(repo_id: str, local_dir: Path | None = None) -> str | None:
         return None
 
 
-def add_quantile_stats(root: Path, repo_id: str) -> None:
+def add_quantile_stats(root: Path, repo_id: str, workers: int = 4) -> None:
     """Recompute stats.json with quantiles (q01..q99), which pi05's quantile normalisation needs.
 
     Same computation as lerobot's scripts/augment_dataset_quantile_stats.py (per-episode stats over
-    all frames, count-weighted aggregate), minus that script's unconditional push_to_hub + tagging.
+    all frames, count-weighted aggregate), minus that script's unconditional push_to_hub + tagging,
+    and with `workers` threads instead of its hard-coded 16: each thread holds a whole episode's
+    images as float32, and 16 of them overran an 8x8G SGE job (libero_goal, 6 Nov 26).
     """
-    from lerobot.datasets import write_stats
-    from lerobot.scripts.augment_dataset_quantile_stats import compute_quantile_stats_for_dataset
+    from concurrent.futures import ThreadPoolExecutor
+
+    from lerobot.datasets import aggregate_stats, write_stats
+    from lerobot.scripts.augment_dataset_quantile_stats import process_single_episode
 
     ds = LeRobotDataset(repo_id, root=root)
-    write_stats(compute_quantile_stats_for_dataset(ds), root)
+    with ThreadPoolExecutor(workers) as pool:
+        stats = list(pool.map(lambda ep: process_single_episode(ds, ep), range(ds.num_episodes)))
+    write_stats(aggregate_stats(stats), root)

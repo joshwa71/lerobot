@@ -93,6 +93,11 @@ def main():
     revision = hub_revision(SRC_REPO, args.src)
     for suite in args.suites:
         out_dir = args.out / suite
+        if (out_dir / "BUILD_INFO.json").exists():
+            logging.info(f"{suite}: already built ({out_dir}/BUILD_INFO.json), skipping")
+            continue
+        if out_dir.exists():
+            raise FileExistsError(f"{out_dir} exists without BUILD_INFO.json (a failed build?); remove it")
         logging.info(f"building {suite} -> {out_dir}")
         ds = subset_keep_task_table(src, episodes_by_suite[suite], out_dir, repo_id=suite)
 
