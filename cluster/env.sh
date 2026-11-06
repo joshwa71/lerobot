@@ -146,30 +146,16 @@ scratch_copy() {
     return 1
 }
 
-# Copy hub models from $HF_HOME/hub to scratch and point HF_HUB_CACHE there.
+# Copy hub models from $HF_HOME/hub to scratch and point HF_HUB_CACHE there. Snapshots are copied
+# dereferenced (no blobs dir), without the onnx exports nothing in lerobot reads (SmolVLM2's are 4.8 GB).
 scratch_hub_models() {
     local repo d try
     for repo in "$@"; do
         d=models--${repo//\//--}
         for try in 1 2 3; do
-            timeout 20m rsync -a "$HF_HOME/hub/$d/" "$SCRATCH/hub/$d/" && break
+            timeout 20m rsync -aL --exclude onnx "$HF_HOME/hub/$d/snapshots" "$HF_HOME/hub/$d/refs" \
+                "$SCRATCH/hub/$d/" && break
             echo "scratch_hub_models: attempt $try of $repo failed or stalled" >&2
-            [ "$try" = 3 ] && return 1
-        done
-    done
-    export HF_HUB_CACHE=$SCRATCH/hub
-}
-
-# Like scratch_hub_models but configs/tokenizers only (no weights): for the VLM backbone when the
-# weights come from a checkpoint (--policy.load_vlm_weights=false).
-scratch_hub_configs() {
-    local repo d try
-    for repo in "$@"; do
-        d=models--${repo//\//--}
-        for try in 1 2 3; do
-            timeout 10m rsync -aL --exclude onnx --exclude '*.safetensors' --exclude '*.bin' \
-                "$HF_HOME/hub/$d/snapshots" "$HF_HOME/hub/$d/refs" "$SCRATCH/hub/$d/" && break
-            echo "scratch_hub_configs: attempt $try of $repo failed or stalled" >&2
             [ "$try" = 3 ] && return 1
         done
     done

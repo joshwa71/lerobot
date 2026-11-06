@@ -28,14 +28,12 @@ SEQ_DATASET=libero_10
 SEQ_TASKS='[0,1,2,3,4,5,6,7,8,9]'   # libero_10 task_index; envs 4,6,9,2,7,0,8,1,3,5
 DS_TO_ENV='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}'
 
-# ---- stage 1: fine-tune without memory. Set STAGE1_CKPT to an existing pretrained_model dir to skip it.
-STAGE1_CKPT=""
+# ---- stage 1: the shared libero_90 base (configs/l90_base.sh: HF's smolvla_base fine-tune recipe, no memory).
+# To run stage 1 inside this chain instead, empty STAGE1_CKPT; STAGE1_FROM / STAGE1_STEPS / STAGE1_ARGS then apply.
+STAGE1_CKPT=$CLUSTER_ROOT/runs/smolvla_l90_base/stage1/checkpoints/030000/pretrained_model
 STAGE1_FROM=lerobot/smolvla_base
-STAGE1_STEPS=50000
-STAGE1_ARGS=(
-  --batch_size=32 --save_freq=2500
-  --policy.train_expert_only=false --policy.freeze_vision_encoder=false   # full fine-tune, as pi05's stage 1
-)
+STAGE1_STEPS=30000
+STAGE1_ARGS=(--batch_size=64 --save_freq=2500)
 
 # ---- memory: attached at the warm-up, carried in the checkpoints from then on ----
 MEMORY=(

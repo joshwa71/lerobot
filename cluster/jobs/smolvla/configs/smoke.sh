@@ -11,8 +11,9 @@ RUN_MARGIN_MIN=15
 PRETRAIN_DATASET=libero_10
 SEQ_TASKS='[0,1]'
 
+STAGE1_CKPT=""  # run a stage 1 of its own, not the shared base
 STAGE1_STEPS=40
-STAGE1_ARGS=(--batch_size=8 --save_freq=20)  # SmolVLA default fine-tune (expert only)
+STAGE1_ARGS=(--batch_size=8 --save_freq=20)  # HF's smolvla_base recipe (expert only), few steps
 MEMORY+=(--policy.memory_layer.mem_n_keys=32 --policy.memory_layer.vlm_mem_n_keys=32
          --policy.memory_layer.mem_knn=8 --policy.memory_layer.routing_loss_topk=8 --policy.memory_layer.vlm_mem_knn=8)
 WARMUP_STEPS=40

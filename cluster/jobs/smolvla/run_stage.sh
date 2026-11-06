@@ -2,7 +2,7 @@
 # One stage of the SmolVLA staged memory chain. Submitted by cluster/jobs/smolvla/chain.sh with
 #   -v RUNS=<run root>,STAGE=<stage>,RUN_LIMIT=<seconds>[,SEED=<eval seed>]
 # The run root holds config.sh (the experiment config snapshot) and one directory per stage.
-# Scratch pattern (CLAUDE.md 9.4): dataset, starting checkpoint and HF configs are copied to node
+# Scratch pattern (CLAUDE.md 9.4): dataset, starting checkpoint and HF models are copied to node
 # scratch; outputs live on scratch and are synced to $RUNS/<stage> every 30 min and on exit. Each stage
 # exits at once when already complete, and otherwise resumes from its last synced checkpoint.
 #$ -S /bin/bash
@@ -13,7 +13,7 @@ source "$RUNS/config.sh"
 export HF_HUB_OFFLINE=1 PYTHONFAULTHANDLER=1
 CTR=$REPO/cluster/bin/ctr
 RENAME='{"observation.images.image": "observation.images.camera1", "observation.images.image2": "observation.images.camera2"}'
-VLM=HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+VLM=HuggingFaceTB/SmolVLM2-500M-Video-Instruct  # loaded by every stage: load_vlm_weights=true, HF's path and dtypes
 echo "== $NAME/$STAGE${SEED:+ seed $SEED} on $(hostname), job $JOB_ID, $(date), GPU ${CUDA_VISIBLE_DEVICES:-none}," \
     "repo $(cd "$REPO" && /usr/bin/git rev-parse --short HEAD)"
 
@@ -39,7 +39,7 @@ train_stage() {  # <stage> <dataset> <steps> <init> [lerobot-train args...]
     scratch_setup
     cd "$SCRATCH"
     data=$(scratch_copy "$HF_LEROBOT_HOME/$dataset")
-    scratch_hub_configs "$VLM"
+    scratch_hub_models "$VLM"
     scratch_outputs "$RUNS/$stage"
     if [ -L "$SCRATCH_OUT/checkpoints/last" ]; then
         echo "== resuming $stage at step $(steps_done "$SCRATCH_OUT")"
@@ -47,7 +47,7 @@ train_stage() {  # <stage> <dataset> <steps> <init> [lerobot-train args...]
     else
         rm -rf "$SCRATCH_OUT"  # lerobot-train starts fresh only in a new directory
         if [ -d "$init" ]; then init=$(scratch_copy "$init" init_model); else scratch_hub_models "$init"; fi
-        args=(--policy.path="$init" --policy.load_vlm_weights=false --policy.push_to_hub=false --rename_map="$RENAME" "$@")
+        args=(--policy.path="$init" --policy.push_to_hub=false --rename_map="$RENAME" "$@")
     fi
     run lerobot-train "${args[@]}" --output_dir="$SCRATCH_OUT" --dataset.repo_id="$dataset" --dataset.root="$data" \
         --steps="$steps" --num_workers="$NUM_WORKERS" "${WANDB[@]}"
@@ -69,7 +69,7 @@ audit)
     cd "$SCRATCH"
     data=$(scratch_copy "$HF_LEROBOT_HOME/$SEQ_DATASET")
     init=$(scratch_copy "$(ckpt warmup)" init_model)
-    scratch_hub_configs "$VLM"
+    scratch_hub_models "$VLM"
     scratch_outputs "$RUNS/audit"
     rm -rf "$SCRATCH_OUT"
     run lerobot-sequential-train --policy.path="$init" --rename_map="$RENAME" \
@@ -94,7 +94,7 @@ seq)
     scratch_setup
     cd "$SCRATCH"
     data=$(scratch_copy "$HF_LEROBOT_HOME/$SEQ_DATASET")
-    scratch_hub_configs "$VLM"
+    scratch_hub_models "$VLM"
     scratch_outputs "$RUNS/seq"
     if [ -f "$SCRATCH_OUT/checkpoints/last/sequential_state.pt" ]; then
         echo "== resuming seq after step $(readlink "$SCRATCH_OUT/checkpoints/last")"
@@ -114,7 +114,7 @@ eval)
     scratch_setup
     cd "$SCRATCH"
     model=$(scratch_copy "$(ckpt seq)" model)
-    scratch_hub_configs "$VLM"
+    scratch_hub_models "$VLM"
     scratch_outputs "$RUNS/eval"
     mkdir -p "$SCRATCH_OUT"
     export CAMP_SEEDS=$SEED CAMP_TAG="${NAME}_seq_final" CAMP_OUT="$SCRATCH_OUT/seeds_$SEED.json"
