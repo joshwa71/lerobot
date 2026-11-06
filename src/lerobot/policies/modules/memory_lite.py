@@ -1907,9 +1907,18 @@ class MLPPlusMemory(nn.Module):
         v = vm2.sum(dim=1)
         pos = torch.arange(T, device=base.device).unsqueeze(0)
         bnd = il.unsqueeze(1)
-        imask = (pos >= 3) & (pos < bnd) & vm2
-        smask = (pos >= bnd + 3) & (pos < (v - 5).unsqueeze(1)) & vm2
-        row_ok = (il > 4) & (smask.sum(dim=1) > 0) & (imask.sum(dim=1) > 0)
+        # Constant marker tokens excluded from the pools: (instr head, state head, state tail).
+        # Default = pi05's prompt "<bos> Task : {instr}, State : {bins};\nAction: " -> (3, 3, 5);
+        # SmolVLA sets its own layout via _ctx_span_skips (see SmolVLMWithExpertModel).
+        # Each skip is an int or a per-sample (B,) tensor.
+        ih, sh, st = getattr(self, "_ctx_span_skips", None) or (3, 3, 5)
+
+        def _col(s):
+            return s.to(base.device).unsqueeze(1) if torch.is_tensor(s) else s
+
+        imask = (pos >= _col(ih)) & (pos < bnd) & vm2
+        smask = (pos >= bnd + _col(sh)) & (pos < v.unsqueeze(1) - _col(st)) & vm2
+        row_ok = (il > (ih.to(il.device) if torch.is_tensor(ih) else ih) + 1) & (smask.sum(dim=1) > 0) & (imask.sum(dim=1) > 0)
         if not bool(row_ok.any()):
             return None
         bf = base.float()
@@ -2130,6 +2139,51 @@ class MLPPlusMemory(nn.Module):
         mem_out[:, lo:lo + xs.shape[1]] = mem_o[:, n_ia:]
         return mem_out
 
+    def _forward_span_gather(self, x, router_x, lang_emb, task_ids):
+        """Span memory for prompts whose span is not the tail of the sequence (SmolVLA).
+
+        pi05's text span is the last `text_span` positions with pads at the end. SmolVLA's
+        prefix is [images, instruction, pads, state token], so the model hands in, per
+        sample, the sequence positions of the span in order (`_ctx_span_index`, (B, n) long:
+        the valid instruction tokens, then the state-region positions, then filler) and a
+        valid mask (`_ctx_valid_mask`, (B, n) bool, a contiguous prefix). The span is gathered
+        into that compact layout, which is exactly the layout the pi05 path works on
+        (instruction [0, il), state region [il, v), pads after), so routing, pooling,
+        route-once and the losses are the same code. The memory output is scattered back to
+        the gathered positions; filler slots carry zero. Only reached when the context is set,
+        so pi05 never takes this path.
+        """
+        idx = self._ctx_span_index
+        vm = getattr(self, "_ctx_valid_mask", None)
+        if vm is None or vm.shape != idx.shape or idx.shape[0] != x.shape[0]:
+            raise RuntimeError(
+                "span-gather memory: stale or missing span context "
+                f"(index {tuple(idx.shape)}, mask {None if vm is None else tuple(vm.shape)}, x {tuple(x.shape)})"
+            )
+        if self.image_regions > 0:
+            raise NotImplementedError("vlm_image_regions is not supported on the span-gather path")
+        tmax = max(int(vm.sum(dim=1).max().item()), 1)
+        idx2 = idx[:, :tmax].to(device=x.device)
+        vm2 = vm[:, :tmax].to(device=x.device)
+        gi = idx2.unsqueeze(-1).expand(-1, -1, x.shape[-1])
+        xs = x.gather(1, gi)
+        rs = router_x.gather(1, gi) if router_x is not None else None
+        comp = None
+        if self.router_pool:
+            base = xs if rs is None else rs
+            comp = self._pooled_components(base, vm2)
+        if (self.router_pool and self.route_once and comp is not None and bool(comp[3].all())
+                and not self.mem._slots_offloaded):
+            mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids)
+        else:
+            if self.router_pool:
+                rs = self._pooled_router_keys(xs if rs is None else rs, vm2)
+            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs, token_mask=vm2)
+            mem_out = mem_out * vm2.to(dtype=mem_out.dtype).unsqueeze(-1)
+        out = self.mlp(x)
+        out = out.to(torch.promote_types(out.dtype, mem_out.dtype))
+        return out.scatter_add(1, gi, mem_out.to(out.dtype))
+
     def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None,
                 router_x: torch.Tensor | None = None):
         if self._frozen_capture:
@@ -2140,6 +2194,12 @@ class MLPPlusMemory(nn.Module):
         if router_x is None and self._frozen_stash:
             router_x = self._frozen_stash.pop(0)
         if self.text_span > 0:
+            if getattr(self, "_ctx_span_index", None) is not None:
+                return self._forward_span_gather(x, router_x, lang_emb, task_ids)
+            if getattr(self, "_span_gather_only", False):
+                # Set by models whose span is not the sequence tail (SmolVLA): the last-n
+                # fallback below would put memory on the wrong positions.
+                raise RuntimeError("span memory called without its span context (set_memory_context)")
             n = self.text_span
             if x.dim() != 3 or x.shape[1] < n:
                 # Sequence without a full language field (never expected on the pi05 prefix):

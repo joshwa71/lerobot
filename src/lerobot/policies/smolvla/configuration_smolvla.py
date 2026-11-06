@@ -109,6 +109,18 @@ class SmolVLAConfig(PreTrainedConfig):
     memory_layers: bool = False
     memory_layer: MemoryLayerConfig = field(default_factory=MemoryLayerConfig)
 
+    # Staged-protocol freeze modes, ported from PI05Config (same semantics, same flags).
+    # Freeze EVERYTHING except the attached memory modules (values, keys, query projections,
+    # gating). Overrides train_expert_only / freeze_vision_encoder for the parameters it covers.
+    train_memory_only: bool = False
+    # Router warm-up: only the memory ROUTER (keys + query projection) trains; values stay at
+    # init (slot_up zero => memory output 0 => MSE gives the router no gradient), so the router
+    # trains on the routing losses alone. Supersedes train_memory_only when both are set.
+    train_router_only: bool = False
+    # Modifier for train_memory_only: also freeze the router, so only values / gate /
+    # value_proj / swilu train (the A-phase after the warm-up).
+    freeze_memory_router: bool = False
+
     # Activation checkpointing across SmolVLM expert layers.
     gradient_checkpointing: bool = False
 

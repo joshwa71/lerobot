@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import dataclasses
 import logging
 from typing import TYPE_CHECKING
 
@@ -36,7 +37,11 @@ else:
     AutoProcessor = None
     SmolVLMForConditionalGeneration = None
 
-from lerobot.policies.modules.memory_lite import MLPPlusMemory, checkpoint_recompute_context_fn
+from lerobot.policies.modules.memory_lite import (
+    MLPPlusMemory,
+    attach_memory_to_layer_list,
+    checkpoint_recompute_context_fn,
+)
 
 
 def apply_rope(x, positions, max_wavelength=10_000):
@@ -148,6 +153,17 @@ class SmolVLMWithExpertModel(nn.Module):
         self._gradient_checkpointing = False
         self.set_requires_grad()
 
+        # Memory state, filled by attach_memory (empty = no memory attached).
+        self._mem_cfg = None
+        self._mem_layer_indices: list[int] = []  # expert layers with memory
+        self._vlm_mem_layer_indices: list[int] = []  # VLM text layers with memory
+        self._anchor_hooks: list = []
+        self._anchor_lock = False
+        self._anchor_pos_mask = None
+        self._frozen_prefix_kv = None
+        self._frozen_prefix_kv_bs = -1
+        self._newline_token_id = None
+
     def get_vlm_model(self):
         return self.vlm.model
 
@@ -191,6 +207,218 @@ class SmolVLMWithExpertModel(nn.Module):
 
         if self.train_expert_only:
             self.vlm.eval()
+            # Memory banks attached inside the frozen VLM still follow `mode`: their routing
+            # losses, query queues and usage/TF-IDF statistics only run in training mode.
+            for m in self.vlm.modules():
+                if isinstance(m, MLPPlusMemory):
+                    m.train(mode)
+
+    # ---------------------------------------------------------------------------------------
+    # Memory: the SmolVLA side of what pi05's PaliGemmaWithExpertModel does. Every knob is a
+    # memory_layer.* config field with the same meaning as on pi05.
+    # ---------------------------------------------------------------------------------------
+    def _vlm_layer_of_expert(self, expert_idx: int) -> int:
+        """The VLM layer an expert layer runs alongside (see get_model_layers)."""
+        return expert_idx * (self.num_vlm_layers // self.num_expert_layers)
+
+    def attach_memory(self, cfg) -> None:
+        """Attach memory to the expert (cfg.layers) and VLM text (cfg.vlm_layers) MLPs.
+
+        Mirrors pi05's attach_memory_to_expert: the expert tower reads cfg directly; the VLM
+        tower gets a derived cfg from the vlm_* fields (bank, rank, knn, share groups, span).
+        Idempotent, so the from_pretrained path can call it before and after loading.
+        """
+        text_layers = self.get_vlm_model().text_model.layers
+        vlm_dim = int(self.config.text_config.hidden_size)
+        anchor = str(getattr(cfg, "expert_anchor_pool", "") or "")
+        frozen = bool(getattr(cfg, "use_frozen_base_input_features", False))
+        prepass = bool(getattr(cfg, "frozen_prepass", False))
+        if anchor and int(getattr(cfg, "expert_anchor_src_dim", 2048)) != vlm_dim:
+            raise ValueError(
+                f"memory_layer.expert_anchor_src_dim={getattr(cfg, 'expert_anchor_src_dim', 2048)} must equal "
+                f"the SmolVLM text hidden size ({vlm_dim})"
+            )
+        if prepass and not frozen:
+            raise ValueError("memory_layer.frozen_prepass requires use_frozen_base_input_features=true (as on pi05)")
+        if frozen and getattr(cfg, "memory_only", False):
+            raise ValueError("use_frozen_base_input_features is incompatible with memory_layer.memory_only")
+
+        attach_memory_to_layer_list(self.lm_expert.layers, dim=self.expert_hidden_size, cfg=cfg, label="EXPERT")
+        self._mem_cfg = cfg
+        self._mem_layer_indices = sorted(
+            i for i, layer in enumerate(self.lm_expert.layers) if isinstance(layer.mlp, MLPPlusMemory)
+        )
+        self.mem_target_layers = list(self._mem_layer_indices)
+
+        # ---- VLM tower ----
+        vlm_layers = list(getattr(cfg, "vlm_layers", []) or [])
+        span = int(getattr(cfg, "vlm_text_span", 0) or 0)
+        if vlm_layers:
+            # Placement guard (pi05): VLM memory at or below an expert memory layer changes the
+            # prefix KV the expert reads, so live expert routing would see memory content.
+            exp_max = max((self._vlm_layer_of_expert(e) for e in self._mem_layer_indices), default=-1)
+            if min(vlm_layers) <= exp_max and not prepass:
+                if getattr(cfg, "allow_nonstationary_routing", False):
+                    logging.warning(
+                        f"LIVE ADDRESSING (allow_nonstationary_routing): interleaved placement expert "
+                        f"{self._mem_layer_indices} / VLM {vlm_layers} without the frozen pre-pass."
+                    )
+                else:
+                    raise ValueError(
+                        f"vlm_layers {vlm_layers} must all sit above the highest expert memory layer "
+                        f"(VLM depth {exp_max}) unless memory_layer.frozen_prepass=true (as on pi05)"
+                    )
+        vlm_cfg = dataclasses.replace(
+            cfg,
+            layers=vlm_layers,
+            mem_n_keys=int(getattr(cfg, "vlm_mem_n_keys", 256)),
+            lora_rank=int(getattr(cfg, "vlm_lora_rank", 2)),
+            mem_knn=int(getattr(cfg, "vlm_mem_knn", 16)),
+            routing_loss_topk=int(getattr(cfg, "vlm_mem_knn", 16)),
+            layer_ranks=[],
+            lang_to_query=False,
+            use_frozen_base_input_features=False,
+            frozen_prepass=False,
+            # > 0 turns on the instruction + state span; the length itself is set per batch
+            # by set_memory_context. 0 = memory on every prefix position (images included).
+            text_span=span,
+            image_regions=0,
+            value_input_noise_sigma=list(getattr(cfg, "vlm_value_input_noise_sigma", []) or []),
+            vlm_value_input_noise_sigma=[],
+            vlm_layers=[],
+            expert_anchor_pool="",
+            share_groups=list(getattr(cfg, "vlm_share_groups", []) or []),
+            vlm_share_groups=[],
+        )
+        if int(getattr(cfg, "vlm_image_regions", 0) or 0):
+            raise NotImplementedError("memory_layer.vlm_image_regions is not supported on SmolVLA")
+        attach_memory_to_layer_list(text_layers, dim=vlm_dim, cfg=vlm_cfg, label="VLM")
+        self._vlm_mem_layer_indices = sorted(
+            i for i, layer in enumerate(text_layers) if isinstance(layer.mlp, MLPPlusMemory)
+        )
+        self.vlm_mem_target_layers = list(self._vlm_mem_layer_indices)
+        for i in self._vlm_mem_layer_indices:
+            text_layers[i].mlp._span_gather_only = span > 0
+
+        # ---- expert anchor: expert layer e routes on the pooled instruction hidden of the VLM
+        # layer it runs alongside (pi05 pairs expert layer j with LM layer j). The hook sits on
+        # that VLM layer's MLP (or its memory wrapper) and sees the post-attention-norm input.
+        for h in self._anchor_hooks:
+            h.remove()
+        self._anchor_hooks = []
+        if anchor:
+            for e in self._mem_layer_indices:
+                wrapper = self.lm_expert.layers[e].mlp
+                vlm_mlp = text_layers[self._vlm_layer_of_expert(e)].mlp
+                self._anchor_hooks.append(vlm_mlp.register_forward_pre_hook(self._make_anchor_hook(wrapper)))
+        logging.info(
+            f"SmolVLA memory: expert layers {self._mem_layer_indices}, VLM layers {self._vlm_mem_layer_indices} "
+            f"(span={'instruction+state' if span > 0 else 'all positions'}), anchor={anchor or 'off'}, "
+            f"frozen routing={'pre-pass' if frozen else 'off'}"
+        )
+
+    def _make_anchor_hook(self, wrapper):
+        def hook(mod, args):
+            if self._anchor_lock:
+                return  # captured by the memory-free pre-pass; the live pass must not overwrite it
+            x = args[0]
+            pm = self._anchor_pos_mask
+            if pm is None:
+                raise RuntimeError("expert anchor: no instruction mask (set_memory_context not called)")
+            if x.dim() != 3 or tuple(x.shape[:2]) != tuple(pm.shape):
+                raise RuntimeError(f"expert anchor: prefix {tuple(x.shape)} vs instruction mask {tuple(pm.shape)}")
+            with torch.no_grad():
+                m = pm.to(device=x.device).unsqueeze(-1).float()
+                pooled = (x.float() * m).sum(dim=1) / m.sum(dim=1).clamp_min(1.0)
+                valid = pm.to(device=x.device).sum(dim=1) > 0
+            wrapper.set_expert_anchor(pooled.detach(), valid)
+
+        return hook
+
+    def _get_newline_token_id(self) -> int:
+        if self._newline_token_id is None:
+            tok = self.processor.tokenizer
+            ids = tok.convert_tokens_to_ids(tok.tokenize("\n"))
+            if len(ids) != 1:
+                raise RuntimeError(f"expected a single newline token, got {ids}")
+            self._newline_token_id = int(ids[0])
+        return self._newline_token_id
+
+    def set_memory_context(
+        self, lang_tokens: torch.Tensor, lang_masks: torch.Tensor, lang_start: int, n_state: int, prefix_len: int
+    ) -> None:
+        """Per-batch positions for the VLM span memory and the expert anchors.
+
+        SmolVLA's prefix is [images | instruction tokens, right-padded | state token(s) | pad].
+        The instruction always ends with the processor's newline token. The layout handed to
+        the span memory mirrors pi05's language field: instruction tokens (routed per token),
+        then the state region = the newline marker + the state token(s), which share one pooled
+        key under vlm_router_pool; the pools skip the newline, as pi05's skip its markers.
+        The expert anchor pools the same instruction tokens.
+        """
+        span_wrappers = [
+            m for _, m in self._memory_wrappers()[1] if int(getattr(m, "text_span", 0) or 0) > 0
+        ]
+        if not span_wrappers and not self._anchor_hooks:
+            return
+        lm = lang_masks.bool()
+        B, L = lm.shape
+        dev = lm.device
+        n_valid = lm.sum(dim=1)
+        pos = torch.arange(L, device=dev).unsqueeze(0)
+        if not bool((lm == (pos < n_valid.unsqueeze(1))).all()):
+            raise ValueError("memory span: language tokens must be right-padded")
+        last = lang_tokens.gather(1, (n_valid - 1).clamp(min=0).unsqueeze(1)).squeeze(1)
+        has_nl = (n_valid > 0) & (last == self._get_newline_token_id())
+        instr_len = n_valid - has_nl.long()
+        if self._anchor_hooks:
+            pm = torch.zeros(B, prefix_len, dtype=torch.bool, device=dev)
+            pm[:, lang_start : lang_start + L] = pos < instr_len.unsqueeze(1)
+            self._anchor_pos_mask = pm
+        if span_wrappers:
+            state_start = lang_start + L
+            t = torch.arange(L + n_state, device=dev).unsqueeze(0)
+            nv = n_valid.unsqueeze(1)
+            idx = torch.where(t < nv, lang_start + t, state_start + (t - nv).clamp(0, n_state - 1))
+            valid = t < nv + n_state
+            skips = (0, has_nl.long(), 0)  # (instruction head, state-region head, state-region tail)
+            for m in span_wrappers:
+                m._ctx_span_index = idx
+                m._ctx_valid_mask = valid
+                m._ctx_instr_len = instr_len
+                m._ctx_span_skips = skips
+
+    def _frozen_routing_on(self) -> bool:
+        cfg = self._mem_cfg
+        return bool(
+            cfg is not None
+            and getattr(cfg, "use_frozen_base_input_features", False)
+            and (self._mem_layer_indices or self._vlm_mem_layer_indices)
+        )
+
+    def _memory_wrappers(self):
+        """([(loop layer index, expert wrapper)], [(loop layer index, VLM wrapper)])."""
+        text_layers = self.get_vlm_model().text_model.layers
+        exp = [(self._vlm_layer_of_expert(e), self.lm_expert.layers[e].mlp) for e in self._mem_layer_indices]
+        vlm = [(i, text_layers[i].mlp) for i in self._vlm_mem_layer_indices]
+        return exp, vlm
+
+    def _capture(self, wrappers, run):
+        """Run `run()` memory-free with `wrappers` stashing their MLP inputs; returns its result."""
+        for _, m in wrappers:
+            m.begin_frozen_capture()
+        try:
+            with torch.no_grad():
+                out = run()
+        except Exception:
+            for _, m in wrappers:
+                m._frozen_capture = False
+                m._frozen_stash = []
+            self._anchor_lock = False
+            raise
+        for _, m in wrappers:
+            m.end_frozen_capture()
+        return out
 
     def embed_image(self, image: torch.Tensor):
         patch_attention_mask = None
@@ -440,8 +668,13 @@ class SmolVLMWithExpertModel(nn.Module):
         past_key_values,
         task_emb,
         task_ids,
+        router_xs=None,
     ):
-        """Compute a single transformer layer (attention + post-attention) for all active streams."""
+        """Compute a single transformer layer (attention + post-attention) for all active streams.
+
+        router_xs: optional (vlm_router_x, expert_router_x) for this layer: the memory-free MLP
+        inputs from the frozen pre-pass, handed to memory wrappers as their routing features.
+        """
         # --- Attention ---
         if (
             fill_kv_cache
@@ -498,7 +731,8 @@ class SmolVLMWithExpertModel(nn.Module):
 
                 out_emb = layer.post_attention_layernorm(out_emb)
                 if isinstance(layer.mlp, MLPPlusMemory):
-                    out_emb = layer.mlp(out_emb, lang_emb=task_emb, task_ids=task_ids)
+                    rx = router_xs[i] if router_xs is not None else None
+                    out_emb = layer.mlp(out_emb, lang_emb=task_emb, task_ids=task_ids, router_x=rx)
                 else:
                     out_emb = layer.mlp(out_emb)
 
@@ -524,14 +758,21 @@ class SmolVLMWithExpertModel(nn.Module):
         task_emb,
         task_ids,
         model_layers=None,
+        vlm_router_x=None,
+        expert_router_x=None,
     ):
-        """Checkpoint-friendly wrapper around _compute_layer (training only, no cache)."""
+        """Checkpoint-friendly wrapper around _compute_layer (training only, no cache).
+
+        Router inputs are explicit arguments so they re-thread through the recompute."""
         inputs_embeds = [vlm_hidden, expert_hidden]
+        router_xs = None
+        if vlm_router_x is not None or expert_router_x is not None:
+            router_xs = (vlm_router_x, expert_router_x)
         outputs_embeds, _ = self._compute_layer(
             layer_idx, inputs_embeds, model_layers,
             position_ids, attention_mask, batch_size, head_dim,
             use_cache=False, fill_kv_cache=False, past_key_values=None,
-            task_emb=task_emb, task_ids=task_ids,
+            task_emb=task_emb, task_ids=task_ids, router_xs=router_xs,
         )
         return outputs_embeds[0], outputs_embeds[1]
 
@@ -563,7 +804,64 @@ class SmolVLMWithExpertModel(nn.Module):
             self._gradient_checkpointing and self.training and not use_cache
         )
 
+        def run_layers(embeds, pkv, use_cache_, fill_kv_cache_):
+            # Memory-free pass over every layer; used by the frozen pre-pass (wrappers in capture mode).
+            for li in range(num_layers):
+                embeds, pkv = self._compute_layer(
+                    li, embeds, model_layers, position_ids, attention_mask, batch_size, head_dim,
+                    use_cache_, fill_kv_cache_, pkv, task_emb, task_ids,
+                )
+            return pkv
+
+        # Frozen-base routing (memory_layer.use_frozen_base_input_features): every memory wrapper
+        # routes (query + gate, and the anchors) on the features the network has WITHOUT memory.
+        # They come from one memory-bypassed pre-pass per forward, as pi05's frozen_prepass does.
+        frozen = self._frozen_routing_on()
+        if not frozen:
+            self._anchor_lock = False  # anchors follow the live stream
+        prefix_only = inputs_embeds[1] is None
+        suffix_only = inputs_embeds[0] is None
+        vlm_rx: dict[int, torch.Tensor] = {}
+        exp_rx: dict[int, torch.Tensor] = {}
+        live_popped = []  # wrappers whose stash the live pass must consume (inference paths)
+        exp_wr, vlm_wr = self._memory_wrappers()
+        if frozen and not prefix_only and not suffix_only:
+            # Training / joint path: drain the stashes into explicit router_x arguments, which
+            # re-thread safely through gradient-checkpoint recompute.
+            self._anchor_lock = False
+            self._capture(exp_wr + vlm_wr, lambda: run_layers(list(inputs_embeds), None, False, False))
+            vlm_rx = {li: m.drain_frozen_stash() for li, m in vlm_wr}
+            exp_rx = {li: m.drain_frozen_stash() for li, m in exp_wr}
+            self._anchor_lock = True
+        elif frozen and prefix_only:
+            # Inference prefix pass. With VLM memory, a memory-free prefix pass stashes the VLM
+            # routing features, captures the anchors (then locked) and keeps its KV cache: the
+            # expert's own memory-free pass (denoise steps) must attend that, not the live KV.
+            self._anchor_lock = False
+            self._frozen_prefix_kv = None
+            self._frozen_prefix_kv_bs = -1
+            if vlm_wr:
+                fkv = self._capture(vlm_wr, lambda: run_layers(list(inputs_embeds), None, True, True))
+                self._frozen_prefix_kv = fkv
+                self._frozen_prefix_kv_bs = int(inputs_embeds[0].shape[0])
+                self._anchor_lock = True
+                live_popped = vlm_wr
+        elif frozen and suffix_only and exp_wr:
+            # Denoise step: the expert's memory-free pass, attending the memory-free prefix KV.
+            kv_src = past_key_values
+            if vlm_wr:
+                if self._frozen_prefix_kv is None or self._frozen_prefix_kv_bs != int(inputs_embeds[1].shape[0]):
+                    raise RuntimeError(
+                        "frozen routing: no memory-free prefix KV for this batch; the prefix pass "
+                        "must run before the denoise steps"
+                    )
+                kv_src = self._frozen_prefix_kv
+            self._capture(exp_wr, lambda: run_layers(list(inputs_embeds), kv_src, use_cache, False))
+            live_popped = exp_wr
+
         for layer_idx in range(num_layers):
+            vrx = vlm_rx.get(layer_idx)
+            erx = exp_rx.get(layer_idx)
             if use_gradient_checkpointing:
                 vlm_out, expert_out = torch.utils.checkpoint.checkpoint(
                     self._compute_layer_checkpointable,
@@ -574,15 +872,20 @@ class SmolVLMWithExpertModel(nn.Module):
                     preserve_rng_state=False,
                     context_fn=checkpoint_recompute_context_fn,
                     model_layers=model_layers,
+                    vlm_router_x=vrx,
+                    expert_router_x=erx,
                 )
                 inputs_embeds = [vlm_out, expert_out]
             else:
+                router_xs = (vrx, erx) if (vrx is not None or erx is not None) else None
                 inputs_embeds, past_key_values = self._compute_layer(
                     layer_idx, inputs_embeds, model_layers,
                     position_ids, attention_mask, batch_size, head_dim,
                     use_cache, fill_kv_cache, past_key_values,
-                    task_emb, task_ids,
+                    task_emb, task_ids, router_xs=router_xs,
                 )
+        for _, m in live_popped:
+            m.assert_frozen_stash_consumed()
 
         # final norm
         outputs_embeds = []

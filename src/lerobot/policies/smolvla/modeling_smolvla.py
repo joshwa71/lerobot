@@ -71,9 +71,8 @@ from lerobot.utils.device_utils import get_safe_dtype
 from lerobot.utils.import_utils import require_package
 
 from ..modules.memory_lite import (
-    MLPPlusMemory,
     TaskEmbeddingCache,
-    attach_memory_to_backbones,
+    aggregate_memory_losses,
     split_memory_params,
 )
 from ..pretrained import PreTrainedPolicy
@@ -263,7 +262,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
             getattr(self.config, "memory_layers", False)
             or getattr(self.config.memory_layer, "enabled", False)
         ) and not getattr(self.config, "pretrained_path", None):
-            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
+            self.model.vlm_with_expert.attach_memory(self.config.memory_layer)
+        # On the from_pretrained path memory attaches later (post_load_setup), which re-applies this.
+        self._apply_train_memory_only(strict=not getattr(self.config, "pretrained_path", None))
 
         if getattr(self.config, "gradient_checkpointing", False):
             self.model.vlm_with_expert.gradient_checkpointing_enable()
@@ -276,7 +277,50 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
     def post_load_setup(self) -> None:
         if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
-            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
+            self.model.vlm_with_expert.attach_memory(self.config.memory_layer)
+        self._apply_train_memory_only()
+
+    def _apply_train_memory_only(self, strict: bool = True) -> None:
+        """Staged-protocol freeze modes (train_memory_only / train_router_only /
+        freeze_memory_router), identical to PI05Policy._apply_train_memory_only: memory params are
+        the `.mlp.mem.` names, the router is `.mlp.mem.keys` + `.mlp.mem.query_proj.`. As on pi05,
+        the expert-anchor projection (`.mlp.anchor_proj`) matches neither, so it stays at init.
+        With strict=False a model whose memory is not attached yet is left untouched."""
+        router_only = getattr(self.config, "train_router_only", False)
+        mem_only = getattr(self.config, "train_memory_only", False)
+        freeze_router = getattr(self.config, "freeze_memory_router", False)
+        if not (router_only or mem_only):
+            return
+
+        def is_router(name: str) -> bool:
+            return ".mlp.mem.keys" in name or ".mlp.mem.query_proj." in name
+
+        def trainable(name: str) -> bool:
+            if router_only:
+                return is_router(name)
+            if ".mlp.mem." not in name:
+                return False
+            if freeze_router and is_router(name):
+                return False
+            return True
+
+        names = [n for n, _ in self.named_parameters()]
+        n_train = sum(trainable(n) for n in names)
+        if n_train == 0:
+            if strict:
+                raise ValueError(
+                    "train_memory_only/train_router_only set but no memory parameters found - enable "
+                    "policy.memory_layers/memory_layer.enabled so memory is attached."
+                )
+            return
+        for name, param in self.named_parameters():
+            param.requires_grad = trainable(name)
+        mode = (
+            "train_router_only" if router_only
+            else "train_memory_only+freeze_memory_router" if freeze_router
+            else "train_memory_only"
+        )
+        logging.info(f"{mode}: {n_train} param tensors trainable, {len(names) - n_train} frozen")
 
     def reset(self):
         """This should be called whenever the environment is reset."""
@@ -305,6 +349,18 @@ class SmolVLAPolicy(PreTrainedPolicy):
             mem_vals, others = split_memory_params(self)
             if len(mem_vals) == 0:
                 return self.parameters()
+            # As on pi05: frozen params (freeze modes, train_expert_only, frozen vision encoder)
+            # stay out of the optimizer.
+            others = [p for p in others if p.requires_grad]
+            mem_vals = [p for p in mem_vals if p.requires_grad]
+            if len(mem_vals) == 0:  # router warm-up: values frozen at init
+                return [
+                    {
+                        "params": others,
+                        "lr": self.config.optimizer_lr,
+                        "weight_decay": self.config.optimizer_weight_decay,
+                    }
+                ]
             return [
                 {
                     "params": others,
@@ -421,17 +477,13 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         instance = cls(config, **kwargs)
         if attach_before_load:
-            try:
-                attach_memory_to_backbones(instance.model.vlm_with_expert, config.memory_layer)
-            except Exception:
-                pass
+            # Not wrapped in try/except: with strict=False a failed attach would silently drop
+            # the checkpoint's memory weights.
+            instance.model.vlm_with_expert.attach_memory(config.memory_layer)
 
         policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
 
-        try:
-            policy.post_load_setup()
-        except Exception:
-            pass
+        policy.post_load_setup()  # attaches memory onto a memory-free checkpoint; applies freeze modes
 
         policy.to(config.device)
         policy.eval()
@@ -608,234 +660,16 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         loss_dict["mse_loss"] = loss.item()
 
-        contrastive_loss_weight = getattr(self.config.memory_layer, "contrastive_loss_weight", 0.0)
-        routing_intra_task_locality_weight = float(
-            getattr(self.config.memory_layer, "routing_intra_task_locality_weight", 0.0)
-        )
-        if routing_intra_task_locality_weight <= 0:
-            routing_intra_task_locality_weight = float(
-                getattr(self.config.memory_layer, "routing_compactness_weight", 0.0)
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            # Same aggregation as pi05 (contrastive / routing regularisers + usage diagnostics);
+            # VLM-tower keys get a "vlm_" prefix.
+            loss = aggregate_memory_losses(
+                self,
+                loss,
+                self.config.memory_layer,
+                loss_dict,
+                layer_label_fn=lambda name: "vlm_" if ".text_model." in name else "",
             )
-        routing_inter_task_separation_weight = float(
-            getattr(self.config.memory_layer, "routing_inter_task_separation_weight", 0.0)
-        )
-        if routing_inter_task_separation_weight <= 0:
-            routing_inter_task_separation_weight = float(
-                getattr(self.config.memory_layer, "routing_separation_weight", 0.0)
-            )
-        routing_global_balance_weight = float(
-            getattr(self.config.memory_layer, "routing_global_balance_weight", 0.0)
-        )
-
-        if contrastive_loss_weight > 0 and (
-            getattr(self.config, "memory_layers", False)
-            or getattr(self.config.memory_layer, "enabled", False)
-        ):
-            try:
-                contrastive_losses = []
-                expert = self.model.vlm_with_expert.lm_expert
-                for li, layer in enumerate(expert.layers):
-                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                        mem = layer.mlp.mem
-                        if getattr(mem, "last_contrastive_loss", None) is not None:
-                            contrastive_losses.append(mem.last_contrastive_loss)
-                            loss_dict[f"contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
-                try:
-                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
-                    for li, layer in enumerate(vlm_text_model.layers):
-                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                            mem = layer.mlp.mem
-                            if getattr(mem, "last_contrastive_loss", None) is not None:
-                                contrastive_losses.append(mem.last_contrastive_loss)
-                                loss_dict[f"vlm_contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
-                except Exception:
-                    pass
-                if contrastive_losses:
-                    total_contrastive = sum(contrastive_losses) / len(contrastive_losses)
-                    loss_dict["contrastive_loss_mean"] = total_contrastive.item()
-                    loss = loss + contrastive_loss_weight * total_contrastive
-            except Exception:
-                pass
-
-        if (
-            routing_intra_task_locality_weight > 0
-            or routing_inter_task_separation_weight > 0
-            or routing_global_balance_weight > 0
-        ) and (
-            getattr(self.config, "memory_layers", False)
-            or getattr(self.config.memory_layer, "enabled", False)
-        ):
-            try:
-                locality_losses = []
-                similarity_losses = []
-                global_balance_losses = []
-                routing_intra_task_entropies = []
-                routing_intra_task_supports = []
-                routing_global_entropies = []
-
-                def _collect_routing(mem, layer_prefix: str, li: int):
-                    if getattr(mem, "last_routing_intra_task_locality_loss", None) is not None:
-                        locality_losses.append(mem.last_routing_intra_task_locality_loss)
-                        locality_val = mem.last_routing_intra_task_locality_loss.item()
-                        loss_dict[f"{layer_prefix}routing_intra_task_locality_L{li}"] = locality_val
-                        loss_dict[f"{layer_prefix}routing_compactness_L{li}"] = locality_val
-                    if getattr(mem, "last_routing_inter_task_similarity_loss", None) is not None:
-                        similarity_losses.append(mem.last_routing_inter_task_similarity_loss)
-                        similarity_val = mem.last_routing_inter_task_similarity_loss.item()
-                        loss_dict[f"{layer_prefix}routing_inter_task_similarity_L{li}"] = similarity_val
-                        loss_dict[f"{layer_prefix}routing_inter_task_separation_L{li}"] = 1.0 - similarity_val
-                        loss_dict[f"{layer_prefix}routing_separation_L{li}"] = similarity_val
-                    if getattr(mem, "last_routing_global_balance_loss", None) is not None:
-                        global_balance_losses.append(mem.last_routing_global_balance_loss)
-                        loss_dict[f"{layer_prefix}routing_global_balance_L{li}"] = (
-                            mem.last_routing_global_balance_loss.item()
-                        )
-                    if getattr(mem, "last_routing_intra_task_entropy", None) is not None:
-                        routing_intra_task_entropies.append(mem.last_routing_intra_task_entropy)
-                        loss_dict[f"{layer_prefix}routing_intra_task_entropy_L{li}"] = (
-                            mem.last_routing_intra_task_entropy
-                        )
-                        loss_dict[f"{layer_prefix}routing_task_entropy_L{li}"] = (
-                            mem.last_routing_intra_task_entropy
-                        )
-                    if getattr(mem, "last_routing_intra_task_support", None) is not None:
-                        routing_intra_task_supports.append(mem.last_routing_intra_task_support)
-                        loss_dict[f"{layer_prefix}routing_intra_task_support_L{li}"] = (
-                            mem.last_routing_intra_task_support
-                        )
-                    if getattr(mem, "last_routing_global_entropy", None) is not None:
-                        routing_global_entropies.append(mem.last_routing_global_entropy)
-                        loss_dict[f"{layer_prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
-
-                expert = self.model.vlm_with_expert.lm_expert
-                for li, layer in enumerate(expert.layers):
-                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                        _collect_routing(layer.mlp.mem, "", li)
-
-                try:
-                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
-                    for li, layer in enumerate(vlm_text_model.layers):
-                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                            _collect_routing(layer.mlp.mem, "vlm_", li)
-                except Exception:
-                    pass
-
-                if locality_losses:
-                    total_locality = sum(locality_losses) / len(locality_losses)
-                    locality_val = total_locality.item()
-                    loss_dict["routing_intra_task_locality_mean"] = locality_val
-                    loss_dict["routing_compactness_mean"] = locality_val
-                    loss = loss + routing_intra_task_locality_weight * total_locality
-                if similarity_losses:
-                    total_similarity = sum(similarity_losses) / len(similarity_losses)
-                    similarity_val = total_similarity.item()
-                    loss_dict["routing_inter_task_similarity_mean"] = similarity_val
-                    loss_dict["routing_inter_task_separation_mean"] = 1.0 - similarity_val
-                    loss_dict["routing_separation_mean"] = similarity_val
-                    loss = loss + routing_inter_task_separation_weight * total_similarity
-                if global_balance_losses:
-                    total_global_balance = sum(global_balance_losses) / len(global_balance_losses)
-                    loss_dict["routing_global_balance_mean"] = total_global_balance.item()
-                    loss = loss + routing_global_balance_weight * total_global_balance
-                if routing_intra_task_entropies:
-                    entropy_mean = float(sum(routing_intra_task_entropies) / len(routing_intra_task_entropies))
-                    loss_dict["routing_intra_task_entropy_mean"] = entropy_mean
-                    loss_dict["routing_task_entropy_mean"] = entropy_mean
-                if routing_intra_task_supports:
-                    loss_dict["routing_intra_task_support_mean"] = float(
-                        sum(routing_intra_task_supports) / len(routing_intra_task_supports)
-                    )
-                if routing_global_entropies:
-                    loss_dict["routing_global_entropy_mean"] = float(
-                        sum(routing_global_entropies) / len(routing_global_entropies)
-                    )
-            except Exception:
-                pass
-
-        try:
-            if (
-                getattr(self.config, "memory_layers", False)
-                or getattr(self.config.memory_layer, "enabled", False)
-            ) and getattr(self.config.memory_layer, "log_usage", False):
-                used_fracs: list[float] = []
-                perplexities: list[float] = []
-                top1_shares: list[float] = []
-                eff_nums: list[float] = []
-                intra_sims: list[float] = []
-                inter_sims: list[float] = []
-                gate_means: list[float] = []
-
-                def _collect_usage(mem, layer_prefix: str, li: int):
-                    if getattr(mem, "last_indices", None) is not None:
-                        idx = mem.last_indices
-                        unique_count = torch.unique(idx).numel()
-                        frac = float(unique_count) / float(mem.size)
-                        loss_dict[f"{layer_prefix}used_count_L{li}"] = float(unique_count)
-                        loss_dict[f"{layer_prefix}used_frac_L{li}"] = frac
-                        used_fracs.append(frac)
-
-                        idx_flat = idx.reshape(-1)
-                        if getattr(mem, "last_weights", None) is not None:
-                            w_flat = mem.last_weights.reshape(-1).float()
-                        else:
-                            w_flat = torch.ones_like(idx_flat, dtype=torch.float32)
-                        uniq, inv = torch.unique(idx_flat, return_inverse=True)
-                        usage = torch.zeros(uniq.shape[0], dtype=torch.float32, device=idx_flat.device)
-                        usage.scatter_add_(0, inv, w_flat)
-                        total = usage.sum()
-                        if total > 0:
-                            p = usage / total
-                            eps = 1e-12
-                            entropy = -(p * (p + eps).log()).sum()
-                            perplexity = float(torch.exp(entropy).item())
-                            top1 = float(p.max().item())
-                            hhi = float((p * p).sum().item())
-                            eff_num = float(1.0 / max(hhi, eps))
-                            loss_dict[f"{layer_prefix}usage_perplexity_L{li}"] = perplexity
-                            loss_dict[f"{layer_prefix}usage_top1_share_L{li}"] = top1
-                            loss_dict[f"{layer_prefix}usage_effnum_L{li}"] = eff_num
-                            perplexities.append(perplexity)
-                            top1_shares.append(top1)
-                            eff_nums.append(eff_num)
-                    if getattr(mem, "last_query_intra_sim", None) is not None:
-                        loss_dict[f"{layer_prefix}query_intra_sim_L{li}"] = mem.last_query_intra_sim
-                        intra_sims.append(mem.last_query_intra_sim)
-                    if getattr(mem, "last_query_inter_sim", None) is not None:
-                        loss_dict[f"{layer_prefix}query_inter_sim_L{li}"] = mem.last_query_inter_sim
-                        inter_sims.append(mem.last_query_inter_sim)
-                    if getattr(mem, "last_gate_mean", None) is not None:
-                        loss_dict[f"{layer_prefix}gate_mean_L{li}"] = mem.last_gate_mean
-                        gate_means.append(mem.last_gate_mean)
-
-                expert = self.model.vlm_with_expert.lm_expert
-                for li, layer in enumerate(expert.layers):
-                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                        _collect_usage(layer.mlp.mem, "mem_", li)
-
-                try:
-                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
-                    for li, layer in enumerate(vlm_text_model.layers):
-                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
-                            _collect_usage(layer.mlp.mem, "vlm_mem_", li)
-                except Exception:
-                    pass
-
-                if used_fracs:
-                    loss_dict["mem_used_frac_mean"] = float(sum(used_fracs) / len(used_fracs))
-                if perplexities:
-                    loss_dict["mem_usage_perplexity_mean"] = float(sum(perplexities) / len(perplexities))
-                if top1_shares:
-                    loss_dict["mem_usage_top1_share_mean"] = float(sum(top1_shares) / len(top1_shares))
-                if eff_nums:
-                    loss_dict["mem_usage_effnum_mean"] = float(sum(eff_nums) / len(eff_nums))
-                if intra_sims:
-                    loss_dict["query_intra_sim_mean"] = float(sum(intra_sims) / len(intra_sims))
-                if inter_sims:
-                    loss_dict["query_inter_sim_mean"] = float(sum(inter_sims) / len(inter_sims))
-                if gate_means:
-                    loss_dict["gate_mean"] = float(sum(gate_means) / len(gate_means))
-        except Exception:
-            pass
 
         loss_dict["loss"] = loss.item()
         return loss, loss_dict
@@ -1124,6 +958,7 @@ class VLAFlowMatching(nn.Module):
                 embs.append(image_end_token)
                 pad_masks.append(image_end_mask)
                 att_masks += [0] * (image_end_mask.shape[1])
+        lang_start = sum(e.shape[1] for e in embs)
         lang_emb = self.vlm_with_expert.embed_language_tokens(lang_tokens)
         # Normalize language embeddings
         lang_emb_dim = lang_emb.shape[-1]
@@ -1160,7 +995,15 @@ class VLAFlowMatching(nn.Module):
 
         att_masks = att_masks.expand(bsize, -1)
 
+        # Where the instruction and state sit in this prefix, for the memory span and anchors.
+        self._prefix_layout = (lang_start, states_seq_len)
         return embs, pad_masks, att_masks
+
+    def _set_memory_context(self, lang_tokens, lang_masks, prefix_embs) -> None:
+        lang_start, n_state = self._prefix_layout
+        self.vlm_with_expert.set_memory_context(
+            lang_tokens, lang_masks, lang_start=lang_start, n_state=n_state, prefix_len=prefix_embs.shape[1]
+        )
 
     def embed_suffix(self, noisy_actions, timestep):
         """Embed state, noisy_actions, timestep to prepare for Expert Gemma processing."""
@@ -1231,6 +1074,7 @@ class VLAFlowMatching(nn.Module):
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images, img_masks, lang_tokens, lang_masks, state=state
         )
+        self._set_memory_context(lang_tokens, lang_masks, prefix_embs)
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, time)
 
         pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
@@ -1277,6 +1121,7 @@ class VLAFlowMatching(nn.Module):
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images, img_masks, lang_tokens, lang_masks, state=state
         )
+        self._set_memory_context(lang_tokens, lang_masks, prefix_embs)
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
         # Compute image and language key value cache
