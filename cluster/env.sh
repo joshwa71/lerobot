@@ -41,5 +41,6 @@ ctr() {
     export SINGULARITYENV_PREPEND_PATH=$VENV/bin
     [ -d /scratch0 ] && binds="$binds,/scratch0"
     command -v nvidia-smi >/dev/null 2>&1 && nv=(--nv)
-    singularity exec "${nv[@]}" --cleanenv -B "$binds" "$SIF" "$@"
+    # ${nv[@]+...}: the host's bash 4.2 treats an empty array as unbound under `set -u`
+    singularity exec ${nv[@]+"${nv[@]}"} --cleanenv -B "$binds" "$SIF" "$@"
 }
