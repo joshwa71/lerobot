@@ -6,7 +6,8 @@ set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/env.sh"
 
 MODELS=(lerobot/smolvla_base HuggingFaceTB/SmolVLM2-500M-Video-Instruct)
-DATASETS=(HuggingFaceVLA/libero)
+# HuggingFaceVLA/libero and jesbu1/libero_90_lerobot are sources for scripts/datasets/build_libero_*.py
+DATASETS=(HuggingFaceVLA/libero jesbu1/libero_90_lerobot)
 
 for m in "${MODELS[@]}"; do
     echo "[$(date '+%F %T')] model $m"
