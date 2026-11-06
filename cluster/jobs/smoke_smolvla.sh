@@ -1,8 +1,10 @@
 #!/bin/bash
-# End-to-end check of the cluster setup on one GPU, laid out like a real training job:
-# container + venv + CUDA; dataset, base model and HF caches on node-local scratch; a short SmolVLA
-# training run that checkpoints to /SAN; a resume from that checkpoint (dataset root passed again,
-# since a real resume runs in a new job with a new scratch dir); a LIBERO rollout with EGL rendering.
+# End-to-end check of the cluster setup on one GPU, laid out like a real training job (the old job
+# scripts' pattern): dataset, base model, caches and outputs on node-local scratch, outputs synced to
+# /SAN periodically (every 2 min here, to exercise it) and on exit; a short SmolVLA training run; a
+# resume from its checkpoint (dataset root passed again, since a real resume runs in a new job with a
+# new scratch dir); a LIBERO rollout with EGL rendering. Afterwards $CLUSTER_ROOT/runs/smoke/smolvla_<job>
+# should hold checkpoints 000100-000300 and eval/ (written by the final sync).
 # Needs cluster/download_assets.sh (login node) and the libero_10 build (jobs/build_libero_datasets.sh).
 #   qsub cluster/jobs/smoke_smolvla.sh
 #$ -S /bin/bash
@@ -19,7 +21,6 @@ export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 WANDB_MODE=disabled
 export PYTHONFAULTHANDLER=1
 STEP_LIMIT=20m
 
-RUN=$CLUSTER_ROOT/runs/smoke/smolvla_$JOB_ID
 echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "== cpus: nproc=$(nproc) NSLOTS=${NSLOTS:-} $(grep Cpus_allowed_list /proc/self/status)"
 cd "$REPO"
@@ -29,6 +30,8 @@ echo "== 0/4 stage to scratch $(date)"
 scratch_setup
 DATA=$(scratch_copy "$HF_LEROBOT_HOME/libero_10")
 scratch_hub_models lerobot/smolvla_base HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+SYNC_EVERY=120 scratch_outputs "$CLUSTER_ROOT/runs/smoke/smolvla_$JOB_ID"
+RUN=$SCRATCH_OUT
 du -sh "$SCRATCH"/* && date
 
 echo "== 1/4 CUDA inside the container"
@@ -67,4 +70,5 @@ echo "== 4/4 LIBERO rollout (1 episode per libero_10 task, EGL)"
 timeout -s ABRT $STEP_LIMIT "$REPO/cluster/bin/ctr" lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
     --env.type=libero --env.task=libero_10 \
     --eval.n_episodes=1 --eval.batch_size=1 --rename_map="$RENAME" --output_dir="$RUN/eval"
+ls "$CLUSTER_ROOT/runs/smoke/smolvla_$JOB_ID/checkpoints"  # periodic syncs so far; the exit trap syncs the rest
 echo "== done $(date)"
