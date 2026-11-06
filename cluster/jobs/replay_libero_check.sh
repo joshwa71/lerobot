@@ -4,10 +4,12 @@
 # Reference numbers from the local validation (6 Nov 26): rot180 orientation on every episode,
 # median start offset ~1.8-1.9 cm, tracking error ~1.9 cm over the first 30 steps, gripper
 # agreement ~1.0; open-loop success 5% (libero_10) / 48% (libero_90).
+# Each dataset is copied to node scratch, checked there and discarded (CLAUDE.md 9.4 rule 6): read
+# directly from /SAN, this job stalled at start-up on 6 Nov 26.
 #   qsub cluster/jobs/replay_libero_check.sh
 #$ -S /bin/bash
 #$ -N replay_libero
-#$ -l tmem=32G,h_rt=4:00:00
+#$ -l tmem=32G,h_rt=8:00:00,tscratch=80G
 #$ -l gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/logs/
@@ -15,11 +17,15 @@ set -euo pipefail
 source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 PYTHONFAULTHANDLER=1
 echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+scratch_setup
 cd "$REPO/scripts/datasets"
 for name in libero_10 libero_goal libero_object libero_spatial libero_90; do
-    echo "== $name $(date)"
-    timeout -s ABRT 90m "$REPO/cluster/bin/ctr" python replay_libero_actions.py --root "$HF_LEROBOT_HOME/$name" --suite "$name" \
+    echo "== $name: copy to scratch $(date)"
+    DATA=$(scratch_copy "$HF_LEROBOT_HOME/$name")
+    echo "== $name: replay $(date)"
+    timeout -s ABRT 90m "$REPO/cluster/bin/ctr" python replay_libero_actions.py --root "$DATA" --suite "$name" \
         --episodes-per-task 3 --report "$CLUSTER_ROOT/logs/replay_$name.json" 2>&1 \
         | grep -E '^(task|skip)|"(replay|tasks_with|rot180|raw|median)' || true
+    rm -rf "$DATA"  # this job's own scratch copy; frees space for the next dataset
 done
 echo "== done $(date)"
