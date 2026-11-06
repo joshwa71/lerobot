@@ -17,6 +17,19 @@ cd "$REPO"
 echo "[$(date '+%F %T')] uv sync (extras: ${EXTRAS[*]})"
 ctr uv sync --locked $(printf -- '--extra %s ' "${EXTRAS[@]}")
 
+# hf-libero asks an interactive question on first import if $LIBERO_CONFIG_PATH/config.yaml is
+# missing (a batch job would crash on it): answer "n" = default paths inside the installed package.
+# It also downloads its scene assets on first use, to ~/.cache by default; put them in the package's
+# own assets/ dir instead, which it checks first and which the default config points at.
+echo "[$(date '+%F %T')] LIBERO config + assets"
+[ -f "$LIBERO_CONFIG_PATH/config.yaml" ] || echo n | ctr python -c "import libero.libero"
+ctr python - <<'EOF'
+import os
+import libero.libero as L
+from libero.libero.utils.download_utils import download_assets_from_huggingface
+print(download_assets_from_huggingface(os.path.join(os.path.dirname(L.__file__), "assets")))
+EOF
+
 echo "[$(date '+%F %T')] import check"
 ctr python - <<'EOF'
 import sys, torch, transformers, lerobot
