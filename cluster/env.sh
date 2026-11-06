@@ -31,7 +31,8 @@ export TOKENIZERS_PARALLELISM=false
 _CTR_VARS="CLUSTER_ROOT REPO VENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON UV_PYTHON_DOWNLOADS
 UV_HTTP_TIMEOUT HF_HOME HF_LEROBOT_HOME HF_HUB_OFFLINE HF_DATASETS_OFFLINE LIBERO_CONFIG_PATH
 WANDB_DIR WANDB_MODE MUJOCO_GL MUJOCO_EGL_DEVICE_ID PYOPENGL_PLATFORM TOKENIZERS_PARALLELISM
-CUDA_VISIBLE_DEVICES JOB_ID SGE_TASK_ID NSLOTS OMP_NUM_THREADS TMPDIR PYTHONFAULTHANDLER"
+CUDA_VISIBLE_DEVICES JOB_ID SGE_TASK_ID NSLOTS OMP_NUM_THREADS TMPDIR PYTHONFAULTHANDLER
+SCRATCH HF_DATASETS_CACHE HF_HUB_CACHE"
 
 # Render LIBERO on the GPU SGE assigned. robosuite indexes EGL devices by this id; NVIDIA EGL devices
 # come first and in nvidia-smi order (Mesa's follow), which is the numbering SGE uses.
@@ -56,6 +57,46 @@ _ctr_prepare() {
         export SINGULARITYENV_LD_LIBRARY_PATH=/.singularity.d/libs:/opt/nvextra
     fi
     _CTR_CMD+=(-B "$binds" "$SIF")
+}
+
+# --- Node-local scratch for jobs (request it: #$ -l tscratch=<n>G) --------------------------------
+# Reads from /SAN can stall for 20+ minutes (seen 6 Nov 26). Training random-reads the HF datasets
+# arrow cache (memory-mapped), so with that cache on /SAN any stall freezes training. As in the old
+# job scripts: per-job dir /scratch0/$USER/$JOB_ID holding the caches and copies of the dataset and
+# base model; removed on exit. Checkpoints still go to /SAN (CLAUDE.md 9.3), never only to scratch.
+#   scratch_setup
+#   DATA=$(scratch_copy "$HF_LEROBOT_HOME/libero_10")       # -> --dataset.root=$DATA
+#   scratch_hub_models lerobot/smolvla_base HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+scratch_setup() {
+    export SCRATCH=/scratch0/$USER/$JOB_ID
+    mkdir -p "$SCRATCH"/{tmp,hf_datasets,data,hub}
+    export TMPDIR=$SCRATCH/tmp HF_DATASETS_CACHE=$SCRATCH/hf_datasets
+    trap 'rm -rf "$SCRATCH"' EXIT
+    echo "scratch: $SCRATCH ($(df -h /scratch0 | awk 'NR==2 {print $4}') free)"
+}
+
+# Copy a directory to scratch, retrying a copy that stalls; prints the scratch path.
+scratch_copy() {
+    local src=$1 dst=$SCRATCH/data/$(basename "$1") try
+    for try in 1 2 3; do
+        timeout 30m rsync -a "$src/" "$dst/" && { echo "$dst"; return 0; }
+        echo "scratch_copy: attempt $try of $src failed or stalled" >&2
+    done
+    return 1
+}
+
+# Copy hub models from $HF_HOME/hub to scratch and point HF_HUB_CACHE there.
+scratch_hub_models() {
+    local repo d try
+    for repo in "$@"; do
+        d=models--${repo//\//--}
+        for try in 1 2 3; do
+            timeout 20m rsync -a "$HF_HOME/hub/$d/" "$SCRATCH/hub/$d/" && break
+            echo "scratch_hub_models: attempt $try of $repo failed or stalled" >&2
+            [ "$try" = 3 ] && return 1
+        done
+    done
+    export HF_HUB_CACHE=$SCRATCH/hub
 }
 
 # In scripts and shells. Under `timeout`, xargs etc. (which can't run shell functions) use the

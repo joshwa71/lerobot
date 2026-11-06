@@ -1,11 +1,13 @@
 #!/bin/bash
-# End-to-end check of the cluster setup on one GPU: container + venv + CUDA, a short SmolVLA
-# training run that checkpoints to /SAN, a resume from that checkpoint, and a LIBERO rollout with
-# EGL rendering. Needs cluster/download_assets.sh to have run on a login node first.
+# End-to-end check of the cluster setup on one GPU, laid out like a real training job:
+# container + venv + CUDA; dataset, base model and HF caches on node-local scratch; a short SmolVLA
+# training run that checkpoints to /SAN; a resume from that checkpoint (dataset root passed again,
+# since a real resume runs in a new job with a new scratch dir); a LIBERO rollout with EGL rendering.
+# Needs cluster/download_assets.sh (login node) and the libero_10 build (jobs/build_libero_datasets.sh).
 #   qsub cluster/jobs/smoke_smolvla.sh
 #$ -S /bin/bash
 #$ -N smoke_smolvla
-#$ -l tmem=32G,h_rt=2:00:00
+#$ -l tmem=32G,h_rt=2:00:00,tscratch=40G
 #$ -l gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/logs/
@@ -23,6 +25,12 @@ echo "== cpus: nproc=$(nproc) NSLOTS=${NSLOTS:-} $(grep Cpus_allowed_list /proc/
 cd "$REPO"
 git log -1 --format='== repo %h %s'
 
+echo "== 0/4 stage to scratch $(date)"
+scratch_setup
+DATA=$(scratch_copy "$HF_LEROBOT_HOME/libero_10")
+scratch_hub_models lerobot/smolvla_base HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+du -sh "$SCRATCH"/* && date
+
 echo "== 1/4 CUDA inside the container"
 ctr python - <<'EOF'
 import torch
@@ -36,13 +44,13 @@ EOF
 RENAME='{"observation.images.image": "observation.images.camera1", "observation.images.image2": "observation.images.camera2"}'
 TRAIN_ARGS=(
     --policy.path=lerobot/smolvla_base
-    --dataset.repo_id=HuggingFaceVLA/libero
-    # explicit root: without it, lerobot treats an `hf download --local-dir` copy as a legacy
-    # mirror and tries to re-fetch it from the hub, which fails offline
-    --dataset.root="$HF_LEROBOT_HOME/HuggingFaceVLA/libero"
+    --dataset.repo_id=libero_10
+    # always pass the root explicitly: lerobot treats `hf download --local-dir` copies found by
+    # repo_id as legacy mirrors and tries to re-fetch them from the hub (fails offline)
+    --dataset.root="$DATA"
     --dataset.episodes="[0,1,2,3,4,5,6,7]"
     --rename_map="$RENAME"
-    --batch_size=8 --num_workers=2
+    --batch_size=8 --num_workers=4
     --log_freq=20 --save_freq=100 --eval_freq=0
     --policy.push_to_hub=false --wandb.enable=false
 )
@@ -52,7 +60,7 @@ ls "$RUN/checkpoints"
 
 echo "== 3/4 resume to 300 steps"
 timeout -s ABRT $STEP_LIMIT "$REPO/cluster/bin/ctr" lerobot-train --config_path="$RUN/checkpoints/last/pretrained_model/train_config.json" \
-    --resume=true --steps=300
+    --resume=true --steps=300 --dataset.root="$DATA"
 ls "$RUN/checkpoints"
 
 echo "== 4/4 LIBERO rollout (1 episode per libero_10 task, EGL)"
