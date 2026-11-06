@@ -28,7 +28,7 @@ import numpy as np
 import pyarrow.parquet as pq
 
 from lerobot.datasets.compute_stats import compute_episode_stats
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
 from lerobot.datasets.utils import serialize_dict
 from libero_common import hub_revision, subset_keep_task_table, write_build_info
 
@@ -110,7 +110,7 @@ def _stage_episode(job):
     return ep, {"episode_index": ep, "stats": serialize_dict(stats), **summary}, problems
 
 
-def stage_v21(src: Path, stage: Path, workers: int) -> dict:
+def stage_v21(src: Path, stage: Path, workers: int, limit: int | None = None) -> dict:
     if stage.exists():
         raise FileExistsError(f"{stage} exists; remove it to re-stage")
     info = json.loads((src / "meta/info.json").read_text())
@@ -125,6 +125,15 @@ def stage_v21(src: Path, stage: Path, workers: int) -> dict:
     tasks = [json.loads(line) for line in (src / "meta/tasks.jsonl").read_text().splitlines()]
     task_to_index = {t["task"]: t["task_index"] for t in tasks}
     episodes = [json.loads(line) for line in (src / "meta/episodes.jsonl").read_text().splitlines()]
+    if limit is not None:  # validation run on the first `limit` episodes (episode indices stay 0..limit-1)
+        episodes = episodes[:limit]
+        assert [e["episode_index"] for e in episodes] == list(range(len(episodes)))
+        info["total_episodes"] = len(episodes)
+        info["total_frames"] = sum(e["length"] for e in episodes)
+        info["total_chunks"] = (len(episodes) - 1) // info["chunks_size"] + 1
+        info["splits"] = {"train": f"0:{len(episodes)}"}
+        (stage / "meta/info.json").write_text(json.dumps(info, indent=4))
+        (stage / "meta/episodes.jsonl").write_text("".join(json.dumps(e) + "\n" for e in episodes))
 
     jobs = []
     for e in episodes:
@@ -176,6 +185,8 @@ def main():
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--steps", nargs="+", default=["stage", "convert", "finalise"],
                    choices=["stage", "convert", "finalise"])
+    p.add_argument("--limit-episodes", type=int,
+                   help="validation only: stage just the first N source episodes")
     p.add_argument("--drop-episodes", type=int, nargs="*", default=[],
                    help="source episode indices to leave out of the final dataset")
     args = p.parse_args()
@@ -183,22 +194,23 @@ def main():
 
     stage, converted = args.work / "stage_v21", args.work / "converted_v30"
     if "stage" in args.steps:
-        stage_v21(args.src, stage, args.workers)
+        stage_v21(args.src, stage, args.workers, args.limit_episodes)
     if "convert" in args.steps:
         convert(stage, converted)
     if "finalise" in args.steps:
-        ds = LeRobotDataset("libero_90", root=converted)
-        keep = [e for e in range(ds.meta.total_episodes) if e not in set(args.drop_episodes)]
-        logging.info(f"finalising {len(keep)}/{ds.meta.total_episodes} episodes -> {args.out}")
-        out = subset_keep_task_table(ds, keep, args.out, repo_id="libero_90")
+        meta = LeRobotDatasetMetadata("libero_90", root=converted)
+        keep = [e for e in range(meta.total_episodes) if e not in set(args.drop_episodes)]
+        logging.info(f"finalising {len(keep)}/{meta.total_episodes} episodes -> {args.out}")
+        out = subset_keep_task_table(meta, keep, args.out, repo_id="libero_90")
         assert out.meta.total_episodes == len(keep)
         write_build_info(
             args.out,
             source=SRC_REPO,
-            source_revision=hub_revision(SRC_REPO),
+            source_revision=hub_revision(SRC_REPO, args.src),
             script="scripts/datasets/build_libero_90.py",
             renamed_features=RENAME,
             dropped_source_episodes=sorted(args.drop_episodes),
+            partial=args.limit_episodes is not None,
         )
 
 

@@ -6,11 +6,16 @@ states, NOT the demo's own start, so open-loop success is expected to be partial
   * image orientation -- dataset frame 0 vs the env's first image, raw and rotated 180 degrees
     (LiberoProcessorStep rotates env images at eval time, so a correct dataset matches "rot180");
   * state             -- dataset state[0] vs the env's [eef_pos, axis-angle, gripper_qpos];
-  * actions           -- open-loop replay of the episode's actions; success if the env reports it.
+  * actions           -- open-loop replay of the episode's actions. The sharp signal is TRACKING: the
+                         env's end-effector path vs the dataset's recorded one over the first steps
+                         (it starts ~1-3 cm apart and should stay close if action scale/axes/frame are
+                         right), and gripper open/close agreement. Task success is reported too, but
+                         replaying from a different init state rarely succeeds on long tasks (5% on
+                         HuggingFaceVLA's libero_10), so it is a weak signal on its own.
 
 A dataset whose conventions are wrong (flipped images, wrong gripper sign, wrong frame) shows a
-non-"rot180" orientation, large state offsets, and ~0 replay success. Compare against a known-good
-dataset (e.g. libero_10 built from HuggingFaceVLA/libero) run through the same script.
+non-"rot180" orientation, large state offsets, fast tracking divergence and gripper disagreement.
+Compare against a known-good dataset (libero_10 from HuggingFaceVLA/libero) through the same script.
 
     MUJOCO_GL=egl python scripts/datasets/replay_libero_actions.py --root outputs/libero_10 \
         --suite libero_10 --episodes-per-task 3 --report outputs/_replay_libero_10.json
@@ -71,7 +76,7 @@ def main():
     p.add_argument("--task-indices", type=int, nargs="*", help="dataset task_index values (default: all)")
     p.add_argument("--report", type=Path)
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
 
     suite = benchmark.get_benchmark_dict()[args.suite]()
     env_langs = [suite.get_task(i).language for i in range(suite.n_tasks)]
@@ -113,20 +118,36 @@ def main():
             r["d_eef_pos_cm"] = round(float(np.linalg.norm(s_env[:3] - s_ds[:3])) * 100, 2)
             r["d_axis_angle"] = round(float(np.linalg.norm(s_env[3:6] - s_ds[3:6])), 3)
             r["d_gripper"] = round(float(np.abs(s_env[6:] - s_ds[6:]).max()), 4)
-            success, steps = False, 0
-            for a in df["action"]:
+            ds_states = np.stack(df["observation.state"].to_numpy()).astype(np.float32)
+            success, steps, pos_err, grip_agree = False, 0, [], []
+            for t, a in enumerate(df["action"]):
                 obs, _, term, _, info = env.step(np.asarray(a, dtype=np.float32))
                 steps += 1
                 if info["is_success"]:
                     success = True
                     break
-            r.update(success=success, steps=steps)
+                if t + 1 < len(ds_states):
+                    s_t = _env_state(obs)
+                    pos_err.append(float(np.linalg.norm(s_t[:3] - ds_states[t + 1, :3])) * 100)
+                    # gripper finger opening agrees on open (> mid) vs closed
+                    mid = 0.02
+                    grip_agree.append((s_t[6] > mid) == (ds_states[t + 1, 6] > mid))
+            pos_err = np.asarray(pos_err)
+            r.update(
+                success=success,
+                steps=steps,
+                track_err_cm_10=round(float(pos_err[:10].mean()), 2) if len(pos_err) else None,
+                track_err_cm_30=round(float(pos_err[:30].mean()), 2) if len(pos_err) else None,
+                track_err_cm_all=round(float(pos_err.mean()), 2) if len(pos_err) else None,
+                gripper_agree=round(float(np.mean(grip_agree)), 3) if grip_agree else None,
+            )
             results.append(r)
             logging.info(
                 f"task {ti:2d} env {env_id:2d} ep {ep:4d}: success={success!s:5} steps={steps:3d}/{len(df)} "
                 f"img raw/rot {r['image_corr_raw']:+.2f}/{r['image_corr_rot180']:+.2f} "
                 f"wrist raw/rot {r['image2_corr_raw']:+.2f}/{r['image2_corr_rot180']:+.2f} "
-                f"d_pos {r['d_eef_pos_cm']}cm d_aa {r['d_axis_angle']}"
+                f"d_pos {r['d_eef_pos_cm']}cm track10/30/all {r['track_err_cm_10']}/{r['track_err_cm_30']}/"
+                f"{r['track_err_cm_all']}cm grip {r['gripper_agree']}"
             )
         env.close()
 
@@ -143,6 +164,10 @@ def main():
         "median_d_eef_pos_cm": float(res.d_eef_pos_cm.median()),
         "median_d_axis_angle": float(res.d_axis_angle.median()),
         "median_d_gripper": float(res.d_gripper.median()),
+        "median_track_err_cm_10": float(res.track_err_cm_10.median()),
+        "median_track_err_cm_30": float(res.track_err_cm_30.median()),
+        "median_track_err_cm_all": float(res.track_err_cm_all.median()),
+        "median_gripper_agree": float(res.gripper_agree.median()),
     }
     logging.info(json.dumps(summary, indent=1))
     if args.report:

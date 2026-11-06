@@ -12,6 +12,10 @@
 set -euo pipefail
 source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 WANDB_MODE=disabled
+# A step that hangs is killed with SIGABRT, which PYTHONFAULTHANDLER turns into a traceback of every
+# thread, so the log shows where it was stuck instead of the job silently burning its h_rt.
+export PYTHONFAULTHANDLER=1
+STEP_LIMIT=20m
 
 RUN=$CLUSTER_ROOT/runs/smoke/smolvla_$JOB_ID
 echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
@@ -43,16 +47,16 @@ TRAIN_ARGS=(
     --policy.push_to_hub=false --wandb.enable=false
 )
 echo "== 2/4 train 200 steps, checkpoint every 100 -> $RUN"
-ctr lerobot-train "${TRAIN_ARGS[@]}" --steps=200 --output_dir="$RUN" --job_name="smoke_$JOB_ID"
+timeout -s ABRT $STEP_LIMIT ctr lerobot-train "${TRAIN_ARGS[@]}" --steps=200 --output_dir="$RUN" --job_name="smoke_$JOB_ID"
 ls "$RUN/checkpoints"
 
 echo "== 3/4 resume to 300 steps"
-ctr lerobot-train --config_path="$RUN/checkpoints/last/pretrained_model/train_config.json" \
+timeout -s ABRT $STEP_LIMIT ctr lerobot-train --config_path="$RUN/checkpoints/last/pretrained_model/train_config.json" \
     --resume=true --steps=300
 ls "$RUN/checkpoints"
 
 echo "== 4/4 LIBERO rollout (1 episode per libero_10 task, EGL)"
-ctr lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
+timeout -s ABRT $STEP_LIMIT ctr lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
     --env.type=libero --env.task=libero_10 \
     --eval.n_episodes=1 --eval.batch_size=1 --rename_map="$RENAME" --output_dir="$RUN/eval"
 echo "== done $(date)"

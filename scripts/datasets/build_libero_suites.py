@@ -5,10 +5,13 @@ HuggingFaceVLA/libero (LeRobot v3.0, images stored in parquet) holds all four su
 4,6,9,2,7,0,8,1,3,5 -- the paper's sequential order. 10-19 are goal, 20-29 object, 30-39 spatial.
 
 Each suite dataset keeps the full 40-task table with the source task_index values (other suites' tasks
-are empty vocabulary), exactly like the Nebius-era libero_10. Stats are aggregated per suite.
+are empty vocabulary), exactly like the Nebius-era libero_10. Stats are recomputed per suite,
+including the quantiles pi05 needs (the source's per-episode stats have none).
+The source's stale per-episode data-file index is corrected first (see libero_common.repaired_source).
 
     python scripts/datasets/build_libero_suites.py \
         --src outputs/hf_src/HuggingFaceVLA/libero --out outputs [--suites libero_10 ...]
+        [--work outputs/_build_libero_suites]
 """
 
 import argparse
@@ -19,8 +22,14 @@ from pathlib import Path
 import pandas as pd
 from libero.libero import benchmark
 
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from libero_common import hub_revision, subset_keep_task_table, write_build_info
+from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
+from libero_common import (
+    add_quantile_stats,
+    hub_revision,
+    repaired_source,
+    subset_keep_task_table,
+    write_build_info,
+)
 
 SRC_REPO = "HuggingFaceVLA/libero"
 SUITES = ["libero_10", "libero_goal", "libero_object", "libero_spatial"]
@@ -33,10 +42,18 @@ def main():
     p.add_argument("--src", type=Path, required=True, help="local copy of HuggingFaceVLA/libero")
     p.add_argument("--out", type=Path, required=True, help="parent dir; writes <out>/<suite>")
     p.add_argument("--suites", nargs="+", default=SUITES, choices=SUITES)
+    p.add_argument("--work", type=Path, help="scratch dir (default <out>/_build_libero_suites)")
+    p.add_argument("--allow-partial", action="store_true",
+                   help="validation only: build from the episodes whose data is present (marked in BUILD_INFO)")
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    src = LeRobotDataset(SRC_REPO, root=args.src)
+    work = args.work or args.out / "_build_libero_suites"
+    src_root = repaired_source(args.src, work / "src_repaired")
+    src = LeRobotDatasetMetadata(SRC_REPO, root=src_root)
+    present = set()
+    for f in (args.src / "data").glob("chunk-*/file-*.parquet"):
+        present.update(pd.read_parquet(f, columns=["episode_index"])["episode_index"].unique().tolist())
 
     bench = benchmark.get_benchmark_dict()
     lang_to_suite = {}
@@ -48,14 +65,14 @@ def main():
             lang_to_suite[lang] = (suite, env_id)
 
     task_suite = {}
-    for task, row in src.meta.tasks.iterrows():
+    for task, row in src.tasks.iterrows():
         if task not in lang_to_suite:
             raise ValueError(f"source task {row.task_index} matches no LIBERO suite: {task!r}")
         task_suite[int(row.task_index)] = lang_to_suite[task]
 
     episodes_by_suite = defaultdict(list)
-    for ep in range(src.meta.total_episodes):
-        tasks = src.meta.episodes[ep]["tasks"]
+    for ep in range(src.total_episodes):
+        tasks = src.episodes[ep]["tasks"]
         assert len(tasks) == 1, f"episode {ep} has {len(tasks)} tasks"
         suite, _ = lang_to_suite[tasks[0]]
         episodes_by_suite[suite].append(ep)
@@ -64,15 +81,23 @@ def main():
     for suite in args.suites:
         if counts.get(suite) != EXPECTED_EPISODES[suite]:
             raise ValueError(f"{suite}: {counts.get(suite)} episodes, expected {EXPECTED_EPISODES[suite]}")
+    if args.allow_partial:
+        episodes_by_suite = {s: [e for e in v if e in present] for s, v in episodes_by_suite.items()}
+        logging.warning(f"PARTIAL build: episodes present per suite {({s: len(v) for s, v in episodes_by_suite.items()})}")
 
-    revision = hub_revision(SRC_REPO)
+    for suite in args.suites:
+        missing = sorted(set(episodes_by_suite[suite]) - present)
+        if missing:
+            raise FileNotFoundError(f"{suite}: {len(missing)} episodes have no data file yet, e.g. {missing[:5]}")
+
+    revision = hub_revision(SRC_REPO, args.src)
     for suite in args.suites:
         out_dir = args.out / suite
         logging.info(f"building {suite} -> {out_dir}")
         ds = subset_keep_task_table(src, episodes_by_suite[suite], out_dir, repo_id=suite)
 
         # same task table as the source, and the frames use exactly this suite's task indices
-        assert ds.meta.tasks["task_index"].to_dict() == src.meta.tasks["task_index"].to_dict()
+        assert ds.meta.tasks["task_index"].to_dict() == src.tasks["task_index"].to_dict()
         frames = pd.concat(
             pd.read_parquet(f, columns=["episode_index", "task_index"])
             for f in sorted((out_dir / "data").rglob("*.parquet"))
@@ -82,6 +107,8 @@ def main():
         assert used == expected, f"{suite}: task indices {used} != {expected}"
         assert frames["episode_index"].nunique() == ds.meta.total_episodes == len(episodes_by_suite[suite])
         assert len(frames) == ds.meta.total_frames
+        add_quantile_stats(out_dir, repo_id=suite)
+        assert {"q01", "q99"} <= set(LeRobotDatasetMetadata(suite, root=out_dir).stats["action"])
         env_order = [task_suite[ti][1] for ti in expected]
         logging.info(f"{suite}: {ds.meta.total_episodes} episodes, {ds.meta.total_frames} frames, "
                      f"task_index {expected[0]}-{expected[-1]} -> env ids {env_order}")
@@ -92,6 +119,7 @@ def main():
             source_revision=revision,
             script="scripts/datasets/build_libero_suites.py",
             suite=suite,
+            partial=args.allow_partial,
             source_episodes=episodes_by_suite[suite],
             task_index_to_env_id={ti: task_suite[ti][1] for ti in expected},
         )
