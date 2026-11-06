@@ -190,7 +190,8 @@ def main():
     p.add_argument("--drop-episodes", type=int, nargs="*", default=[],
                    help="source episode indices to leave out of the final dataset")
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO)
+    # force: lerobot configures logging on import, which would make a plain basicConfig a no-op
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
 
     stage, converted = args.work / "stage_v21", args.work / "converted_v30"
     if "stage" in args.steps:

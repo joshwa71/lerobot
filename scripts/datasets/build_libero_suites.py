@@ -46,7 +46,8 @@ def main():
     p.add_argument("--allow-partial", action="store_true",
                    help="validation only: build from the episodes whose data is present (marked in BUILD_INFO)")
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO)
+    # force: lerobot configures logging on import, which would make a plain basicConfig a no-op
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
 
     work = args.work or args.out / "_build_libero_suites"
     src_root = repaired_source(args.src, work / "src_repaired")
