@@ -203,7 +203,7 @@ def main():
         keep = [e for e in range(meta.total_episodes) if e not in set(args.drop_episodes)]
         logging.info(f"finalising {len(keep)}/{meta.total_episodes} episodes -> {args.out}")
         out = subset_keep_task_table(meta, keep, args.out, repo_id="libero_90")
-        assert out.meta.total_episodes == len(keep)
+        assert out.total_episodes == len(keep)
         write_build_info(
             args.out,
             source=SRC_REPO,

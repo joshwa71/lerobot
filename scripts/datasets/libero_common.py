@@ -16,7 +16,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 def subset_keep_task_table(
     src_meta: LeRobotDatasetMetadata, episodes: list[int], out_dir: Path, repo_id: str
-) -> LeRobotDataset:
+) -> LeRobotDatasetMetadata:
     """Copy `episodes` of a source dataset into a new one at `out_dir`, keeping the FULL task table.
 
     Same copy path as `dataset_tools.split_dataset` (data/videos copied, episodes renumbered from 0,
@@ -26,7 +26,9 @@ def subset_keep_task_table(
     silently reorder a sequential task sequence given as task indices (--online_task_ids).
 
     Only the source's metadata is loaded (the copy helpers read files by path), so this works on a
-    partially downloaded source as long as the selected episodes' files are present.
+    partially downloaded source as long as the selected episodes' files are present. Returns the new
+    dataset's metadata, re-read from disk; it deliberately doesn't open the dataset itself, which
+    builds the HF arrow cache over the whole thing (65 GB for libero_90; that hung on /SAN, 6 Nov 26).
     """
     src = SimpleNamespace(meta=src_meta, root=src_meta.root)
     meta = LeRobotDatasetMetadata.create(
@@ -48,7 +50,7 @@ def subset_keep_task_table(
         video_metadata = dt._copy_and_reindex_videos(src, meta, episode_mapping)
     data_metadata = dt._copy_and_reindex_data(src, meta, episode_mapping)
     dt._copy_and_reindex_episodes_metadata(src, meta, episode_mapping, data_metadata, video_metadata)
-    return LeRobotDataset(repo_id=repo_id, root=out_dir)
+    return LeRobotDatasetMetadata(repo_id, root=out_dir)
 
 
 def repaired_source(src_root: Path, work_root: Path) -> Path:

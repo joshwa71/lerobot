@@ -103,7 +103,7 @@ def main():
         ds = subset_keep_task_table(src, episodes_by_suite[suite], out_dir, repo_id=suite)
 
         # same task table as the source, and the frames use exactly this suite's task indices
-        assert ds.meta.tasks["task_index"].to_dict() == src.tasks["task_index"].to_dict()
+        assert ds.tasks["task_index"].to_dict() == src.tasks["task_index"].to_dict()
         frames = pd.concat(
             pd.read_parquet(f, columns=["episode_index", "task_index"])
             for f in sorted((out_dir / "data").rglob("*.parquet"))
@@ -111,12 +111,12 @@ def main():
         used = sorted(frames["task_index"].unique().tolist())
         expected = sorted(ti for ti, (s, _) in task_suite.items() if s == suite)
         assert used == expected, f"{suite}: task indices {used} != {expected}"
-        assert frames["episode_index"].nunique() == ds.meta.total_episodes == len(episodes_by_suite[suite])
-        assert len(frames) == ds.meta.total_frames
+        assert frames["episode_index"].nunique() == ds.total_episodes == len(episodes_by_suite[suite])
+        assert len(frames) == ds.total_frames
         add_quantile_stats(out_dir, repo_id=suite)
         assert {"q01", "q99"} <= set(LeRobotDatasetMetadata(suite, root=out_dir).stats["action"])
         env_order = [task_suite[ti][1] for ti in expected]
-        logging.info(f"{suite}: {ds.meta.total_episodes} episodes, {ds.meta.total_frames} frames, "
+        logging.info(f"{suite}: {ds.total_episodes} episodes, {ds.total_frames} frames, "
                      f"task_index {expected[0]}-{expected[-1]} -> env ids {env_order}")
 
         write_build_info(
