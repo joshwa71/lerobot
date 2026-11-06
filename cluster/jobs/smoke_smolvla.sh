@@ -47,16 +47,16 @@ TRAIN_ARGS=(
     --policy.push_to_hub=false --wandb.enable=false
 )
 echo "== 2/4 train 200 steps, checkpoint every 100 -> $RUN"
-timeout -s ABRT $STEP_LIMIT ctr lerobot-train "${TRAIN_ARGS[@]}" --steps=200 --output_dir="$RUN" --job_name="smoke_$JOB_ID"
+timeout -s ABRT $STEP_LIMIT "$REPO/cluster/bin/ctr" lerobot-train "${TRAIN_ARGS[@]}" --steps=200 --output_dir="$RUN" --job_name="smoke_$JOB_ID"
 ls "$RUN/checkpoints"
 
 echo "== 3/4 resume to 300 steps"
-timeout -s ABRT $STEP_LIMIT ctr lerobot-train --config_path="$RUN/checkpoints/last/pretrained_model/train_config.json" \
+timeout -s ABRT $STEP_LIMIT "$REPO/cluster/bin/ctr" lerobot-train --config_path="$RUN/checkpoints/last/pretrained_model/train_config.json" \
     --resume=true --steps=300
 ls "$RUN/checkpoints"
 
 echo "== 4/4 LIBERO rollout (1 episode per libero_10 task, EGL)"
-timeout -s ABRT $STEP_LIMIT ctr lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
+timeout -s ABRT $STEP_LIMIT "$REPO/cluster/bin/ctr" lerobot-eval --policy.path="$RUN/checkpoints/last/pretrained_model" \
     --env.type=libero --env.task=libero_10 \
     --eval.n_episodes=1 --eval.batch_size=1 --rename_map="$RENAME" --output_dir="$RUN/eval"
 echo "== done $(date)"

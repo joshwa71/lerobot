@@ -37,15 +37,17 @@ CUDA_VISIBLE_DEVICES JOB_ID SGE_TASK_ID NSLOTS OMP_NUM_THREADS TMPDIR PYTHONFAUL
 # come first and in nvidia-smi order (Mesa's follow), which is the numbering SGE uses.
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then export MUJOCO_EGL_DEVICE_ID=${CUDA_VISIBLE_DEVICES%%,*}; fi
 
-ctr() {
-    local v f binds=$CLUSTER_ROOT nv=()
+# Fills _CTR_CMD with the `singularity exec ...` prefix and exports the forwarded variables.
+_ctr_prepare() {
+    local v f binds=$CLUSTER_ROOT
     for v in $_CTR_VARS; do
         if [ -n "${!v+x}" ]; then export "SINGULARITYENV_$v=${!v}"; fi
     done
     export SINGULARITYENV_PREPEND_PATH=$VENV/bin
     [ -d /scratch0 ] && binds="$binds,/scratch0"
+    _CTR_CMD=(singularity exec --cleanenv)
     if command -v nvidia-smi >/dev/null 2>&1; then
-        nv=(--nv)
+        _CTR_CMD+=(--nv)
         # Singularity 3.8's --nv library list predates driver 530+, where libnvidia-eglcore needs
         # libnvidia-gpucomp. Without it every NVIDIA EGL device fails to initialise (MUJOCO_GL=egl).
         for f in /usr/lib64/libnvidia-gpucomp.so.*; do
@@ -53,6 +55,12 @@ ctr() {
         done
         export SINGULARITYENV_LD_LIBRARY_PATH=/.singularity.d/libs:/opt/nvextra
     fi
-    # ${nv[@]+...}: the host's bash 4.2 treats an empty array as unbound under `set -u`
-    singularity exec ${nv[@]+"${nv[@]}"} --cleanenv -B "$binds" "$SIF" "$@"
+    _CTR_CMD+=(-B "$binds" "$SIF")
+}
+
+# In scripts and shells. Under `timeout`, xargs etc. (which can't run shell functions) use the
+# executable form instead, cluster/bin/ctr, which execs singularity so signals reach the container.
+ctr() {
+    _ctr_prepare
+    "${_CTR_CMD[@]}" "$@"
 }

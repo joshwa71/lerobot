@@ -18,7 +18,7 @@ echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVI
 cd "$REPO/scripts/datasets"
 for name in libero_10 libero_goal libero_object libero_spatial libero_90; do
     echo "== $name $(date)"
-    timeout -s ABRT 90m ctr python replay_libero_actions.py --root "$HF_LEROBOT_HOME/$name" --suite "$name" \
+    timeout -s ABRT 90m "$REPO/cluster/bin/ctr" python replay_libero_actions.py --root "$HF_LEROBOT_HOME/$name" --suite "$name" \
         --episodes-per-task 3 --report "$CLUSTER_ROOT/logs/replay_$name.json" 2>&1 \
         | grep -E '^(task|skip)|"(replay|tasks_with|rot180|raw|median)' || true
 done
