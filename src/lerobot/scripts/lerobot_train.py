@@ -13,56 +13,57 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Train a policy.
+
+Requires: pip install 'lerobot[training]'  (includes dataset + accelerate + wandb extras)
+"""
+
+import dataclasses
 import logging
 import time
 from contextlib import nullcontext
 from pprint import pformat
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from accelerate import Accelerator
 
 import torch
-from accelerate import Accelerator
 from termcolor import colored
 from torch.optim import Optimizer
+from tqdm import tqdm
 
-from lerobot.configs import parser
-from lerobot.configs.train import TrainPipelineConfig
-from lerobot.datasets.factory import make_dataset
-from lerobot.datasets.sampler import EpisodeAwareSampler
-from lerobot.datasets.utils import cycle
-from lerobot.envs.factory import make_env
-from lerobot.envs.utils import close_envs
-from lerobot.optim.factory import make_optimizer_and_scheduler
-from lerobot.policies.factory import make_policy, make_pre_post_processors
-from lerobot.policies.pretrained import PreTrainedPolicy
-from lerobot.rl.wandb_utils import WandBLogger
-from lerobot.scripts.lerobot_eval import eval_policy_all
-from lerobot.utils.logging_utils import AverageMeter, MetricsTracker
-from lerobot.utils.random_utils import set_seed
-from lerobot.utils.train_utils import (
+from lerobot.common.train_utils import (
     get_step_checkpoint_dir,
     get_step_identifier,
     load_training_state,
     save_checkpoint,
     update_last_checkpoint,
 )
+from lerobot.common.wandb_utils import WandBLogger
+from lerobot.configs import parser
+from lerobot.configs.train import TrainPipelineConfig
+from lerobot.datasets import EpisodeAwareSampler, make_dataset
+from lerobot.envs import close_envs, make_env, make_env_pre_post_processors
+from lerobot.optim.factory import make_optimizer_and_scheduler
+from lerobot.policies import PreTrainedPolicy, make_policy, make_pre_post_processors
+from lerobot.rewards import make_reward_pre_post_processors
+from lerobot.utils.import_utils import register_third_party_plugins
+from lerobot.utils.logging_utils import AverageMeter, MetricsTracker
+from lerobot.utils.random_utils import set_seed
 from lerobot.utils.utils import (
+    cycle,
     format_big_number,
     has_method,
     init_logging,
+    inside_slurm,
 )
+
+from .lerobot_eval import eval_policy_all
 
 
 def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
-    """Convert values to basic types acceptable by our WandB wrapper.
-
-    - torch.Tensor with numel()==1 -> scalar via .item()
-    - torch.Tensor with more elements -> mean().item()
-    - pass through int/float/str; drop others
-    """
     sanitized: dict[str, int | float | str] = {}
-    # Local import to avoid hard dependency if torch is unavailable in some contexts
-    import torch  # type: ignore
-
     for k, v in d.items():
         if isinstance(v, (int, float, str)):
             sanitized[k] = v
@@ -72,8 +73,17 @@ def _sanitize_wandb_dict(d: dict[str, Any]) -> dict[str, int | float | str]:
                 sanitized[k] = v.item()
             else:
                 sanitized[k] = v.detach().float().mean().item()
-            continue
     return sanitized
+
+
+def _flush_staged_contrastive_queues(module: torch.nn.Module) -> None:
+    try:
+        for submodule in module.modules():
+            flush_fn = getattr(submodule, "flush_staged_contrastive_queries", None)
+            if callable(flush_fn):
+                flush_fn()
+    except Exception:
+        pass
 
 
 def update_policy(
@@ -82,10 +92,13 @@ def update_policy(
     batch: Any,
     optimizer: Optimizer,
     grad_clip_norm: float,
-    accelerator: Accelerator,
+    accelerator: "Accelerator",
     lr_scheduler=None,
     lock=None,
-) -> tuple[MetricsTracker, dict]:
+    sample_weighter=None,
+    task_emb: torch.Tensor | None = None,
+    task_ids: torch.Tensor | None = None,
+) -> tuple[MetricsTracker, dict | None]:
     """
     Performs a single training step to update the policy's weights.
 
@@ -101,6 +114,7 @@ def update_policy(
         accelerator: The Accelerator instance for distributed training and mixed precision.
         lr_scheduler: An optional learning rate scheduler.
         lock: An optional lock for thread-safe optimizer updates.
+        sample_weighter: Optional SampleWeighter instance for per-sample loss weighting.
 
     Returns:
         A tuple containing:
@@ -110,45 +124,74 @@ def update_policy(
     start_time = time.perf_counter()
     policy.train()
 
+    # Compute sample weights if a weighter is provided
+    sample_weights = None
+    weight_stats = None
+    if sample_weighter is not None:
+        sample_weights, weight_stats = sample_weighter.compute_batch_weights(batch)
+
     # Let accelerator handle mixed precision
     with accelerator.autocast():
-        loss, output_dict = policy.forward(batch)
+        if sample_weights is not None:
+            # Use per-sample loss for weighted training
+            # Note: Policies supporting sample weighting must implement forward(batch, reduction="none")
+            per_sample_loss, output_dict = policy.forward(
+                batch,
+                reduction="none",
+                task_emb=task_emb,
+                task_ids=task_ids,
+            )
+
+            # Weighted loss: each sample's contribution is scaled by its weight.
+            # We divide by weight sum (not batch size) so that if some weights are zero,
+            # the remaining samples contribute proportionally more, preserving gradient scale.
+            # Weights are pre-normalized to sum to batch_size for stable training dynamics.
+            epsilon = 1e-6
+            loss = (per_sample_loss * sample_weights).sum() / (sample_weights.sum() + epsilon)
+
+            # Log weighting statistics
+            if output_dict is None:
+                output_dict = {}
+            for key, value in weight_stats.items():
+                output_dict[f"sample_weight_{key}"] = value
+        else:
+            loss, output_dict = policy.forward(batch, task_emb=task_emb, task_ids=task_ids)
+
         # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
     # Use accelerator's backward method
     accelerator.backward(loss)
 
-    # Clip gradients if specified
-    if grad_clip_norm > 0:
-        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
-    else:
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            policy.parameters(), float("inf"), error_if_nonfinite=False
-        )
+    if accelerator.sync_gradients:
+        if grad_clip_norm > 0:
+            grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm)
+        else:
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                policy.parameters(), float("inf"), error_if_nonfinite=False
+            )
 
-    # Optimizer step
-    with lock if lock is not None else nullcontext():
-        optimizer.step()
+        with lock if lock is not None else nullcontext():
+            optimizer.step()
 
-    optimizer.zero_grad()
+        optimizer.zero_grad()
 
-    # Step through pytorch scheduler at every batch instead of epoch
-    if lr_scheduler is not None:
-        lr_scheduler.step()
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
-    # Update internal buffers if policy has update method
-    if has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
-        accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
+        unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+        if has_method(unwrapped_policy, "update"):
+            unwrapped_policy.update()
+        _flush_staged_contrastive_queues(unwrapped_policy)
 
-    train_metrics.loss = loss.item()
-    train_metrics.grad_norm = grad_norm.item()
-    train_metrics.lr = optimizer.param_groups[0]["lr"]
-    train_metrics.update_s = time.perf_counter() - start_time
+        train_metrics.loss = loss.item()
+        train_metrics.grad_norm = grad_norm.item()
+        train_metrics.lr = optimizer.param_groups[0]["lr"]
+        train_metrics.update_s = time.perf_counter() - start_time
     return train_metrics, output_dict
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
+def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
     """
     Main function to train a policy.
 
@@ -164,6 +207,11 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         cfg: A `TrainPipelineConfig` object containing all training configurations.
         accelerator: Optional Accelerator instance. If None, one will be created automatically.
     """
+    from lerobot.utils.import_utils import require_package
+
+    require_package("accelerate", extra="training")
+    from accelerate import Accelerator
+
     cfg.validate()
 
     # Create Accelerator if not provided
@@ -174,7 +222,15 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         from accelerate.utils import DistributedDataParallelKwargs
 
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-        accelerator = Accelerator(step_scheduler_with_optimizer=False, kwargs_handlers=[ddp_kwargs])
+        # Accelerate auto-detects the device based on the available hardware and ignores the policy.device setting.
+        # Force the device to be CPU when the active config's device is set to CPU (works for both policy and reward model training).
+        force_cpu = cfg.trainable_config.device == "cpu"
+        accelerator = Accelerator(
+            gradient_accumulation_steps=getattr(cfg, "gradient_accumulation_steps", 1),
+            step_scheduler_with_optimizer=False,
+            kwargs_handlers=[ddp_kwargs],
+            cpu=force_cpu,
+        )
 
     init_logging(accelerator=accelerator)
 
@@ -199,7 +255,11 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
 
     # Use accelerator's device
     device = accelerator.device
-    torch.backends.cudnn.benchmark = True
+    if cfg.cudnn_deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    else:
+        torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
     # Dataset loading synchronization: main process downloads first to avoid race conditions
@@ -214,37 +274,82 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         dataset = make_dataset(cfg)
 
     if cfg.epochs is not None:
-        cfg.steps = int(cfg.epochs * dataset.num_frames / cfg.batch_size)
-        logging.info(f"Calculated steps from epochs: {cfg.epochs} epochs * {dataset.num_frames} frames / {cfg.batch_size} batch_size = {cfg.steps} steps")
-
+        grad_accum = getattr(cfg, "gradient_accumulation_steps", 1)
+        cfg.steps = int(cfg.epochs * dataset.num_frames / (cfg.batch_size * grad_accum))
+        if is_main_process:
+            logging.info(
+                "Calculated steps from epochs: %s epochs * %s frames / (%s batch_size * %s accum) = %s steps",
+                cfg.epochs,
+                dataset.num_frames,
+                cfg.batch_size,
+                grad_accum,
+                cfg.steps,
+            )
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
     # using the eval.py instead, with gym_dora environment and dora-rs.
     eval_env = None
-    if cfg.eval_freq > 0 and cfg.env is not None:
-        if is_main_process:
-            logging.info("Creating env")
+    if cfg.eval_freq > 0 and cfg.env is not None and is_main_process:
+        logging.info("Creating env")
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
-    if is_main_process:
-        logging.info("Creating policy")
-    policy = make_policy(
-        cfg=cfg.policy,
-        ds_meta=dataset.meta,
-    )
+    if cfg.is_reward_model_training:
+        if is_main_process:
+            logging.info("Creating reward model")
+        from lerobot.rewards import make_reward_model
 
-    # Wait for all processes to finish policy creation before continuing
+        policy = make_reward_model(
+            cfg=cfg.reward_model,
+            dataset_stats=dataset.meta.stats,
+            dataset_meta=dataset.meta,
+        )
+        if not policy.is_trainable:
+            raise ValueError(
+                f"Reward model '{policy.name}' is zero-shot and cannot be trained via lerobot-train. "
+                "Use it directly for inference via compute_reward() (e.g. offline precompute)."
+            )
+    else:
+        if is_main_process:
+            logging.info("Creating policy")
+        policy = make_policy(
+            cfg=cfg.policy,
+            ds_meta=dataset.meta,
+            rename_map=cfg.rename_map,
+        )
+
+    if cfg.peft is not None:
+        if cfg.is_reward_model_training:
+            raise ValueError("PEFT is only supported for policy training. ")
+        logging.info("Using PEFT! Wrapping model.")
+        peft_cli_overrides = dataclasses.asdict(cfg.peft)
+        policy = policy.wrap_with_peft(peft_cli_overrides=peft_cli_overrides)
+
+    # Wait for all processes to finish model creation before continuing
     accelerator.wait_for_everyone()
 
-    # Create processors - only provide dataset_stats if not resuming from saved processors
+    active_cfg = cfg.trainable_config
+    processor_pretrained_path = active_cfg.pretrained_path
+    if (
+        getattr(active_cfg, "use_relative_actions", False)
+        and processor_pretrained_path is not None
+        and not cfg.resume
+    ):
+        logging.warning(
+            "use_relative_actions=true with pretrained processors can skip relative transforms if "
+            "the checkpoint processors do not define them. Building processors from current policy config."
+        )
+        processor_pretrained_path = None
+
     processor_kwargs = {}
     postprocessor_kwargs = {}
-    if (cfg.policy.pretrained_path and not cfg.resume) or not cfg.policy.pretrained_path:
-        # Only provide dataset_stats when not resuming from saved processor state
+    if (processor_pretrained_path and not cfg.resume) or not processor_pretrained_path:
         processor_kwargs["dataset_stats"] = dataset.meta.stats
 
-    if cfg.policy.pretrained_path is not None:
+    if cfg.is_reward_model_training:
+        processor_kwargs["dataset_meta"] = dataset.meta
+
+    if not cfg.is_reward_model_training and processor_pretrained_path is not None:
         processor_kwargs["preprocessor_overrides"] = {
             "device_processor": {"device": device.type},
             "normalizer_processor": {
@@ -252,6 +357,9 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                 "features": {**policy.config.input_features, **policy.config.output_features},
                 "norm_map": policy.config.normalization_mapping,
             },
+        }
+        processor_kwargs["preprocessor_overrides"]["rename_observations_processor"] = {
+            "rename_map": cfg.rename_map
         }
         postprocessor_kwargs["postprocessor_overrides"] = {
             "unnormalizer_processor": {
@@ -261,16 +369,44 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             },
         }
 
-    preprocessor, postprocessor = make_pre_post_processors(
-        policy_cfg=cfg.policy,
-        pretrained_path=cfg.policy.pretrained_path,
-        **processor_kwargs,
-        **postprocessor_kwargs,
-    )
+    if cfg.is_reward_model_training:
+        preprocessor, postprocessor = make_reward_pre_post_processors(
+            cfg.reward_model,
+            **processor_kwargs,
+        )
+    else:
+        preprocessor, postprocessor = make_pre_post_processors(
+            policy_cfg=cfg.policy,
+            pretrained_path=processor_pretrained_path,
+            **processor_kwargs,
+            **postprocessor_kwargs,
+        )
+
+    task_index_to_name: dict[int, str] = {}
+    if not cfg.is_reward_model_training and hasattr(policy, "precompute_task_embeddings"):
+        policy.precompute_task_embeddings(dataset.meta)
+        if dataset.meta.tasks is not None:
+            for task_name, row in dataset.meta.tasks.iterrows():
+                task_index_to_name[int(row["task_index"])] = task_name
 
     if is_main_process:
         logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
+
+    # Create sample weighter if configured (e.g., for RA-BC training)
+    sample_weighter = None
+    if cfg.sample_weighting is not None:
+        from lerobot.utils.sample_weighting import make_sample_weighter
+
+        if is_main_process:
+            logging.info(f"Creating sample weighter: {cfg.sample_weighting.type}")
+        sample_weighter = make_sample_weighter(
+            cfg.sample_weighting,
+            policy,
+            device,
+            dataset_root=cfg.dataset.root,
+            dataset_repo_id=cfg.dataset.repo_id,
+        )
 
     step = 0  # number of policy updates (forward + backward + optim)
 
@@ -284,101 +420,60 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
         if cfg.env is not None:
             logging.info(f"{cfg.env.task=}")
+            logging.info("Creating environment processors")
+            env_preprocessor, env_postprocessor = make_env_pre_post_processors(
+                env_cfg=cfg.env, policy_cfg=cfg.policy
+            )
         logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
         logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
         logging.info(f"{dataset.num_episodes=}")
         num_processes = accelerator.num_processes
-        effective_bs = cfg.batch_size * num_processes
-        logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} = {effective_bs}")
+        grad_accum = getattr(cfg, "gradient_accumulation_steps", 1)
+        effective_bs = cfg.batch_size * num_processes * grad_accum
+        if grad_accum > 1:
+            logging.info(
+                "Effective batch size: %s x %s x %s (accum) = %s",
+                cfg.batch_size,
+                num_processes,
+                grad_accum,
+                effective_bs,
+            )
+        else:
+            logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} = {effective_bs}")
         logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
         logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
-    # create dataloader for offline training (with optional curriculum)
-    def _build_dataloader(episode_indices_to_use: list[int] | None = None):
-        use_sampler = episode_indices_to_use is not None or hasattr(cfg.policy, "drop_n_last_frames")
-        if use_sampler:
-            drop_n_last = getattr(cfg.policy, "drop_n_last_frames", 0)
-            sampler_local = EpisodeAwareSampler(
-                dataset.meta.episodes["dataset_from_index"],
-                dataset.meta.episodes["dataset_to_index"],
-                episode_indices_to_use=episode_indices_to_use,
-                drop_n_last_frames=drop_n_last,
-                shuffle=True,
-            )
-        else:
-            sampler_local = None
-
-        return torch.utils.data.DataLoader(
-            dataset,
-            num_workers=cfg.num_workers,
-            batch_size=cfg.batch_size,
-            shuffle=(not use_sampler) and not cfg.dataset.streaming,
-            sampler=sampler_local,
-            pin_memory=device.type == "cuda",
-            drop_last=False,
-            prefetch_factor=2 if cfg.num_workers > 0 else None,
-        )
-
-    curriculum_enabled = getattr(cfg, "curriculum", None) is not None and cfg.curriculum.enabled
-    if curriculum_enabled and getattr(cfg.dataset, "streaming", False):
-        raise NotImplementedError("Curriculum is not supported with streaming datasets")
-
-    if curriculum_enabled:
-        # Compute segment ends in steps
-        splits = cfg.curriculum.splits
-        segment_ends: list[int] = []
-        acc = 0
-        for i, pct in enumerate(splits):
-            if i == len(splits) - 1:
-                seg_steps = cfg.steps - acc
-            else:
-                seg_steps = round(cfg.steps * (pct / 100))
-            acc += seg_steps
-            segment_ends.append(acc)
-
-        # Map task_index -> task name
-        task_index_to_name: dict[int, str] = {}
-        if dataset.meta.tasks is not None:
-            for task_name, row in dataset.meta.tasks.iterrows():
-                task_index_to_name[int(row["task_index"])] = task_name
-
-        # Build per-segment episode indices from allowed task indices
-        all_episode_tasks = dataset.meta.episodes["tasks"]
-        segment_to_episode_indices: list[list[int]] = []
-        for seg_id in range(1, len(splits) + 1):
-            allowed_task_indices = cfg.curriculum.tasks.get(str(seg_id), [])
-            allowed_task_names = {task_index_to_name[i] for i in allowed_task_indices if i in task_index_to_name}
-            ep_indices = [
-                i for i, tlist in enumerate(all_episode_tasks) if any(t in allowed_task_names for t in tlist)
-            ]
-            segment_to_episode_indices.append(ep_indices)
-
-        # Determine initial segment (supports resume)
-        def _current_segment(step_val: int) -> int:
-            for idx, end in enumerate(segment_ends):
-                if step_val < end:
-                    return idx
-            return len(segment_ends) - 1
-
-        current_seg = _current_segment(step)
-        dataloader = _build_dataloader(segment_to_episode_indices[current_seg])
-        logging.info(
-            f"Curriculum segment {current_seg + 1}/{len(splits)} | episodes={len(segment_to_episode_indices[current_seg])}"
+    # create dataloader for offline training
+    if hasattr(active_cfg, "drop_n_last_frames"):
+        shuffle = False
+        sampler = EpisodeAwareSampler(
+            dataset.meta.episodes["dataset_from_index"],
+            dataset.meta.episodes["dataset_to_index"],
+            episode_indices_to_use=dataset.episodes,
+            drop_n_last_frames=active_cfg.drop_n_last_frames,
+            shuffle=True,
         )
     else:
-        dataloader = _build_dataloader(None)
+        shuffle = True
+        sampler = None
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        num_workers=cfg.num_workers,
+        batch_size=cfg.batch_size,
+        shuffle=shuffle and not cfg.dataset.streaming,
+        sampler=sampler,
+        pin_memory=device.type == "cuda",
+        drop_last=False,
+        prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
+        persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
+    )
 
     # Prepare everything with accelerator
     accelerator.wait_for_everyone()
-    # Prepare model/optimizer/scheduler
-    policy, optimizer, lr_scheduler = accelerator.prepare(
-        policy, optimizer, lr_scheduler
+    policy, optimizer, dataloader, lr_scheduler = accelerator.prepare(
+        policy, optimizer, dataloader, lr_scheduler
     )
-    # Shard dataloader across processes; keep device placement under preprocessor control
-    if hasattr(accelerator, "prepare_data_loader"):
-        dataloader = accelerator.prepare_data_loader(dataloader, device_placement=False)
-    else:
-        dataloader = accelerator.prepare(dataloader)
     dl_iter = cycle(dataloader)
 
     policy.train()
@@ -391,10 +486,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         "dataloading_s": AverageMeter("data_s", ":.3f"),
     }
 
-    # Use effective batch size for proper epoch calculation in distributed training
-    effective_batch_size = cfg.batch_size * accelerator.num_processes
+    grad_accum_steps = getattr(cfg, "gradient_accumulation_steps", 1)
+    effective_batch_size = cfg.batch_size * accelerator.num_processes * grad_accum_steps
     train_tracker = MetricsTracker(
-        effective_batch_size,
+        cfg.batch_size * grad_accum_steps,
         dataset.num_frames,
         dataset.num_episodes,
         train_metrics,
@@ -403,53 +498,83 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     )
 
     if is_main_process:
-        logging.info("Start offline training on a fixed dataset")
+        progbar = tqdm(
+            total=cfg.steps - step,
+            desc="Training",
+            unit="step",
+            disable=inside_slurm(),
+            position=0,
+            leave=True,
+        )
+        logging.info(
+            f"Start offline training on a fixed dataset, with effective batch size: {effective_batch_size}"
+        )
 
     for _ in range(step, cfg.steps):
-        start_time = time.perf_counter()
-        batch = next(dl_iter)
-        batch = preprocessor(batch)
-        train_tracker.dataloading_s = time.perf_counter() - start_time
+        output_dict = None
 
-        train_tracker, output_dict = update_policy(
-            train_tracker,
-            policy,
-            batch,
-            optimizer,
-            cfg.optimizer.grad_clip_norm,
-            accelerator=accelerator,
-            lr_scheduler=lr_scheduler,
-        )
+        for _micro in range(grad_accum_steps):
+            with accelerator.accumulate(policy):
+                start_time = time.perf_counter()
+                raw_batch = next(dl_iter)
+                task_ids = raw_batch.get("task_index") if isinstance(raw_batch, dict) else None
+                for cam_key in dataset.meta.camera_keys:
+                    if cam_key in raw_batch and raw_batch[cam_key].dtype == torch.uint8:
+                        raw_batch[cam_key] = raw_batch[cam_key].to(dtype=torch.float32) / 255.0
+                batch = preprocessor(raw_batch)
+                train_tracker.dataloading_s = time.perf_counter() - start_time
+
+                task_emb = None
+                task_ids_device = None
+                if task_ids is not None and task_index_to_name:
+                    try:
+                        task_ids_device = task_ids.to(device=device)
+                    except Exception:
+                        task_ids_device = task_ids
+
+                    unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+                    if hasattr(unwrapped_policy, "get_task_embeddings"):
+                        try:
+                            task_names = [task_index_to_name.get(int(tid), "") for tid in task_ids.tolist()]
+                            task_emb = unwrapped_policy.get_task_embeddings(task_names)
+                            if task_emb is not None:
+                                task_emb = task_emb.to(device=device)
+                        except Exception:
+                            task_emb = None
+
+                train_tracker, output_dict = update_policy(
+                    train_tracker,
+                    policy,
+                    batch,
+                    optimizer,
+                    cfg.optimizer.grad_clip_norm,
+                    accelerator=accelerator,
+                    lr_scheduler=lr_scheduler,
+                    sample_weighter=sample_weighter,
+                    task_emb=task_emb,
+                    task_ids=task_ids_device,
+                )
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
         step += 1
+        if is_main_process:
+            progbar.update(1)
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0 and is_main_process
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps
         is_eval_step = cfg.eval_freq > 0 and step % cfg.eval_freq == 0
-
-        if curriculum_enabled:
-            # Switch segment exactly at boundary after completing that step
-            if step <= segment_ends[-1] and step == segment_ends[current_seg]:
-                if current_seg + 1 < len(segment_ends):
-                    current_seg += 1
-                    dataloader = _build_dataloader(segment_to_episode_indices[current_seg])
-                    if hasattr(accelerator, "prepare_data_loader"):
-                        dataloader = accelerator.prepare_data_loader(dataloader, device_placement=False)
-                    else:
-                        dataloader = accelerator.prepare(dataloader)
-                    dl_iter = cycle(dataloader)
-                    logging.info(
-                        f"Switched to curriculum segment {current_seg + 1}/{len(segment_ends)} | episodes={len(segment_to_episode_indices[current_seg])}"
-                    )
 
         if is_log_step:
             logging.info(train_tracker)
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
                 if output_dict:
-                    wandb_log_dict.update(_sanitize_wandb_dict(output_dict))
+                    wandb_log_dict.update(output_dict)
+                # Log sample weighting statistics if enabled
+                if sample_weighter is not None:
+                    weighter_stats = sample_weighter.get_stats()
+                    wandb_log_dict.update({f"sample_weighting/{k}": v for k, v in weighter_stats.items()})
                 wandb_logger.log_dict(wandb_log_dict, step)
             train_tracker.reset_averages()
 
@@ -474,29 +599,23 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             accelerator.wait_for_everyone()
 
         if cfg.env and is_eval_step:
-            # Run evaluation on ALL ranks to avoid waiting at barriers while one rank compiles/graphs
-            step_id = get_step_identifier(step, cfg.steps)
             if is_main_process:
+                step_id = get_step_identifier(step, cfg.steps)
                 logging.info(f"Eval policy at step {step}")
-
-            # Only main process writes videos to disk; others evaluate without rendering to avoid conflicts
-            videos_dir = (cfg.output_dir / "eval" / f"videos_step_{step_id}") if is_main_process else None
-            max_episodes_rendered = 4 if is_main_process else 0
-
-            with torch.no_grad(), accelerator.autocast():
-                eval_info = eval_policy_all(
-                    envs=eval_env,  # dict[suite][task_id] -> vec_env
-                    policy=accelerator.unwrap_model(policy),
-                    preprocessor=preprocessor,
-                    postprocessor=postprocessor,
-                    n_episodes=cfg.eval.n_episodes,
-                    videos_dir=videos_dir,
-                    max_episodes_rendered=max_episodes_rendered,
-                    start_seed=cfg.seed,
-                    max_parallel_tasks=cfg.env.max_parallel_tasks,
-                )
-
-            if is_main_process:
+                with torch.no_grad(), accelerator.autocast():
+                    eval_info = eval_policy_all(
+                        envs=eval_env,  # dict[suite][task_id] -> vec_env
+                        policy=accelerator.unwrap_model(policy),
+                        env_preprocessor=env_preprocessor,
+                        env_postprocessor=env_postprocessor,
+                        preprocessor=preprocessor,
+                        postprocessor=postprocessor,
+                        n_episodes=cfg.eval.n_episodes,
+                        videos_dir=cfg.output_dir / "eval" / f"videos_step_{step_id}",
+                        max_episodes_rendered=4,
+                        start_seed=cfg.seed,
+                        max_parallel_tasks=cfg.env.max_parallel_tasks,
+                    )
                 # overall metrics (suite-agnostic)
                 aggregated = eval_info["overall"]
 
@@ -524,10 +643,12 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                 if wandb_logger:
                     wandb_log_dict = {**eval_tracker.to_dict(), **eval_info}
                     wandb_logger.log_dict(wandb_log_dict, step, mode="eval")
-                    if eval_info["overall"].get("video_paths"):
-                        wandb_logger.log_video(eval_info["overall"]["video_paths"][0], step, mode="eval")
+                    wandb_logger.log_video(eval_info["overall"]["video_paths"][0], step, mode="eval")
 
             accelerator.wait_for_everyone()
+
+    if is_main_process:
+        progbar.close()
 
     if eval_env:
         close_envs(eval_env)
@@ -535,11 +656,15 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     if is_main_process:
         logging.info("End of training")
 
-        if cfg.policy.push_to_hub:
-            unwrapped_policy = accelerator.unwrap_model(policy)
-            unwrapped_policy.push_model_to_hub(cfg)
-            preprocessor.push_to_hub(cfg.policy.repo_id)
-            postprocessor.push_to_hub(cfg.policy.repo_id)
+        if getattr(active_cfg, "push_to_hub", False):
+            unwrapped_model = accelerator.unwrap_model(policy)
+            # PEFT only applies when training a policy — reward models use the plain path.
+            if not cfg.is_reward_model_training and cfg.policy.use_peft:
+                unwrapped_model.push_model_to_hub(cfg, peft_model=unwrapped_model)
+            else:
+                unwrapped_model.push_model_to_hub(cfg)
+            preprocessor.push_to_hub(active_cfg.repo_id)
+            postprocessor.push_to_hub(active_cfg.repo_id)
 
     # Properly clean up the distributed process group
     accelerator.wait_for_everyone()
@@ -547,6 +672,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
 
 
 def main():
+    register_third_party_plugins()
     train()
 
 

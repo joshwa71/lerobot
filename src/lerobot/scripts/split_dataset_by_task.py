@@ -26,20 +26,25 @@ import pandas as pd
 
 from lerobot.datasets.compute_stats import aggregate_stats
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
-from lerobot.datasets.utils import (
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_DATA_PATH,
-    DEFAULT_EPISODES_PATH,
+from lerobot.datasets.feature_utils import (
     DEFAULT_FEATURES,
-    DEFAULT_VIDEO_PATH,
-    INFO_PATH,
     create_empty_dataset_info,
     get_hf_features_from_features,
+)
+from lerobot.datasets.io_utils import (
     load_episodes,
+    load_stats,
     to_parquet_with_hf_images,
     write_info,
     write_stats,
     write_tasks,
+)
+from lerobot.datasets.utils import (
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_DATA_PATH,
+    DEFAULT_EPISODES_PATH,
+    DEFAULT_VIDEO_PATH,
+    INFO_PATH,
     update_chunk_file_indices,
 )
 
@@ -61,13 +66,29 @@ def _find_task_name(tasks_df: pd.DataFrame, task_index: int) -> str:
         raise ValueError(f"Invalid task index {task_index}") from e
 
 
-def _filter_episode_indices_for_task(src_meta: LeRobotDatasetMetadata, task_name: str) -> List[int]:
-    # Load episodes (without stats) and select those that include the task_name in 'tasks' list
-    eps = load_episodes(src_meta.root)
-    df = eps.to_pandas()
-    mask = df["tasks"].apply(lambda lst: task_name in lst)
-    ep_indices = df.loc[mask, "episode_index"].astype(int).tolist()
-    ep_indices.sort()
+def _build_episode_task_indices(src_root: Path) -> Dict[int, List[int]]:
+    # Derive episode_index -> sorted list of task_indices from the data parquet files.
+    # The episodes metadata in some v3.0 datasets does not carry a 'tasks' column,
+    # so we read the authoritative per-frame `task_index` column from data files.
+    data_dir = src_root / "data"
+    episode_to_tasks: Dict[int, set] = {}
+    if not data_dir.exists():
+        return {}
+    for chunk_dir in sorted(data_dir.glob("chunk-*")):
+        for file_path in sorted(chunk_dir.glob("file-*.parquet")):
+            df = pd.read_parquet(file_path, columns=["episode_index", "task_index"])
+            pairs = df.drop_duplicates()
+            for ep_idx, task_idx in pairs.itertuples(index=False):
+                episode_to_tasks.setdefault(int(ep_idx), set()).add(int(task_idx))
+    return {ep: sorted(tasks) for ep, tasks in episode_to_tasks.items()}
+
+
+def _filter_episode_indices_for_task(
+    episode_task_indices: Dict[int, List[int]], task_index: int
+) -> List[int]:
+    ep_indices = sorted(
+        ep for ep, task_idxs in episode_task_indices.items() if int(task_index) in task_idxs
+    )
     return ep_indices
 
 
@@ -231,6 +252,8 @@ def _rebuild_data_and_meta(
     dst_root: Path,
     episodes_to_keep: List[int],
     video_mapping: Dict[Tuple[str, int, int], Tuple[int, int]],
+    episode_task_indices: Dict[int, List[int]],
+    task_index_to_name: Dict[int, str],
 ) -> Tuple[int, int]:
     # Write data parquet files (one per episode) and build episodes metadata DataFrame
     # Returns (total_episodes, total_frames)
@@ -260,7 +283,10 @@ def _rebuild_data_and_meta(
 
     for new_ep_idx, src_ep_idx in enumerate(episodes_to_keep):
         ep_meta = ep_df.loc[src_ep_idx]
-        
+        ep_task_names = [
+            task_index_to_name[ti] for ti in episode_task_indices.get(int(src_ep_idx), [])
+        ]
+
         # Load episode data using pre-built index
         file_paths = episode_to_files.get(src_ep_idx, [])
         df = _load_episode_data_from_files(file_paths, src_ep_idx)
@@ -268,7 +294,7 @@ def _rebuild_data_and_meta(
         # Reindex episode_index and global index
         length = len(df)
         if length == 0:
-            logging.warning(f"Episode {src_ep_idx} has no data frames (task: {ep_meta['tasks']}). Skipping.")
+            logging.warning(f"Episode {src_ep_idx} has no data frames (tasks: {ep_task_names}). Skipping.")
             continue
         df["episode_index"] = new_ep_idx
         df["index"] = np.arange(current_dataset_index, current_dataset_index + length)
@@ -286,7 +312,7 @@ def _rebuild_data_and_meta(
         # Build episode metadata row
         meta_row = {
             "episode_index": new_ep_idx,
-            "tasks": ep_meta["tasks"],
+            "tasks": ep_task_names,
             "length": int(length),
             "meta/episodes/chunk_index": 0,
             "meta/episodes/file_index": 0,
@@ -331,7 +357,11 @@ def _rebuild_data_and_meta(
 def split_dataset_by_task(
     src_root: Path,
     dst_root_parent: Path,
+    exclude_episode_indices: set[int] | None = None,
 ) -> None:
+    # exclude_episode_indices: source episode indices to drop from every per-task output
+    # (e.g. degenerate recordings). Video files are copied whole, so this never re-encodes.
+    exclude_episode_indices = set(exclude_episode_indices or ())
     # Load source metadata
     src_meta = LeRobotDatasetMetadata(repo_id="local/src", root=src_root)
 
@@ -340,12 +370,23 @@ def split_dataset_by_task(
     use_videos = len(src_meta.video_keys) > 0
 
     tasks_df = src_meta.tasks.copy()
+    task_index_to_name: Dict[int, str] = {
+        int(row.task_index): str(name) for name, row in tasks_df.iterrows()
+    }
+
+    logging.info("Building episode -> task_index mapping from data files...")
+    episode_task_indices = _build_episode_task_indices(src_root)
 
     # Iterate over actual task indices present in tasks_df (sorted)
     task_indices = tasks_df["task_index"].astype(int).sort_values().tolist()
     for task_index in task_indices:
         task_name = _find_task_name(tasks_df, task_index)
-        episodes_to_keep = _filter_episode_indices_for_task(src_meta, task_name)
+        episodes_to_keep = _filter_episode_indices_for_task(episode_task_indices, task_index)
+        if exclude_episode_indices:
+            dropped = [e for e in episodes_to_keep if int(e) in exclude_episode_indices]
+            if dropped:
+                logging.info(f"Task {task_index}: excluding episodes {dropped}")
+                episodes_to_keep = [e for e in episodes_to_keep if int(e) not in exclude_episode_indices]
         if len(episodes_to_keep) == 0:
             logging.info(f"Skip task {task_index}: '{task_name}' (no episodes)")
             continue
@@ -375,12 +416,29 @@ def split_dataset_by_task(
 
         # Build data parquet and episodes metadata
         total_episodes, total_frames = _rebuild_data_and_meta(
-            src_meta, dst_root, episodes_to_keep, video_mapping
+            src_meta,
+            dst_root,
+            episodes_to_keep,
+            video_mapping,
+            episode_task_indices,
+            task_index_to_name,
         )
 
-        # Aggregate stats from selected episodes and write
+        # Aggregate stats from selected episodes and write.
+        # Older v3.0 datasets store stats only in meta/stats.json (no per-episode
+        # stats columns in meta/episodes), so the per-episode aggregation returns
+        # {} and downstream training crashes with KeyError on image keys. Fall
+        # back to the source's global stats.json so each split has usable stats.
         ep_rows = _read_episode_stats_rows(src_meta.root, episodes_to_keep)
         stats = _aggregate_stats_from_episode_rows(ep_rows, src_meta.features)
+        if not stats:
+            stats = load_stats(src_meta.root) or {}
+            if stats:
+                logging.warning(
+                    "No per-episode stats found in meta/episodes for source %s; "
+                    "copied global meta/stats.json into split %s as a fallback.",
+                    src_meta.root, dst_root,
+                )
         write_stats(stats, dst_root)
 
         # Finalize info.json
@@ -413,11 +471,20 @@ def main():
         required=True,
         help="Directory where per-task datasets will be created.",
     )
+    parser.add_argument(
+        "--exclude_episode_indices",
+        type=str,
+        default="[]",
+        help='JSON list of source episode indices to drop from every output, e.g. "[548]".',
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
-    split_dataset_by_task(Path(args.src_root), Path(args.dst_root_parent))
+    import json
+
+    exclude = {int(x) for x in json.loads(args.exclude_episode_indices)}
+    split_dataset_by_task(Path(args.src_root), Path(args.dst_root_parent), exclude_episode_indices=exclude)
 
 
 if __name__ == "__main__":

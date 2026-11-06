@@ -30,7 +30,7 @@ Example of finetuning the smolvla pretrained model (`smolvla_base`):
 ```bash
 lerobot-train \
 --policy.path=lerobot/smolvla_base \
---dataset.repo_id=danaaubakirova/svla_so100_task1_v3 \
+--dataset.repo_id=<USER>/svla_so100_task1_v3 \
 --batch_size=64 \
 --steps=200000
 ```
@@ -40,7 +40,7 @@ and an action expert.
 ```bash
 lerobot-train \
 --policy.type=smolvla \
---dataset.repo_id=danaaubakirova/svla_so100_task1_v3 \
+--dataset.repo_id=<USER>/svla_so100_task1_v3 \
 --batch_size=64 \
 --steps=200000
 ```
@@ -52,21 +52,43 @@ policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
 
 """
 
+import logging
 import math
+import os
 from collections import deque
+from typing import TypedDict, Unpack
 
 import torch
 import torch.nn.functional as F  # noqa: N812
+from huggingface_hub import hf_hub_download
+from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
+from huggingface_hub.errors import HfHubHTTPError
+from safetensors import safe_open
 from torch import Tensor, nn
 
-from lerobot.policies.pretrained import PreTrainedPolicy
-from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
-from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel
-from lerobot.policies.utils import (
+from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
+from lerobot.utils.device_utils import get_safe_dtype
+from lerobot.utils.import_utils import require_package
+
+from ..modules.memory_lite import (
+    MLPPlusMemory,
+    TaskEmbeddingCache,
+    attach_memory_to_backbones,
+    split_memory_params,
+)
+from ..pretrained import PreTrainedPolicy
+from ..rtc.modeling_rtc import RTCProcessor
+from ..utils import (
     populate_queues,
 )
-from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
-from lerobot.utils.utils import get_safe_dtype
+from .configuration_smolvla import SmolVLAConfig
+from .smolvlm_with_expert import SmolVLMWithExpertModel
+
+
+class ActionSelectKwargs(TypedDict, total=False):
+    inference_delay: int | None
+    prev_chunk_left_over: Tensor | None
+    execution_horizon: int | None
 
 
 def create_sinusoidal_pos_embedding(
@@ -222,6 +244,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
     def __init__(
         self,
         config: SmolVLAConfig,
+        **kwargs,
     ):
         """
         Args:
@@ -229,12 +252,31 @@ class SmolVLAPolicy(PreTrainedPolicy):
                     the configuration class is used.
         """
 
+        require_package("transformers", extra="smolvla")
         super().__init__(config)
         config.validate_features()
         self.config = config
+        self.init_rtc_processor()
+        self.model = VLAFlowMatching(config, rtc_processor=self.rtc_processor)
 
-        self.model = VLAFlowMatching(config)
+        if (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ) and not getattr(self.config, "pretrained_path", None):
+            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
+
+        if getattr(self.config, "gradient_checkpointing", False):
+            self.model.vlm_with_expert.gradient_checkpointing_enable()
+
+        self.task_embedding_cache = None
+        if getattr(self.config.memory_layer, "lang_to_query", False):
+            embedding_model = getattr(self.config.memory_layer, "embedding_model", "all-MiniLM-L6-v2")
+            self.task_embedding_cache = TaskEmbeddingCache(model_name=embedding_model, device="cpu")
         self.reset()
+
+    def post_load_setup(self) -> None:
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            attach_memory_to_backbones(self.model.vlm_with_expert, self.config.memory_layer)
 
     def reset(self):
         """This should be called whenever the environment is reset."""
@@ -242,10 +284,162 @@ class SmolVLAPolicy(PreTrainedPolicy):
             ACTION: deque(maxlen=self.config.n_action_steps),
         }
 
+    def init_rtc_processor(self):
+        """Initialize RTC processor if RTC is enabled in config."""
+        self.rtc_processor = None
+
+        # Lets create processor if the config provided
+        # If RTC is not enabled - we still can track the denoising data
+        if self.config.rtc_config is not None:
+            self.rtc_processor = RTCProcessor(self.config.rtc_config)
+
+            # In case of calling init_rtc_processor after the model is created
+            # We need to set the rtc_processor to the model
+            # During the normal initialization process the model is not created yet
+            model_value = getattr(self, "model", None)
+            if model_value is not None:
+                model_value.rtc_processor = self.rtc_processor
+
     def get_optim_params(self) -> dict:
+        if getattr(self.config, "memory_layers", False) or getattr(self.config.memory_layer, "enabled", False):
+            mem_vals, others = split_memory_params(self)
+            if len(mem_vals) == 0:
+                return self.parameters()
+            return [
+                {
+                    "params": others,
+                    "lr": self.config.optimizer_lr,
+                    "weight_decay": self.config.optimizer_weight_decay,
+                },
+                {
+                    "params": mem_vals,
+                    "lr": getattr(self.config.memory_layer, "memory_lr", 1e-3),
+                    "weight_decay": getattr(self.config.memory_layer, "memory_weight_decay", 0.0),
+                },
+            ]
         return self.parameters()
 
-    def _get_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def precompute_task_embeddings(self, dataset_meta) -> None:
+        if self.task_embedding_cache is not None:
+            self.task_embedding_cache.precompute_from_metadata(dataset_meta)
+
+    def get_task_embeddings(self, task_names: list[str]) -> torch.Tensor | None:
+        if self.task_embedding_cache is None:
+            return None
+        return self.task_embedding_cache.get_by_indices(task_names)
+
+    def get_task_embeddings_from_tokens(self, lang_tokens: torch.Tensor) -> torch.Tensor | None:
+        if self.task_embedding_cache is None:
+            return None
+        try:
+            tokenizer = self.model.vlm_with_expert.processor.tokenizer
+            texts = tokenizer.batch_decode(lang_tokens, skip_special_tokens=True)
+            texts = [t.strip() for t in texts]
+            return self.task_embedding_cache.get_by_indices(texts)
+        except Exception:
+            logging.exception(
+                "Failed to compute task embeddings from language tokens; "
+                "memory routing would fall back to lang_emb=None."
+            )
+            raise
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_name_or_path: str | os.PathLike,
+        *,
+        config: SmolVLAConfig | None = None,
+        force_download: bool = False,
+        resume_download: bool | None = None,
+        proxies: dict | None = None,
+        token: str | bool | None = None,
+        cache_dir: str | os.PathLike | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        strict: bool = False,
+        **kwargs,
+    ):
+        model_id = str(pretrained_name_or_path)
+
+        if config is None:
+            return super().from_pretrained(
+                pretrained_name_or_path,
+                config=config,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                strict=strict,
+                **kwargs,
+            )
+
+        if os.path.isdir(model_id):
+            model_file = os.path.join(model_id, SAFETENSORS_SINGLE_FILE)
+        else:
+            try:
+                model_file = hf_hub_download(
+                    repo_id=model_id,
+                    filename=SAFETENSORS_SINGLE_FILE,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    proxies=proxies,
+                    resume_download=resume_download,
+                    token=token,
+                    local_files_only=local_files_only,
+                )
+            except HfHubHTTPError:
+                return super().from_pretrained(
+                    pretrained_name_or_path,
+                    config=config,
+                    force_download=force_download,
+                    resume_download=resume_download,
+                    proxies=proxies,
+                    token=token,
+                    cache_dir=cache_dir,
+                    local_files_only=local_files_only,
+                    revision=revision,
+                    strict=strict,
+                    **kwargs,
+                )
+
+        has_memory_params = False
+        try:
+            with safe_open(model_file, framework="pt") as f:
+                for key in f.keys():
+                    if ".mlp.mem." in key or ".mlp.mlp." in key:
+                        has_memory_params = True
+                        break
+        except Exception:
+            pass
+
+        want_memory = bool(getattr(config, "memory_layers", False) or getattr(config.memory_layer, "enabled", False))
+        attach_before_load = has_memory_params and want_memory
+
+        instance = cls(config, **kwargs)
+        if attach_before_load:
+            try:
+                attach_memory_to_backbones(instance.model.vlm_with_expert, config.memory_layer)
+            except Exception:
+                pass
+
+        policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
+
+        try:
+            policy.post_load_setup()
+        except Exception:
+            pass
+
+        policy.to(config.device)
+        policy.eval()
+        return policy
+
+    def _get_action_chunk(
+        self, batch: dict[str, Tensor], noise: Tensor | None = None, **kwargs: Unpack[ActionSelectKwargs]
+    ) -> Tensor:
         # TODO: Check if this for loop is needed.
         # Context: In fact, self.queues contains only ACTION field, and in inference, we don't have action in the batch
         # In the case of offline inference, we have the action in the batch
@@ -260,8 +454,20 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         lang_tokens = batch[f"{OBS_LANGUAGE_TOKENS}"]
         lang_masks = batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
+        task_emb = self.get_task_embeddings_from_tokens(lang_tokens)
+        if task_emb is not None:
+            task_emb = task_emb.to(device=state.device)
 
-        actions = self.model.sample_actions(images, img_masks, lang_tokens, lang_masks, state, noise=noise)
+        actions = self.model.sample_actions(
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state,
+            noise=noise,
+            task_emb=task_emb,
+            **kwargs,
+        )
 
         # Unpad actions
         original_action_dim = self.config.action_feature.shape[0]
@@ -279,31 +485,38 @@ class SmolVLAPolicy(PreTrainedPolicy):
         return batch
 
     @torch.no_grad()
-    def predict_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def predict_action_chunk(
+        self, batch: dict[str, Tensor], noise: Tensor | None = None, **kwargs: Unpack[ActionSelectKwargs]
+    ) -> Tensor:
         self.eval()
 
         batch = self._prepare_batch(batch)
-
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
 
-        actions = self._get_action_chunk(batch, noise)
+        actions = self._get_action_chunk(batch, noise, **kwargs)
         return actions
 
     @torch.no_grad()
-    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def select_action(
+        self, batch: dict[str, Tensor], noise: Tensor | None = None, **kwargs: Unpack[ActionSelectKwargs]
+    ) -> Tensor:
         """Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
         environment. It works by managing the actions in a queue and only calling `select_actions` when the
         queue is empty.
         """
+
+        assert not self._rtc_enabled(), (
+            "RTC is not supported for select_action, use it with predict_action_chunk"
+        )
+
         self.eval()
         batch = self._prepare_batch(batch)
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
-        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
-        # querying the policy.
-        if len(self._queues[ACTION]) == 0:
-            actions = self._get_action_chunk(batch, noise)
+
+        if self._check_get_actions_condition():
+            actions = self._get_action_chunk(batch, noise, **kwargs)
 
             # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
@@ -311,34 +524,319 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         return self._queues[ACTION].popleft()
 
-    def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
-        """Do a full training forward pass to compute the loss"""
+    def _check_get_actions_condition(self) -> bool:
+        return len(self._queues[ACTION]) == 0
+
+    def _rtc_enabled(self) -> bool:
+        return self.config.rtc_config is not None and self.config.rtc_config.enabled
+
+    def forward(
+        self,
+        batch: dict[str, Tensor],
+        noise=None,
+        time=None,
+        reduction: str = "mean",
+        task_emb: Tensor | None = None,
+        task_ids: Tensor | None = None,
+    ) -> dict[str, Tensor]:
+        """Do a full training forward pass to compute the loss.
+
+        Args:
+            batch: Training batch containing observations and actions.
+            noise: Optional noise tensor for flow matching.
+            time: Optional time tensor for flow matching.
+            reduction: How to reduce the loss. Options:
+                - "mean": Return scalar mean loss (default, backward compatible)
+                - "none": Return per-sample losses of shape (batch_size,) for RA-BC weighting
+        """
         if self.config.adapt_to_pi_aloha:
             batch[OBS_STATE] = self._pi_aloha_decode_state(batch[OBS_STATE])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
+
+        if task_ids is None and "task_index" in batch:
+            task_ids = batch["task_index"]
+            if task_ids is not None:
+                task_ids = task_ids.to(device=batch[OBS_STATE].device)
 
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
         lang_tokens = batch[f"{OBS_LANGUAGE_TOKENS}"]
         lang_masks = batch[f"{OBS_LANGUAGE_ATTENTION_MASK}"]
         actions = self.prepare_action(batch)
-        actions_is_pad = batch.get("actions_is_pad")
+        actions_is_pad = batch.get("action_is_pad")
         loss_dict = {}
-        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
-        loss_dict["losses_after_forward"] = losses.clone()
+        losses = self.model.forward(
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state,
+            actions,
+            noise,
+            time,
+            task_emb=task_emb,
+            task_ids=task_ids,
+        )
+        original_action_dim = self.config.action_feature.shape[0]
+        losses = losses[:, :, :original_action_dim]
+        loss_dict["losses_after_forward"] = losses.clone().mean().item()
 
         if actions_is_pad is not None:
             in_episode_bound = ~actions_is_pad
             losses = losses * in_episode_bound.unsqueeze(-1)
-            loss_dict["losses_after_in_ep_bound"] = losses.clone()
+            loss_dict["losses_after_in_ep_bound"] = losses.clone().mean().item()
 
         # Remove padding
         losses = losses[:, :, : self.config.max_action_dim]
-        loss_dict["losses_after_rm_padding"] = losses.clone()
+        loss_dict["losses_after_rm_padding"] = losses.clone().mean().item()
 
-        # For backward pass
-        loss = losses.mean()
-        # For backward pass
+        if reduction == "none":
+            # Return per-sample losses (B,) by averaging over valid (time, action) entries
+            if actions_is_pad is None:
+                per_sample_loss = losses.mean(dim=(1, 2))
+            else:
+                num_valid = ((~actions_is_pad).sum(dim=1) * losses.shape[-1]).clamp_min(1)
+                per_sample_loss = losses.sum(dim=(1, 2)) / num_valid
+            loss_dict["loss"] = per_sample_loss.mean().item()
+            return per_sample_loss, loss_dict
+
+        if actions_is_pad is None:
+            loss = losses.mean()
+        else:
+            num_valid = ((~actions_is_pad).sum() * losses.shape[-1]).clamp_min(1)
+            loss = losses.sum() / num_valid
+
+        loss_dict["mse_loss"] = loss.item()
+
+        contrastive_loss_weight = getattr(self.config.memory_layer, "contrastive_loss_weight", 0.0)
+        routing_intra_task_locality_weight = float(
+            getattr(self.config.memory_layer, "routing_intra_task_locality_weight", 0.0)
+        )
+        if routing_intra_task_locality_weight <= 0:
+            routing_intra_task_locality_weight = float(
+                getattr(self.config.memory_layer, "routing_compactness_weight", 0.0)
+            )
+        routing_inter_task_separation_weight = float(
+            getattr(self.config.memory_layer, "routing_inter_task_separation_weight", 0.0)
+        )
+        if routing_inter_task_separation_weight <= 0:
+            routing_inter_task_separation_weight = float(
+                getattr(self.config.memory_layer, "routing_separation_weight", 0.0)
+            )
+        routing_global_balance_weight = float(
+            getattr(self.config.memory_layer, "routing_global_balance_weight", 0.0)
+        )
+
+        if contrastive_loss_weight > 0 and (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ):
+            try:
+                contrastive_losses = []
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        mem = layer.mlp.mem
+                        if getattr(mem, "last_contrastive_loss", None) is not None:
+                            contrastive_losses.append(mem.last_contrastive_loss)
+                            loss_dict[f"contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            mem = layer.mlp.mem
+                            if getattr(mem, "last_contrastive_loss", None) is not None:
+                                contrastive_losses.append(mem.last_contrastive_loss)
+                                loss_dict[f"vlm_contrastive_loss_L{li}"] = mem.last_contrastive_loss.item()
+                except Exception:
+                    pass
+                if contrastive_losses:
+                    total_contrastive = sum(contrastive_losses) / len(contrastive_losses)
+                    loss_dict["contrastive_loss_mean"] = total_contrastive.item()
+                    loss = loss + contrastive_loss_weight * total_contrastive
+            except Exception:
+                pass
+
+        if (
+            routing_intra_task_locality_weight > 0
+            or routing_inter_task_separation_weight > 0
+            or routing_global_balance_weight > 0
+        ) and (
+            getattr(self.config, "memory_layers", False)
+            or getattr(self.config.memory_layer, "enabled", False)
+        ):
+            try:
+                locality_losses = []
+                similarity_losses = []
+                global_balance_losses = []
+                routing_intra_task_entropies = []
+                routing_intra_task_supports = []
+                routing_global_entropies = []
+
+                def _collect_routing(mem, layer_prefix: str, li: int):
+                    if getattr(mem, "last_routing_intra_task_locality_loss", None) is not None:
+                        locality_losses.append(mem.last_routing_intra_task_locality_loss)
+                        locality_val = mem.last_routing_intra_task_locality_loss.item()
+                        loss_dict[f"{layer_prefix}routing_intra_task_locality_L{li}"] = locality_val
+                        loss_dict[f"{layer_prefix}routing_compactness_L{li}"] = locality_val
+                    if getattr(mem, "last_routing_inter_task_similarity_loss", None) is not None:
+                        similarity_losses.append(mem.last_routing_inter_task_similarity_loss)
+                        similarity_val = mem.last_routing_inter_task_similarity_loss.item()
+                        loss_dict[f"{layer_prefix}routing_inter_task_similarity_L{li}"] = similarity_val
+                        loss_dict[f"{layer_prefix}routing_inter_task_separation_L{li}"] = 1.0 - similarity_val
+                        loss_dict[f"{layer_prefix}routing_separation_L{li}"] = similarity_val
+                    if getattr(mem, "last_routing_global_balance_loss", None) is not None:
+                        global_balance_losses.append(mem.last_routing_global_balance_loss)
+                        loss_dict[f"{layer_prefix}routing_global_balance_L{li}"] = (
+                            mem.last_routing_global_balance_loss.item()
+                        )
+                    if getattr(mem, "last_routing_intra_task_entropy", None) is not None:
+                        routing_intra_task_entropies.append(mem.last_routing_intra_task_entropy)
+                        loss_dict[f"{layer_prefix}routing_intra_task_entropy_L{li}"] = (
+                            mem.last_routing_intra_task_entropy
+                        )
+                        loss_dict[f"{layer_prefix}routing_task_entropy_L{li}"] = (
+                            mem.last_routing_intra_task_entropy
+                        )
+                    if getattr(mem, "last_routing_intra_task_support", None) is not None:
+                        routing_intra_task_supports.append(mem.last_routing_intra_task_support)
+                        loss_dict[f"{layer_prefix}routing_intra_task_support_L{li}"] = (
+                            mem.last_routing_intra_task_support
+                        )
+                    if getattr(mem, "last_routing_global_entropy", None) is not None:
+                        routing_global_entropies.append(mem.last_routing_global_entropy)
+                        loss_dict[f"{layer_prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
+
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        _collect_routing(layer.mlp.mem, "", li)
+
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            _collect_routing(layer.mlp.mem, "vlm_", li)
+                except Exception:
+                    pass
+
+                if locality_losses:
+                    total_locality = sum(locality_losses) / len(locality_losses)
+                    locality_val = total_locality.item()
+                    loss_dict["routing_intra_task_locality_mean"] = locality_val
+                    loss_dict["routing_compactness_mean"] = locality_val
+                    loss = loss + routing_intra_task_locality_weight * total_locality
+                if similarity_losses:
+                    total_similarity = sum(similarity_losses) / len(similarity_losses)
+                    similarity_val = total_similarity.item()
+                    loss_dict["routing_inter_task_similarity_mean"] = similarity_val
+                    loss_dict["routing_inter_task_separation_mean"] = 1.0 - similarity_val
+                    loss_dict["routing_separation_mean"] = similarity_val
+                    loss = loss + routing_inter_task_separation_weight * total_similarity
+                if global_balance_losses:
+                    total_global_balance = sum(global_balance_losses) / len(global_balance_losses)
+                    loss_dict["routing_global_balance_mean"] = total_global_balance.item()
+                    loss = loss + routing_global_balance_weight * total_global_balance
+                if routing_intra_task_entropies:
+                    entropy_mean = float(sum(routing_intra_task_entropies) / len(routing_intra_task_entropies))
+                    loss_dict["routing_intra_task_entropy_mean"] = entropy_mean
+                    loss_dict["routing_task_entropy_mean"] = entropy_mean
+                if routing_intra_task_supports:
+                    loss_dict["routing_intra_task_support_mean"] = float(
+                        sum(routing_intra_task_supports) / len(routing_intra_task_supports)
+                    )
+                if routing_global_entropies:
+                    loss_dict["routing_global_entropy_mean"] = float(
+                        sum(routing_global_entropies) / len(routing_global_entropies)
+                    )
+            except Exception:
+                pass
+
+        try:
+            if (
+                getattr(self.config, "memory_layers", False)
+                or getattr(self.config.memory_layer, "enabled", False)
+            ) and getattr(self.config.memory_layer, "log_usage", False):
+                used_fracs: list[float] = []
+                perplexities: list[float] = []
+                top1_shares: list[float] = []
+                eff_nums: list[float] = []
+                intra_sims: list[float] = []
+                inter_sims: list[float] = []
+                gate_means: list[float] = []
+
+                def _collect_usage(mem, layer_prefix: str, li: int):
+                    if getattr(mem, "last_indices", None) is not None:
+                        idx = mem.last_indices
+                        unique_count = torch.unique(idx).numel()
+                        frac = float(unique_count) / float(mem.size)
+                        loss_dict[f"{layer_prefix}used_count_L{li}"] = float(unique_count)
+                        loss_dict[f"{layer_prefix}used_frac_L{li}"] = frac
+                        used_fracs.append(frac)
+
+                        idx_flat = idx.reshape(-1)
+                        if getattr(mem, "last_weights", None) is not None:
+                            w_flat = mem.last_weights.reshape(-1).float()
+                        else:
+                            w_flat = torch.ones_like(idx_flat, dtype=torch.float32)
+                        uniq, inv = torch.unique(idx_flat, return_inverse=True)
+                        usage = torch.zeros(uniq.shape[0], dtype=torch.float32, device=idx_flat.device)
+                        usage.scatter_add_(0, inv, w_flat)
+                        total = usage.sum()
+                        if total > 0:
+                            p = usage / total
+                            eps = 1e-12
+                            entropy = -(p * (p + eps).log()).sum()
+                            perplexity = float(torch.exp(entropy).item())
+                            top1 = float(p.max().item())
+                            hhi = float((p * p).sum().item())
+                            eff_num = float(1.0 / max(hhi, eps))
+                            loss_dict[f"{layer_prefix}usage_perplexity_L{li}"] = perplexity
+                            loss_dict[f"{layer_prefix}usage_top1_share_L{li}"] = top1
+                            loss_dict[f"{layer_prefix}usage_effnum_L{li}"] = eff_num
+                            perplexities.append(perplexity)
+                            top1_shares.append(top1)
+                            eff_nums.append(eff_num)
+                    if getattr(mem, "last_query_intra_sim", None) is not None:
+                        loss_dict[f"{layer_prefix}query_intra_sim_L{li}"] = mem.last_query_intra_sim
+                        intra_sims.append(mem.last_query_intra_sim)
+                    if getattr(mem, "last_query_inter_sim", None) is not None:
+                        loss_dict[f"{layer_prefix}query_inter_sim_L{li}"] = mem.last_query_inter_sim
+                        inter_sims.append(mem.last_query_inter_sim)
+                    if getattr(mem, "last_gate_mean", None) is not None:
+                        loss_dict[f"{layer_prefix}gate_mean_L{li}"] = mem.last_gate_mean
+                        gate_means.append(mem.last_gate_mean)
+
+                expert = self.model.vlm_with_expert.lm_expert
+                for li, layer in enumerate(expert.layers):
+                    if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                        _collect_usage(layer.mlp.mem, "mem_", li)
+
+                try:
+                    vlm_text_model = self.model.vlm_with_expert.get_vlm_model().text_model
+                    for li, layer in enumerate(vlm_text_model.layers):
+                        if isinstance(getattr(layer, "mlp", None), MLPPlusMemory):
+                            _collect_usage(layer.mlp.mem, "vlm_mem_", li)
+                except Exception:
+                    pass
+
+                if used_fracs:
+                    loss_dict["mem_used_frac_mean"] = float(sum(used_fracs) / len(used_fracs))
+                if perplexities:
+                    loss_dict["mem_usage_perplexity_mean"] = float(sum(perplexities) / len(perplexities))
+                if top1_shares:
+                    loss_dict["mem_usage_top1_share_mean"] = float(sum(top1_shares) / len(top1_shares))
+                if eff_nums:
+                    loss_dict["mem_usage_effnum_mean"] = float(sum(eff_nums) / len(eff_nums))
+                if intra_sims:
+                    loss_dict["query_intra_sim_mean"] = float(sum(intra_sims) / len(intra_sims))
+                if inter_sims:
+                    loss_dict["query_inter_sim_mean"] = float(sum(inter_sims) / len(inter_sims))
+                if gate_means:
+                    loss_dict["gate_mean"] = float(sum(gate_means) / len(gate_means))
+        except Exception:
+            pass
+
         loss_dict["loss"] = loss.item()
         return loss, loss_dict
 
@@ -428,6 +926,28 @@ class SmolVLAPolicy(PreTrainedPolicy):
         actions = pad_vector(batch[ACTION], self.config.max_action_dim)
         return actions
 
+    def _get_default_peft_targets(self) -> dict[str, any]:
+        """Return default PEFT target modules for SmolVLA fine-tuning."""
+        common_projections = (
+            "state_proj|action_in_proj|action_out_proj|action_time_mlp_in|action_time_mlp_out"
+        )
+        target_modules = rf"(model\.vlm_with_expert\.lm_expert\..*\.(q|v)_proj|model\.({common_projections}))"
+        return {
+            "target_modules": target_modules,
+            "modules_to_save": [],
+        }
+
+    def _validate_peft_config(self, peft_config) -> None:
+        """Validate PEFT configuration for SmolVLA."""
+        super()._validate_peft_config(peft_config)
+        if not self.config.load_vlm_weights:
+            import logging
+
+            logging.warning(
+                "Training SmolVLA from scratch using PEFT. This is unlikely to yield good results. "
+                "Set `load_vlm_weights=True` to fine-tune the existing policy."
+            )
+
 
 def pad_tensor(tensor, max_len, pad_value=0):
     """
@@ -478,7 +998,7 @@ class VLAFlowMatching(nn.Module):
     └──────────────────────────────┘
     """
 
-    def __init__(self, config: SmolVLAConfig):
+    def __init__(self, config: SmolVLAConfig, rtc_processor: RTCProcessor | None = None):
         super().__init__()
         self.config = config
 
@@ -492,6 +1012,7 @@ class VLAFlowMatching(nn.Module):
             num_vlm_layers=self.config.num_vlm_layers,
             self_attn_every_n_layers=self.config.self_attn_every_n_layers,
             expert_width_multiplier=self.config.expert_width_multiplier,
+            device=self.config.device if self.config.device is not None else "auto",
         )
         self.state_proj = nn.Linear(
             self.config.max_state_dim, self.vlm_with_expert.config.text_config.hidden_size
@@ -516,6 +1037,16 @@ class VLAFlowMatching(nn.Module):
         self.add_image_special_tokens = self.config.add_image_special_tokens
         self.image_end_token = torch.tensor([self.fake_image_token], dtype=torch.long)
         self.prefix_length = self.config.prefix_length
+        self.rtc_processor = rtc_processor
+
+        # Compile model if requested
+        if config.compile_model:
+            torch.set_float32_matmul_precision("high")
+            self.sample_actions = torch.compile(self.sample_actions, mode=config.compile_mode)
+            self.forward = torch.compile(self.forward, mode=config.compile_mode)
+
+    def _rtc_enabled(self):
+        return self.config.rtc_config is not None and self.config.rtc_config.enabled
 
     def set_requires_grad(self):
         for params in self.state_proj.parameters():
@@ -675,7 +1206,17 @@ class VLAFlowMatching(nn.Module):
         return embs, pad_masks, att_masks
 
     def forward(
-        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None
+        self,
+        images,
+        img_masks,
+        lang_tokens,
+        lang_masks,
+        state,
+        actions,
+        noise=None,
+        time=None,
+        task_emb=None,
+        task_ids=None,
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
@@ -704,6 +1245,8 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[prefix_embs, suffix_embs],
             use_cache=False,
             fill_kv_cache=False,
+            task_emb=task_emb,
+            task_ids=task_ids,
         )
         suffix_out = suffix_out[:, -self.config.chunk_size :]
         # Original openpi code, upcast attention output
@@ -712,7 +1255,17 @@ class VLAFlowMatching(nn.Module):
         losses = F.mse_loss(u_t, v_t, reduction="none")
         return losses
 
-    def sample_actions(self, images, img_masks, lang_tokens, lang_masks, state, noise=None) -> Tensor:
+    def sample_actions(
+        self,
+        images,
+        img_masks,
+        lang_tokens,
+        lang_masks,
+        state,
+        noise=None,
+        task_emb=None,
+        **kwargs: Unpack[ActionSelectKwargs],
+    ) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
         device = state.device
@@ -734,23 +1287,46 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[prefix_embs, None],
             use_cache=self.config.use_cache,
             fill_kv_cache=True,
+            task_emb=task_emb,
         )
-        dt = -1.0 / self.config.num_steps
-        dt = torch.tensor(dt, dtype=torch.float32, device=device)
+        num_steps = self.config.num_steps
+        dt = -1.0 / num_steps
 
         x_t = noise
-        time = torch.tensor(1.0, dtype=torch.float32, device=device)
-        while time >= -dt / 2:
-            expanded_time = time.expand(bsize)
-            v_t = self.denoise_step(
-                prefix_pad_masks,
-                past_key_values,
-                x_t,
-                expanded_time,
-            )
-            # Euler step
-            x_t += dt * v_t
-            time += dt
+        for step in range(num_steps):
+            time = 1.0 + step * dt
+            time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
+
+            def denoise_step_partial_call(input_x_t, current_timestep=time_tensor):
+                return self.denoise_step(
+                    x_t=input_x_t,
+                    prefix_pad_masks=prefix_pad_masks,
+                    past_key_values=past_key_values,
+                    timestep=current_timestep,
+                    task_emb=task_emb,
+                )
+
+            if self._rtc_enabled():
+                inference_delay = kwargs.get("inference_delay")
+                prev_chunk_left_over = kwargs.get("prev_chunk_left_over")
+                execution_horizon = kwargs.get("execution_horizon")
+
+                v_t = self.rtc_processor.denoise_step(
+                    x_t=x_t,
+                    prev_chunk_left_over=prev_chunk_left_over,
+                    inference_delay=inference_delay,
+                    time=time,
+                    original_denoise_step_partial=denoise_step_partial_call,
+                    execution_horizon=execution_horizon,
+                )
+            else:
+                v_t = denoise_step_partial_call(x_t)
+
+            x_t = x_t + dt * v_t
+
+            if self.rtc_processor is not None and self.rtc_processor.is_debug_enabled():
+                self.rtc_processor.track(time=time, x_t=x_t, v_t=v_t)
+
         return x_t
 
     def denoise_step(
@@ -759,6 +1335,7 @@ class VLAFlowMatching(nn.Module):
         past_key_values,
         x_t,
         timestep,
+        task_emb=None,
     ):
         """Apply one denoising step of the noise `x_t` at a given timestep."""
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, timestep)
@@ -781,6 +1358,7 @@ class VLAFlowMatching(nn.Module):
             inputs_embeds=[None, suffix_embs],
             use_cache=self.config.use_cache,
             fill_kv_cache=False,
+            task_emb=task_emb,
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.chunk_size :]

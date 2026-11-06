@@ -37,11 +37,9 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from lerobot.cameras.configs import ColorMode
-from lerobot.cameras.opencv.camera_opencv import OpenCVCamera
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense.camera_realsense import RealSenseCamera
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.cameras import ColorMode
+from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
+from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +178,7 @@ def create_camera_instance(cam_meta: dict[str, Any]) -> dict[str, Any] | None:
 
         if instance:
             logger.info(f"Connecting to {cam_type} camera: {cam_id}...")
-            instance.connect(warmup=False)
+            instance.connect(warmup=True)
             return {"instance": instance, "meta": cam_meta}
     except Exception as e:
         logger.error(f"Failed to connect or configure {cam_type} camera {cam_id}: {e}")

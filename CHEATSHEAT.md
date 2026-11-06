@@ -62,11 +62,11 @@ lerobot-train \
 
 lerobot-train \
   --policy.path=outputs/smolvla_base \
-  --policy.repo_id=outputs/train/mixed_libero_10_5025 \
-  --dataset.repo_id=outputs/mixed_libero_10_5025 \
+  --policy.repo_id=outputs/train/smolvla_libero_10 \
+  --dataset.repo_id=outputs/libero_10 \
   --env.type=libero \
   --env.task=libero_10 \
-  --output_dir=./outputs/train/mixed_libero_10_5025 \
+  --output_dir=./outputs/train/smolvla_libero_10 \
   --save_freq=10000 \
   --steps=100000 \
   --batch_size=8 \
@@ -78,9 +78,74 @@ lerobot-train \
   --policy.train_state_proj=true \
   --policy.scheduler_warmup_steps=10000 \
   --policy.scheduler_decay_steps=150000 \
-  --job_name=mixed_libero_10_5025 \
+  --job_name=smolvla_libero \
   --policy.push_to_hub=false \
   --wandb.enable=false
+
+
+### Train SmolVLA with Memory Layers
+lerobot-train \
+  --policy.path=outputs/smolvla_base \
+  --policy.repo_id=outputs/train/smolvla_libero_90_mem_pretrained_2 \
+  --dataset.repo_id=outputs/libero_90 \
+  --env.type=libero \
+  --env.task=libero_spatial \
+  --output_dir=./outputs/train/smolvla_libero_90_mem_pretrained_2 \
+  --save_freq=10000 \
+  --steps=200000 \
+  --batch_size=8 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=3 \
+  --eval_freq=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.train_state_proj=true \
+  --policy.scheduler_warmup_steps=10000 \
+  --policy.scheduler_decay_steps=150000 \
+  --job_name=smolvla_libero_90_mem_pretrained \
+  --policy.push_to_hub=false \
+  --wandb.enable=true \
+  --policy.memory_layers=true \
+  --policy.memory_layer.memory_only=true \
+  --policy.memory_layer.layers="[10]" \
+  --policy.memory_layer.vlm_layers="[10]" \
+  --policy.memory_layer.log_usage=true \
+  --policy.memory_layer.enabled=true \
+  --policy.memory_layer.mem_n_keys=256 \
+  --policy.memory_layer.mem_heads=4 \
+  --policy.memory_layer.mem_knn=16 \
+  --policy.memory_layer.mem_k_dim=256 \
+  --policy.memory_layer.value_fixed_lr=0.001 \
+  --policy.memory_layer.memory_lr=0.001
+
+
+# Train SmolVLA sequentially
+
+python -m lerobot.scripts.lerobot_sequential_train \
+  --policy.path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model \
+  --dataset.repo_id=outputs/libero_10 \
+  --env.type=libero \
+  --env.task=libero_10 \
+  --output_dir=./outputs/train/smolvla_libero_10_mem_online_tfidf_4 \
+  --steps=2000 \
+  --batch_size=64 \
+  --num_workers=12 \
+  --eval.batch_size=1 \
+  --eval.n_episodes=20 \
+  --log_freq=200 \
+  --wandb.enable=true \
+  --wandb.project=vla-memory \
+  --job_name=smolvla_libero_10_mem_online_tfidf_4 \
+  --online_task_ids='[6,7,8,9]' \
+  --online_steps_per_task=2000 \
+  --ds_to_env_map_json='{"0":4,"1":6,"2":9,"3":2,"4":7,"5":0,"6":8,"7":1,"8":3,"9":5}' \
+  --save_after_each_task=true \
+  --policy.memory_layer.aggregate_usage=false \
+  --reinit_optimizer_each_task=true \
+  --tfidf_enable=true \
+  --tfidf_top_t=512 \
+  --idf_stats_path=/home/josh/phddev/lerobot/outputs/cluster_train/memory_libero_95_mem_mlp_512_1_layer/checkpoints/last/pretrained_model/memory_usage.json \
+  --memory_value_lr=0.02
 
 ### Run A Policy
 lerobot-record   --robot.type=so100_follower   --robot.port=/dev/ttyACM1   --robot.id=follower   --robot.max_relative_target=18   --robot.cameras="{ head: {type: opencv, index_or_path: /dev/video0, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"    --dataset.single_task="Grasp a lego block and put it in the red area."  --teleop.type=so100_leader  --teleop.port=/dev/ttyACM0  --teleop.id=leader --dataset.repo_id=outputs/eval_bl_success_60_smolvla   --dataset.episode_time_s=50 --dataset.reset_time_s=3000  --dataset.num_episodes=100   --policy.path=outputs/train/bl_success_60_smolvla/checkpoints/last/pretrained_model
@@ -106,7 +171,10 @@ python /home/josh/phddev/lerobot-upstream/src/lerobot/scripts/recalibrate_datase
   --new-calibration /home/josh/phddev/lerobot-upstream/calibration/robots/so100_follower/my_blue_follower_arm.json
 Wrote recalibrated dataset to: /home/josh/phddev/lerobot-upstream/outputs/bl_mixed_100_calibrated
 
-
+### Rsync
+rsync -avzP <source> <target>
+e.g.
+rsync -avzP /home/josh/phddev/lerobot/outputs/libero_95/ vic:/SAN/vision/jo71_vla_wd/lerobot/outputs/libero_95/
 
 ## Libero
 
@@ -122,6 +190,7 @@ put both moka pots on the stove                                                 
 put both the cream cheese box and the butter in the basket                                         7
 put the black bowl in the bottom drawer of the cabinet and close it                                8
 pick up the book and place it in the back compartment of the caddy                                 9
+
 **Other**
 put the bowl on the plate                                                                         10
 put the wine bottle on the rack                                                                   11
@@ -154,28 +223,27 @@ pick up the black bowl next to the ramekin and place it on the plate            
 pick up the black bowl from table center and place it on the plate                                38
 pick up the black bowl on the wooden cabinet and place it on the plate                            39
 
+### Env Task Ids
 
+00 put both the alphabet soup and the tomato sauce in the basket
+01 put both the cream cheese box and the butter in the basket
+02 turn on the stove and put the moka pot on it
+03 put the black bowl in the bottom drawer of the cabinet and close it
+04 put the white mug on the left plate and put the yellow and white mug on the right plate
+05 pick up the book and place it in the back compartment of the caddy
+06 put the white mug on the plate and put the chocolate pudding to the right of the plate
+07 put both the alphabet soup and the cream cheese box in the basket
+08 put both moka pots on the stove
+09 put the yellow and white mug in the microwave and close it
 
-
-
-lerobot-train \
-  --policy.type=pi05 \
-  --policy.dtype=bfloat16 \
-  --policy.compile_model=true \
-  --policy.gradient_checkpointing=true \
-  --policy.pretrained_path=outputs/pi05_base \
-  --policy.repo_id=outputs/train/libero_10_pi05_100k \
-  --dataset.repo_id=outputs/libero_10 \
-  --output_dir=outputs/train/test_pi05 \
-  --steps=100000 \
-  --batch_size=2 \
-  --num_workers=12 \
-  --env.type=libero \
-  --env.task=libero_10 \
-  --eval.batch_size=1 \
-  --eval.n_episodes=3 \
-  --eval_freq=5000 \
-  --save_freq=20000 \
-  --policy.push_to_hub=false \
-  --job_name=libero_10_pi05_100k \
-  --wandb.enable=true
+### Mapping Dataset -> Env
+0 → 4
+1 → 6
+2 → 9
+3 → 2
+4 → 7
+5 → 0
+6 → 8
+7 → 1
+8 → 3
+9 → 5

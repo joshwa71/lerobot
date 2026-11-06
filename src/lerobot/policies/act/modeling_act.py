@@ -33,9 +33,10 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from lerobot.policies.act.configuration_act import ACTConfig
-from lerobot.policies.pretrained import PreTrainedPolicy
 from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
+
+from ..pretrained import PreTrainedPolicy
+from .configuration_act import ACTConfig
 
 
 class ACTPolicy(PreTrainedPolicy):
@@ -50,6 +51,7 @@ class ACTPolicy(PreTrainedPolicy):
     def __init__(
         self,
         config: ACTConfig,
+        **kwargs,
     ):
         """
         Args:
@@ -140,9 +142,10 @@ class ACTPolicy(PreTrainedPolicy):
 
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
 
-        l1_loss = (
-            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
-        ).mean()
+        abs_err = F.l1_loss(batch[ACTION], actions_hat, reduction="none")
+        valid_mask = ~batch["action_is_pad"].unsqueeze(-1)
+        num_valid = valid_mask.sum() * abs_err.shape[-1]
+        l1_loss = (abs_err * valid_mask).sum() / num_valid.clamp_min(1)
 
         loss_dict = {"l1_loss": l1_loss.item()}
         if self.config.use_vae:
@@ -626,8 +629,8 @@ class ACTDecoderLayer(nn.Module):
             x: (Decoder Sequence, Batch, Channel) tensor of input tokens.
             encoder_out: (Encoder Sequence, B, C) output features from the last layer of the encoder we are
                 cross-attending with.
-            decoder_pos_embed: (ES, 1, C) positional embedding for keys (from the encoder).
-            encoder_pos_embed: (DS, 1, C) Positional_embedding for the queries (from the decoder).
+            encoder_pos_embed: (ES, 1, C) positional embedding for keys (from the encoder).
+            decoder_pos_embed: (DS, 1, C) positional embedding for the queries (from the decoder).
         Returns:
             (DS, B, C) tensor of decoder output features.
         """
