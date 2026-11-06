@@ -57,6 +57,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--no_prepass", action="store_true",
                     help="latency attribution: disable the frozen prepass (changes numerics, timing only)")
+    ap.add_argument("--random_init", action="store_true",
+                    help="build the policy from config.json with random weights (no safetensors needed); "
+                         "latency is weight-independent, so this reproduces timing without the checkpoint")
     ap.add_argument("--bf16", action="store_true",
                     help="cast the policy to bf16 on CPU before the GPU move; paired with autocast, "
                          "this is the precision the triangle evals run (--policy.dtype=bfloat16)")
@@ -82,7 +85,13 @@ def main():
             if hasattr(cfg.memory_layer, attr):
                 setattr(cfg.memory_layer, attr, False)
     cls = get_policy_class(cfg.type)
-    policy = cls.from_pretrained(args.ckpt, config=cfg)
+    if args.random_init:
+        # Memory attaches in __init__ when pretrained_path is unset (the from_pretrained path defers it).
+        cfg.pretrained_path = None
+        policy = cls(cfg)
+        print(f"[{args.label}] built from config with random weights", flush=True)
+    else:
+        policy = cls.from_pretrained(args.ckpt, config=cfg)
     print(f"[{args.label}] loaded on cpu; gpu alloc {torch.cuda.memory_allocated()/2**30:.2f} GiB", flush=True)
     # Match the two checkpoints' precision layouts before the GPU move. The base checkpoint stores its
     # backbone in bf16; ours stores the same backbone in fp32 (19 GB on disk vs 8.8 GB), which OOMs a
@@ -138,6 +147,7 @@ def main():
     times.sort()
     res = {
         "label": args.label, "ckpt": args.ckpt, "n": len(times), "bf16": args.bf16, "no_prepass": args.no_prepass,
+        "random_init": args.random_init,
         "params_B": round(n_params / 1e9, 4), "memory_layers": mem_on,
         "chunk_size": getattr(cfg, "chunk_size", None),
         "mean_ms": round(statistics.mean(times), 2),
