@@ -16,7 +16,8 @@ NUM_WORKERS=8
 
 # bs32 all weights without checkpointing: ~33 GiB estimated peak, so GPUs with >= 48 GB.
 GPUS="gpu=true,gpu_type=(a100_80|a40|a6000|h100|l40s|rtx6000ada)"
-RES_STAGE1="tmem=64G,h_rt=36:00:00,tscratch=120G"
+# Scratch as the old cluster scripts requested: libero_90 (65 GB) + its HF datasets cache (65 GB) + checkpoints.
+RES_STAGE1="tmem=64G,h_rt=36:00:00,tscratch=200G"
 RUN_MARGIN_MIN=30
 
 PRETRAIN_DATASET=libero_90

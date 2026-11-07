@@ -14,10 +14,10 @@ NUM_WORKERS=8
 # Resources per stage: SGE -l string (dip-207-1 is excluded by chain.sh). RUN_MARGIN_MIN before h_rt the
 # python process is stopped (SIGABRT + traceback) so the job's exit trap can still sync outputs to /SAN.
 GPUS="gpu=true,gpu_type=(a100|a100_80|a40|a6000|h100|l40s|rtx6000ada)"   # >= 40 GB
-RES_STAGE1="tmem=64G,h_rt=72:00:00,tscratch=120G"
-RES_WARMUP="tmem=64G,h_rt=48:00:00,tscratch=120G"
+RES_STAGE1="tmem=64G,h_rt=72:00:00,tscratch=200G"   # libero_90 stages (as the old scripts): 65 GB data + 65 GB HF datasets cache + ckpts
+RES_WARMUP="tmem=64G,h_rt=48:00:00,tscratch=200G"
 RES_AUDIT="tmem=48G,h_rt=12:00:00,tscratch=60G"
-RES_APHASE="tmem=64G,h_rt=48:00:00,tscratch=120G"
+RES_APHASE="tmem=64G,h_rt=48:00:00,tscratch=200G"
 RES_SEQ="tmem=64G,h_rt=72:00:00,tscratch=80G"
 RES_EVAL="tmem=48G,h_rt=24:00:00,tscratch=40G"
 RUN_MARGIN_MIN=30
