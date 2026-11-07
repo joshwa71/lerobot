@@ -36,6 +36,8 @@ seq_done() { [ "$(readlink "$RUNS/seq/checkpoints/last")" = "$seq_final" ] && [ 
 train_stage() {  # <stage> <dataset> <steps> <init> [lerobot-train args...]
     local stage=$1 dataset=$2 steps=$3 init=$4 data args; shift 4
     if [ "$(steps_done "$RUNS/$stage")" -ge "$steps" ]; then echo "== $stage already complete"; return 0; fi
+    # a checkpoint path that is missing (e.g. its run failed) fails here, not after an hour of data staging
+    case $init in /*) [ -d "$init" ] || { echo "ERROR: starting checkpoint $init does not exist"; exit 1; } ;; esac
     scratch_setup
     cd "$SCRATCH"
     data=$(scratch_copy "$HF_LEROBOT_HOME/$dataset")
