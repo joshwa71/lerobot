@@ -20,6 +20,7 @@ and a synthetic batch (real tokenizer, so the instruction/newline layout is the 
 """
 
 import argparse
+import gc
 import copy
 import tempfile
 
@@ -246,6 +247,7 @@ def config_matrix(dev, batch):
         except Exception as e:  # noqa: BLE001
             check(f"config: {name}", False, f"{type(e).__name__}: {e}"[:200])
         del p
+        gc.collect()  # anchor hooks hold reference cycles: refcounting alone never frees a policy
         torch.cuda.empty_cache()
 
 
@@ -408,6 +410,36 @@ def main():
     has_e = any(k.startswith("routing_inter_task_similarity_L") for k in ld)
     check("routing losses on both towers", has_v and has_e and "contrastive_loss_mean" in ld,
           f"vlm {has_v} expert {has_e}")
+    # 8b. the VLM routing losses see EVERY valid span position (all instruction tokens and the state
+    # token), not the batch's shortest span: cutting to the shortest dropped SmolVLA's state token
+    # (it ends each variable-length span) in ~94% of samples until 11 Nov 26.
+    # Broadcast routing (the warm-up setting) has one row per valid position: every language token
+    # (newline included) + the state token. Route-once (audit / A-phase / sequential) folds the state
+    # region into ONE pooled-key row: every instruction token + 1.
+    nv = batch[OBS_LANGUAGE_ATTENTION_MASK].sum(1).cpu()
+    n_state = mem.model._prefix_layout[1]
+    vlm_wr = vwe._memory_wrappers()[1]
+    for route_once in (False, True):
+        seen, origs = {}, []
+        for li, w in vlm_wr:
+            w.route_once = route_once
+            o = w.mem._compute_routing_losses
+            def spy(*a, _o=o, _li=li, **kw):
+                seen[_li] = kw.get("row_mask")
+                return _o(*a, **kw)
+            w.mem._compute_routing_losses = spy
+            origs.append((w.mem, o))
+        mem.forward(dict(batch))
+        for m_, o in origs:
+            m_._compute_routing_losses = o
+        want = nv - 1 + 1 if route_once else nv + n_state  # batch texts end in "\n" (newline in the state region)
+        rows = {li: (None if r is None else r.sum(1).cpu()) for li, r in seen.items()}
+        check(f"VLM routing losses cover every valid row ({'route-once' if route_once else 'broadcast'})",
+              len(rows) == len(vlm_wr) and all(r is not None and torch.equal(r, want) for r in rows.values())
+              and len(set(want.tolist())) > 1,
+              f"want {want.tolist()}, loss rows {[None if r is None else r.tolist() for r in rows.values()][:1]}")
+    for _, w in vlm_wr:
+        w.route_once = True
     del mem
     torch.cuda.empty_cache()
 
@@ -447,7 +479,8 @@ def main():
     check("save/load round trip", torch.allclose(ref_loss, l_q, rtol=0, atol=1e-6) and len(q.model.vlm_with_expert._anchor_hooks) == 4,
           f"{ref_loss.item():.8f} vs {l_q.item():.8f}")
 
-    del p, q
+    del p, q, plain  # free the reference policy too: the matrix builds one policy per config
+    gc.collect()
     torch.cuda.empty_cache()
     config_matrix(dev, batch)
 

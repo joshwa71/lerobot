@@ -1,4 +1,5 @@
 import ast
+import collections
 import contextlib
 import json
 import logging
@@ -286,7 +287,11 @@ class HashingMemoryLite(nn.Module):
         self._routing_queue_ptr = 0
         self._routing_queue_count = 0
         self._routing_queue_cap_rows = 0
-        self._pending_routing_batches: list[tuple[torch.Tensor, torch.Tensor, int]] = []
+        # Masked-loss mode (span-gather path): valid rows per queued sample, newest last,
+        # so the queue serves exactly the last `routing_query_queue` samples. Empty in the
+        # legacy mode, which serves every stored row.
+        self._routing_queue_sample_rows: collections.deque = collections.deque()
+        self._pending_routing_batches: list[tuple[torch.Tensor, torch.Tensor, int, list | None]] = []
 
         # Store last contrastive loss and diagnostic metrics for aggregation (set during forward)
         self.last_contrastive_loss = None
@@ -580,8 +585,8 @@ class HashingMemoryLite(nn.Module):
             self._pending_contrastive_batches.clear()
         # Routing-separation queue shares the same flush hook.
         if self._pending_routing_batches:
-            for q_rows, labels, rows_per_sample in self._pending_routing_batches:
-                self._enqueue_routing_queries(q_rows, labels, rows_per_sample)
+            for q_rows, labels, rows_per_sample, sample_rows in self._pending_routing_batches:
+                self._enqueue_routing_queries(q_rows, labels, rows_per_sample, sample_rows)
             self._pending_routing_batches.clear()
 
     # ── Routing-separation cross-batch queue ───────────────────────────
@@ -603,12 +608,23 @@ class HashingMemoryLite(nn.Module):
             self._routing_queue_ptr = 0
             self._routing_queue_count = 0
             self._routing_queue_cap_rows = cap_rows
+            self._routing_queue_sample_rows = collections.deque(maxlen=cap)
 
     def _get_routing_queue(self, device: torch.device, dtype: torch.dtype):
         if self.routing_query_queue <= 0:
             return None, None
         if self._routing_queue_q is None or int(self._routing_queue_count) <= 0:
             return None, None
+        if self._routing_queue_sample_rows:
+            # Masked-loss mode: the newest rows belonging to the last `cap` samples
+            # (the ring holds cap * max-rows-per-sample, so all of them are present).
+            n = min(sum(self._routing_queue_sample_rows), int(self._routing_queue_count))
+            cap_rows = self._routing_queue_cap_rows
+            idx = (int(self._routing_queue_ptr) - n + torch.arange(n, device=self._routing_queue_q.device)) % cap_rows
+            return (
+                self._routing_queue_q[idx].to(device=device, dtype=dtype),
+                self._routing_queue_labels[idx].to(device=device),
+            )
         n = int(self._routing_queue_count)
         return (
             self._routing_queue_q[:n].to(device=device, dtype=dtype),
@@ -617,14 +633,21 @@ class HashingMemoryLite(nn.Module):
 
     @torch.no_grad()
     def _stage_routing_queries(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor,
-                               size_T: int | None = None) -> None:
+                               size_T: int | None = None, row_mask: torch.Tensor | None = None) -> None:
         if self.routing_query_queue <= 0 or _is_checkpoint_recompute():
             return
         # query: (B*T*heads, k_dim) in (bs, heads) row-major order with bs = B*T.
         # size_T pins the ring-buffer sizing when T varies batch-to-batch (token-mask slice).
         q_rows = query.detach().view(B * T, self.heads, self.k_dim)
         labels = task_ids.view(B, 1).expand(B, T).reshape(B * T).detach().to(torch.long)
-        self._pending_routing_batches.append((q_rows, labels, int(size_T or T)))
+        if row_mask is None:
+            self._pending_routing_batches.append((q_rows, labels, int(size_T or T), None))
+            return
+        # Masked-loss mode: queue only the valid rows (no pads), and remember how many
+        # each sample contributed. size_T must be the fixed maximum rows per sample.
+        keep = row_mask.reshape(B * T).to(device=q_rows.device, dtype=torch.bool)
+        sample_rows = row_mask.sum(dim=1).tolist()
+        self._pending_routing_batches.append((q_rows[keep], labels[keep], int(size_T or T), sample_rows))
 
     def _router_trainable(self) -> bool:
         """True iff the router (query proj or keys) can receive gradient.
@@ -641,11 +664,14 @@ class HashingMemoryLite(nn.Module):
         return any(p.requires_grad for p in self.query_proj.parameters())
 
     @torch.no_grad()
-    def _enqueue_routing_queries(self, q_rows: torch.Tensor, labels: torch.Tensor, rows_per_sample: int) -> None:
+    def _enqueue_routing_queries(self, q_rows: torch.Tensor, labels: torch.Tensor, rows_per_sample: int,
+                                 sample_rows: list | None = None) -> None:
         cap = self.routing_query_queue
         if cap <= 0 or q_rows.numel() == 0:
             return
         self._ensure_routing_queue(q_rows.device, q_rows.dtype, rows_per_sample)
+        if sample_rows is not None:
+            self._routing_queue_sample_rows.extend(int(r) for r in sample_rows)
         cap_rows = self._routing_queue_cap_rows
         n = int(q_rows.shape[0])
         if n >= cap_rows:
@@ -733,7 +759,13 @@ class HashingMemoryLite(nn.Module):
         if self.gating is not None:
             nn.init.normal_(self.gating.weight, mean=0, std=self.input_dim ** -0.5)
 
-    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None, token_mask: torch.Tensor | None = None, stat_repeat: torch.Tensor | None = None, return_retrieval: bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lang_emb: torch.Tensor | None = None, task_ids: torch.Tensor | None = None, router_x: torch.Tensor | None = None, token_mask: torch.Tensor | None = None, stat_repeat: torch.Tensor | None = None, return_retrieval: bool = False, mask_losses: bool = False, queue_rows_per_sample: int | None = None) -> torch.Tensor:
+        # mask_losses (with token_mask): the routing/contrastive losses and the routing queue
+        # use EVERY valid row, pads masked out, instead of cutting all samples to the batch's
+        # shortest valid length. Set by the span-gather path (SmolVLA), whose state region
+        # sits at the end of a variable-length span, where the cut would drop it.
+        # queue_rows_per_sample: fixed maximum rows per sample in that mode (sizes the
+        # routing queue's ring once, so a varying batch length never re-creates it).
         # x: (B, T, C)
         # lang_emb: (B, lang_dim) or None
         # task_ids: (B,) optional task indices for contrastive loss
@@ -811,16 +843,22 @@ class HashingMemoryLite(nn.Module):
         # rectangular [:, :Tv] slice (Tv = min valid count in the batch) — pads never reach
         # the contrastive means, routing histograms, or the cross-batch queues.
         q_loss, T_loss = query, T
+        loss_rows = None  # (B, T) bool in masked-loss mode
         if token_mask is not None and T > 1:
-            tv = max(int(token_mask.sum(dim=1).min().item()), 1)
-            if tv < T:
-                q_loss = query.view(B, T, self.heads, self.k_dim)[:, :tv].reshape(B * tv * self.heads, self.k_dim)
-                T_loss = tv
+            if mask_losses:
+                loss_rows = token_mask.reshape(B, T).to(device=device, dtype=torch.bool)
+            else:
+                tv = max(int(token_mask.sum(dim=1).min().item()), 1)
+                if tv < T:
+                    q_loss = query.view(B, T, self.heads, self.k_dim)[:, :tv].reshape(B * tv * self.heads, self.k_dim)
+                    T_loss = tv
         if self.training and self.contrastive_loss_weight > 0 and task_ids is not None and router_trainable:
             if self.contrastive_method == "sample":
-                self.last_contrastive_loss = self._compute_sample_contrastive_loss(q_loss, B, T_loss, task_ids)
+                self.last_contrastive_loss = self._compute_sample_contrastive_loss(
+                    q_loss, B, T_loss, task_ids, row_mask=loss_rows)
             else:
-                self.last_contrastive_loss = self._compute_contrastive_loss(q_loss, B, T_loss, task_ids)
+                self.last_contrastive_loss = self._compute_contrastive_loss(
+                    q_loss, B, T_loss, task_ids, row_mask=loss_rows)
 
         s1_full, s2_full = self._compute_subkey_scores(query)
         s1_loss, s2_loss = s1_full, s2_full
@@ -841,7 +879,7 @@ class HashingMemoryLite(nn.Module):
                 self.last_routing_intra_task_entropy,
                 self.last_routing_intra_task_support,
                 self.last_routing_global_entropy,
-            ) = self._compute_routing_losses(s1_loss, s2_loss, B, T_loss, task_ids)
+            ) = self._compute_routing_losses(s1_loss, s2_loss, B, T_loss, task_ids, row_mask=loss_rows)
             self.last_routing_compactness_loss = self.last_routing_intra_task_locality_loss
             self.last_routing_separation_loss = self.last_routing_inter_task_similarity_loss
             self.last_routing_task_entropy = self.last_routing_intra_task_entropy
@@ -850,7 +888,11 @@ class HashingMemoryLite(nn.Module):
         # (flushed after the optimizer step in the pretrain loop; skipped when the
         # router is frozen so the pending list cannot leak — see note above).
         if self.training and self.routing_query_queue > 0 and task_ids is not None and router_trainable:
-            self._stage_routing_queries(q_loss, B, T_loss, task_ids, size_T=T)
+            if loss_rows is not None:
+                self._stage_routing_queries(q_loss, B, T_loss, task_ids, size_T=queue_rows_per_sample or T,
+                                            row_mask=loss_rows)
+            else:
+                self._stage_routing_queries(q_loss, B, T_loss, task_ids, size_T=T)
 
         # Indices and scores
         scores, indices = self._get_indices_from_subkey_scores(s1_full, s2_full)  # (bs*heads, knn)
@@ -1213,7 +1255,18 @@ class HashingMemoryLite(nn.Module):
 
         return out_fp32
 
-    def _compute_contrastive_loss(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor) -> torch.Tensor:
+    def _masked_sample_mean(self, query: torch.Tensor, B: int, T: int, row_mask: torch.Tensor | None) -> torch.Tensor:
+        """Per-sample mean query over its T*heads rows, (B, k_dim). With row_mask (B, T) bool,
+        only the valid rows count (masked-loss mode: pads contribute nothing)."""
+        if row_mask is None:
+            return query.view(B, T * self.heads, self.k_dim).mean(dim=1)
+        q = query.view(B, T, self.heads, self.k_dim)
+        w = row_mask.to(device=q.device, dtype=q.dtype).view(B, T, 1, 1)
+        n = (row_mask.sum(dim=1).to(device=q.device, dtype=q.dtype) * self.heads).clamp(min=1).view(B, 1)
+        return (q * w).sum(dim=(1, 2)) / n
+
+    def _compute_contrastive_loss(self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor,
+                                  row_mask: torch.Tensor | None = None) -> torch.Tensor:
         """
         Compute contrastive loss to push query centroids apart across tasks.
 
@@ -1226,10 +1279,8 @@ class HashingMemoryLite(nn.Module):
         Returns:
             Scalar contrastive loss tensor
         """
-        # Reshape query to (B, T*heads, k_dim) and compute per-sample mean
-        # query: (B*T*heads, k_dim) -> (B, T*heads, k_dim) -> (B, k_dim)
-        query_reshaped = query.view(B, T * self.heads, self.k_dim)
-        per_sample_query = query_reshaped.mean(dim=1)  # (B, k_dim)
+        # Per-sample mean query: (B*T*heads, k_dim) -> (B, k_dim)
+        per_sample_query = self._masked_sample_mean(query, B, T, row_mask)  # (B, k_dim)
 
         # Get unique tasks in this batch
         unique_tasks = torch.unique(task_ids)
@@ -1286,7 +1337,7 @@ class HashingMemoryLite(nn.Module):
         return contrastive_loss
 
     def _compute_sample_contrastive_loss(
-        self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor
+        self, query: torch.Tensor, B: int, T: int, task_ids: torch.Tensor, row_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Supervised contrastive loss (SupCon, Khosla et al. 2020) on per-sample
@@ -1323,9 +1374,8 @@ class HashingMemoryLite(nn.Module):
         Returns:
             Scalar contrastive loss tensor
         """
-        # ---- per-sample representation: mean over T*heads -> (B, k_dim) ----
-        query_reshaped = query.view(B, T * self.heads, self.k_dim)
-        z = query_reshaped.mean(dim=1)  # (B, k_dim)
+        # ---- per-sample representation: mean over T*heads (valid rows only if masked) -> (B, k_dim) ----
+        z = self._masked_sample_mean(query, B, T, row_mask)  # (B, k_dim)
         labels = task_ids.view(-1).to(device=query.device, dtype=torch.long)
 
         # Build key set = current batch (+ optional queue entries from previous batches).
@@ -1420,6 +1470,7 @@ class HashingMemoryLite(nn.Module):
         B: int,
         T: int,
         task_ids: torch.Tensor,
+        row_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, float | None, float | None]:
         """Compute routing losses on the joint product-key candidate distribution.
 
@@ -1429,12 +1480,17 @@ class HashingMemoryLite(nn.Module):
         the joint candidate scores, scatters per-task distributions into a
         compact slot histogram, and computes locality/separation losses on
         those full-slot distributions.
+
+        row_mask (B, T) bool, masked-loss mode: only valid rows add mass to the
+        per-task slot histograms (pad rows contribute zero).
         """
+        if row_mask is not None:
+            row_mask = row_mask.to(device=s1_full.device, dtype=torch.bool)
         # When a cross-batch routing queue is enabled, use the dense-histogram
         # path that pushes the current (differentiable) per-task distributions
         # away from queued, all-task reference distributions.
         if self.routing_query_queue > 0:
-            return self._routing_losses_queued(s1_full, s2_full, B, T, task_ids)
+            return self._routing_losses_queued(s1_full, s2_full, B, T, task_ids, row_mask=row_mask)
 
         eps = 1e-12
         M = self.routing_loss_topk if self.routing_loss_topk > 0 else self.knn
@@ -1477,6 +1533,8 @@ class HashingMemoryLite(nn.Module):
         # Reshape for task grouping: (B, T, heads, M^2)
         joint_probs = joint_probs.view(B, T, self.heads, candidate_pool)
         joint_ids = joint_ids.view(B, T, self.heads, candidate_pool)
+        if row_mask is not None:
+            joint_probs = joint_probs * row_mask.to(joint_probs.dtype).view(B, T, 1, 1)
 
         # Compact the slot ID space: map the unique slot IDs that appear
         # in this batch to a dense [0, n_compact) range to save memory.
@@ -1581,6 +1639,7 @@ class HashingMemoryLite(nn.Module):
         B: int,
         T: int,
         task_ids: torch.Tensor,
+        row_mask: torch.Tensor | None = None,
     ):
         """Routing losses with a cross-batch reference queue.
 
@@ -1642,6 +1701,8 @@ class HashingMemoryLite(nn.Module):
         joint_scores = (s1_top.unsqueeze(3) + s2_top.unsqueeze(2)).reshape(bs, heads, candidate_pool)
         joint_ids = (i1_top.unsqueeze(3) * self.n_keys + i2_top.unsqueeze(2)).reshape(bs, heads, candidate_pool)
         joint_probs = F.softmax(joint_scores.float() / score_scale, dim=-1)
+        if row_mask is not None:  # masked-loss mode: pad rows add no mass to the histograms
+            joint_probs = joint_probs * row_mask.reshape(bs).to(joint_probs.dtype).view(bs, 1, 1)
 
         cur_unique = torch.unique(task_ids)
         cur_id_list = cur_unique.tolist()
@@ -1939,7 +2000,8 @@ class MLPPlusMemory(nn.Module):
         k = _nrm(k) * target.unsqueeze(-1)
         return k, il, v, row_ok
 
-    def _route_once_pooled(self, xs, rs, vm2, comp, lang_emb, task_ids):
+    def _route_once_pooled(self, xs, rs, vm2, comp, lang_emb, task_ids, mask_losses=False,
+                           queue_rows_per_sample=None):
         """E45 route-once: every state-region position shares one router key, so the
         retrieval is computed ONCE per sample on a compact sequence [state key,
         instruction tokens] (key first so valid tokens stay a contiguous prefix for
@@ -1968,6 +2030,7 @@ class MLPPlusMemory(nn.Module):
         mem_c, idx_v, w_v = self.mem(
             xc, lang_emb=lang_emb, task_ids=task_ids, router_x=rc,
             token_mask=mc, stat_repeat=srep, return_retrieval=True,
+            mask_losses=mask_losses, queue_rows_per_sample=queue_rows_per_sample,
         )
         mem_out = xs.new_zeros(B, T, mem_c.shape[-1])
         mem_out[:, :bmax] = mem_c[:, 1:1 + bmax] * instr_valid.to(mem_c.dtype).unsqueeze(-1)
@@ -2172,13 +2235,19 @@ class MLPPlusMemory(nn.Module):
         if self.router_pool:
             base = xs if rs is None else rs
             comp = self._pooled_components(base, vm2)
+        # The state region sits at the END of each variable-length span here, so the losses
+        # must use every valid row (mask_losses), never the cut to the batch's shortest span
+        # that the pi05 tail layout tolerates. The full span width fixes the queue's sizing.
+        width = int(vm.shape[1])
         if (self.router_pool and self.route_once and comp is not None and bool(comp[3].all())
                 and not self.mem._slots_offloaded):
-            mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids)
+            mem_out = self._route_once_pooled(xs, rs, vm2, comp, lang_emb, task_ids,
+                                              mask_losses=True, queue_rows_per_sample=width + 1)
         else:
             if self.router_pool:
                 rs = self._pooled_router_keys(xs if rs is None else rs, vm2)
-            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs, token_mask=vm2)
+            mem_out = self.mem(xs, lang_emb=lang_emb, task_ids=task_ids, router_x=rs, token_mask=vm2,
+                               mask_losses=True, queue_rows_per_sample=width)
             mem_out = mem_out * vm2.to(dtype=mem_out.dtype).unsqueeze(-1)
         out = self.mlp(x)
         out = out.to(torch.promote_types(out.dtype, mem_out.dtype))
