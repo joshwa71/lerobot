@@ -1,11 +1,12 @@
 # Experiment config for the SmolVLA staged memory chain. Plain bash, sourced by every job of the chain.
 # To try a configuration: copy this file, edit it, submit it:
 #   cluster/jobs/smolvla/chain.sh cluster/jobs/smolvla/configs/<name>.sh [stage ...]
-# Stages, in order: stage1 warmup audit aphase seq eval (default: all). Re-running chain.sh resumes:
+# Stages, in order: stage1 warmup audit aphase seq tri (default: all; eval = the final checkpoint only). Re-running chain.sh resumes:
 # each stage skips itself when complete and otherwise continues from its last synced checkpoint.
 #
 # Values follow the pi05 sim paper cell (projects/summary_research_log.md section 2) where a knob carries
-# over unchanged; the memory LAYOUT (layers, sharing) is a placeholder mapped onto SmolVLA's 16 + 16 layers.
+# over unchanged. The memory LAYOUT is pi05's relative depths on SmolVLA's 16 + 16 layers, without the last VLM
+# layer (SmolVLA never reads its output): 11 sites, 7 tables (research_log2 Entry 1).
 
 NAME=example                  # outputs: $CLUSTER_ROOT/runs/$NAME/<stage>; job logs: .../logs
 WANDB=(--wandb.enable=false)  # e.g. (--wandb.enable=true --wandb.project=vla-memory)
@@ -17,8 +18,9 @@ GPUS="gpu=true,gpu_type=(a100|a100_80|a40|a6000|h100|l40s|rtx6000ada)"   # >= 40
 RES_STAGE1="tmem=64G,h_rt=72:00:00,tscratch=200G"   # libero_90 stages (as the old scripts): 65 GB data + 65 GB HF datasets cache + ckpts
 RES_WARMUP="tmem=64G,h_rt=48:00:00,tscratch=200G"
 RES_AUDIT="tmem=48G,h_rt=12:00:00,tscratch=60G"
-RES_APHASE="tmem=64G,h_rt=48:00:00,tscratch=200G"
-RES_SEQ="tmem=64G,h_rt=72:00:00,tscratch=80G"
+RES_APHASE="tmem=64G,h_rt=48:00:00,tscratch=200G"   # + init 7 GB + 19 GB per checkpoint (values + Adam moments)
+RES_SEQ="tmem=64G,h_rt=72:00:00,tscratch=150G"     # libero_10 24 GB with cache + init + one 7 GB checkpoint per task
+RES_TRI="tmem=48G,h_rt=24:00:00,tscratch=40G"
 RES_EVAL="tmem=48G,h_rt=24:00:00,tscratch=40G"
 RUN_MARGIN_MIN=30
 
@@ -43,7 +45,7 @@ STAGE1_ARGS=(
 MEMORY=(
   --policy.memory_layers=true --policy.memory_layer.enabled=true
   --policy.memory_layer.layers='[4,6,8,10,12,14]' --policy.memory_layer.share_groups='[[4,6],[8,10]]'
-  --policy.memory_layer.vlm_layers='[5,7,9,11,13,15]' --policy.memory_layer.vlm_share_groups='[[5,7],[9,11],[13,15]]'
+  --policy.memory_layer.vlm_layers='[5,7,9,11,13]' --policy.memory_layer.vlm_share_groups='[[5,7],[9,11]]'
   --policy.memory_layer.mem_n_keys=256 --policy.memory_layer.vlm_mem_n_keys=256
   --policy.memory_layer.value_type=lora --policy.memory_layer.lora_rank=2 --policy.memory_layer.vlm_lora_rank=2
   --policy.memory_layer.mem_heads=4 --policy.memory_layer.mem_k_dim=512
@@ -72,6 +74,7 @@ WARMUP_ARGS=(
 )
 
 # ---- held-out routing audit: stream SEQ_DATASET through the frozen warm-up checkpoint (value LR 1e-12) ----
+AUDIT_TASKS='[0,1,2,3,4,5,6,7,8,9]'   # all ten, whatever SEQ_TASKS is, so certificates stay comparable
 AUDIT_ARGS=(
   --batch_size=8 --online_steps_per_task=400
   --policy.memory_layer.aggregate_usage=false --policy.memory_layer.vlm_route_once=true
@@ -83,7 +86,7 @@ AUDIT_ARGS=(
 # ---- A-phase: values (+ gate / projections) on the pretraining data, router frozen ----
 APHASE_STEPS=10000
 APHASE_ARGS=(
-  --batch_size=32 --save_freq=2500
+  --batch_size=32 --save_freq=5000
   --policy.train_router_only=false --policy.memory_layer.router_only_fast=false
   --policy.train_memory_only=true --policy.freeze_memory_router=true
   --policy.memory_layer.vlm_route_once=true
@@ -95,13 +98,14 @@ SEQ_ARGS=(
   --batch_size=16 --gradient_accumulation_steps=2
   --policy.train_router_only=false --policy.memory_layer.router_only_fast=false
   --policy.memory_layer.vlm_route_once=true --policy.memory_layer.aggregate_usage=false
+  --policy.n_action_steps=10
   --save_after_each_task=true --reinit_optimizer_each_task=true
   --tfidf_enable=true --tfidf_top_t=3072 --use_online_idf_stats=true --idf_exponent=1
   --protect_prior_slots=true --protect_beta=4 --protect_mode=rank --protect_u_norm=corefrac
   --memory_value_lr=2e-3 --memory_value_lr_end=2e-4 --memory_value_scheduler_type=linear
-  --env.type=libero --env.task=libero_10 --eval.batch_size=1 --eval.n_episodes=20 --eval_final_episodes=50
-)
+)  # no --env: no in-run boundary evals (retired on pi05); tri measures every boundary
 
-# ---- evaluation of the final sequential checkpoint: one job per seed (paired seeds across configs) ----
+# ---- evaluation: tri = retention triangle (one job per task boundary, all seeds); eval = final checkpoint, one
+# job per seed. SmolVLA executes 10 actions per predicted chunk (research_log2 Entry 1). ----
 EVAL_SEEDS=(1000 2000 3000 4000)
-EVAL_ARGS=(--env.type=libero --env.task=libero_10 --eval.n_episodes=25 --eval.batch_size=5)
+EVAL_ARGS=(--env.type=libero --env.task=libero_10 --eval.n_episodes=25 --eval.batch_size=5 --policy.n_action_steps=10)

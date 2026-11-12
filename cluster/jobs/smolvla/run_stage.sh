@@ -1,6 +1,6 @@
 #!/bin/bash
 # One stage of the SmolVLA staged memory chain. Submitted by cluster/jobs/smolvla/chain.sh with
-#   -v RUNS=<run root>,STAGE=<stage>,RUN_LIMIT=<seconds>[,SEED=<eval seed>]
+#   -v RUNS=<run root>,STAGE=<stage>,RUN_LIMIT=<seconds>[,SEED=<eval seed>][,BLOCK=<triangle row>]
 # The run root holds config.sh (the experiment config snapshot) and one directory per stage.
 # Scratch pattern (CLAUDE.md 9.4): dataset, starting checkpoint and HF models are copied to node
 # scratch; outputs live on scratch and are synced to $RUNS/<stage> every 30 min and on exit. Each stage
@@ -14,7 +14,7 @@ export HF_HUB_OFFLINE=1 PYTHONFAULTHANDLER=1
 CTR=$REPO/cluster/bin/ctr
 RENAME='{"observation.images.image": "observation.images.camera1", "observation.images.image2": "observation.images.camera2"}'
 VLM=HuggingFaceTB/SmolVLM2-500M-Video-Instruct  # loaded by every stage: load_vlm_weights=true, HF's path and dtypes
-echo "== $NAME/$STAGE${SEED:+ seed $SEED} on $(hostname), job $JOB_ID, $(date), GPU ${CUDA_VISIBLE_DEVICES:-none}," \
+echo "== $NAME/$STAGE${SEED:+ seed $SEED}${BLOCK:+ row $BLOCK} on $(hostname), job $JOB_ID, $(date), GPU ${CUDA_VISIBLE_DEVICES:-none}," \
     "repo $(cd "$REPO" && /usr/bin/git rev-parse --short HEAD)"
 
 # Python runs under a limit RUN_MARGIN_MIN short of h_rt (SGE's h_rt kill is SIGKILL, which skips the exit
@@ -31,6 +31,13 @@ require_train_done() {  # <stage> <steps>
 n_seq_tasks=$(( $(echo "$SEQ_TASKS" | tr -cd ',' | wc -c) + 1 ))
 seq_final=$(printf '%06d' $((n_seq_tasks * SEQ_STEPS_PER_TASK)))
 seq_done() { [ "$(readlink "$RUNS/seq/checkpoints/last")" = "$seq_final" ] && [ -f "$RUNS/seq/checkpoints/last/sequential_state.pt" ]; }
+seq_envs() {  # <n>: LIBERO env ids of the first n SEQ_TASKS (through DS_TO_ENV), comma-separated
+    local t ids=()
+    for t in $(echo "$SEQ_TASKS" | tr -d '[] ' | tr ',' ' ' | cut -d' ' -f1-"$1"); do
+        ids+=("$(echo "$DS_TO_ENV" | grep -o "\"$t\": *[0-9]*" | grep -o '[0-9]*$')")
+    done
+    (IFS=,; echo "${ids[*]}")
+}
 
 # lerobot-train stage: fresh from <init> (checkpoint dir or hub id), or resumed from its own last checkpoint
 train_stage() {  # <stage> <dataset> <steps> <init> [lerobot-train args...]
@@ -76,7 +83,7 @@ audit)
     rm -rf "$SCRATCH_OUT"
     run lerobot-sequential-train --policy.path="$init" --rename_map="$RENAME" \
         --dataset.repo_id="$SEQ_DATASET" --dataset.root="$data" --output_dir="$SCRATCH_OUT" \
-        --online_task_ids="$SEQ_TASKS" --save_checkpoint=false --save_after_each_task=false \
+        --online_task_ids="${AUDIT_TASKS:-$SEQ_TASKS}" --save_checkpoint=false --save_after_each_task=false \
         --reinit_optimizer_each_task=true --num_workers="$NUM_WORKERS" --wandb.enable=false "${AUDIT_ARGS[@]}"
     # Per-tower routing summary (core50 / effnum per task, family and background IoU) for the gate
     read -r EL EB VL VB < <(run python -c 'import json, sys
@@ -111,17 +118,42 @@ seq)
         --num_workers="$NUM_WORKERS" "${WANDB[@]}" "${SEQ_ARGS[@]}"
     ;;
 eval)
+    # One seed of EVAL_ARGS on the envs of all SEQ_TASKS: the final sequential checkpoint, or EVAL_MODEL when the
+    # config sets one (e.g. the zero-shot floor of the stage-1 base). An --env.task_ids in EVAL_ARGS overrides the envs.
     if [ -f "$RUNS/eval/seeds_$SEED.json" ]; then echo "== eval seed $SEED already complete"; exit 0; fi
-    seq_done || { echo "ERROR: seq is not complete"; exit 1; }
+    if [ -n "${EVAL_MODEL:-}" ]; then
+        src=$EVAL_MODEL tag=$NAME
+        [ -d "$src" ] || { echo "ERROR: EVAL_MODEL $src does not exist"; exit 1; }
+    else
+        seq_done || { echo "ERROR: seq is not complete"; exit 1; }
+        src=$(ckpt seq) tag=${NAME}_seq_final
+    fi
     scratch_setup
     cd "$SCRATCH"
-    model=$(scratch_copy "$(ckpt seq)" model)
+    model=$(scratch_copy "$src" model)
     scratch_hub_models "$VLM"
     scratch_outputs "$RUNS/eval"
     mkdir -p "$SCRATCH_OUT"
-    export CAMP_SEEDS=$SEED CAMP_TAG="${NAME}_seq_final" CAMP_OUT="$SCRATCH_OUT/seeds_$SEED.json"
+    export CAMP_SEEDS=$SEED CAMP_TAG=$tag CAMP_OUT="$SCRATCH_OUT/seeds_$SEED.json"
     run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" --policy.path="$model" --rename_map="$RENAME" \
-        "${EVAL_ARGS[@]}"
+        --env.task_ids="[$(seq_envs "$n_seq_tasks")]" "${EVAL_ARGS[@]}"
+    ;;
+tri)
+    # Retention-triangle row BLOCK: the checkpoint after sequential task BLOCK on the envs of tasks 1..BLOCK,
+    # EVAL_ARGS episodes x every EVAL_SEEDS seed (the pi05 instrument: 25 episodes x 4 paired seeds per cell).
+    if [ -f "$RUNS/tri/b$BLOCK.json" ]; then echo "== triangle row $BLOCK already complete"; exit 0; fi
+    ck=$RUNS/seq/checkpoints/$(printf '%06d' $((BLOCK * SEQ_STEPS_PER_TASK)))
+    # sequential_state.pt is written after the boundary checkpoint, so its presence means the boundary is complete
+    [ -f "$ck/sequential_state.pt" ] || { echo "ERROR: sequential boundary $BLOCK is not complete ($ck)"; exit 1; }
+    scratch_setup
+    cd "$SCRATCH"
+    model=$(scratch_copy "$ck/pretrained_model" model)
+    scratch_hub_models "$VLM"
+    scratch_outputs "$RUNS/tri"
+    mkdir -p "$SCRATCH_OUT"
+    export CAMP_SEEDS=$(IFS=,; echo "${EVAL_SEEDS[*]}") CAMP_TAG="${NAME}_tri_b$BLOCK" CAMP_OUT="$SCRATCH_OUT/b$BLOCK.json"
+    run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" --policy.path="$model" --rename_map="$RENAME" \
+        "${EVAL_ARGS[@]}" --env.task_ids="[$(seq_envs "$BLOCK")]"
     ;;
 *)
     echo "unknown STAGE=$STAGE"; exit 1

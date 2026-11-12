@@ -2,8 +2,11 @@
 # Submit the SmolVLA staged memory chain for one experiment config (template: configs/example.sh).
 # On a login node:
 #   cd /SAN/vision/jo71_vla_wd/lerobot && cluster/jobs/smolvla/chain.sh cluster/jobs/smolvla/configs/<name>.sh [stage ...]
-# Stages (default all): stage1 warmup audit aphase seq eval. Each is one job held on the previous stage's
-# job(s); eval is one job per EVAL_SEEDS entry. Re-running resumes: complete stages exit at once.
+# Stages (default: stage1 warmup audit aphase seq tri). Each is one job held on the previous stage's job(s).
+# tri is the retention triangle, one job per sequential task boundary (row k: the checkpoint after task k on
+# the envs of tasks 1..k, every EVAL_SEEDS seed); its last row is the final evaluation. eval is one job per
+# EVAL_SEEDS entry on the final checkpoint, or on EVAL_MODEL (e.g. a zero-shot floor). Re-running resumes:
+# complete stages exit at once.
 # The config is snapshotted to $CLUSTER_ROOT/runs/<NAME>/config.sh, and the jobs read that copy. A different
 # config under an existing NAME is refused (use a new NAME, or FORCE=1 to replace the snapshot).
 # HOLD_JID=<job id[,...]> makes the first stage wait for jobs outside this chain (e.g. the stage-1 base).
@@ -20,7 +23,7 @@ fi
 cp "$CONFIG" "$RUNS/config.sh"
 
 stages=("$@")
-[ ${#stages[@]} -gt 0 ] || stages=(stage1 warmup audit aphase seq eval)
+[ ${#stages[@]} -gt 0 ] || stages=(stage1 warmup audit aphase seq tri)
 hold=${HOLD_JID:-}
 for st in "${stages[@]}"; do
     res_var=RES_${st^^}
@@ -28,12 +31,14 @@ for st in "${stages[@]}"; do
     [ -n "$res" ] || { echo "ERROR: no $res_var in $CONFIG"; exit 1; }
     hrt=$(echo "$res" | grep -o 'h_rt=[0-9:]*' | cut -d= -f2)
     limit=$(( $(echo "$hrt" | awk -F: '{print $1 * 3600 + $2 * 60 + $3}') - RUN_MARGIN_MIN * 60 ))
-    seeds=("")
-    [ "$st" = eval ] && seeds=("${EVAL_SEEDS[@]}")
+    # eval: one job per EVAL_SEEDS entry; tri: one job per sequential task boundary (triangle row); else one job
+    jobs=("")
+    [ "$st" = eval ] && jobs=("${EVAL_SEEDS[@]/#/SEED=}")
+    [ "$st" = tri ] && jobs=($(seq -f 'BLOCK=%g' 1 $(( $(echo "$SEQ_TASKS" | tr -cd ',' | wc -c) + 1 ))))
     ids=()
-    for seed in "${seeds[@]}"; do
-        ids+=("$(qsub -terse -N "${NAME}_${st}${seed:+_$seed}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l 'h=!dip-207-1*' \
-            ${hold:+-hold_jid "$hold"} -v "RUNS=$RUNS,STAGE=$st,RUN_LIMIT=$limit,SEED=$seed" \
+    for job in "${jobs[@]}"; do
+        ids+=("$(qsub -terse -N "${NAME}_${st}${job:+_${job#*=}}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l 'h=!dip-207-1*' \
+            ${hold:+-hold_jid "$hold"} -v "RUNS=$RUNS,STAGE=$st,RUN_LIMIT=$limit${job:+,$job}" \
             "$REPO/cluster/jobs/smolvla/run_stage.sh")")
     done
     echo "$st: ${ids[*]}"

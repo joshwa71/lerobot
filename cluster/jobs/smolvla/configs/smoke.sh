@@ -5,11 +5,12 @@ source "$REPO/cluster/jobs/smolvla/configs/example.sh"
 NAME=smoke_chain
 NUM_WORKERS=4
 GPUS="gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)"
-for st in STAGE1 WARMUP AUDIT APHASE SEQ EVAL; do declare "RES_$st=tmem=32G,h_rt=3:00:00,tscratch=40G"; done
+for st in STAGE1 WARMUP AUDIT APHASE SEQ TRI EVAL; do declare "RES_$st=tmem=32G,h_rt=3:00:00,tscratch=40G"; done
 RUN_MARGIN_MIN=15
 
 PRETRAIN_DATASET=libero_10
 SEQ_TASKS='[0,1]'
+AUDIT_TASKS='[0,1]'
 
 STAGE1_CKPT=""  # run a stage 1 of its own, not the shared base
 STAGE1_STEPS=40

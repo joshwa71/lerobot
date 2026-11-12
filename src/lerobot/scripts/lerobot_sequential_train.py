@@ -2661,12 +2661,16 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
             step_id = get_step_identifier(global_step, cfg.steps)
             logging.info(f"Checkpoint policy after task {idx+1} | step {global_step}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, global_step)
+            # Nothing reads the optimizer back: a resume restarts at this boundary (resume_sequential),
+            # and with reinit_optimizer_each_task the next task builds a fresh optimizer anyway. Skipping
+            # it saves the value tables' Adam moments (2x the value parameters, ~12 GB on SmolVLA's full
+            # layout) per boundary.
             save_checkpoint(
                 checkpoint_dir=checkpoint_dir,
                 step=global_step,
                 cfg=cfg,
                 policy=accelerator.unwrap_model(policy),
-                optimizer=optimizer,
+                optimizer=None if cfg.reinit_optimizer_each_task else optimizer,
                 scheduler=lr_scheduler,
                 preprocessor=preprocessor,
                 postprocessor=postprocessor,
