@@ -12,9 +12,9 @@ WANDB=(--wandb.enable=false)
 NUM_WORKERS=8
 GPUS="gpu=true,gpu_type=(a100_80|a40|a6000|h100|l40s|rtx6000ada)"   # >= 48 GB: backprop through every layer at batch 32
 RES_SPEC="tmem=48G,h_rt=12:00:00,tscratch=40G"
-RES_SEQ="tmem=48G,h_rt=48:00:00,tscratch=40G"     # libero_10 24 GB with cache + base + small adapter checkpoints
+RES_SEQ="tmem=48G,h_rt=12:00:00,tscratch=40G"     # libero_10 24 GB with cache + base + small adapter checkpoints
 RES_TRI="tmem=48G,h_rt=24:00:00,tscratch=40G"
-RES_JOINT="tmem=48G,h_rt=48:00:00,tscratch=40G"
+RES_JOINT="tmem=48G,h_rt=24:00:00,tscratch=40G"   # 50k LoRA steps at ~1.15 step/s: ~12 h
 RES_EVAL="tmem=48G,h_rt=24:00:00,tscratch=40G"
 RUN_MARGIN_MIN=30
 
