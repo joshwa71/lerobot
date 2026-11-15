@@ -18,8 +18,28 @@ echo "== $NAME/$STAGE${SEED:+ seed $SEED}${BLOCK:+ row $BLOCK}${TASK:+ task $TAS
     "repo $(cd "$REPO" && /usr/bin/git rev-parse --short HEAD)"
 
 # Python runs under a limit RUN_MARGIN_MIN short of h_rt (SGE's h_rt kill is SIGKILL, which skips the exit
-# trap and its final sync); SIGABRT leaves a faulthandler traceback.
-run() { timeout -s ABRT "$RUN_LIMIT" "$CTR" "$@"; }
+# trap and its final sync); SIGABRT leaves a faulthandler traceback. RUN_LIMIT is one budget for the whole job,
+# counted from its start, so a job with several Python steps (e.g. grouped specialists) also stops in time.
+DEADLINE=$(( $(date +%s) + RUN_LIMIT ))
+run() {
+    local left=$(( DEADLINE - $(date +%s) ))
+    [ "$left" -gt 60 ] || { echo "ERROR: the job's time budget (RUN_LIMIT) is used up"; return 124; }
+    timeout -s ABRT "$left" "$CTR" "$@"
+}
+# LIBERO evals occasionally fail to create their EGL framebuffer at the first batch ("Offscreen framebuffer is not
+# complete", 2 of ~25 evals on 13-15 Nov 26, on GPUs that rendered fine before and after): retry twice, a minute
+# apart. A timeout (exit 124: the budget is used up) is not retried.
+run_eval() {  # [eval_seeds_campaign.py args...]
+    local attempt rc=0
+    for attempt in 1 2 3; do
+        run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "$@" && return 0
+        rc=$?
+        [ "$rc" != 124 ] || return "$rc"
+        echo "== eval attempt $attempt failed (exit $rc)"
+        [ "$attempt" = 3 ] || sleep 60
+    done
+    return "$rc"
+}
 steps_done() {  # <out dir>: training step of checkpoints/last, 0 if none
     local f=$1/checkpoints/last/training_state/training_step.json
     if [ -f "$f" ]; then tr -cd '0-9' < "$f"; else echo 0; fi
@@ -161,7 +181,7 @@ eval)
     scratch_outputs "$RUNS/eval"
     mkdir -p "$SCRATCH_OUT"
     export CAMP_SEEDS=$SEED CAMP_TAG=$tag CAMP_OUT="$SCRATCH_OUT/seeds_$SEED.json"
-    run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
+    run_eval "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
         --env.task_ids="[$(seq_envs "$n_seq_tasks")]" "${EVAL_ARGS[@]}"
     ;;
 tri)
@@ -178,7 +198,7 @@ tri)
     scratch_outputs "$RUNS/tri"
     mkdir -p "$SCRATCH_OUT"
     export CAMP_SEEDS=$(IFS=,; echo "${EVAL_SEEDS[*]}") CAMP_TAG="${NAME}_tri_b$BLOCK" CAMP_OUT="$SCRATCH_OUT/b$BLOCK.json"
-    run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
+    run_eval "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
         "${EVAL_ARGS[@]}" --env.task_ids="[$(seq_envs "$BLOCK")]"
     ;;
 spec)
@@ -211,7 +231,7 @@ spec)
             fi
             peft_args "$(scratch_copy "$SCRATCH_OUT/train/checkpoints/$final/pretrained_model" model)"
             export CAMP_SEEDS=$(IFS=,; echo "${EVAL_SEEDS[*]}") CAMP_TAG="${NAME}_spec_t$t" CAMP_OUT="$SCRATCH_OUT/eval.json"
-            run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
+            run_eval "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
                 "${EVAL_ARGS[@]}" --env.task_ids="[$(task_env "$t")]"
             echo "== specialist $t: done $(date)"
         done
