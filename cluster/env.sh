@@ -108,6 +108,20 @@ scratch_outputs() {
     export SCRATCH_OUT=$_OUT
 }
 
+# Finish the current outputs (stop their periodic sync, final sync to /SAN) so a job can move on to another run
+# directory with a new scratch_outputs call; the exit trap then covers only the new one. No-op before the first call.
+scratch_outputs_close() {
+    # `wait` returns the killed loop's status: never let that trip a caller's `set -e`
+    if [ -n "${_OUT_SYNC_PID:-}" ]; then kill "$_OUT_SYNC_PID" 2>/dev/null || true; wait "$_OUT_SYNC_PID" 2>/dev/null || true; fi
+    _OUT_SYNC_PID=
+    if [ -n "${_OUT:-}" ] && [ -d "$_OUT" ]; then
+        local try ok=
+        for try in 1 2 3; do _sync_out && { ok=1; break; }; done
+        [ -n "$ok" ] || { echo "scratch_outputs_close: sync of $_OUT failed" >&2; return 1; }
+    fi
+    _OUT= _OUT_DEST=
+}
+
 # Outputs -> /SAN, with checkpoints/last moved only after its target has arrived in full: note where
 # `last` points, copy everything else, then set `last` on /SAN by an atomic rename. An rsync cut off
 # part-way (job killed) can leave a half-copied checkpoint directory on /SAN, but never a `last`

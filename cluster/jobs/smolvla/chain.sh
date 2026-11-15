@@ -6,7 +6,7 @@
 # tri is the retention triangle, one job per sequential task boundary (row k: the checkpoint after task k on
 # the envs of tasks 1..k, every EVAL_SEEDS seed); its last row is the final evaluation. eval is one job per
 # EVAL_SEEDS entry on the final checkpoint, or on EVAL_MODEL (e.g. a zero-shot floor). Re-running resumes:
-# complete stages exit at once. Baselines: spec (per-task specialists, one job per SEQ_TASKS entry), joint (all
+# complete stages exit at once. Baselines: spec (per-task specialists, SPEC_GROUP tasks per job, env or config), joint (all
 # SEQ_DATASET episodes, then eval with EVAL_FROM=joint); naive sequential is seq with SEQ_INIT and --peft.* args.
 # The config is snapshotted to $CLUSTER_ROOT/runs/<NAME>/config.sh, and the jobs read that copy. A different
 # config under an existing NAME is refused (use a new NAME, or FORCE=1 to replace the snapshot).
@@ -33,14 +33,15 @@ for st in "${stages[@]}"; do
     hrt=$(echo "$res" | grep -o 'h_rt=[0-9:]*' | cut -d= -f2)
     limit=$(( $(echo "$hrt" | awk -F: '{print $1 * 3600 + $2 * 60 + $3}') - RUN_MARGIN_MIN * 60 ))
     # eval: one job per EVAL_SEEDS entry; tri: one per sequential task boundary (triangle row); spec: one per
-    # SEQ_TASKS entry (per-task specialist); else one job
+    # SPEC_GROUP SEQ_TASKS entries (default 1; specialists run back to back in a job); else one job
     jobs=("")
     [ "$st" = eval ] && jobs=("${EVAL_SEEDS[@]/#/SEED=}")
     [ "$st" = tri ] && jobs=($(seq -f 'BLOCK=%g' 1 $(( $(echo "$SEQ_TASKS" | tr -cd ',' | wc -c) + 1 ))))
-    [ "$st" = spec ] && jobs=($(echo "$SEQ_TASKS" | tr -d '[] ' | tr ',' '\n' | sed 's/^/TASK=/'))
+    [ "$st" = spec ] && jobs=($(echo "$SEQ_TASKS" | tr -d '[] ' | tr ',' '\n' | xargs -n "${SPEC_GROUP:-1}" | tr ' ' ':' | sed 's/^/TASKS=/'))
     ids=()
     for job in "${jobs[@]}"; do
-        ids+=("$(qsub -terse -N "${NAME}_${st}${job:+_${job#*=}}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l 'h=!dip-207-1*' \
+        suffix=${job#*=}
+        ids+=("$(qsub -terse -N "${NAME}_${st}${job:+_${suffix//:/-}}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l 'h=!dip-207-1*' \
             ${hold:+-hold_jid "$hold"} -v "RUNS=$RUNS,STAGE=$st,RUN_LIMIT=$limit${job:+,$job}" \
             "$REPO/cluster/jobs/smolvla/run_stage.sh")")
     done

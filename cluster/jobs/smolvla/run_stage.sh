@@ -1,6 +1,6 @@
 #!/bin/bash
 # One stage of the SmolVLA staged memory chain. Submitted by cluster/jobs/smolvla/chain.sh with
-#   -v RUNS=<run root>,STAGE=<stage>,RUN_LIMIT=<seconds>[,SEED=<eval seed>][,BLOCK=<triangle row>][,TASK=<task_index>]
+#   -v RUNS=<run root>,STAGE=<stage>,RUN_LIMIT=<seconds>[,SEED=<eval seed>][,BLOCK=<triangle row>][,TASKS=<t:t:...>]
 # The run root holds config.sh (the experiment config snapshot) and one directory per stage.
 # Scratch pattern (CLAUDE.md 9.4): dataset, starting checkpoint and HF models are copied to node
 # scratch; outputs live on scratch and are synced to $RUNS/<stage> every 30 min and on exit. Each stage
@@ -14,7 +14,7 @@ export HF_HUB_OFFLINE=1 PYTHONFAULTHANDLER=1
 CTR=$REPO/cluster/bin/ctr
 RENAME='{"observation.images.image": "observation.images.camera1", "observation.images.image2": "observation.images.camera2"}'
 VLM=HuggingFaceTB/SmolVLM2-500M-Video-Instruct  # loaded by every stage: load_vlm_weights=true, HF's path and dtypes
-echo "== $NAME/$STAGE${SEED:+ seed $SEED}${BLOCK:+ row $BLOCK}${TASK:+ task $TASK} on $(hostname), job $JOB_ID, $(date), GPU ${CUDA_VISIBLE_DEVICES:-none}," \
+echo "== $NAME/$STAGE${SEED:+ seed $SEED}${BLOCK:+ row $BLOCK}${TASK:+ task $TASK}${TASKS:+ tasks $TASKS} on $(hostname), job $JOB_ID, $(date), GPU ${CUDA_VISIBLE_DEVICES:-none}," \
     "repo $(cd "$REPO" && /usr/bin/git rev-parse --short HEAD)"
 
 # Python runs under a limit RUN_MARGIN_MIN short of h_rt (SGE's h_rt kill is SIGKILL, which skips the exit
@@ -182,26 +182,40 @@ tri)
         "${EVAL_ARGS[@]}" --env.task_ids="[$(seq_envs "$BLOCK")]"
     ;;
 spec)
-    # Per-task specialist for task_index TASK: the sequential trainer on that task alone (SEQ_ARGS, from SEQ_INIT or
-    # the stage-1 base), then its own env, EVAL_ARGS episodes x every EVAL_SEEDS seed. Outputs: spec/t<TASK>/.
-    if [ -f "$RUNS/spec/t$TASK/eval.json" ]; then echo "== specialist $TASK already complete"; exit 0; fi
+    # Per-task specialists for the task_index list TASKS (':'-separated, e.g. 0:1:2; or TASK for one), one after
+    # another in this job: the sequential trainer on each task alone (SEQ_ARGS, from SEQ_INIT or the stage-1 base),
+    # then its own env, EVAL_ARGS episodes x every EVAL_SEEDS seed. Outputs: spec/t<task>/, each synced on its own,
+    # so two jobs never write the same files. Finished tasks are skipped, so a resubmitted group resumes at its first
+    # unfinished task; a task whose training finished but whose eval did not is only re-evaluated.
     final=$(printf '%06d' "$SEQ_STEPS_PER_TASK")
-    scratch_setup
-    cd "$SCRATCH"
-    scratch_hub_models "$VLM"
-    scratch_outputs "$RUNS/spec/t$TASK"
-    if [ ! -f "$SCRATCH_OUT/train/checkpoints/$final/sequential_state.pt" ]; then
-        rm -rf "$SCRATCH_OUT/train"  # one short task: an interrupted specialist retrains from the start
-        data=$(scratch_copy "$HF_LEROBOT_HOME/$SEQ_DATASET")
-        run lerobot-sequential-train --policy.path="$(scratch_copy "${SEQ_INIT:-$STAGE1_CKPT}" init_model)" \
-            --policy.push_to_hub=false --rename_map="$RENAME" --dataset.repo_id="$SEQ_DATASET" --dataset.root="$data" \
-            --output_dir="$SCRATCH_OUT/train" --online_task_ids="[$TASK]" --online_steps_per_task="$SEQ_STEPS_PER_TASK" \
-            --ds_to_env_map_json="$DS_TO_ENV" --num_workers="$NUM_WORKERS" "${WANDB[@]}" "${SEQ_ARGS[@]}"
+    todo=()
+    for t in $(echo "${TASKS:-$TASK}" | tr ':' ' '); do
+        if [ -f "$RUNS/spec/t$t/eval.json" ]; then echo "== specialist $t already complete"; else todo+=("$t"); fi
+    done
+    if [ ${#todo[@]} -gt 0 ]; then
+        scratch_setup
+        cd "$SCRATCH"
+        scratch_hub_models "$VLM"
+        data=  # staged once, and only if some task still needs training
+        for t in "${todo[@]}"; do
+            echo "== specialist $t: start $(date)"
+            scratch_outputs_close
+            scratch_outputs "$RUNS/spec/t$t"
+            if [ ! -f "$SCRATCH_OUT/train/checkpoints/$final/sequential_state.pt" ]; then
+                rm -rf "$SCRATCH_OUT/train"  # one short task: an interrupted specialist retrains from the start
+                [ -n "$data" ] || data=$(scratch_copy "$HF_LEROBOT_HOME/$SEQ_DATASET")
+                run lerobot-sequential-train --policy.path="$(scratch_copy "${SEQ_INIT:-$STAGE1_CKPT}" init_model)" \
+                    --policy.push_to_hub=false --rename_map="$RENAME" --dataset.repo_id="$SEQ_DATASET" --dataset.root="$data" \
+                    --output_dir="$SCRATCH_OUT/train" --online_task_ids="[$t]" --online_steps_per_task="$SEQ_STEPS_PER_TASK" \
+                    --ds_to_env_map_json="$DS_TO_ENV" --num_workers="$NUM_WORKERS" "${WANDB[@]}" "${SEQ_ARGS[@]}"
+            fi
+            peft_args "$(scratch_copy "$SCRATCH_OUT/train/checkpoints/$final/pretrained_model" model)"
+            export CAMP_SEEDS=$(IFS=,; echo "${EVAL_SEEDS[*]}") CAMP_TAG="${NAME}_spec_t$t" CAMP_OUT="$SCRATCH_OUT/eval.json"
+            run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
+                "${EVAL_ARGS[@]}" --env.task_ids="[$(task_env "$t")]"
+            echo "== specialist $t: done $(date)"
+        done
     fi
-    peft_args "$(scratch_copy "$SCRATCH_OUT/train/checkpoints/$final/pretrained_model" model)"
-    export CAMP_SEEDS=$(IFS=,; echo "${EVAL_SEEDS[*]}") CAMP_TAG="${NAME}_spec_t$TASK" CAMP_OUT="$SCRATCH_OUT/eval.json"
-    run python "$REPO/scripts/vla_analysis/eval_seeds_campaign.py" "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
-        "${EVAL_ARGS[@]}" --env.task_ids="[$(task_env "$TASK")]"
     ;;
 joint)
     # Joint training on every SEQ_DATASET episode from the stage-1 base: JOINT_ARGS give all weights (the joint
