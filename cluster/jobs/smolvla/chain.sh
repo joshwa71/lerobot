@@ -26,6 +26,8 @@ cp "$CONFIG" "$RUNS/config.sh"
 stages=("$@")
 [ ${#stages[@]} -gt 0 ] || stages=(stage1 warmup audit aphase seq tri)
 hold=${HOLD_JID:-}
+# Nodes to avoid (CLAUDE.md 9.4 rule 9): dip-207-1 froze on /SAN reads; dip-207-2 GPU 6 failed or hung LIBERO evals
+EXCLUDE_HOSTS=${EXCLUDE_HOSTS:-dip-207-1*|dip-207-2*}
 for st in "${stages[@]}"; do
     res_var=RES_${st^^}
     res=${!res_var}
@@ -41,7 +43,7 @@ for st in "${stages[@]}"; do
     ids=()
     for job in "${jobs[@]}"; do
         suffix=${job#*=}
-        ids+=("$(qsub -terse -N "${NAME}_${st}${job:+_${suffix//:/-}}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l 'h=!dip-207-1*' \
+        ids+=("$(qsub -terse -N "${NAME}_${st}${job:+_${suffix//:/-}}" -o "$RUNS/logs/" -l "$res" -l "$GPUS" -l "h=!($EXCLUDE_HOSTS)" \
             ${hold:+-hold_jid "$hold"} -v "RUNS=$RUNS,STAGE=$st,RUN_LIMIT=$limit${job:+,$job}" \
             "$REPO/cluster/jobs/smolvla/run_stage.sh")")
     done
