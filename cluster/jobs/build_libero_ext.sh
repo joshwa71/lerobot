@@ -11,9 +11,10 @@
 # learnability check (configs/ext_learn_spec_r128.sh), copied to /SAN before the full dataset.
 #$ -S /bin/bash
 #$ -N build_libero_ext
-#$ -l tmem=12G,h_vmem=12G,h_rt=12:00:00,tscratch=200G
+# One gpu.q slot (each slot is a GPU there, so -pe smp N would need N free GPUs on one host); the render
+# workers use the node's other CPUs (jobs are not pinned). No h_vmem: EGL/CUDA reserve large virtual memory.
+#$ -l tmem=32G,h_rt=12:00:00,tscratch=200G
 #$ -l gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)
-#$ -pe smp 6
 #$ -R y
 #$ -j y
 #$ -o /SAN/vision/jo71_vla_wd/logs/
@@ -22,7 +23,7 @@ source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
 D=$HF_LEROBOT_HOME
 LEARN_TASKS=${LEARN_TASKS:-0,31,42,59}
-echo "== $(hostname) $(date) job=$JOB_ID slots=$NSLOTS CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-} nproc=$(nproc)"
 cd "$REPO/scripts/datasets"
 git log -1 --format='== repo %h %s'
 if [ -f "$D/libero_ext/meta/info.json" ] && [ -f "$D/libero_ext_learn4/meta/info.json" ]; then
