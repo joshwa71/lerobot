@@ -32,7 +32,12 @@ from libero.libero.envs import OffScreenRenderEnv
 
 from lerobot.types import RobotObservation
 
+from .libero_ext import register as _register_libero_ext
 from .utils import _LazyAsyncVectorEnv, parse_camera_names
+
+# The libero_ext suite (projects/dataset_gen.md): new tasks from LIBERO's assets, plus the "lifted" predicate and
+# the faucet's on/off checks they use. Registered at import so worker processes have it too.
+_register_libero_ext()
 
 
 def _get_suite(name: str) -> benchmark.Benchmark:
@@ -101,6 +106,7 @@ TASK_SUITE_MAX_STEPS: dict[str, int] = {
     "libero_goal": 300,  # longest training demo has 270 steps
     "libero_10": 520,  # longest training demo has 505 steps
     "libero_90": 400,  # longest training demo has 373 steps
+    "libero_ext": 520,  # as libero_10 until expert demos exist (half its tasks are two-step)
 }
 
 

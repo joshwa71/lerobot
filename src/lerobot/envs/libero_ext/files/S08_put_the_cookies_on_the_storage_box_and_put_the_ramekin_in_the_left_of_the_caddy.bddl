@@ -1,0 +1,125 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the cookies on the storage box and put the ramekin in the left of the caddy)
+    (:regions
+      (desk_caddy_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0945 0.0200 -0.0745 0.0400)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2335 -0.2740 -0.2035 -0.2440)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_yellow_mug_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0950 -0.0950 0.1250 -0.0650)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (glazed_rim_porcelain_ramekin_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0895 0.2395 0.1195 0.2695)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (salad_dressing_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2770 0.1615 -0.2470 0.1915)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1540 0.3655 -0.1340 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0885 -0.2490 0.1085 -0.2290)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+      (left_contain_region
+          (:target desk_caddy_1)
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    desk_caddy_1 - desk_caddy
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    cookies_1 - cookies
+    white_yellow_mug_1 - white_yellow_mug
+    glazed_rim_porcelain_ramekin_1 - glazed_rim_porcelain_ramekin
+    salad_dressing_1 - salad_dressing
+  )
+
+  (:obj_of_interest
+    cookies_1
+    desk_caddy_1
+    glazed_rim_porcelain_ramekin_1
+    white_storage_box_1
+  )
+
+  (:init
+    (On desk_caddy_1 study_table_desk_caddy_init_region)
+    (On cookies_1 study_table_cookies_init_region)
+    (On white_yellow_mug_1 study_table_white_yellow_mug_init_region)
+    (On glazed_rim_porcelain_ramekin_1 study_table_glazed_rim_porcelain_ramekin_init_region)
+    (On salad_dressing_1 study_table_salad_dressing_init_region)
+    (On wooden_two_layer_shelf_1 study_table_wooden_two_layer_shelf_init_region)
+    (On white_storage_box_1 study_table_white_storage_box_init_region)
+  )
+
+  (:goal
+    (And (On cookies_1 white_storage_box_1_top_side) (In glazed_rim_porcelain_ramekin_1 desk_caddy_1_left_contain_region))
+  )
+
+)

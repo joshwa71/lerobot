@@ -1,0 +1,107 @@
+(define (problem LIBERO_Coffee_Table_Manipulation)
+  (:domain robosuite)
+  (:language put the milk on the storage box)
+    (:regions
+      (basket_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.0635 -0.1600 0.0935 -0.1300)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0735 0.2260 -0.0435 0.2560)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (milk_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.1515 0.1015 0.1815 0.1315)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (orange_juice_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0685 0.0015 -0.0385 0.0315)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0740 -0.3855 -0.0540 -0.3655)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.1315 -0.1290 -0.1115 -0.1090)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+    )
+
+  (:fixtures
+    coffee_table - coffee_table
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    basket_1 - basket
+    cookies_1 - cookies
+    milk_1 - milk
+    orange_juice_1 - orange_juice
+  )
+
+  (:obj_of_interest
+    milk_1
+    white_storage_box_1
+  )
+
+  (:init
+    (On basket_1 coffee_table_basket_init_region)
+    (On cookies_1 coffee_table_cookies_init_region)
+    (On milk_1 coffee_table_milk_init_region)
+    (On orange_juice_1 coffee_table_orange_juice_init_region)
+    (On wooden_two_layer_shelf_1 coffee_table_wooden_two_layer_shelf_init_region)
+    (On white_storage_box_1 coffee_table_white_storage_box_init_region)
+  )
+
+  (:goal
+    (And (On milk_1 white_storage_box_1_top_side))
+  )
+
+)

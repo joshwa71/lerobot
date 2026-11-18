@@ -1,0 +1,1194 @@
+{
+ "basket": {
+  "bbq sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "salad dressing": {
+   "variants": [],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached"
+   ]
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "tray": {
+  "bbq sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "caddy": {
+  "butter": {
+   "variants": [
+    2,
+    3
+   ],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  },
+  "cream cheese": {
+   "variants": [
+    2,
+    3
+   ],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  },
+  "chocolate pudding": {
+   "variants": [
+    2,
+    3
+   ],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  },
+  "ramekin": {
+   "variants": [
+    2,
+    3
+   ],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  }
+ },
+ "drainer": {
+  "mug": {
+   "variants": [],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  },
+  "bowl": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "plate": {
+   "variants": [],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  },
+  "ramekin": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "frying pan": {
+   "variants": [],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached"
+   ]
+  }
+ },
+ "drawer": {
+  "cream cheese": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [],
+   "level": null,
+   "fail": [
+    "v0: forced goal not reached",
+    "v1: forced goal not reached",
+    "v2: forced goal not reached"
+   ]
+  },
+  "popcorn": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bbq sauce": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "book": {
+   "variants": [
+    0,
+    2
+   ],
+   "level": null,
+   "fail": [
+    "v1: forced goal not reached"
+   ]
+  },
+  "ramekin": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  },
+  "mug": {
+   "variants": [
+    0,
+    1,
+    2
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "microwave": {
+  "bowl": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "fridge": {
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached",
+    "v0/upper_region: forced goal not reached"
+   ]
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached",
+    "v0/upper_region: forced goal not reached"
+   ]
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached",
+    "v0/upper_region: forced goal not reached"
+   ]
+  },
+  "bbq sauce": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached"
+   ]
+  },
+  "salad dressing": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached",
+    "v0/upper_region: forced goal not reached"
+   ]
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/lower_region: forced goal not reached"
+   ]
+  },
+  "wine bottle": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  }
+ },
+ "shelf": {
+  "mug": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": [
+    "v1: forced goal not reached"
+   ]
+  },
+  "wine bottle": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": [
+    "v1: forced goal not reached"
+   ]
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": [
+    "v1: forced goal not reached"
+   ]
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": [
+    "v1: forced goal not reached"
+   ]
+  },
+  "bbq sauce": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0,
+    1
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "bookcase": {
+  "book": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": [
+    "v0/top_region: forced goal not reached"
+   ]
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": "middle_region",
+   "fail": []
+  }
+ },
+ "bowl": {
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "plate": {
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "cabinet top": {
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "book": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bbq sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "salad dressing": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "wine bottle": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "storage box": {
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bowl": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "book": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "chocolate pudding": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "lift": {
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bowl": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "book": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "salad dressing": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "wine bottle": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "beside": {
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "book": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "frying pan": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "moka pot": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "wine bottle": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "alphabet soup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "tomato sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ketchup": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bbq sauce": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "salad dressing": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "milk": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "orange juice": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cookies": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "macaroni": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "popcorn": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "placemat": {
+  "plate": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "bowl": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "mug": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "ramekin": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ },
+ "pan": {
+  "butter": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  },
+  "cream cheese": {
+   "variants": [
+    0
+   ],
+   "level": null,
+   "fail": []
+  }
+ }
+}

@@ -54,6 +54,25 @@
 
 The SmolVLA prototype (E0–E17) used the earlier joint protocol on four tasks (best 57.5%, not comparable). History: `research_log.md`, summarised in `summary_research_log.md`.
 
+**Plan: Paper 1, capacity, growth and priors for sparse memory** (the thesis plan, `phd_deliverables/upgrade_viva/conversion/chapters/05_future_work.tex`). Five items. Items 1 → 2 → 3 run in sequence, each building on the one before; items 4 and 5 are parallel threads.
+
+1. **Scale the task sequence to 30–60 tasks.** The tasks are new environments built in the LIBERO simulator, with demonstrations generated for them. They are not drawn from libero_90 (the thesis plan's source), which is the pretraining corpus.
+   - Protocol as now, in at least two task orders: related tasks grouped, and interleaved.
+   - Retention matrix in full at every fifth task, the diagonal at every task.
+   - Deliverable: acquisition, retention and loss increase as functions of the number of tasks K, with the protected-slot statistics at each boundary.
+   - Why this range: on pi05 each task's core is ~1.7% of an expert table, and unrelated cores overlap at ~0.024 per pair, close to random placement. The share of a new task's reads outside every earlier core then falls as ~(1 − 0.024)^(K−1): 0.80 at K = 10 (measured 0.72–0.86), 0.30 at K = 50. The point where the write rule stops finding enough unprotected slots has never been measured.
+2. **Measure capacity and calibrate a saturation detector,** on item 1's runs. Set marginal plasticity (task K's success at a fixed adaptation budget, against K) against the protection statistics: the protected fraction, and ω_K, the share of a new task's read mass outside every earlier core. Both statistics come from a forward pass before any values are updated. The detector is the ω_K (or protected fraction) at which plasticity starts to fall.
+3. **Add capacity on detected saturation.** Grow only when the detector fires, and never change an existing lookup (stationary addressing). Candidates:
+   - a writable value stacked on a contended slot (equivalent to widening the slot);
+   - reserved tables, warmed up but held at zero values with gates closed, opened when the detector fires;
+   - a floor on the protection score, so stale cores can be revised (consolidation; no new parameters).
+
+   Compared on item 1's saturated sequences: acquisition of tasks after the trigger, retention of tasks before it.
+4. **Meta-learned prior over memory contents.** Replace multitask value fill with first-order meta-learning (Reptile or first-order MAML) of the values' initialisation and the components every task shares (gates, output projections, shared tables). Deliverable: demonstrations or adaptation steps to reach a target success on a held-out task, for zero initialisation, multitask fill and the meta-learned prior.
+5. **Selective engagement.** The memory is always in the loop, and the pretraining tasks have never been evaluated after sequential adaptation.
+   - First step: libero_90 success before and after the ten-task sequence. Both SmolVLA checkpoints exist (the libero_90 base and the ten-task run's final).
+   - If retention there is acceptable, the rest is a refinement. If not, add a per-input bypass to the memory-free pre-pass prediction, decided by one of: retrieval confidence, the existing gate trained to close on pretraining inputs, a null slot the routers learn to send pretraining inputs to, or the spread of sampled action chunks.
+
 ---
 ## Entry 1 - 6 Nov 26 (SmolVLA reproduction of the paper recipe, and the baselines it needs)
 

@@ -1,0 +1,94 @@
+(define (problem LIBERO_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the plate on the placemat and put the wine bottle on the shelf)
+    (:regions
+      (dining_set_group_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0300 -0.0400 -0.0100 -0.0200)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (plate_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2660 0.1640 -0.2360 0.1940)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2740 0.3655 -0.2540 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wine_bottle_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0930 -0.2630 -0.0630 -0.2330)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (dining_set_group_mat_region
+          (:target main_table)
+          (:ranges (
+              (-0.0800 -0.0900 0.0400 0.0300)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_two_layer_shelf_1)
+      )
+    )
+
+  (:fixtures
+    main_table - table
+    dining_set_group_1 - dining_set_group
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+  )
+
+  (:objects
+    plate_1 - plate
+    wine_bottle_1 - wine_bottle
+  )
+
+  (:obj_of_interest
+    dining_set_group_1
+    plate_1
+    wine_bottle_1
+    wooden_two_layer_shelf_1
+  )
+
+  (:init
+    (On dining_set_group_1 main_table_dining_set_group_init_region)
+    (On plate_1 main_table_plate_init_region)
+    (On wooden_two_layer_shelf_1 main_table_wooden_two_layer_shelf_init_region)
+    (On wine_bottle_1 main_table_wine_bottle_init_region)
+  )
+
+  (:goal
+    (And (On plate_1 main_table_dining_set_group_mat_region) (On wine_bottle_1 wooden_two_layer_shelf_1_top_side))
+  )
+
+)

@@ -1,0 +1,81 @@
+(define (problem LIBERO_Living_Room_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the moka pot in the tray)
+    (:regions
+      (cream_cheese_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.1255 -0.0835 0.1555 -0.0535)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (chefmate_8_frypan_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0950 0.0150 -0.0650 0.0450)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.1055 0.0690 0.1355 0.0990)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0250 -0.2815 0.0550 -0.2515)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (contain_region
+          (:target wooden_tray_1)
+      )
+    )
+
+  (:fixtures
+    living_room_table - living_room_table
+  )
+
+  (:objects
+    cream_cheese_1 - cream_cheese
+    chefmate_8_frypan_1 - chefmate_8_frypan
+    moka_pot_1 - moka_pot
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    moka_pot_1
+    wooden_tray_1
+  )
+
+  (:init
+    (On cream_cheese_1 living_room_table_cream_cheese_init_region)
+    (On chefmate_8_frypan_1 living_room_table_chefmate_8_frypan_init_region)
+    (On moka_pot_1 living_room_table_moka_pot_init_region)
+    (On wooden_tray_1 living_room_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (In moka_pot_1 wooden_tray_1_contain_region))
+  )
+
+)

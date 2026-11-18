@@ -1,0 +1,146 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the chocolate pudding in the left of the caddy)
+    (:regions
+      (alphabet_soup_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0635 -0.0535 -0.0335 -0.0235)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (yellow_book_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0595 -0.3105 0.0895 -0.2805)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_cabinet_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1625 -0.4005 -0.1425 -0.3805)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (desk_caddy_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0655 -0.0000 0.0855 0.0200)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (chocolate_pudding_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1150 -0.1420 -0.0850 -0.1120)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2545 0.2490 -0.2245 0.2790)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2260 0.0440 -0.1960 0.0740)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1840 -0.2040 -0.1540 -0.1740)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1190 0.2385 -0.0990 0.2585)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (left_contain_region
+          (:target desk_caddy_1)
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    white_cabinet_1 - white_cabinet
+    desk_caddy_1 - desk_caddy
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    alphabet_soup_1 - alphabet_soup
+    yellow_book_1 - yellow_book
+    chocolate_pudding_1 - chocolate_pudding
+    moka_pot_1 - moka_pot
+    plate_1 - plate
+    popcorn_1 - popcorn
+  )
+
+  (:obj_of_interest
+    chocolate_pudding_1
+    desk_caddy_1
+  )
+
+  (:init
+    (On alphabet_soup_1 study_table_alphabet_soup_init_region)
+    (On yellow_book_1 study_table_yellow_book_init_region)
+    (On white_cabinet_1 study_table_white_cabinet_init_region)
+    (On desk_caddy_1 study_table_desk_caddy_init_region)
+    (On chocolate_pudding_1 study_table_chocolate_pudding_init_region)
+    (On moka_pot_1 study_table_moka_pot_init_region)
+    (On plate_1 study_table_plate_init_region)
+    (On popcorn_1 study_table_popcorn_init_region)
+    (On white_storage_box_1 study_table_white_storage_box_init_region)
+  )
+
+  (:goal
+    (And (In chocolate_pudding_1 desk_caddy_1_left_contain_region))
+  )
+
+)

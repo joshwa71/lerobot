@@ -1,0 +1,1273 @@
+{
+ "seed": 41,
+ "restarts": 400,
+ "scenes": [
+  {
+   "id": 1,
+   "room": "kitchen",
+   "items": [
+    "butter",
+    "cookies",
+    "faucet",
+    "fridge",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "turn on the faucet",
+     "kind": 1,
+     "steps": [],
+     "artic": "faucet",
+     "artic_variant": null
+    },
+    {
+     "language": "put the butter in the fridge and put the cookies in the tray",
+     "kind": 2,
+     "steps": [
+      [
+       "butter",
+       "fridge",
+       "in the fridge"
+      ],
+      [
+       "cookies",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "room": "kitchen",
+   "items": [
+    "bbq sauce",
+    "bowl",
+    "drainer",
+    "fridge",
+    "mug",
+    "placemat",
+    "ramekin",
+    "salad dressing"
+   ],
+   "tasks": [
+    {
+     "language": "put the ramekin in the bowl",
+     "kind": 1,
+     "steps": [
+      [
+       "ramekin",
+       "bowl",
+       "in the bowl"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the bowl in the left side of the drainer and put the mug on the placemat",
+     "kind": 2,
+     "steps": [
+      [
+       "bowl",
+       "drainer",
+       "in the left side of the drainer"
+      ],
+      [
+       "mug",
+       "placemat",
+       "on the placemat"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the salad dressing in the fridge and put the bbq sauce in front of the bowl",
+     "kind": 2,
+     "steps": [
+      [
+       "salad dressing",
+       "fridge",
+       "in the fridge"
+      ],
+      [
+       "bbq sauce",
+       "beside",
+       "in front of the bowl"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "room": "kitchen",
+   "items": [
+    "cabinet",
+    "orange juice",
+    "tomato sauce",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "put the tomato sauce in the bottom drawer and put the orange juice in the tray",
+     "kind": 2,
+     "steps": [
+      [
+       "tomato sauce",
+       "drawer",
+       "in the bottom drawer"
+      ],
+      [
+       "orange juice",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "room": "kitchen",
+   "items": [
+    "bowl",
+    "cabinet",
+    "chocolate pudding",
+    "drainer",
+    "milk",
+    "ramekin",
+    "tray",
+    "wine bottle"
+   ],
+   "tasks": [
+    {
+     "language": "put the chocolate pudding in the bowl",
+     "kind": 1,
+     "steps": [
+      [
+       "chocolate pudding",
+       "bowl",
+       "in the bowl"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the ramekin in the right side of the drainer",
+     "kind": 1,
+     "steps": [
+      [
+       "ramekin",
+       "drainer",
+       "in the right side of the drainer"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the milk in the tray and put the wine bottle on the cabinet",
+     "kind": 2,
+     "steps": [
+      [
+       "milk",
+       "tray",
+       "in the tray"
+      ],
+      [
+       "wine bottle",
+       "cabinet top",
+       "on the cabinet"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "room": "kitchen",
+   "items": [
+    "chocolate pudding",
+    "fridge",
+    "orange juice",
+    "plate",
+    "tomato sauce"
+   ],
+   "tasks": [
+    {
+     "language": "put the orange juice to the right of the plate",
+     "kind": 1,
+     "steps": [
+      [
+       "orange juice",
+       "beside",
+       "to the right of the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the tomato sauce in the fridge and put the chocolate pudding on the plate",
+     "kind": 2,
+     "steps": [
+      [
+       "tomato sauce",
+       "fridge",
+       "in the fridge"
+      ],
+      [
+       "chocolate pudding",
+       "plate",
+       "on the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "room": "kitchen",
+   "items": [
+    "bbq sauce",
+    "cabinet",
+    "fridge",
+    "macaroni",
+    "microwave",
+    "salad dressing",
+    "wine bottle"
+   ],
+   "tasks": [
+    {
+     "language": "put the bbq sauce in the top drawer",
+     "kind": 1,
+     "steps": [
+      [
+       "bbq sauce",
+       "drawer",
+       "in the top drawer"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the wine bottle in the fridge",
+     "kind": 1,
+     "steps": [
+      [
+       "wine bottle",
+       "fridge",
+       "in the fridge"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the salad dressing on the cabinet and put the macaroni in the microwave",
+     "kind": 2,
+     "steps": [
+      [
+       "salad dressing",
+       "cabinet top",
+       "on the cabinet"
+      ],
+      [
+       "macaroni",
+       "microwave",
+       "in the microwave"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "room": "kitchen",
+   "items": [
+    "cookies",
+    "fridge",
+    "ketchup",
+    "microwave",
+    "mug",
+    "plate",
+    "popcorn",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "put the cookies on the plate",
+     "kind": 1,
+     "steps": [
+      [
+       "cookies",
+       "plate",
+       "on the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "open the fridge and put the ketchup in it",
+     "kind": 2,
+     "steps": [
+      [
+       "ketchup",
+       "fridge",
+       "in the fridge"
+      ]
+     ],
+     "artic": "fridge",
+     "artic_variant": null
+    },
+    {
+     "language": "put the popcorn in the microwave and put the mug in the tray",
+     "kind": 2,
+     "steps": [
+      [
+       "popcorn",
+       "microwave",
+       "in the microwave"
+      ],
+      [
+       "mug",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "room": "study",
+   "items": [
+    "caddy",
+    "cookies",
+    "mug",
+    "ramekin",
+    "salad dressing",
+    "shelf",
+    "storage box"
+   ],
+   "tasks": [
+    {
+     "language": "lift the salad dressing",
+     "kind": 1,
+     "steps": [
+      [
+       "salad dressing",
+       "lift",
+       "lift"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the mug on the shelf",
+     "kind": 1,
+     "steps": [
+      [
+       "mug",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the cookies on the storage box and put the ramekin in the left of the caddy",
+     "kind": 2,
+     "steps": [
+      [
+       "cookies",
+       "storage box",
+       "on the storage box"
+      ],
+      [
+       "ramekin",
+       "caddy",
+       "in the left of the caddy"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "room": "study",
+   "items": [
+    "bookcase",
+    "butter",
+    "caddy",
+    "cream cheese",
+    "ketchup",
+    "shelf"
+   ],
+   "tasks": [
+    {
+     "language": "put the butter in the right of the caddy",
+     "kind": 1,
+     "steps": [
+      [
+       "butter",
+       "caddy",
+       "in the right of the caddy"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the cream cheese in the bookcase",
+     "kind": 1,
+     "steps": [
+      [
+       "cream cheese",
+       "bookcase",
+       "in the bookcase"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the ketchup on the shelf",
+     "kind": 1,
+     "steps": [
+      [
+       "ketchup",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "room": "study",
+   "items": [
+    "bookcase",
+    "bowl",
+    "cream cheese",
+    "popcorn"
+   ],
+   "tasks": [
+    {
+     "language": "put the cream cheese in the bowl",
+     "kind": 1,
+     "steps": [
+      [
+       "cream cheese",
+       "bowl",
+       "in the bowl"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the popcorn in the bookcase",
+     "kind": 1,
+     "steps": [
+      [
+       "popcorn",
+       "bookcase",
+       "in the bookcase"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "room": "study",
+   "items": [
+    "bbq sauce",
+    "bookcase",
+    "cabinet",
+    "caddy",
+    "chocolate pudding",
+    "cream cheese",
+    "moka pot"
+   ],
+   "tasks": [
+    {
+     "language": "lift the moka pot",
+     "kind": 1,
+     "steps": [
+      [
+       "moka pot",
+       "lift",
+       "lift"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the chocolate pudding in the bookcase",
+     "kind": 1,
+     "steps": [
+      [
+       "chocolate pudding",
+       "bookcase",
+       "in the bookcase"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the bbq sauce on the cabinet and put the cream cheese in the right of the caddy",
+     "kind": 2,
+     "steps": [
+      [
+       "bbq sauce",
+       "cabinet top",
+       "on the cabinet"
+      ],
+      [
+       "cream cheese",
+       "caddy",
+       "in the right of the caddy"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "room": "study",
+   "items": [
+    "alphabet soup",
+    "book",
+    "cabinet",
+    "caddy",
+    "chocolate pudding",
+    "moka pot",
+    "plate",
+    "popcorn",
+    "storage box"
+   ],
+   "tasks": [
+    {
+     "language": "put the chocolate pudding in the left of the caddy",
+     "kind": 1,
+     "steps": [
+      [
+       "chocolate pudding",
+       "caddy",
+       "in the left of the caddy"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the alphabet soup on the storage box and put the moka pot in front of the plate",
+     "kind": 2,
+     "steps": [
+      [
+       "alphabet soup",
+       "storage box",
+       "on the storage box"
+      ],
+      [
+       "moka pot",
+       "beside",
+       "in front of the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the popcorn on the plate and put the book on the cabinet",
+     "kind": 2,
+     "steps": [
+      [
+       "popcorn",
+       "plate",
+       "on the plate"
+      ],
+      [
+       "book",
+       "cabinet top",
+       "on the cabinet"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "room": "study",
+   "items": [
+    "book",
+    "cabinet",
+    "ketchup",
+    "milk",
+    "mug",
+    "shelf",
+    "storage box"
+   ],
+   "tasks": [
+    {
+     "language": "put the book in the bottom drawer and put the milk on the shelf",
+     "kind": 2,
+     "steps": [
+      [
+       "book",
+       "drawer",
+       "in the bottom drawer"
+      ],
+      [
+       "milk",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the ketchup on the storage box and put the mug on the cabinet",
+     "kind": 2,
+     "steps": [
+      [
+       "ketchup",
+       "storage box",
+       "on the storage box"
+      ],
+      [
+       "mug",
+       "cabinet top",
+       "on the cabinet"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "room": "living room",
+   "items": [
+    "cream cheese",
+    "frying pan",
+    "moka pot",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "put the cream cheese in the pan",
+     "kind": 1,
+     "steps": [
+      [
+       "cream cheese",
+       "pan",
+       "in the pan"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the moka pot in the tray",
+     "kind": 1,
+     "steps": [
+      [
+       "moka pot",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "room": "living room",
+   "items": [
+    "basket",
+    "bbq sauce",
+    "book",
+    "chocolate pudding",
+    "milk",
+    "storage box",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "lift the milk",
+     "kind": 1,
+     "steps": [
+      [
+       "milk",
+       "lift",
+       "lift"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the chocolate pudding in the basket",
+     "kind": 1,
+     "steps": [
+      [
+       "chocolate pudding",
+       "basket",
+       "in the basket"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the book on the storage box and put the bbq sauce in the tray",
+     "kind": 2,
+     "steps": [
+      [
+       "book",
+       "storage box",
+       "on the storage box"
+      ],
+      [
+       "bbq sauce",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 16,
+   "room": "coffee table",
+   "items": [
+    "basket",
+    "cookies",
+    "milk",
+    "orange juice",
+    "shelf",
+    "storage box"
+   ],
+   "tasks": [
+    {
+     "language": "put the milk on the storage box",
+     "kind": 1,
+     "steps": [
+      [
+       "milk",
+       "storage box",
+       "on the storage box"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the cookies in the basket and put the orange juice on the shelf",
+     "kind": 2,
+     "steps": [
+      [
+       "cookies",
+       "basket",
+       "in the basket"
+      ],
+      [
+       "orange juice",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 17,
+   "room": "coffee table",
+   "items": [
+    "basket",
+    "bookcase",
+    "butter",
+    "macaroni",
+    "plate",
+    "ramekin",
+    "storage box",
+    "tomato sauce"
+   ],
+   "tasks": [
+    {
+     "language": "put the butter in the bookcase and put the ramekin on the plate",
+     "kind": 2,
+     "steps": [
+      [
+       "butter",
+       "bookcase",
+       "in the bookcase"
+      ],
+      [
+       "ramekin",
+       "plate",
+       "on the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the tomato sauce on the storage box and put the macaroni in the basket",
+     "kind": 2,
+     "steps": [
+      [
+       "tomato sauce",
+       "storage box",
+       "on the storage box"
+      ],
+      [
+       "macaroni",
+       "basket",
+       "in the basket"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "room": "tabletop",
+   "items": [
+    "bookcase",
+    "bowl",
+    "cookies",
+    "macaroni",
+    "orange juice",
+    "placemat",
+    "ramekin",
+    "storage box"
+   ],
+   "tasks": [
+    {
+     "language": "lift the bowl",
+     "kind": 1,
+     "steps": [
+      [
+       "bowl",
+       "lift",
+       "lift"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the orange juice on the storage box",
+     "kind": 1,
+     "steps": [
+      [
+       "orange juice",
+       "storage box",
+       "on the storage box"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the ramekin on the placemat",
+     "kind": 1,
+     "steps": [
+      [
+       "ramekin",
+       "placemat",
+       "on the placemat"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the cookies in the bowl and put the macaroni in the bookcase",
+     "kind": 2,
+     "steps": [
+      [
+       "cookies",
+       "bowl",
+       "in the bowl"
+      ],
+      [
+       "macaroni",
+       "bookcase",
+       "in the bookcase"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "room": "tabletop",
+   "items": [
+    "alphabet soup",
+    "basket",
+    "bbq sauce",
+    "book",
+    "bookcase",
+    "shelf",
+    "wine bottle"
+   ],
+   "tasks": [
+    {
+     "language": "put the book in the bookcase",
+     "kind": 1,
+     "steps": [
+      [
+       "book",
+       "bookcase",
+       "in the bookcase"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the wine bottle in front of the basket",
+     "kind": 1,
+     "steps": [
+      [
+       "wine bottle",
+       "beside",
+       "in front of the basket"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the bbq sauce in the basket and put the alphabet soup on the shelf",
+     "kind": 2,
+     "steps": [
+      [
+       "bbq sauce",
+       "basket",
+       "in the basket"
+      ],
+      [
+       "alphabet soup",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "room": "tabletop",
+   "items": [
+    "placemat",
+    "plate",
+    "shelf",
+    "wine bottle"
+   ],
+   "tasks": [
+    {
+     "language": "put the plate on the placemat and put the wine bottle on the shelf",
+     "kind": 2,
+     "steps": [
+      [
+       "plate",
+       "placemat",
+       "on the placemat"
+      ],
+      [
+       "wine bottle",
+       "shelf",
+       "on the shelf"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ],
+   "room_note": "moved from floor, then coffee table: their table-region markers miss a plate lying on the mat"
+  },
+  {
+   "id": 21,
+   "room": "kitchen",
+   "items": [
+    "alphabet soup",
+    "bowl",
+    "butter",
+    "cabinet",
+    "microwave"
+   ],
+   "tasks": [
+    {
+     "language": "put the bowl in the microwave and close it",
+     "kind": 2,
+     "steps": [
+      [
+       "bowl",
+       "microwave",
+       "in the microwave"
+      ]
+     ],
+     "artic": "microwave",
+     "artic_variant": null
+    },
+    {
+     "language": "put the butter in the bowl and put the alphabet soup on the cabinet",
+     "kind": 2,
+     "steps": [
+      [
+       "butter",
+       "bowl",
+       "in the bowl"
+      ],
+      [
+       "alphabet soup",
+       "cabinet top",
+       "on the cabinet"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ],
+   "split_from": 3
+  },
+  {
+   "id": 22,
+   "room": "tabletop",
+   "items": [
+    "alphabet soup",
+    "cabinet",
+    "moka pot",
+    "shelf",
+    "tomato sauce"
+   ],
+   "tasks": [
+    {
+     "language": "open the middle drawer and put the alphabet soup in it",
+     "kind": 2,
+     "steps": [
+      [
+       "alphabet soup",
+       "drawer",
+       "in the middle drawer"
+      ]
+     ],
+     "artic": "drawer",
+     "artic_variant": "middle"
+    },
+    {
+     "language": "put the tomato sauce on the shelf and put the moka pot on the cabinet",
+     "kind": 2,
+     "steps": [
+      [
+       "tomato sauce",
+       "shelf",
+       "on the shelf"
+      ],
+      [
+       "moka pot",
+       "cabinet top",
+       "on the cabinet"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ],
+   "split_from": 10,
+   "room_note": "moved from study: the arm could not reach the side cabinet drawer front there"
+  },
+  {
+   "id": 23,
+   "room": "living room",
+   "items": [
+    "basket",
+    "bookcase",
+    "frying pan",
+    "mug",
+    "popcorn"
+   ],
+   "tasks": [
+    {
+     "language": "put the popcorn in the basket",
+     "kind": 1,
+     "steps": [
+      [
+       "popcorn",
+       "basket",
+       "in the basket"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the mug in the bookcase and put the frying pan to the right of the basket",
+     "kind": 2,
+     "steps": [
+      [
+       "mug",
+       "bookcase",
+       "in the bookcase"
+      ],
+      [
+       "frying pan",
+       "beside",
+       "to the right of the basket"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ],
+   "split_from": 14
+  },
+  {
+   "id": 24,
+   "room": "floor",
+   "items": [
+    "bowl",
+    "cream cheese",
+    "ketchup",
+    "macaroni",
+    "plate",
+    "popcorn",
+    "tray"
+   ],
+   "tasks": [
+    {
+     "language": "put the cream cheese on the plate and put the macaroni in the tray",
+     "kind": 2,
+     "steps": [
+      [
+       "cream cheese",
+       "plate",
+       "on the plate"
+      ],
+      [
+       "macaroni",
+       "tray",
+       "in the tray"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "put the popcorn in the bowl and put the ketchup behind the plate",
+     "kind": 2,
+     "steps": [
+      [
+       "popcorn",
+       "bowl",
+       "in the bowl"
+      ],
+      [
+       "ketchup",
+       "beside",
+       "behind the plate"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    }
+   ],
+   "split_from": 20
+  },
+  {
+   "id": 25,
+   "room": "kitchen",
+   "items": [
+    "butter",
+    "frying pan",
+    "microwave",
+    "ramekin",
+    "stove"
+   ],
+   "tasks": [
+    {
+     "language": "put the ramekin in the microwave",
+     "kind": 1,
+     "steps": [
+      [
+       "ramekin",
+       "microwave",
+       "in the microwave"
+      ]
+     ],
+     "artic": null,
+     "artic_variant": null
+    },
+    {
+     "language": "turn on the stove and put the butter in the pan",
+     "kind": 2,
+     "steps": [
+      [
+       "butter",
+       "pan",
+       "in the pan"
+      ]
+     ],
+     "artic": "stove",
+     "artic_variant": null
+    }
+   ],
+   "split_from": 5
+  }
+ ]
+}
