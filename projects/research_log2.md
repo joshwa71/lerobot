@@ -1,6 +1,6 @@
 # Research Log 2 - VLA Memory on SmolVLA
 
-## Executive summary (state at 6 Nov 26)
+## Executive summary (state at 18 Nov 26)
 
 **Problem.** Learn new tasks one after another without forgetting earlier ones: frozen backbone, no task identity at inference, no replay, no per-task parameters.
 
@@ -11,7 +11,7 @@
 
 **Paper cell** (pi05: PaliGemma-2B VLM + 300M action expert). Expert sites [4,6,8,10,14,16], VLM sites [5,7,9,11,13,15]; adjacent pairs share a table except the two deepest expert sites: 12 sites, 7 tables of 65,536 slots, ~2.7B value parameters. Sequential: 5,000 steps per task, value LR 2e-3 → 2e-4. Instrument: 25 episodes × 4 paired seeds per task, a retention triangle and a paired-noise loss matrix.
 
-**Headline results** (ten libero_10 tasks in sequence, 4-seed means; drift = own-task loss from just-trained to final):
+**pi05 headline results** (ten libero_10 tasks in sequence, 4-seed means; drift = own-task loss from just-trained to final):
 
 | Row | Success | Drift |
 |---|---|---|
@@ -34,7 +34,25 @@
 - **Real robot** (WidowX AI, five tasks, function space only): drift +2.7% against +2356% for naive LoRA, and lower own-task loss than every r64 specialist. No robot rollouts exist.
 - **Limits.** The basket family (envs 7, 0, 1: one scene, near-identical tasks) accounts for the whole deficit against the specialists; env 7 is the worst drift cell. Overall the method matches roughly an r45 specialist and sits 14.6 below the joint fine-tune.
 
-The SmolVLA prototype (E0–E17) used the earlier joint protocol on four tasks (best 57.5%, not comparable); the staged protocol has never run on SmolVLA. History: `research_log.md`, summarised in `summary_research_log.md`.
+**SmolVLA reproduction** (Entries 1–4). The same staged recipe and instrument on SmolVLA (~450M parameters), from an all-weights libero_90 base.
+- Layout: 11 sites, 7 tables, ~1.5B value parameters. Warm-up at separation 2, the only separation weight that keeps every expert site above the core50 floor; otherwise pi05's cell settings.
+- Chunks execute 10 actions (pi05: 50), so absolute numbers do not compare with pi05.
+- LoRA rows adapt attention and MLP in both towers with α = r. LR is 1e-3, except where 1e-3 was unstable: r256 specialists and naive sequential at 3e-4, multitask at 1e-4.
+
+| Row (ten libero_10 tasks, 4-seed means) | Success |
+|---|---|
+| Per-task LoRA specialists, task identity given (r32 / r64 / r128 / r256) | 85.9 / 85.8 / 84.5 / 84.1 |
+| **Ours, sequential** | **81.7** |
+| Full fine-tune on all ten tasks jointly | 79.6 |
+| Multitask LoRA r128 (one adapter, all tasks jointly) | 72.2 |
+| Zero-shot (libero_90 base) | 7.2 |
+
+- **Retention.** Each task scores 86.5 on average just after training, matching the specialists. After all ten blocks the earlier tasks average 79.8, 5.3 below their just-trained level. The loss is uneven (e4 −20, e7 −16, the rest within ±7) and does not grow from five tasks (−5.0) to ten.
+- **Naive sequential LoRA r128** (five tasks): every earlier task is at 0 from block 2; final row 10.6, against 81.0 for the memory's five-task run.
+- **Against pi05's shape.** As on pi05, sequential memory sits far above naive training and close to the specialists. Unlike pi05, the specialists do not rise with rank, and the two joint-training rows sit below both the specialists and the memory (on pi05 they were the top two rows).
+- **Replicate.** The ten-task run repeats the five-task run's first five blocks to within ~3 points per cell.
+
+The SmolVLA prototype (E0–E17) used the earlier joint protocol on four tasks (best 57.5%, not comparable). History: `research_log.md`, summarised in `summary_research_log.md`.
 
 ---
 ## Entry 1 - 6 Nov 26 (SmolVLA reproduction of the paper recipe, and the baselines it needs)
@@ -172,7 +190,7 @@ That is one clean frozen-base measurement. Arms: c = 0, 0.2 and 1.0 at separatio
 - At c = 1.0, watch for query collapse: cores shrinking to a handful of slots (E21).
 
 **First paper-cell chain on SmolVLA.**
-- Layout: Entry 1's (11 sites, 7 tables, ~1.5B value parameters), chosen without the compass and geometry probes, which have not run.
+- Layout: Entry 1's (11 sites, 7 tables, ~1.5B value parameters).
 - Warm-up at separation 2; otherwise the pi05 cell: contrastive 0.05, expert anchor 0.4, VLM pool (1, 0.5), pre-pass; A-phase 10k on libero_90; 5,000 steps per task; value LR 2e-3 → 2e-4; top-t 3072; protection β4, rank mode, corefrac.
 - Five tasks (front-5: envs 4, 6, 9, 2, 7), as pi05's development runs.
 - Instrument: retention triangle at every task boundary, 25 episodes × 4 paired seeds per cell, 10 actions per chunk. The audit covers all ten tasks; its solo sites (E14, V13) test whether the reduced-layout certificates carry over.
@@ -239,7 +257,6 @@ Result (12 Nov 26): **7.2** mean over 4 seeds. Per env in train order: e4 0, e6 
   e6 dropped when e9 was trained (83 → 72), and e4 when e2 was trained (87 → 75).
 - **Against pi05.** pi05's five-task run held its earlier tasks level: prior-task mean 69.8 at block 5, against a diagonal of 65.6. SmolVLA fits each task much better but leaks on its two oldest tasks. Absolute levels are not comparable: 10 actions executed per chunk here, 50 on pi05; the SmolVLA paper gives 82.8 vs 51.8 for those settings.
 - **Not yet interpretable without SmolVLA baselines.** Naive sequential training shows how much forgetting the memory prevents; the joint fine-tune and the specialists show how far 81 sits from the ceiling.
-- **The leak's source is unlocated.** Candidates: write-mask saturation at the VLM sites (one state token, Entry 1) or the shared expert tables (pi05's shared layout was also leakier than dedicated tables, E65 add-24). The paired-noise loss matrix and prior-core write counts would separate them. Neither is in the SmolVLA chain yet.
 
 ---
 ## Entry 4 - 13 Nov 26 (SmolVLA baselines; the ten-task memory run)
@@ -357,7 +374,7 @@ Just-trained mean 77.2. On the same five tasks: memory 85.0 (both runs), special
   - The just-trained scores sit below the memory's on average, most on e7, the last task: 53, against 91 / 90 (memory) and 69 (specialists r128).
 - **Specialists do not rise with rank:** r32 85.9, r64 85.8, r128 84.5, r256 84.1 (r256 at LR 3e-4, the others at 1e-3). With a flat ladder the memory has no equivalent specialist rank. Its scores just after training (mean 86.5) match the specialists; its final row (81.7) is 2–4 points below them.
 - **Not confirmed: the joint-training rows are the lowest of the trained rows.**
-  - The joint fine-tune (79.6) is below the specialists and below the memory's final row, with weak cells on e6 (59) and e8 (61). pi05's recipe may not be optimal for SmolVLA.
+  - The joint fine-tune (79.6) is below the specialists and below the memory's final row, with weak cells on e6 (59) and e8 (61). Its recipe is stage 1's, carried over from pi05's joint row (50k steps at batch 32, SmolVLA's default optimizer: AdamW 1e-4 → 2.5e-6), and may not be optimal for this fine-tune.
   - Multitask LoRA (72.2) is 7.4 points below the joint fine-tune, not just below it (pi05: 2.6 below). Its weakest cells are e0 (52) and e8 (49), and its training loss ended at 0.062, against the joint fine-tune's 0.04.
   - Order on SmolVLA: specialists 84–86, memory's final row 81.7, joint fine-tune 79.6, multitask LoRA 72.2.
 - **The leak on the oldest tasks does not grow with more tasks.** Earlier tasks lose −5.0 points on average at five tasks and −5.3 at ten. It is uneven: e4 −20 and e7 −16 at ten tasks, the rest within ±7. e4's drop replicates across the two runs (−9 and −18 at row 5); e6's five-task drop does not (−11 and −3).
