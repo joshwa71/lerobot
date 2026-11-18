@@ -13,7 +13,7 @@
 #$ -N build_libero_ext
 # One gpu.q slot (each slot is a GPU there, so -pe smp N would need N free GPUs on one host); the render
 # workers use the node's other CPUs (jobs are not pinned). No h_vmem: EGL/CUDA reserve large virtual memory.
-#$ -l tmem=32G,h_rt=12:00:00,tscratch=200G
+#$ -l tmem=20G,h_rt=12:00:00,tscratch=200G
 #$ -l gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)
 #$ -R y
 #$ -j y
@@ -37,7 +37,7 @@ mkdir -p "$SCRATCH_OUT"
 WORK=$SCRATCH_OUT/tasks
 echo "== per-task datasets $(date)"
 timeout -s ABRT 8h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage tasks --demos "$DEMOS" \
-    --work "$WORK" --out "$SCRATCH/libero_ext" --workers 4
+    --work "$WORK" --out "$SCRATCH/libero_ext" --workers 3
 scratch_outputs_close  # all per-task datasets on /SAN before scratch copies are dropped
 if [ ! -f "$D/libero_ext_learn4/meta/info.json" ]; then
     echo "== learnability subset (suite tasks $LEARN_TASKS) $(date)"
