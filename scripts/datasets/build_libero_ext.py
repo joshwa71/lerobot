@@ -114,8 +114,11 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--stats-workers", type=int, default=4)
     ap.add_argument("--partial", action="store_true", help="test builds: only the tasks whose demos are present")
-    ap.add_argument("--stage", choices=["all", "tasks", "aggregate"], default="all",
-                    help="tasks: per-task datasets only; aggregate: merge them (all built) and add stats")
+    ap.add_argument("--stage", choices=["all", "tasks", "aggregate", "subset"], default="all",
+                    help="tasks: per-task datasets only; aggregate: merge them (all built) and add stats; "
+                    "subset: merge only --subset tasks into --out (a small dataset for quick checks)")
+    ap.add_argument("--subset", default=None, help="comma-separated suite task indices, for --stage subset")
+    ap.add_argument("--repo-id", default=REPO_ID)
     ap.add_argument("--drop-work", action="store_true", help="delete the per-task datasets once merged (scratch)")
     a = ap.parse_args()
     files = sorted(a.demos.glob("*.npz"))
@@ -139,6 +142,8 @@ def main():
         assert worst < 5e-3, "re-read states differ from the demos' own: model or state mismatch"
         if a.stage == "tasks":
             return
+    if a.stage == "subset":
+        idxs = [int(x) for x in a.subset.split(",")]
     missing = [i for i in idxs if not (a.work / f"task_{i:02d}" / "meta" / "info.json").exists()]
     assert not missing, f"per-task datasets missing: {missing}"
 
@@ -149,20 +154,20 @@ def main():
         shutil.rmtree(tmp_out, ignore_errors=True)
         aggregate_datasets(
             repo_ids=[f"{REPO_ID}_task{i:02d}" for i in idxs],
-            aggr_repo_id=REPO_ID,
+            aggr_repo_id=a.repo_id,
             roots=[a.work / f"task_{i:02d}" for i in idxs],
             aggr_root=tmp_out,
         )
         os.replace(tmp_out, a.out)
-    if a.drop_work:
+    if a.drop_work and a.stage != "subset":
         for i in idxs:
             shutil.rmtree(a.work / f"task_{i:02d}", ignore_errors=True)
     from libero_common import add_quantile_stats, write_build_info
 
     from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
 
-    add_quantile_stats(a.out, REPO_ID, workers=a.stats_workers)
-    md = LeRobotDatasetMetadata(REPO_ID, root=a.out)
+    add_quantile_stats(a.out, a.repo_id, workers=a.stats_workers)
+    md = LeRobotDatasetMetadata(a.repo_id, root=a.out)
     tasks = list(md.tasks.index)
     assert tasks == [suite["tasks"][i]["language"] for i in idxs], "task_index is not the suite order"
     shutil.copy(EXT / "suite.json", a.out / "meta" / "libero_ext_suite.json")
@@ -174,7 +179,8 @@ def main():
         episodes=md.total_episodes,
         frames=md.total_frames,
         tasks=len(tasks),
-        demos_per_task=[metas[i]["n_demos"] for i in order],
+        suite_task_indices=idxs,
+        demos_per_task=[next(m["n_demos"] for m in metas if m["task_index"] == i) for i in idxs],
     )
     print(f"done: {md.total_episodes} episodes, {md.total_frames} frames, {len(tasks)} tasks -> {a.out}")
 

@@ -7,6 +7,8 @@
 # built; the aggregate is made on scratch, copied to /SAN and renamed into place. Exclude the bad nodes
 # (CLAUDE.md 9.4 rule 9):
 #   qsub -l 'h=!(dip-207-1*|dip-207-2*)' cluster/jobs/build_libero_ext.sh
+# Also writes $HF_LEROBOT_HOME/libero_ext_learn4: suite tasks LEARN_TASKS only (task_index 0-3), for the
+# learnability check (configs/ext_learn_spec_r128.sh), copied to /SAN before the full dataset.
 #$ -S /bin/bash
 #$ -N build_libero_ext
 #$ -l tmem=12G,h_vmem=12G,h_rt=12:00:00,tscratch=200G
@@ -19,11 +21,12 @@ set -euo pipefail
 source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
 D=$HF_LEROBOT_HOME
+LEARN_TASKS=${LEARN_TASKS:-0,12,34,45}
 echo "== $(hostname) $(date) job=$JOB_ID slots=$NSLOTS CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
 cd "$REPO/scripts/datasets"
 git log -1 --format='== repo %h %s'
-if [ -f "$D/libero_ext/meta/info.json" ]; then
-    echo "== $D/libero_ext already exists; nothing to do"
+if [ -f "$D/libero_ext/meta/info.json" ] && [ -f "$D/libero_ext_learn4/meta/info.json" ]; then
+    echo "== $D/libero_ext and libero_ext_learn4 already exist; nothing to do"
     exit 0
 fi
 scratch_setup
@@ -35,6 +38,18 @@ echo "== per-task datasets $(date)"
 timeout -s ABRT 8h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage tasks --demos "$DEMOS" \
     --work "$WORK" --out "$SCRATCH/libero_ext" --workers 4
 scratch_outputs_close  # all per-task datasets on /SAN before scratch copies are dropped
+if [ ! -f "$D/libero_ext_learn4/meta/info.json" ]; then
+    echo "== learnability subset (suite tasks $LEARN_TASKS) $(date)"
+    timeout -s ABRT 1h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage subset --subset "$LEARN_TASKS" \
+        --repo-id libero_ext_learn4 --demos "$DEMOS" --work "$WORK" --out "$SCRATCH/libero_ext_learn4" --stats-workers 4
+    timeout 2h rsync -a --timeout=600 "$SCRATCH/libero_ext_learn4/" "$D/.libero_ext_learn4.tmp/"
+    mv -T "$D/.libero_ext_learn4.tmp" "$D/libero_ext_learn4"
+    rm -rf "$SCRATCH/libero_ext_learn4"
+fi
+if [ -f "$D/libero_ext/meta/info.json" ]; then
+    echo "== $D/libero_ext already exists; done"
+    exit 0
+fi
 echo "== aggregate + stats $(date)"
 timeout -s ABRT 3h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage aggregate --demos "$DEMOS" \
     --work "$WORK" --out "$SCRATCH/libero_ext" --drop-work --stats-workers 4
