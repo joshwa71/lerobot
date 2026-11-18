@@ -1,0 +1,148 @@
+(define (problem LIBERO_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the tomato sauce on the shelf and put the chocolate pudding on the plate)
+    (:regions
+      (basket_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0765 -0.2600 -0.0465 -0.2300)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (chocolate_pudding_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2350 0.1580 -0.2050 0.1880)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (macaroni_and_cheese_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.1225 0.1770 -0.0925 0.2070)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2145 -0.2510 -0.1845 -0.2210)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (orange_juice_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0685 0.1215 -0.0385 0.1515)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target main_table)
+          (:ranges (
+              (0.0140 -0.0560 0.0440 -0.0260)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.1140 0.3655 -0.0940 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (tomato_sauce_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.3235 -0.1740 -0.2935 -0.1440)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2750 -0.0415 -0.2450 -0.0115)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_two_layer_shelf_1)
+      )
+    )
+
+  (:fixtures
+    main_table - table
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+  )
+
+  (:objects
+    basket_1 - basket
+    chocolate_pudding_1 - chocolate_pudding
+    macaroni_and_cheese_1 - macaroni_and_cheese
+    moka_pot_1 - moka_pot
+    orange_juice_1 - orange_juice
+    plate_1 - plate
+    tomato_sauce_1 - tomato_sauce
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    chocolate_pudding_1
+    plate_1
+    tomato_sauce_1
+    wooden_two_layer_shelf_1
+  )
+
+  (:init
+    (On basket_1 main_table_basket_init_region)
+    (On chocolate_pudding_1 main_table_chocolate_pudding_init_region)
+    (On macaroni_and_cheese_1 main_table_macaroni_and_cheese_init_region)
+    (On moka_pot_1 main_table_moka_pot_init_region)
+    (On orange_juice_1 main_table_orange_juice_init_region)
+    (On plate_1 main_table_plate_init_region)
+    (On wooden_two_layer_shelf_1 main_table_wooden_two_layer_shelf_init_region)
+    (On tomato_sauce_1 main_table_tomato_sauce_init_region)
+    (On wooden_tray_1 main_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (On tomato_sauce_1 wooden_two_layer_shelf_1_top_side) (On chocolate_pudding_1 plate_1))
+  )
+
+)

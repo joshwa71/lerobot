@@ -1,214 +1,240 @@
 # libero_ext build report
 
-Built by `scripts/libero_tasks/build_suite.py` from `scripts/libero_tasks/plan.json` (planner seed 41). Checks per task: stable settled resets (drift < 1 cm), goal false at start, forced goal reached without interpenetration, objects in the agentview image, end effector within 5 cm of each approach point. 50 start states per task.
+Built by `scripts/libero_tasks/build_suite.py` from `scripts/libero_tasks/plan.json` (planner seed 4). Checks per task: stable settled resets (drift < 1 cm), goal false at start, forced goal reached without interpenetration, objects in the agentview image, end effector within 5 cm of each approach point, and the scripted expert succeeding in at least 2 of 3 episodes. 50 start states per task.
 
-**60 tasks in 25 of 25 scenes built.**
+**60 tasks in 27 of 27 scenes built.**
 
-## S01 (kitchen): built after 1 layout(s), 125 s
+## S01 (kitchen): built after 14 layout(s), 299 s
 
-Classes: butter = butter, cookies = cookies, faucet = faucet, fridge = short_fridge, tray = wooden_tray.
+Classes: bbq sauce = bbq_sauce, bowl = akita_black_bowl, cabinet = wooden_cabinet, cookies = cookies, fridge = short_fridge, mug = white_yellow_mug.
 
-- turn on the faucet: drift 0.00 cm; reach (cm) faucet 2.6; 50 resets for the start states
-- put the butter in the fridge and put the cookies in the tray: drift 0.00 cm; reach (cm) above butter 2.7, fridge opening 2.7, above cookies 2.6, tray 2.7; 50 resets for the start states
+- put the cookies in the bowl: drift 0.00 cm; reach (cm) above cookies 2.7, bowl 2.8; 50 resets for the start states; expert 3/3
+- put the bbq sauce in the fridge and put the mug on the cabinet: drift 0.00 cm; reach (cm) above bbq sauce 2.2, fridge opening 2.8, above mug 2.5, cabinet top 2.8; 50 resets for the start states; expert 3/3
 
-## S02 (kitchen): built after 19 layout(s), 251 s
+Rejected layouts (last few): #8 put the bbq sauce in the fridge and put the mug on the cabinet: {'drift': 0.0, 'low': -0.009950777323967874, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #9 put the bbq sauce in the fridge and put the mug on the cabinet: {'drift': 0.0, 'low': -0.009950777323967874, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #10 put the bbq sauce in the fridge and put the mug on the cabinet: {'drift': 1.0, 'low': -0.004327470178351223, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #11 put the bbq sauce in the fridge and put the mug on the cabinet: {'drift': 1.0, 'low': -0.902394171198558, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #12 put the bbq sauce in the fridge and put the mug on the cabinet: expert 0/3
 
-Classes: bbq sauce = bbq_sauce, bowl = white_bowl, drainer = bowl_drainer, fridge = short_fridge, mug = porcelain_mug, placemat = dining_set_group, ramekin = glazed_rim_porcelain_ramekin, salad dressing = new_salad_dressing.
+## S02 (kitchen): built after 1 layout(s), 59 s
 
-- put the ramekin in the bowl: drift 0.00 cm; reach (cm) above ramekin 2.6, bowl 2.9; 50 resets for the start states
-- put the bowl in the left side of the drainer and put the mug on the placemat: drift 0.00 cm; reach (cm) above bowl 3.0, drainer 2.3, above mug 2.7, placemat 2.8; 50 resets for the start states
-- put the salad dressing in the fridge and put the bbq sauce in front of the bowl: drift 0.00 cm; reach (cm) above salad dressing 2.4, fridge opening 2.4, above bbq sauce 2.9, beside 2.9; 50 resets for the start states
+Classes: butter = butter, fridge = short_fridge, plate = plate, salad dressing = salad_dressing.
 
-Rejected layouts (last few): #13 put the bowl in the left side of the drainer and put the mug on the placemat: {'drift': 0.0, 'low': -0.032603141691782134, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above bowl': 0.027, 'drainer': 0.023, 'above mug': 0.024, 'placemat': 0.041}}; #14 layout: no non-overlapping layout; #15 layout: no non-overlapping layout; #16 layout: no non-overlapping layout; #17 layout: no non-overlapping layout
+- put the butter on the plate and put the salad dressing in the fridge: drift 0.00 cm; reach (cm) above butter 2.7, plate 2.4, above salad dressing 2.3, fridge opening 2.9; 50 resets for the start states; expert 3/3
 
-## S03 (kitchen): built after 1 layout(s), 69 s
+## S03 (kitchen): built after 2 layout(s), 126 s
 
-Classes: cabinet = white_cabinet, orange juice = orange_juice, tomato sauce = tomato_sauce, tray = wooden_tray.
+Classes: bbq sauce = bbq_sauce, cabinet = white_cabinet, cream cheese = cream_cheese, ketchup = ketchup, plate = plate, wine bottle = wine_bottle.
 
-- put the tomato sauce in the bottom drawer and put the orange juice in the tray: drift 0.00 cm; reach (cm) above tomato sauce 2.5, drawer 3.0, above orange juice 2.3, tray 2.3; 50 resets for the start states
-
-## S04 (kitchen): built after 4 layout(s), 255 s
-
-Classes: bowl = akita_black_bowl, cabinet = wooden_cabinet, chocolate pudding = chocolate_pudding, drainer = bowl_drainer, milk = milk, ramekin = glazed_rim_porcelain_ramekin, tray = wooden_tray, wine bottle = wine_bottle.
-
-- put the chocolate pudding in the bowl: drift 0.00 cm; reach (cm) above chocolate pudding 2.9, bowl 2.3; 50 resets for the start states
-- put the ramekin in the right side of the drainer: drift 0.00 cm; reach (cm) above ramekin 2.5, drainer 2.4; 50 resets for the start states
-- put the milk in the tray and put the wine bottle on the cabinet: drift 0.00 cm; reach (cm) above milk 2.5, tray 2.4, above wine bottle 2.5, cabinet top 2.7; 50 resets for the start states
-
-Rejected layouts (last few): #0 put the chocolate pudding in the bowl: {'drift': 2.8189256484623115e-15, 'low': -0.0026072886421317776, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above chocolate pudding': 0.052, 'bowl': 0.025}}; #1 put the chocolate pudding in the bowl: {'drift': 0.0, 'low': -0.0026072886421317776, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above chocolate pudding': 0.153, 'bowl': 0.024}}; #2 put the chocolate pudding in the bowl: {'drift': 1.0, 'low': -0.5824568679706068, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
-
-## S05 (kitchen): built after 2 layout(s), 94 s
-
-Classes: chocolate pudding = chocolate_pudding, fridge = short_fridge, orange juice = orange_juice, plate = plate, tomato sauce = tomato_sauce.
-
-- put the orange juice to the right of the plate: drift 0.00 cm; reach (cm) above orange juice 2.7, beside 3.0; 50 resets for the start states
-- put the tomato sauce in the fridge and put the chocolate pudding on the plate: drift 0.00 cm; reach (cm) above tomato sauce 2.3, fridge opening 2.9, above chocolate pudding 2.9, plate 2.3; 50 resets for the start states
+- put the bbq sauce in the bottom drawer and put the ketchup in front of the plate: drift 0.00 cm; reach (cm) above bbq sauce 2.4, drawer 2.6, above ketchup 2.8, beside 2.6; 50 resets for the start states; expert 3/3
+- put the cream cheese on the plate and put the wine bottle on the cabinet: drift 0.00 cm; reach (cm) above cream cheese 2.3, plate 2.3, above wine bottle 2.3, cabinet top 2.3; 50 resets for the start states; expert 3/3
 
 Rejected layouts (last few): #0 layout: no non-overlapping layout
 
-## S06 (kitchen): built after 9 layout(s), 232 s
+## S04 (kitchen): built after 2 layout(s), 176 s
 
-Classes: bbq sauce = bbq_sauce, cabinet = wooden_cabinet, fridge = short_fridge, macaroni = macaroni_and_cheese, microwave = microwave, salad dressing = salad_dressing, wine bottle = wine_bottle.
+Classes: alphabet soup = alphabet_soup, cabinet = wooden_cabinet, drainer = bowl_drainer, faucet = faucet, macaroni = macaroni_and_cheese, ramekin = glazed_rim_porcelain_ramekin.
 
-- put the bbq sauce in the top drawer: drift 0.00 cm; reach (cm) above bbq sauce 2.4, drawer 2.7; 50 resets for the start states
-- put the wine bottle in the fridge: drift 0.00 cm; reach (cm) above wine bottle 2.8, fridge opening 2.9; 50 resets for the start states
-- put the salad dressing on the cabinet and put the macaroni in the microwave: drift 0.00 cm; reach (cm) above salad dressing 2.5, cabinet top 2.6, above macaroni 2.7, microwave opening 2.7; 50 resets for the start states
+- put the macaroni on the cabinet: drift 0.00 cm; reach (cm) above macaroni 2.6, cabinet top 2.9; 50 resets for the start states; expert 3/3
+- turn on the faucet: drift 0.00 cm; reach (cm) faucet 2.1; 50 resets for the start states; expert 2/3
+- put the alphabet soup in the top drawer and put the ramekin in the right side of the drainer: drift 0.00 cm; reach (cm) above alphabet soup 3.0, drawer 2.4, above ramekin 2.4, drainer 2.2; 50 resets for the start states; expert 3/3
 
-Rejected layouts (last few): #3 put the salad dressing on the cabinet and put the macaroni in the microwave: {'drift': 1.0, 'low': -0.002517303991490416, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #4 layout: no non-overlapping layout; #5 layout: no non-overlapping layout; #6 layout: no non-overlapping layout; #7 put the salad dressing on the cabinet and put the macaroni in the microwave: {'drift': 6.938893903907228e-15, 'low': -0.002517303991490416, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
+Rejected layouts (last few): #0 put the macaroni on the cabinet: {'drift': 1.6289053439422219e-15, 'low': -0.004237494667114539, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-## S07 (kitchen): built after 18 layout(s), 181 s
+## S05 (kitchen): built after 17 layout(s), 418 s
 
-Classes: cookies = cookies, fridge = short_fridge, ketchup = ketchup, microwave = microwave, mug = white_yellow_mug, plate = plate, popcorn = popcorn, tray = wooden_tray.
+Classes: bowl = akita_black_bowl, drainer = bowl_drainer, fridge = short_fridge, popcorn = popcorn, tomato sauce = tomato_sauce.
 
-- put the cookies on the plate: drift 0.00 cm; reach (cm) above cookies 2.9, plate 2.4; 50 resets for the start states
-- open the fridge and put the ketchup in it: drift 0.00 cm; reach (cm) above ketchup 2.3, fridge opening 4.3; 50 resets for the start states
-- put the popcorn in the microwave and put the mug in the tray: drift 0.00 cm; reach (cm) above popcorn 2.9, microwave opening 2.9, above mug 2.7, tray 2.6; 50 resets for the start states
+- put the popcorn in the bowl: drift 0.00 cm; reach (cm) above popcorn 2.6, bowl 2.3; 50 resets for the start states; expert 3/3
+- put the tomato sauce in the fridge and put the bowl in the left side of the drainer: drift 0.00 cm; reach (cm) above tomato sauce 2.7, fridge opening 2.5, above bowl 2.8, drainer 2.6; 50 resets for the start states; expert 2/3
 
-Rejected layouts (last few): #12 layout: no non-overlapping layout; #13 layout: no non-overlapping layout; #14 layout: no non-overlapping layout; #15 layout: no non-overlapping layout; #16 layout: no non-overlapping layout
+Rejected layouts (last few): #11 put the tomato sauce in the fridge and put the bowl in the left side of the drainer: expert 0/3; #12 put the tomato sauce in the fridge and put the bowl in the left side of the drainer: expert 0/3; #13 put the popcorn in the bowl: {'drift': 2.2487262639618315e-15, 'low': -0.902394171198558, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #14 put the tomato sauce in the fridge and put the bowl in the left side of the drainer: expert 0/3; #15 put the tomato sauce in the fridge and put the bowl in the left side of the drainer: expert 1/3
 
-## S08 (study): built after 1 layout(s), 203 s
+## S06 (kitchen): built after 3 layout(s), 61 s
 
-Classes: caddy = desk_caddy, cookies = cookies, mug = white_yellow_mug, ramekin = glazed_rim_porcelain_ramekin, salad dressing = salad_dressing, shelf = wooden_two_layer_shelf, storage box = white_storage_box.
+Classes: book = black_book, cabinet = wooden_cabinet, moka pot = moka_pot, tray = wooden_tray.
 
-- lift the salad dressing: drift 0.00 cm; reach (cm) above salad dressing 2.6; 50 resets for the start states
-- put the mug on the shelf: drift 0.00 cm; reach (cm) above mug 2.4, shelf 2.8; 50 resets for the start states
-- put the cookies on the storage box and put the ramekin in the left of the caddy: drift 0.00 cm; reach (cm) above cookies 3.0, storage box 2.7, above ramekin 2.9, caddy 2.6; 50 resets for the start states
+- put the book on the cabinet and put the moka pot in the tray: drift 0.00 cm; reach (cm) above book 2.2, cabinet top 2.8, above moka pot 2.6, tray 2.7; 50 resets for the start states; expert 2/3
 
-## S09 (study): built after 1 layout(s), 181 s
+Rejected layouts (last few): #0 put the book on the cabinet and put the moka pot in the tray: {'drift': 0.0, 'low': -0.002586208943078261, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #1 put the book on the cabinet and put the moka pot in the tray: {'drift': np.float64(1.0408340855860843e-16), 'low': -0.00258620894307815, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-Classes: bookcase = wooden_shelf, butter = butter, caddy = desk_caddy, cream cheese = cream_cheese, ketchup = ketchup, shelf = wooden_two_layer_shelf.
+## S07 (kitchen): built after 11 layout(s), 310 s
 
-- put the butter in the right of the caddy: drift 0.00 cm; reach (cm) above butter 2.7, caddy 2.6; 50 resets for the start states
-- put the cream cheese in the bookcase: drift 0.00 cm; reach (cm) above cream cheese 2.5, bookcase opening 2.8; 50 resets for the start states
-- put the ketchup on the shelf: drift 0.00 cm; reach (cm) above ketchup 2.5, shelf 2.8; 50 resets for the start states
+Classes: cabinet = wooden_cabinet, macaroni = macaroni_and_cheese, microwave = microwave, placemat = dining_set_group, ramekin = glazed_rim_porcelain_ramekin, salad dressing = salad_dressing, tomato sauce = tomato_sauce.
 
-## S10 (study): built after 1 layout(s), 135 s
+- put the tomato sauce in the middle drawer: drift 0.00 cm; reach (cm) above tomato sauce 2.7, drawer 2.6; 51 resets for the start states; expert 3/3
+- put the macaroni in the microwave and close it: drift 0.00 cm; reach (cm) above macaroni 2.6, microwave opening 2.4; 52 resets for the start states; expert 3/3
+- put the salad dressing on the cabinet and put the ramekin on the placemat: drift 0.00 cm; reach (cm) above salad dressing 2.6, cabinet top 2.8, above ramekin 2.7, placemat 2.7; 51 resets for the start states; expert 3/3
 
-Classes: bookcase = wooden_shelf, bowl = akita_black_bowl, cream cheese = cream_cheese, popcorn = popcorn.
+Rejected layouts (last few): #5 put the salad dressing on the cabinet and put the ramekin on the placemat: {'drift': 1.6896206656014101e-15, 'low': -0.004667130382987494, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #6 layout: no non-overlapping layout; #7 put the salad dressing on the cabinet and put the ramekin on the placemat: {'drift': 1.7496550317114955e-15, 'low': -0.004667130382987383, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #8 layout: no non-overlapping layout; #9 put the salad dressing on the cabinet and put the ramekin on the placemat: {'drift': 1.0547118733938987e-15, 'low': -0.004667130382987494, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-- put the cream cheese in the bowl: drift 0.00 cm; reach (cm) above cream cheese 2.3, bowl 2.7; 50 resets for the start states
-- put the popcorn in the bookcase: drift 0.00 cm; reach (cm) above popcorn 2.4, bookcase opening 3.0; 50 resets for the start states
+## S08 (kitchen): built after 5 layout(s), 287 s
 
-## S11 (study): built after 1 layout(s), 211 s
+Classes: bowl = akita_black_bowl, butter = butter, cabinet = wooden_cabinet, microwave = microwave, orange juice = orange_juice, ramekin = glazed_rim_porcelain_ramekin.
 
-Classes: bbq sauce = bbq_sauce, bookcase = wooden_shelf, cabinet = white_cabinet, caddy = desk_caddy, chocolate pudding = chocolate_pudding, cream cheese = cream_cheese, moka pot = moka_pot.
+- put the orange juice to the right of the bowl: drift 0.00 cm; reach (cm) above orange juice 2.7, beside 2.4; 50 resets for the start states; expert 3/3
+- put the ramekin in the bowl: drift 0.00 cm; reach (cm) above ramekin 3.0, bowl 2.8; 50 resets for the start states; expert 3/3
+- put the bowl in the microwave and put the butter on the cabinet: drift 0.00 cm; reach (cm) above bowl 3.0, microwave opening 2.4, above butter 3.0, cabinet top 2.9; 50 resets for the start states; expert 2/3
 
-- lift the moka pot: drift 0.00 cm; reach (cm) above moka pot 2.9; 50 resets for the start states
-- put the chocolate pudding in the bookcase: drift 0.00 cm; reach (cm) above chocolate pudding 2.9, bookcase opening 2.4; 50 resets for the start states
-- put the bbq sauce on the cabinet and put the cream cheese in the right of the caddy: drift 0.00 cm; reach (cm) above bbq sauce 2.6, cabinet top 2.8, above cream cheese 2.8, caddy 2.9; 50 resets for the start states
+Rejected layouts (last few): #0 put the bowl in the microwave and put the butter on the cabinet: {'drift': 0.0, 'low': -0.0028077126930423635, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #1 put the bowl in the microwave and put the butter on the cabinet: {'drift': 7.152448122690996e-15, 'low': -0.0028077126930423635, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #2 put the bowl in the microwave and put the butter on the cabinet: expert 0/3; #3 put the bowl in the microwave and put the butter on the cabinet: {'drift': 0.0, 'low': -0.0028077126930423635, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-## S12 (study): built after 17 layout(s), 266 s
+## S09 (kitchen): built after 9 layout(s), 278 s
 
-Classes: alphabet soup = alphabet_soup, book = yellow_book, cabinet = white_cabinet, caddy = desk_caddy, chocolate pudding = chocolate_pudding, moka pot = moka_pot, plate = plate, popcorn = popcorn, storage box = white_storage_box.
+Classes: alphabet soup = alphabet_soup, cream cheese = cream_cheese, fridge = short_fridge, frying pan = chefmate_8_frypan, ketchup = ketchup, macaroni = macaroni_and_cheese, stove = flat_stove, tray = wooden_tray.
 
-- put the chocolate pudding in the left of the caddy: drift 0.00 cm; reach (cm) above chocolate pudding 2.7, caddy 2.2; 52 resets for the start states
-- put the alphabet soup on the storage box and put the moka pot in front of the plate: drift 0.00 cm; reach (cm) above alphabet soup 2.7, storage box 2.9, above moka pot 2.9, beside 2.3; 56 resets for the start states
-- put the popcorn on the plate and put the book on the cabinet: drift 0.00 cm; reach (cm) above popcorn 2.6, plate 2.5, above book 2.2, cabinet top 3.0; 53 resets for the start states
+- lift the alphabet soup: drift 0.00 cm; reach (cm) above alphabet soup 2.6; 50 resets for the start states; expert 3/3
+- put the ketchup in the fridge and put the macaroni in the tray: drift 0.00 cm; reach (cm) above ketchup 2.7, fridge opening 2.9, above macaroni 2.3, tray 2.6; 50 resets for the start states; expert 3/3
+- turn on the stove and put the cream cheese in the pan: drift 0.00 cm; reach (cm) above cream cheese 2.6, pan 3.0; 50 resets for the start states; expert 3/3
 
-Rejected layouts (last few): #11 layout: no non-overlapping layout; #12 layout: no non-overlapping layout; #13 layout: no non-overlapping layout; #14 layout: no non-overlapping layout; #15 put the chocolate pudding in the left of the caddy: {'drift': 4.819661020294401, 'low': -0.8997872052073743, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
+Rejected layouts (last few): #3 layout: no non-overlapping layout; #4 turn on the stove and put the cream cheese in the pan: {'drift': 1.6514567491299204e-15, 'low': -0.004237494667114539, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #5 put the ketchup in the fridge and put the macaroni in the tray: expert 0/3; #6 layout: no non-overlapping layout; #7 lift the alphabet soup: {'drift': 1.0, 'low': -0.9094105427057643, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
 
-## S13 (study): built after 10 layout(s), 201 s
+## S10 (study): built after 12 layout(s), 191 s
 
-Classes: book = yellow_book, cabinet = white_cabinet, ketchup = ketchup, milk = milk, mug = red_coffee_mug, shelf = wooden_two_layer_shelf, storage box = white_storage_box.
+Classes: book = yellow_book, cabinet = white_cabinet, milk = milk, orange juice = orange_juice, shelf = wooden_two_layer_shelf.
 
-- put the book in the bottom drawer and put the milk on the shelf: drift 0.00 cm; reach (cm) above book 2.4, drawer 2.6, above milk 2.4, shelf 2.5; 51 resets for the start states
-- put the ketchup on the storage box and put the mug on the cabinet: drift 0.00 cm; reach (cm) above ketchup 2.8, storage box 2.3, above mug 2.4, cabinet top 3.0; 56 resets for the start states
+- put the milk on the cabinet: drift 0.00 cm; reach (cm) above milk 2.6, cabinet top 2.5; 50 resets for the start states; expert 3/3
+- put the book in the bottom drawer and put the orange juice on the shelf: drift 0.00 cm; reach (cm) above book 2.8, drawer 2.8, above orange juice 2.8, shelf 2.6; 50 resets for the start states; expert 3/3
 
-Rejected layouts (last few): #4 put the book in the bottom drawer and put the milk on the shelf: {'drift': 6.994405055138486e-15, 'low': -0.007815279234344552, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #5 put the book in the bottom drawer and put the milk on the shelf: {'drift': 1.0, 'low': -0.007815279234344552, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #6 put the book in the bottom drawer and put the milk on the shelf: {'drift': 1.0, 'low': -0.007815279234344663, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #7 put the ketchup on the storage box and put the mug on the cabinet: {'drift': 3.469446951953614e-15, 'low': -0.007815279234344552, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #8 put the ketchup on the storage box and put the mug on the cabinet: {'drift': 6.938893903907228e-15, 'low': -0.007815279234344552, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
+Rejected layouts (last few): #6 put the milk on the cabinet: {'drift': 3.5493527563892463e-15, 'low': -0.0006632570903359891, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #7 put the book in the bottom drawer and put the orange juice on the shelf: expert 1/3; #8 put the milk on the cabinet: {'drift': 3.469446951953614e-15, 'low': -0.0006632570903359891, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #9 put the book in the bottom drawer and put the orange juice on the shelf: {'drift': 0.0, 'low': -0.0006632570903359891, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #10 put the milk on the cabinet: {'drift': 6.938893903907228e-15, 'low': -0.0006632570903359891, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-## S14 (living room): built after 4 layout(s), 150 s
+## S11 (study): built after 6 layout(s), 217 s
 
-Classes: cream cheese = cream_cheese, frying pan = chefmate_8_frypan, moka pot = moka_pot, tray = wooden_tray.
+Classes: cabinet = white_cabinet, cookies = cookies, ketchup = ketchup, mug = white_yellow_mug, orange juice = orange_juice, shelf = wooden_two_layer_shelf, storage box = white_storage_box.
 
-- put the cream cheese in the pan: drift 0.00 cm; reach (cm) above cream cheese 2.5, pan 2.7; 54 resets for the start states
-- put the moka pot in the tray: drift 0.00 cm; reach (cm) above moka pot 2.4, tray 2.9; 51 resets for the start states
+- put the cookies in the middle drawer: drift 0.00 cm; reach (cm) above cookies 2.3, drawer 2.7; 50 resets for the start states; expert 2/3
+- put the mug on the shelf: drift 0.00 cm; reach (cm) above mug 2.4, shelf 2.8; 50 resets for the start states; expert 3/3
+- put the ketchup on the storage box and put the orange juice on the cabinet: drift 0.00 cm; reach (cm) above ketchup 2.4, storage box 2.8, above orange juice 2.3, cabinet top 2.2; 50 resets for the start states; expert 2/3
 
-Rejected layouts (last few): #0 put the cream cheese in the pan: {'drift': 1.0, 'low': -0.459536637500857, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #1 put the cream cheese in the pan: {'drift': 1.0, 'low': -0.46375903954850284, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #2 put the cream cheese in the pan: {'drift': 1.0, 'low': -0.02699291612654431, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
+Rejected layouts (last few): #0 put the cookies in the middle drawer: {'drift': 3.469446951953614e-15, 'low': -0.002195654584990603, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above cookies': 0.077, 'drawer': 0.028}}; #1 put the mug on the shelf: {'drift': 3.0269169999247415e-15, 'low': -0.002195654584990603, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #2 put the cookies in the middle drawer: {'drift': 2.063081476116683e-16, 'low': -0.002195654584990603, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above cookies': 0.051, 'drawer': 0.022}}; #3 put the ketchup on the storage box and put the orange juice on the cabinet: {'drift': 3.469446951953614e-15, 'low': -0.002195654584990603, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #4 put the cookies in the middle drawer: {'drift': 1.0, 'low': -0.003568543703407645, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
 
-## S15 (living room): built after 20 layout(s), 306 s
+## S12 (study): built after 23 layout(s), 255 s
 
-Classes: basket = basket, bbq sauce = bbq_sauce, book = black_book, chocolate pudding = chocolate_pudding, milk = milk, storage box = white_storage_box, tray = wooden_tray.
+Classes: alphabet soup = alphabet_soup, butter = butter, cabinet = wooden_cabinet, caddy = desk_caddy, moka pot = moka_pot, shelf = wooden_two_layer_shelf.
 
-- lift the milk: drift 0.00 cm; reach (cm) above milk 2.5; 50 resets for the start states
-- put the chocolate pudding in the basket: drift 0.00 cm; reach (cm) above chocolate pudding 2.4, basket 2.7; 50 resets for the start states
-- put the book on the storage box and put the bbq sauce in the tray: drift 0.00 cm; reach (cm) above book 2.3, storage box 2.5, above bbq sauce 2.9, tray 2.4; 50 resets for the start states
+- put the alphabet soup on the cabinet: drift 0.00 cm; reach (cm) above alphabet soup 2.3, cabinet top 2.3; 50 resets for the start states; expert 3/3
+- put the moka pot on the shelf and put the butter in the left of the caddy: drift 0.00 cm; reach (cm) above moka pot 2.9, shelf 2.8, above butter 2.4, caddy 2.3; 50 resets for the start states; expert 3/3
 
-Rejected layouts (last few): #14 lift the milk: {'drift': 1.0, 'low': -0.4382472434445275, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #15 put the chocolate pudding in the basket: {'drift': 1.3877787807814457e-14, 'low': -0.009352354195647394, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above chocolate pudding': 0.063, 'basket': 0.028}}; #16 lift the milk: {'drift': 1.0, 'low': -0.43593038784347704, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #17 put the chocolate pudding in the basket: {'drift': 6.938893903907228e-15, 'low': -0.009352354195647394, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above chocolate pudding': 0.06, 'basket': 0.025}}; #18 lift the milk: {'drift': 6.668925906876251e-11, 'low': -0.43651730399148997, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}
+Rejected layouts (last few): #17 put the alphabet soup on the cabinet: {'drift': 5.412337245047638e-16, 'low': -0.002064979391585786, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #18 put the moka pot on the shelf and put the butter in the left of the caddy: expert 1/3; #19 put the alphabet soup on the cabinet: {'drift': 1.304512053934559e-15, 'low': -0.002064979391585786, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #20 put the moka pot on the shelf and put the butter in the left of the caddy: {'drift': 2.8895890415671624e-15, 'low': -0.002064979391585897, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #21 put the alphabet soup on the cabinet: {'drift': 1.8735013540549517e-15, 'low': -0.002064979391585897, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-## S16 (coffee table): built after 1 layout(s), 144 s
+## S13 (study): built after 3 layout(s), 244 s
 
-Classes: basket = basket, cookies = cookies, milk = milk, orange juice = orange_juice, shelf = wooden_two_layer_shelf, storage box = white_storage_box.
+Classes: book = yellow_book, bowl = white_bowl, butter = butter, plate = plate, ramekin = glazed_rim_porcelain_ramekin, storage box = white_storage_box, tomato sauce = tomato_sauce.
 
-- put the milk on the storage box: drift 0.00 cm; reach (cm) above milk 2.8, storage box 2.8; 50 resets for the start states
-- put the cookies in the basket and put the orange juice on the shelf: drift 0.00 cm; reach (cm) above cookies 2.7, basket 2.7, above orange juice 2.7, shelf 2.6; 50 resets for the start states
+- lift the bowl: drift 0.00 cm; reach (cm) above bowl 2.7; 50 resets for the start states; expert 3/3
+- put the book behind the bowl and put the ramekin on the plate: drift 0.00 cm; reach (cm) above book 2.7, beside 2.8, above ramekin 2.4, plate 3.0; 50 resets for the start states; expert 3/3
+- put the butter in the bowl and put the tomato sauce on the storage box: drift 0.00 cm; reach (cm) above butter 2.5, bowl 2.9, above tomato sauce 2.2, storage box 2.7; 50 resets for the start states; expert 2/3
 
-## S17 (coffee table): built after 1 layout(s), 177 s
+Rejected layouts (last few): #0 lift the bowl: expert 0/3; #1 lift the bowl: expert 1/3
 
-Classes: basket = basket, bookcase = wooden_shelf, butter = butter, macaroni = macaroni_and_cheese, plate = plate, ramekin = glazed_rim_porcelain_ramekin, storage box = white_storage_box, tomato sauce = tomato_sauce.
+## S14 (study): built after 3 layout(s), 152 s
 
-- put the butter in the bookcase and put the ramekin on the plate: drift 0.00 cm; reach (cm) above butter 2.2, bookcase opening 2.6, above ramekin 2.5, plate 2.5; 50 resets for the start states
-- put the tomato sauce on the storage box and put the macaroni in the basket: drift 0.00 cm; reach (cm) above tomato sauce 2.7, storage box 2.8, above macaroni 2.7, basket 3.0; 50 resets for the start states
+Classes: book = black_book, caddy = desk_caddy, cream cheese = cream_cheese, ketchup = ketchup, shelf = wooden_two_layer_shelf, storage box = white_storage_box.
 
-## S18 (tabletop): built after 1 layout(s), 264 s
+- put the book on the storage box: drift 0.00 cm; reach (cm) above book 2.9, storage box 2.2; 50 resets for the start states; expert 2/3
+- put the ketchup on the shelf and put the cream cheese in the right of the caddy: drift 0.00 cm; reach (cm) above ketchup 2.5, shelf 2.6, above cream cheese 3.0, caddy 2.4; 50 resets for the start states; expert 3/3
 
-Classes: bookcase = wooden_shelf, bowl = akita_black_bowl, cookies = cookies, macaroni = macaroni_and_cheese, orange juice = orange_juice, placemat = dining_set_group, ramekin = glazed_rim_porcelain_ramekin, storage box = white_storage_box.
+Rejected layouts (last few): #0 put the book on the storage box: expert 1/3; #1 put the ketchup on the shelf and put the cream cheese in the right of the caddy: {'drift': 1.1102230246251565e-16, 'low': -0.00044176484168612085, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-- lift the bowl: drift 0.00 cm; reach (cm) above bowl 2.5; 50 resets for the start states
-- put the orange juice on the storage box: drift 0.00 cm; reach (cm) above orange juice 2.7, storage box 2.6; 50 resets for the start states
-- put the ramekin on the placemat: drift 0.00 cm; reach (cm) above ramekin 2.9, placemat 2.4; 50 resets for the start states
-- put the cookies in the bowl and put the macaroni in the bookcase: drift 0.00 cm; reach (cm) above cookies 2.6, bowl 2.7, above macaroni 2.5, bookcase opening 3.0; 50 resets for the start states
+## S15 (living room): built after 3 layout(s), 100 s
 
-## S19 (tabletop): built after 1 layout(s), 187 s
+Classes: bbq sauce = bbq_sauce, ramekin = glazed_rim_porcelain_ramekin, shelf = wooden_two_layer_shelf, tray = wooden_tray.
 
-Classes: alphabet soup = alphabet_soup, basket = basket, bbq sauce = bbq_sauce, book = yellow_book, bookcase = wooden_shelf, shelf = wooden_two_layer_shelf, wine bottle = wine_bottle.
+- put the bbq sauce on the lower shelf: drift 0.00 cm; reach (cm) above bbq sauce 2.9, shelf opening 2.7; 50 resets for the start states; expert 2/3
+- put the ramekin in the tray: drift 0.00 cm; reach (cm) above ramekin 2.6, tray 2.9; 50 resets for the start states; expert 3/3
 
-- put the book in the bookcase: drift 0.00 cm; reach (cm) above book 2.9, bookcase opening 3.1; 50 resets for the start states
-- put the wine bottle in front of the basket: drift 0.00 cm; reach (cm) above wine bottle 2.7, beside 2.4; 50 resets for the start states
-- put the bbq sauce in the basket and put the alphabet soup on the shelf: drift 0.00 cm; reach (cm) above bbq sauce 2.1, basket 2.2, above alphabet soup 2.8, shelf 2.3; 50 resets for the start states
+Rejected layouts (last few): #0 put the bbq sauce on the lower shelf: {'drift': 1.1102230246251565e-13, 'low': -0.43651730399149, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #1 put the ramekin in the tray: {'drift': 0.0, 'low': 0.00025714010990196545, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
 
-## S20 (tabletop): built after 2 layout(s), 63 s
+## S16 (living room): built after 1 layout(s), 236 s
 
-Classes: placemat = dining_set_group, plate = plate, shelf = wooden_two_layer_shelf, wine bottle = wine_bottle.
+Classes: basket = basket, chocolate pudding = chocolate_pudding, cookies = cookies, milk = milk, mug = red_coffee_mug, placemat = dining_set_group, plate = plate, storage box = white_storage_box.
 
-- put the plate on the placemat and put the wine bottle on the shelf: drift 0.00 cm; reach (cm) above plate 2.4, placemat 2.5, above wine bottle 2.2, shelf 2.4; 50 resets for the start states
+- put the cookies on the plate: drift 0.00 cm; reach (cm) above cookies 2.8, plate 2.5; 50 resets for the start states; expert 3/3
+- put the milk on the storage box: drift 0.00 cm; reach (cm) above milk 2.5, storage box 2.5; 50 resets for the start states; expert 3/3
+- put the mug on the placemat and put the chocolate pudding in the basket: drift 0.00 cm; reach (cm) above mug 2.4, placemat 2.5, above chocolate pudding 2.8, basket 2.9; 50 resets for the start states; expert 3/3
 
-Rejected layouts (last few): #0 put the plate on the placemat and put the wine bottle on the shelf: {'drift': 3.122502256758253e-17, 'low': -0.0014568679706069565, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
+## S17 (living room): built after 1 layout(s), 105 s
 
-## S21 (kitchen): built after 4 layout(s), 155 s
+Classes: bbq sauce = bbq_sauce, bookcase = wooden_shelf, cream cheese = cream_cheese, popcorn = popcorn, storage box = white_storage_box, tray = wooden_tray.
 
-Classes: alphabet soup = alphabet_soup, bowl = white_bowl, butter = butter, cabinet = white_cabinet, microwave = microwave.
+- put the cream cheese on the storage box: drift 0.00 cm; reach (cm) above cream cheese 2.7, storage box 2.5; 50 resets for the start states; expert 3/3
+- put the bbq sauce in the tray and put the popcorn in the bookcase: drift 0.00 cm; reach (cm) above bbq sauce 2.3, tray 2.5, above popcorn 2.4, bookcase opening 2.6; 50 resets for the start states; expert 3/3
 
-- put the bowl in the microwave and close it: drift 0.00 cm; reach (cm) above bowl 2.7, microwave opening 2.5; 50 resets for the start states
-- put the butter in the bowl and put the alphabet soup on the cabinet: drift 0.00 cm; reach (cm) above butter 2.8, bowl 2.7, above alphabet soup 3.0, cabinet top 2.9; 50 resets for the start states
+## S18 (coffee table): built after 1 layout(s), 122 s
 
-Rejected layouts (last few): #0 put the bowl in the microwave and close it: {'drift': 1.0, 'low': -0.014097219264647465, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #1 put the butter in the bowl and put the alphabet soup on the cabinet: {'drift': 0.0, 'low': -0.004237494667114539, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}; #2 put the butter in the bowl and put the alphabet soup on the cabinet: {'drift': 0.0, 'low': -0.004237494667114539, 'start_success': False, 'forced': False, 'view': False, 'reach': {}}
+Classes: cookies = cookies, milk = milk, shelf = wooden_two_layer_shelf, storage box = white_storage_box, wine bottle = wine_bottle.
 
-## S22 (tabletop): built after 1 layout(s), 117 s
+- lift the milk: drift 0.00 cm; reach (cm) above milk 2.8; 50 resets for the start states; expert 3/3
+- put the wine bottle on the shelf and put the cookies on the storage box: drift 0.00 cm; reach (cm) above wine bottle 2.8, shelf 2.4, above cookies 2.4, storage box 2.8; 50 resets for the start states; expert 3/3
 
-Classes: alphabet soup = alphabet_soup, cabinet = wooden_cabinet, moka pot = moka_pot, shelf = wooden_two_layer_shelf, tomato sauce = tomato_sauce.
+## S19 (coffee table): built after 1 layout(s), 279 s
 
-- open the middle drawer and put the alphabet soup in it: drift 0.00 cm; reach (cm) above alphabet soup 2.5, drawer front 2.4; 50 resets for the start states
-- put the tomato sauce on the shelf and put the moka pot on the cabinet: drift 0.00 cm; reach (cm) above tomato sauce 2.7, shelf 2.8, above moka pot 2.6, cabinet top 2.4; 50 resets for the start states
+Classes: bowl = white_bowl, chocolate pudding = chocolate_pudding, milk = milk, moka pot = moka_pot, popcorn = popcorn, ramekin = glazed_rim_porcelain_ramekin, shelf = wooden_two_layer_shelf, storage box = white_storage_box, tray = wooden_tray.
 
-## S23 (living room): built after 15 layout(s), 118 s
+- lift the moka pot: drift 0.00 cm; reach (cm) above moka pot 2.4; 50 resets for the start states; expert 2/3
+- put the chocolate pudding in the bowl and put the milk in the tray: drift 0.00 cm; reach (cm) above chocolate pudding 2.6, bowl 2.4, above milk 3.0, tray 2.2; 50 resets for the start states; expert 3/3
+- put the ramekin on the storage box and put the popcorn on the shelf: drift 0.00 cm; reach (cm) above ramekin 2.2, storage box 2.9, above popcorn 2.6, shelf 3.0; 50 resets for the start states; expert 3/3
 
-Classes: basket = basket, bookcase = wooden_shelf, frying pan = chefmate_8_frypan, mug = porcelain_mug, popcorn = popcorn.
+## S20 (coffee table): built after 1 layout(s), 136 s
 
-- put the popcorn in the basket: drift 0.00 cm; reach (cm) above popcorn 2.8, basket 2.4; 51 resets for the start states
-- put the mug in the bookcase and put the frying pan to the right of the basket: drift 0.00 cm; reach (cm) above mug 2.8, bookcase opening 2.9, above frying pan 2.7, beside 2.9; 50 resets for the start states
+Classes: macaroni = macaroni_and_cheese, plate = plate, popcorn = popcorn, shelf = wooden_two_layer_shelf.
 
-Rejected layouts (last few): #9 layout: no non-overlapping layout; #10 layout: no non-overlapping layout; #11 layout: no non-overlapping layout; #12 layout: no non-overlapping layout; #13 layout: no non-overlapping layout
+- put the macaroni on the shelf: drift 0.00 cm; reach (cm) above macaroni 2.7, shelf 3.0; 50 resets for the start states; expert 3/3
+- put the popcorn on the plate: drift 0.00 cm; reach (cm) above popcorn 2.2, plate 2.5; 50 resets for the start states; expert 3/3
 
-## S24 (floor): built after 1 layout(s), 128 s
+## S21 (tabletop): built after 1 layout(s), 84 s
 
-Classes: bowl = akita_black_bowl, cream cheese = cream_cheese, ketchup = ketchup, macaroni = macaroni_and_cheese, plate = plate, popcorn = popcorn, tray = wooden_tray.
+Classes: chocolate pudding = chocolate_pudding, cookies = cookies, storage box = white_storage_box, tray = wooden_tray.
 
-- put the cream cheese on the plate and put the macaroni in the tray: drift 0.00 cm; reach (cm) above cream cheese 2.4, plate 2.8, above macaroni 2.4, tray 2.4; 50 resets for the start states
-- put the popcorn in the bowl and put the ketchup behind the plate: drift 0.00 cm; reach (cm) above popcorn 2.3, bowl 2.4, above ketchup 2.2, beside 2.4; 50 resets for the start states
+- put the chocolate pudding on the storage box: drift 0.00 cm; reach (cm) above chocolate pudding 2.5, storage box 2.9; 50 resets for the start states; expert 3/3
+- put the cookies in the tray: drift 0.00 cm; reach (cm) above cookies 3.0, tray 2.6; 50 resets for the start states; expert 3/3
 
-## S25 (kitchen): built after 1 layout(s), 90 s
+## S22 (tabletop): built after 2 layout(s), 193 s
 
-Classes: butter = butter, frying pan = chefmate_8_frypan, microwave = microwave, ramekin = glazed_rim_porcelain_ramekin, stove = flat_stove.
+Classes: basket = basket, bbq sauce = bbq_sauce, bowl = akita_black_bowl, butter = butter, cream cheese = cream_cheese, frying pan = chefmate_8_frypan.
 
-- put the ramekin in the microwave: drift 0.00 cm; reach (cm) above ramekin 2.9, microwave opening 2.9; 50 resets for the start states
-- turn on the stove and put the butter in the pan: drift 0.00 cm; reach (cm) above butter 2.7, pan 2.8; 50 resets for the start states
+- put the butter in the pan: drift 0.00 cm; reach (cm) above butter 2.5, pan 2.9; 50 resets for the start states; expert 3/3
+- put the bbq sauce in the basket and put the cream cheese in the bowl: drift 0.00 cm; reach (cm) above bbq sauce 2.3, basket 2.3, above cream cheese 2.4, bowl 2.6; 50 resets for the start states; expert 2/3
+
+Rejected layouts (last few): #0 put the bbq sauce in the basket and put the cream cheese in the bowl: expert 1/3
+
+## S23 (tabletop): built after 39 layout(s), 361 s
+
+Classes: basket = basket, chocolate pudding = chocolate_pudding, macaroni = macaroni_and_cheese, moka pot = moka_pot, orange juice = orange_juice, plate = plate, shelf = wooden_two_layer_shelf, tomato sauce = tomato_sauce, tray = wooden_tray.
+
+- put the orange juice in the tray: drift 0.00 cm; reach (cm) above orange juice 2.8, tray 2.2; 50 resets for the start states; expert 2/3
+- put the macaroni in the basket and put the moka pot to the right of the plate: drift 0.00 cm; reach (cm) above macaroni 2.2, basket 2.2, above moka pot 2.6, beside 2.9; 51 resets for the start states; expert 3/3
+- put the tomato sauce on the shelf and put the chocolate pudding on the plate: drift 0.00 cm; reach (cm) above tomato sauce 3.0, shelf 2.6, above chocolate pudding 2.4, plate 2.6; 50 resets for the start states; expert 3/3
+
+Rejected layouts (last few): #33 layout: no non-overlapping layout; #34 put the tomato sauce on the shelf and put the chocolate pudding on the plate: expert 0/3; #35 layout: no non-overlapping layout; #36 layout: no non-overlapping layout; #37 layout: no non-overlapping layout
+
+## S24 (tabletop): built after 2 layout(s), 149 s
+
+Classes: basket = basket, caddy = desk_caddy, chocolate pudding = chocolate_pudding, popcorn = popcorn, wine bottle = wine_bottle.
+
+- put the popcorn in the basket: drift 0.00 cm; reach (cm) above popcorn 2.6, basket 2.7; 50 resets for the start states; expert 3/3
+- put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy: drift 0.00 cm; reach (cm) above wine bottle 2.4, beside 2.9, above chocolate pudding 3.0, caddy 2.8; 50 resets for the start states; expert 3/3
+
+Rejected layouts (last few): #0 put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy: {'drift': 0.0, 'low': -0.012126986942515239, 'start_success': False, 'forced': False, 'view': True, 'reach': {'above wine bottle': 0.028, 'beside': 0.022, 'above chocolate pudding': 0.073, 'caddy': 0.024}}
+
+## S25 (floor): built after 2 layout(s), 169 s
+
+Classes: alphabet soup = alphabet_soup, basket = basket, cookies = cookies, mug = red_coffee_mug, storage box = white_storage_box, tray = wooden_tray.
+
+- put the cookies in the basket: drift 0.00 cm; reach (cm) above cookies 2.5, basket 2.8; 50 resets for the start states; expert 3/3
+- put the mug in the tray and put the alphabet soup on the storage box: drift 0.00 cm; reach (cm) above mug 2.9, tray 2.6, above alphabet soup 2.3, storage box 2.5; 50 resets for the start states; expert 3/3
+
+Rejected layouts (last few): #0 put the mug in the tray and put the alphabet soup on the storage box: expert 1/3
+
+## S26 (kitchen): built after 7 layout(s), 115 s
+
+Classes: microwave = microwave, mug = white_yellow_mug, plate = plate, popcorn = popcorn.
+
+- put the mug to the left of the plate and put the popcorn in the microwave: drift 0.00 cm; reach (cm) above mug 2.4, beside 2.2, above popcorn 2.9, microwave opening 2.4; 50 resets for the start states; expert 2/3
+
+Rejected layouts (last few): #1 put the mug to the left of the plate and put the popcorn in the microwave: expert 0/3; #2 layout: no non-overlapping layout; #3 put the mug to the left of the plate and put the popcorn in the microwave: {'drift': 1.0, 'low': -0.004327470178351223, 'start_success': False, 'forced': False, 'view': True, 'reach': {}}; #4 put the mug to the left of the plate and put the popcorn in the microwave: expert 0/3; #5 layout: no non-overlapping layout
+
+## S27 (kitchen): built after 3 layout(s), 132 s
+
+Classes: cabinet = white_cabinet, fridge = short_fridge, popcorn = popcorn, wine bottle = wine_bottle.
+
+- put the wine bottle in the fridge: drift 0.00 cm; reach (cm) above wine bottle 2.3, fridge opening 2.7; 50 resets for the start states; expert 3/3
+- open the top drawer and put the popcorn in it: drift 0.00 cm; reach (cm) above popcorn 2.9, drawer front 2.9; 50 resets for the start states; expert 2/3
+
+Rejected layouts (last few): #0 put the wine bottle in the fridge: expert 1/3; #1 open the top drawer and put the popcorn in it: expert 1/3

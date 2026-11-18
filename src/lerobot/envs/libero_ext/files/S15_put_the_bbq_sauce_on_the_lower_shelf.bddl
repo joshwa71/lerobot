@@ -1,0 +1,81 @@
+(define (problem LIBERO_Living_Room_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the bbq sauce on the lower shelf)
+    (:regions
+      (bbq_sauce_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.2205 0.0585 -0.1905 0.0885)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (glazed_rim_porcelain_ramekin_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.1095 0.1595 0.1395 0.1895)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.1340 0.3655 -0.1140 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0550 -0.2615 -0.0250 -0.2315)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (bottom_region
+          (:target wooden_two_layer_shelf_1)
+      )
+    )
+
+  (:fixtures
+    living_room_table - living_room_table
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+  )
+
+  (:objects
+    bbq_sauce_1 - bbq_sauce
+    glazed_rim_porcelain_ramekin_1 - glazed_rim_porcelain_ramekin
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    bbq_sauce_1
+    wooden_two_layer_shelf_1
+  )
+
+  (:init
+    (On bbq_sauce_1 living_room_table_bbq_sauce_init_region)
+    (On glazed_rim_porcelain_ramekin_1 living_room_table_glazed_rim_porcelain_ramekin_init_region)
+    (On wooden_two_layer_shelf_1 living_room_table_wooden_two_layer_shelf_init_region)
+    (On wooden_tray_1 living_room_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (In bbq_sauce_1 wooden_two_layer_shelf_1_bottom_region))
+  )
+
+)

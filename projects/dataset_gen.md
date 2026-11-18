@@ -440,6 +440,12 @@ Once a layout passes, each task gets 50 start states from settled resets that pa
 
 Insertion through a side opening (bookcase, fridge, microwave) is the expert's weak point. The bookcase works only for the popcorn box.
 
+*Correction (18 Nov 26).* These runs had a bug: a geometry cache served a closed environment's geom ids to the next environment built in the same process (fixed in `81f8c649`).
+- Six pairings lost layouts to the resulting errors.
+- Other episodes may have failed on wrong object boxes.
+- Successes are unaffected, because they come from the environment's own goal check, not the expert's geometry. So every kept pairing is genuinely demonstrable; a few excluded ones may not deserve to be.
+- The suite build, which also used the cache (stability and below-surface checks), was redone after the fix.
+
 **Replan** (`plan_tasks.py --seed 4`):
 - **Same rules as §2:** 60 tasks, 30 single-step and 30 two-step, no two tasks sharing both an object and a destination, and four open/close/turn tasks (faucet, microwave, drawer, stove).
 - **Kept pairings only, and the 5/9 threshold.** At 6/9, too few pairings remain: several destinations have only 1–2 usable objects, and the planner found no complete task set.
@@ -450,7 +456,10 @@ Insertion through a side opening (bookcase, fridge, microwave) is the expert's w
 
 **Rebuild:**
 - `build_suite.py` adds an expert check to each candidate layout: the expert must succeed in 2 of 3 episodes of every task of the scene, or the layout is rejected.
-- Results: see `dataset_gen_build.md`.
+- 23 of the 25 scenes built. The two crowded kitchen scenes found no layout that fits: S02 (fridge, microwave, five objects) and S06 (cabinet with the 28 cm drawer strip, fridge, tray). They were split in two (S02 → S26, S06 → S27, tasks unchanged).
+- **Result: 60 tasks in 27 scenes.** In its accepted layout, the expert succeeded 3/3 on 46 tasks and 2/3 on 14.
+- `smoke_suite.py`: 180/180, through lerobot's LIBERO env on 3 stored start states per task (goal false at the start, true once forced).
+- Details: `dataset_gen_build.md`.
 
 **Data pipeline:**
 - `generate_demos.py` (desk PC, no rendering) runs the expert from fresh and widened starts until 50 successes per task. Per episode it saves the simulator positions before each action, the 8-D state, the expert's action (the label) and the executed action. That is about 100 MB for the whole suite.

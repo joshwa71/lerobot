@@ -1,0 +1,129 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the book behind the bowl and put the ramekin on the plate)
+    (:regions
+      (yellow_book_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0605 -0.2505 -0.0305 -0.2205)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_bowl_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1415 0.1485 -0.1115 0.1785)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (butter_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2570 0.2950 -0.2270 0.3250)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0340 0.0840 0.0640 0.1140)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (glazed_rim_porcelain_ramekin_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0095 0.2795 0.0395 0.3095)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0990 -0.0615 -0.0790 -0.0415)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (tomato_sauce_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2435 -0.0740 -0.2135 -0.0440)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_bowl_behind_region
+          (:target study_table)
+          (:ranges (
+              (-0.3045 0.1135 -0.2045 0.2135)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    yellow_book_1 - yellow_book
+    white_bowl_1 - white_bowl
+    butter_1 - butter
+    plate_1 - plate
+    glazed_rim_porcelain_ramekin_1 - glazed_rim_porcelain_ramekin
+    tomato_sauce_1 - tomato_sauce
+  )
+
+  (:obj_of_interest
+    glazed_rim_porcelain_ramekin_1
+    plate_1
+    yellow_book_1
+  )
+
+  (:init
+    (On yellow_book_1 study_table_yellow_book_init_region)
+    (On white_bowl_1 study_table_white_bowl_init_region)
+    (On butter_1 study_table_butter_init_region)
+    (On plate_1 study_table_plate_init_region)
+    (On glazed_rim_porcelain_ramekin_1 study_table_glazed_rim_porcelain_ramekin_init_region)
+    (On white_storage_box_1 study_table_white_storage_box_init_region)
+    (On tomato_sauce_1 study_table_tomato_sauce_init_region)
+  )
+
+  (:goal
+    (And (On yellow_book_1 study_table_white_bowl_behind_region) (On glazed_rim_porcelain_ramekin_1 plate_1))
+  )
+
+)

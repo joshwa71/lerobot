@@ -1,0 +1,99 @@
+(define (problem LIBERO_Coffee_Table_Manipulation)
+  (:domain robosuite)
+  (:language put the wine bottle on the shelf and put the cookies on the storage box)
+    (:regions
+      (cookies_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0535 -0.0540 -0.0235 -0.0240)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (milk_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0085 -0.2385 0.0215 -0.2085)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.0740 0.3655 -0.0540 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.0685 -0.0090 0.0885 0.0110)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (wine_bottle_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.1930 0.1170 -0.1630 0.1470)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_two_layer_shelf_1)
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+    )
+
+  (:fixtures
+    coffee_table - coffee_table
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    cookies_1 - cookies
+    milk_1 - milk
+    wine_bottle_1 - wine_bottle
+  )
+
+  (:obj_of_interest
+    cookies_1
+    white_storage_box_1
+    wine_bottle_1
+    wooden_two_layer_shelf_1
+  )
+
+  (:init
+    (On cookies_1 coffee_table_cookies_init_region)
+    (On milk_1 coffee_table_milk_init_region)
+    (On wooden_two_layer_shelf_1 coffee_table_wooden_two_layer_shelf_init_region)
+    (On white_storage_box_1 coffee_table_white_storage_box_init_region)
+    (On wine_bottle_1 coffee_table_wine_bottle_init_region)
+  )
+
+  (:goal
+    (And (On wine_bottle_1 wooden_two_layer_shelf_1_top_side) (On cookies_1 white_storage_box_1_top_side))
+  )
+
+)

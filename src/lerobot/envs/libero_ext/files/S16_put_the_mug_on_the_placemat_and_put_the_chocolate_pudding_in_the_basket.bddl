@@ -1,0 +1,146 @@
+(define (problem LIBERO_Living_Room_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the mug on the placemat and put the chocolate pudding in the basket)
+    (:regions
+      (basket_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0035 0.2400 0.0335 0.2700)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (chocolate_pudding_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.1150 0.0380 -0.0850 0.0680)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.1465 0.2060 0.1765 0.2360)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (milk_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.2085 -0.1185 -0.1785 -0.0885)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (red_coffee_mug_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.1650 0.2050 -0.1350 0.2350)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (dining_set_group_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0100 -0.1200 0.0100 -0.1000)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0860 -0.2960 -0.0560 -0.2660)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0410 0.0785 0.0610 0.0985)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (dining_set_group_mat_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0600 -0.1700 0.0600 -0.0500)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (contain_region
+          (:target basket_1)
+      )
+    )
+
+  (:fixtures
+    living_room_table - living_room_table
+    dining_set_group_1 - dining_set_group
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    basket_1 - basket
+    chocolate_pudding_1 - chocolate_pudding
+    cookies_1 - cookies
+    milk_1 - milk
+    red_coffee_mug_1 - red_coffee_mug
+    plate_1 - plate
+  )
+
+  (:obj_of_interest
+    basket_1
+    chocolate_pudding_1
+    dining_set_group_1
+    red_coffee_mug_1
+  )
+
+  (:init
+    (On basket_1 living_room_table_basket_init_region)
+    (On chocolate_pudding_1 living_room_table_chocolate_pudding_init_region)
+    (On cookies_1 living_room_table_cookies_init_region)
+    (On milk_1 living_room_table_milk_init_region)
+    (On red_coffee_mug_1 living_room_table_red_coffee_mug_init_region)
+    (On dining_set_group_1 living_room_table_dining_set_group_init_region)
+    (On plate_1 living_room_table_plate_init_region)
+    (On white_storage_box_1 living_room_table_white_storage_box_init_region)
+  )
+
+  (:goal
+    (And (On red_coffee_mug_1 living_room_table_dining_set_group_mat_region) (In chocolate_pudding_1 basket_1_contain_region))
+  )
+
+)

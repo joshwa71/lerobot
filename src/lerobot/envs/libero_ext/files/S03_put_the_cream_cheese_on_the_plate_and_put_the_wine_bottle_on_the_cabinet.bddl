@@ -1,0 +1,109 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the cream cheese on the plate and put the wine bottle on the cabinet)
+    (:regions
+      (bbq_sauce_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0005 0.0985 0.0295 0.1285)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_cabinet_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2025 0.3805 -0.1825 0.4005)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cream_cheese_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2345 -0.3435 -0.2045 -0.3135)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (ketchup_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0765 -0.2370 -0.0465 -0.2070)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0860 -0.0360 -0.0560 -0.0060)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wine_bottle_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (0.0270 0.1770 0.0570 0.2070)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target white_cabinet_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    white_cabinet_1 - white_cabinet
+  )
+
+  (:objects
+    bbq_sauce_1 - bbq_sauce
+    cream_cheese_1 - cream_cheese
+    ketchup_1 - ketchup
+    plate_1 - plate
+    wine_bottle_1 - wine_bottle
+  )
+
+  (:obj_of_interest
+    cream_cheese_1
+    plate_1
+    white_cabinet_1
+    wine_bottle_1
+  )
+
+  (:init
+    (On bbq_sauce_1 kitchen_table_bbq_sauce_init_region)
+    (On white_cabinet_1 kitchen_table_white_cabinet_init_region)
+    (On cream_cheese_1 kitchen_table_cream_cheese_init_region)
+    (On ketchup_1 kitchen_table_ketchup_init_region)
+    (On plate_1 kitchen_table_plate_init_region)
+    (On wine_bottle_1 kitchen_table_wine_bottle_init_region)
+  )
+
+  (:goal
+    (And (On cream_cheese_1 plate_1) (On wine_bottle_1 white_cabinet_1_top_side))
+  )
+
+)

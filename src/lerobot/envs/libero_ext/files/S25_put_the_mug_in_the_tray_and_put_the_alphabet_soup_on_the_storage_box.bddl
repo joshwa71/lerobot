@@ -1,0 +1,112 @@
+(define (problem LIBERO_Floor_Manipulation)
+  (:domain robosuite)
+  (:language put the mug in the tray and put the alphabet soup on the storage box)
+    (:regions
+      (alphabet_soup_init_region
+          (:target floor)
+          (:ranges (
+              (-0.1435 0.1465 -0.1135 0.1765)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (basket_init_region
+          (:target floor)
+          (:ranges (
+              (0.0035 0.1600 0.0335 0.1900)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target floor)
+          (:ranges (
+              (-0.0735 -0.2140 -0.0435 -0.1840)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (red_coffee_mug_init_region
+          (:target floor)
+          (:ranges (
+              (-0.2450 -0.2950 -0.2150 -0.2650)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target floor)
+          (:ranges (
+              (-0.2590 0.2585 -0.2390 0.2785)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target floor)
+          (:ranges (
+              (-0.1150 -0.0415 -0.0850 -0.0115)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (contain_region
+          (:target wooden_tray_1)
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+    )
+
+  (:fixtures
+    floor - floor
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    alphabet_soup_1 - alphabet_soup
+    basket_1 - basket
+    cookies_1 - cookies
+    red_coffee_mug_1 - red_coffee_mug
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    alphabet_soup_1
+    red_coffee_mug_1
+    white_storage_box_1
+    wooden_tray_1
+  )
+
+  (:init
+    (On alphabet_soup_1 floor_alphabet_soup_init_region)
+    (On basket_1 floor_basket_init_region)
+    (On cookies_1 floor_cookies_init_region)
+    (On red_coffee_mug_1 floor_red_coffee_mug_init_region)
+    (On white_storage_box_1 floor_white_storage_box_init_region)
+    (On wooden_tray_1 floor_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (In red_coffee_mug_1 wooden_tray_1_contain_region) (On alphabet_soup_1 white_storage_box_1_top_side))
+  )
+
+)

@@ -1,11 +1,22 @@
-(define (problem LIBERO_Coffee_Table_Manipulation)
+(define (problem LIBERO_Living_Room_Tabletop_Manipulation)
   (:domain robosuite)
   (:language put the milk on the storage box)
     (:regions
       (basket_init_region
-          (:target coffee_table)
+          (:target living_room_table)
           (:ranges (
-              (0.0635 -0.1600 0.0935 -0.1300)
+              (0.0035 0.2400 0.0335 0.2700)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (chocolate_pudding_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.1150 0.0380 -0.0850 0.0680)
             )
           )
           (:yaw_rotation (
@@ -14,9 +25,9 @@
           )
       )
       (cookies_init_region
-          (:target coffee_table)
+          (:target living_room_table)
           (:ranges (
-              (-0.0735 0.2260 -0.0435 0.2560)
+              (0.1465 0.2060 0.1765 0.2360)
             )
           )
           (:yaw_rotation (
@@ -25,9 +36,9 @@
           )
       )
       (milk_init_region
-          (:target coffee_table)
+          (:target living_room_table)
           (:ranges (
-              (0.1515 0.1015 0.1815 0.1315)
+              (-0.2085 -0.1185 -0.1785 -0.0885)
             )
           )
           (:yaw_rotation (
@@ -35,10 +46,10 @@
             )
           )
       )
-      (orange_juice_init_region
-          (:target coffee_table)
+      (red_coffee_mug_init_region
+          (:target living_room_table)
           (:ranges (
-              (-0.0685 0.0015 -0.0385 0.0315)
+              (-0.1650 0.2050 -0.1350 0.2350)
             )
           )
           (:yaw_rotation (
@@ -46,25 +57,36 @@
             )
           )
       )
-      (wooden_two_layer_shelf_init_region
-          (:target coffee_table)
+      (dining_set_group_init_region
+          (:target living_room_table)
           (:ranges (
-              (-0.0740 -0.3855 -0.0540 -0.3655)
+              (-0.0100 -0.1200 0.0100 -0.1000)
             )
           )
           (:yaw_rotation (
-              (3.1416 3.1416)
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0860 -0.2960 -0.0560 -0.2660)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
             )
           )
       )
       (white_storage_box_init_region
-          (:target coffee_table)
+          (:target living_room_table)
           (:ranges (
-              (-0.1315 -0.1290 -0.1115 -0.1090)
+              (0.0410 0.0785 0.0610 0.0985)
             )
           )
           (:yaw_rotation (
-              (1.5708 1.5708)
+              (0.0000 0.0000)
             )
           )
       )
@@ -74,16 +96,18 @@
     )
 
   (:fixtures
-    coffee_table - coffee_table
-    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    living_room_table - living_room_table
+    dining_set_group_1 - dining_set_group
     white_storage_box_1 - white_storage_box
   )
 
   (:objects
     basket_1 - basket
+    chocolate_pudding_1 - chocolate_pudding
     cookies_1 - cookies
     milk_1 - milk
-    orange_juice_1 - orange_juice
+    red_coffee_mug_1 - red_coffee_mug
+    plate_1 - plate
   )
 
   (:obj_of_interest
@@ -92,12 +116,14 @@
   )
 
   (:init
-    (On basket_1 coffee_table_basket_init_region)
-    (On cookies_1 coffee_table_cookies_init_region)
-    (On milk_1 coffee_table_milk_init_region)
-    (On orange_juice_1 coffee_table_orange_juice_init_region)
-    (On wooden_two_layer_shelf_1 coffee_table_wooden_two_layer_shelf_init_region)
-    (On white_storage_box_1 coffee_table_white_storage_box_init_region)
+    (On basket_1 living_room_table_basket_init_region)
+    (On chocolate_pudding_1 living_room_table_chocolate_pudding_init_region)
+    (On cookies_1 living_room_table_cookies_init_region)
+    (On milk_1 living_room_table_milk_init_region)
+    (On red_coffee_mug_1 living_room_table_red_coffee_mug_init_region)
+    (On dining_set_group_1 living_room_table_dining_set_group_init_region)
+    (On plate_1 living_room_table_plate_init_region)
+    (On white_storage_box_1 living_room_table_white_storage_box_init_region)
   )
 
   (:goal

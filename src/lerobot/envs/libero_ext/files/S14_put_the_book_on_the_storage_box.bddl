@@ -1,0 +1,107 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the book on the storage box)
+    (:regions
+      (black_book_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0995 0.2495 0.1295 0.2795)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (desk_caddy_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1745 -0.0000 -0.1545 0.0200)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (cream_cheese_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0145 -0.0635 0.0155 -0.0335)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (ketchup_init_region
+          (:target study_table)
+          (:ranges (
+              (0.1035 0.0430 0.1335 0.0730)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2140 -0.3855 -0.1940 -0.3655)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0810 -0.1815 0.1010 -0.1615)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    desk_caddy_1 - desk_caddy
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    black_book_1 - black_book
+    cream_cheese_1 - cream_cheese
+    ketchup_1 - ketchup
+  )
+
+  (:obj_of_interest
+    black_book_1
+    white_storage_box_1
+  )
+
+  (:init
+    (On black_book_1 study_table_black_book_init_region)
+    (On desk_caddy_1 study_table_desk_caddy_init_region)
+    (On cream_cheese_1 study_table_cream_cheese_init_region)
+    (On ketchup_1 study_table_ketchup_init_region)
+    (On wooden_two_layer_shelf_1 study_table_wooden_two_layer_shelf_init_region)
+    (On white_storage_box_1 study_table_white_storage_box_init_region)
+  )
+
+  (:goal
+    (And (On black_book_1 white_storage_box_1_top_side))
+  )
+
+)

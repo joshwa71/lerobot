@@ -1,0 +1,81 @@
+(define (problem LIBERO_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the chocolate pudding on the storage box)
+    (:regions
+      (chocolate_pudding_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.1950 -0.1020 -0.1650 -0.0720)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.3135 0.2460 -0.2835 0.2760)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2715 -0.2690 -0.2515 -0.2490)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0750 0.1385 -0.0450 0.1685)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target white_storage_box_1)
+      )
+    )
+
+  (:fixtures
+    main_table - table
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    chocolate_pudding_1 - chocolate_pudding
+    cookies_1 - cookies
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    chocolate_pudding_1
+    white_storage_box_1
+  )
+
+  (:init
+    (On chocolate_pudding_1 main_table_chocolate_pudding_init_region)
+    (On cookies_1 main_table_cookies_init_region)
+    (On white_storage_box_1 main_table_white_storage_box_init_region)
+    (On wooden_tray_1 main_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (On chocolate_pudding_1 white_storage_box_1_top_side))
+  )
+
+)

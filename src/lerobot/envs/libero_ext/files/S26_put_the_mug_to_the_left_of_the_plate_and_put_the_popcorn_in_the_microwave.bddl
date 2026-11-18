@@ -1,0 +1,94 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the mug to the left of the plate and put the popcorn in the microwave)
+    (:regions
+      (microwave_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2175 0.4015 -0.1975 0.4215)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_yellow_mug_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2650 -0.2150 -0.2350 -0.1850)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1060 -0.1360 -0.0760 -0.1060)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0040 0.0360 0.0260 0.0660)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_left_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1410 -0.3300 -0.0410 -0.2300)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (heating_region
+          (:target microwave_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    microwave_1 - microwave
+  )
+
+  (:objects
+    white_yellow_mug_1 - white_yellow_mug
+    plate_1 - plate
+    popcorn_1 - popcorn
+  )
+
+  (:obj_of_interest
+    microwave_1
+    popcorn_1
+    white_yellow_mug_1
+  )
+
+  (:init
+    (On microwave_1 kitchen_table_microwave_init_region)
+    (On white_yellow_mug_1 kitchen_table_white_yellow_mug_init_region)
+    (On plate_1 kitchen_table_plate_init_region)
+    (On popcorn_1 kitchen_table_popcorn_init_region)
+    (Open microwave_1)
+  )
+
+  (:goal
+    (And (On white_yellow_mug_1 kitchen_table_plate_left_region) (In popcorn_1 microwave_1_heating_region))
+  )
+
+)

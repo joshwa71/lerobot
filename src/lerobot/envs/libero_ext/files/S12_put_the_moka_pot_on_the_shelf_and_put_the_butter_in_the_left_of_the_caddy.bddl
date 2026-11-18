@@ -1,0 +1,112 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the moka pot on the shelf and put the butter in the left of the caddy)
+    (:regions
+      (alphabet_soup_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0965 -0.0735 0.1265 -0.0435)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (butter_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0170 -0.1050 0.0130 -0.0750)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_cabinet_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2625 0.3805 -0.2425 0.4005)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (desk_caddy_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0145 0.2400 0.0055 0.2600)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1945 -0.0310 -0.1645 -0.0010)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.1540 -0.3855 -0.1340 -0.3655)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_two_layer_shelf_1)
+      )
+      (left_contain_region
+          (:target desk_caddy_1)
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    wooden_cabinet_1 - wooden_cabinet
+    desk_caddy_1 - desk_caddy
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+  )
+
+  (:objects
+    alphabet_soup_1 - alphabet_soup
+    butter_1 - butter
+    moka_pot_1 - moka_pot
+  )
+
+  (:obj_of_interest
+    butter_1
+    desk_caddy_1
+    moka_pot_1
+    wooden_two_layer_shelf_1
+  )
+
+  (:init
+    (On alphabet_soup_1 study_table_alphabet_soup_init_region)
+    (On butter_1 study_table_butter_init_region)
+    (On wooden_cabinet_1 study_table_wooden_cabinet_init_region)
+    (On desk_caddy_1 study_table_desk_caddy_init_region)
+    (On moka_pot_1 study_table_moka_pot_init_region)
+    (On wooden_two_layer_shelf_1 study_table_wooden_two_layer_shelf_init_region)
+  )
+
+  (:goal
+    (And (On moka_pot_1 wooden_two_layer_shelf_1_top_side) (In butter_1 desk_caddy_1_left_contain_region))
+  )
+
+)

@@ -1,0 +1,106 @@
+(define (problem LIBERO_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy)
+    (:regions
+      (basket_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0565 -0.1200 -0.0265 -0.0900)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (desk_caddy_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.0500 0.2355 -0.0300 0.2555)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (chocolate_pudding_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.2950 -0.0420 -0.2650 -0.0120)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.1240 0.0960 -0.0940 0.1260)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wine_bottle_init_region
+          (:target main_table)
+          (:ranges (
+              (-0.3130 0.2170 -0.2830 0.2470)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (basket_left_region
+          (:target main_table)
+          (:ranges (
+              (-0.0915 -0.3100 0.0085 -0.2100)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (left_contain_region
+          (:target desk_caddy_1)
+      )
+    )
+
+  (:fixtures
+    main_table - table
+    desk_caddy_1 - desk_caddy
+  )
+
+  (:objects
+    basket_1 - basket
+    chocolate_pudding_1 - chocolate_pudding
+    popcorn_1 - popcorn
+    wine_bottle_1 - wine_bottle
+  )
+
+  (:obj_of_interest
+    chocolate_pudding_1
+    desk_caddy_1
+    wine_bottle_1
+  )
+
+  (:init
+    (On basket_1 main_table_basket_init_region)
+    (On desk_caddy_1 main_table_desk_caddy_init_region)
+    (On chocolate_pudding_1 main_table_chocolate_pudding_init_region)
+    (On popcorn_1 main_table_popcorn_init_region)
+    (On wine_bottle_1 main_table_wine_bottle_init_region)
+  )
+
+  (:goal
+    (And (On wine_bottle_1 main_table_basket_left_region) (In chocolate_pudding_1 desk_caddy_1_left_contain_region))
+  )
+
+)

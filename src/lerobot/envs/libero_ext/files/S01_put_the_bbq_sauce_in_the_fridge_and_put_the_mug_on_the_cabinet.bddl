@@ -1,0 +1,113 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the bbq sauce in the fridge and put the mug on the cabinet)
+    (:regions
+      (bbq_sauce_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (0.0395 -0.2815 0.0695 -0.2515)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (akita_black_bowl_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1215 -0.0715 -0.0915 -0.0415)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_cabinet_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1625 -0.4005 -0.1425 -0.3805)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2735 -0.0740 -0.2435 -0.0440)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (short_fridge_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0290 0.3865 -0.0090 0.4065)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_yellow_mug_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.3050 0.1450 -0.2750 0.1750)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (middle_region
+          (:target short_fridge_1)
+      )
+      (top_side
+          (:target wooden_cabinet_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    wooden_cabinet_1 - wooden_cabinet
+    short_fridge_1 - short_fridge
+  )
+
+  (:objects
+    bbq_sauce_1 - bbq_sauce
+    akita_black_bowl_1 - akita_black_bowl
+    cookies_1 - cookies
+    white_yellow_mug_1 - white_yellow_mug
+  )
+
+  (:obj_of_interest
+    bbq_sauce_1
+    short_fridge_1
+    white_yellow_mug_1
+    wooden_cabinet_1
+  )
+
+  (:init
+    (On bbq_sauce_1 kitchen_table_bbq_sauce_init_region)
+    (On akita_black_bowl_1 kitchen_table_akita_black_bowl_init_region)
+    (On wooden_cabinet_1 kitchen_table_wooden_cabinet_init_region)
+    (On cookies_1 kitchen_table_cookies_init_region)
+    (On short_fridge_1 kitchen_table_short_fridge_init_region)
+    (On white_yellow_mug_1 kitchen_table_white_yellow_mug_init_region)
+    (Open short_fridge_1)
+  )
+
+  (:goal
+    (And (In bbq_sauce_1 short_fridge_1_middle_region) (On white_yellow_mug_1 wooden_cabinet_1_top_side))
+  )
+
+)

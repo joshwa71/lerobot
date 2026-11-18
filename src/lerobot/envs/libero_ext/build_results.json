@@ -3,45 +3,191 @@
   "scene": 1,
   "room": "kitchen",
   "ok": true,
-  "attempts": 1,
+  "attempts": 14,
   "tasks": [
    {
-    "name": "S01_turn_on_the_faucet",
-    "language": "turn on the faucet",
-    "bddl_file": "S01_turn_on_the_faucet.bddl",
-    "init_file": "S01_turn_on_the_faucet.pruned_init",
+    "name": "S01_put_the_cookies_in_the_bowl",
+    "language": "put the cookies in the bowl",
+    "bddl_file": "S01_put_the_cookies_in_the_bowl.bddl",
+    "init_file": "S01_put_the_cookies_in_the_bowl.pruned_init",
     "scene": 1,
     "room": "kitchen",
     "kind": 1,
-    "steps": [],
-    "artic": "faucet",
+    "steps": [
+     [
+      "cookies",
+      "bowl",
+      "in the bowl"
+     ]
+    ],
+    "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.001,
+     "min_height_m": -0.004,
      "reach_m": {
-      "faucet": 0.026
+      "above cookies": 0.027,
+      "bowl": 0.028
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S01_put_the_butter_in_the_fridge_and_put_the_cookies_in_the_tray",
-    "language": "put the butter in the fridge and put the cookies in the tray",
-    "bddl_file": "S01_put_the_butter_in_the_fridge_and_put_the_cookies_in_the_tray.bddl",
-    "init_file": "S01_put_the_butter_in_the_fridge_and_put_the_cookies_in_the_tray.pruned_init",
+    "name": "S01_put_the_bbq_sauce_in_the_fridge_and_put_the_mug_on_the_cabinet",
+    "language": "put the bbq sauce in the fridge and put the mug on the cabinet",
+    "bddl_file": "S01_put_the_bbq_sauce_in_the_fridge_and_put_the_mug_on_the_cabinet.bddl",
+    "init_file": "S01_put_the_bbq_sauce_in_the_fridge_and_put_the_mug_on_the_cabinet.pruned_init",
     "scene": 1,
     "room": "kitchen",
     "kind": 2,
     "steps": [
      [
-      "butter",
+      "bbq sauce",
       "fridge",
       "in the fridge"
      ],
      [
-      "cookies",
-      "tray",
-      "in the tray"
+      "mug",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.004,
+     "reach_m": {
+      "above bbq sauce": 0.022,
+      "fridge opening": 0.028,
+      "above mug": 0.025,
+      "cabinet top": 0.028
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "fridge": [
+    -0.019,
+    0.397,
+    0.0
+   ],
+   "cabinet": [
+    -0.152,
+    -0.391,
+    3.142
+   ],
+   "mug": [
+    -0.29,
+    0.16,
+    0.0
+   ],
+   "bowl": [
+    -0.106,
+    -0.056,
+    0.0
+   ],
+   "cookies": [
+    -0.259,
+    -0.059,
+    0.0
+   ],
+   "bbq sauce": [
+    0.055,
+    -0.266,
+    0.0
+   ]
+  },
+  "classes": {
+   "bbq sauce": "bbq_sauce",
+   "bowl": "akita_black_bowl",
+   "cabinet": "wooden_cabinet",
+   "cookies": "cookies",
+   "fridge": "short_fridge",
+   "mug": "white_yellow_mug"
+  },
+  "log": [
+   [
+    8,
+    "put the bbq sauce in the fridge and put the mug on the cabinet",
+    {
+     "drift": 0.0,
+     "low": -0.009950777323967874,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    9,
+    "put the bbq sauce in the fridge and put the mug on the cabinet",
+    {
+     "drift": 0.0,
+     "low": -0.009950777323967874,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    10,
+    "put the bbq sauce in the fridge and put the mug on the cabinet",
+    {
+     "drift": 1.0,
+     "low": -0.004327470178351223,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {}
+    }
+   ],
+   [
+    11,
+    "put the bbq sauce in the fridge and put the mug on the cabinet",
+    {
+     "drift": 1.0,
+     "low": -0.902394171198558,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {}
+    }
+   ],
+   [
+    12,
+    "put the bbq sauce in the fridge and put the mug on the cabinet",
+    "expert 0/3"
+   ]
+  ],
+  "secs": 299
+ },
+ {
+  "scene": 2,
+  "room": "kitchen",
+  "ok": true,
+  "attempts": 1,
+  "tasks": [
+   {
+    "name": "S02_put_the_butter_on_the_plate_and_put_the_salad_dressing_in_the_fridge",
+    "language": "put the butter on the plate and put the salad dressing in the fridge",
+    "bddl_file": "S02_put_the_butter_on_the_plate_and_put_the_salad_dressing_in_the_fridge.bddl",
+    "init_file": "S02_put_the_butter_on_the_plate_and_put_the_salad_dressing_in_the_fridge.pruned_init",
+    "scene": 2,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "butter",
+      "plate",
+      "on the plate"
+     ],
+     [
+      "salad dressing",
+      "fridge",
+      "in the fridge"
      ]
     ],
     "artic": null,
@@ -50,333 +196,70 @@
      "min_height_m": -0.001,
      "reach_m": {
       "above butter": 0.027,
-      "fridge opening": 0.027,
-      "above cookies": 0.026,
-      "tray": 0.027
+      "plate": 0.024,
+      "above salad dressing": 0.023,
+      "fridge opening": 0.029
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
    "fridge": [
-    -0.259,
+    0.041,
     0.397,
     0.0
    ],
-   "tray": [
-    -0.0,
-    -0.127,
-    0.0
-   ],
-   "faucet": [
-    0.02,
-    0.036,
-    1.571
-   ],
-   "cookies": [
-    -0.259,
-    -0.019,
+   "plate": [
+    -0.151,
+    0.099,
     0.0
    ],
    "butter": [
-    0.038,
-    -0.25,
+    -0.202,
+    0.33,
+    0.0
+   ],
+   "salad dressing": [
+    -0.202,
+    -0.123,
     0.0
    ]
   },
   "classes": {
    "butter": "butter",
-   "cookies": "cookies",
-   "faucet": "faucet",
    "fridge": "short_fridge",
-   "tray": "wooden_tray"
+   "plate": "plate",
+   "salad dressing": "salad_dressing"
   },
   "log": [],
-  "secs": 125
- },
- {
-  "scene": 2,
-  "room": "kitchen",
-  "ok": true,
-  "attempts": 19,
-  "tasks": [
-   {
-    "name": "S02_put_the_ramekin_in_the_bowl",
-    "language": "put the ramekin in the bowl",
-    "bddl_file": "S02_put_the_ramekin_in_the_bowl.bddl",
-    "init_file": "S02_put_the_ramekin_in_the_bowl.pruned_init",
-    "scene": 2,
-    "room": "kitchen",
-    "kind": 1,
-    "steps": [
-     [
-      "ramekin",
-      "bowl",
-      "in the bowl"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.033,
-     "reach_m": {
-      "above ramekin": 0.026,
-      "bowl": 0.029
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S02_put_the_bowl_in_the_left_side_of_the_drainer_and_put_the_mug_on_the_placemat",
-    "language": "put the bowl in the left side of the drainer and put the mug on the placemat",
-    "bddl_file": "S02_put_the_bowl_in_the_left_side_of_the_drainer_and_put_the_mug_on_the_placemat.bddl",
-    "init_file": "S02_put_the_bowl_in_the_left_side_of_the_drainer_and_put_the_mug_on_the_placemat.pruned_init",
-    "scene": 2,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "bowl",
-      "drainer",
-      "in the left side of the drainer"
-     ],
-     [
-      "mug",
-      "placemat",
-      "on the placemat"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.033,
-     "reach_m": {
-      "above bowl": 0.03,
-      "drainer": 0.023,
-      "above mug": 0.027,
-      "placemat": 0.028
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S02_put_the_salad_dressing_in_the_fridge_and_put_the_bbq_sauce_in_front_of_the_bowl",
-    "language": "put the salad dressing in the fridge and put the bbq sauce in front of the bowl",
-    "bddl_file": "S02_put_the_salad_dressing_in_the_fridge_and_put_the_bbq_sauce_in_front_of_the_bowl.bddl",
-    "init_file": "S02_put_the_salad_dressing_in_the_fridge_and_put_the_bbq_sauce_in_front_of_the_bowl.pruned_init",
-    "scene": 2,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "salad dressing",
-      "fridge",
-      "in the fridge"
-     ],
-     [
-      "bbq sauce",
-      "beside",
-      "in front of the bowl"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.033,
-     "reach_m": {
-      "above salad dressing": 0.024,
-      "fridge opening": 0.024,
-      "above bbq sauce": 0.029,
-      "beside": 0.029
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "fridge": [
-    -0.299,
-    -0.397,
-    3.142
-   ],
-   "placemat": [
-    -0.1,
-    -0.03,
-    1.571
-   ],
-   "drainer": [
-    -0.16,
-    0.25,
-    1.571
-   ],
-   "mug": [
-    -0.27,
-    0.04,
-    0.0
-   ],
-   "bowl": [
-    -0.046,
-    -0.276,
-    0.0
-   ],
-   "ramekin": [
-    0.045,
-    -0.145,
-    0.0
-   ],
-   "salad dressing": [
-    -0.002,
-    0.317,
-    0.0
-   ],
-   "bbq sauce": [
-    0.035,
-    0.194,
-    0.0
-   ]
-  },
-  "classes": {
-   "bbq sauce": "bbq_sauce",
-   "bowl": "white_bowl",
-   "drainer": "bowl_drainer",
-   "fridge": "short_fridge",
-   "mug": "porcelain_mug",
-   "placemat": "dining_set_group",
-   "ramekin": "glazed_rim_porcelain_ramekin",
-   "salad dressing": "new_salad_dressing"
-  },
-  "log": [
-   [
-    13,
-    "put the bowl in the left side of the drainer and put the mug on the placemat",
-    {
-     "drift": 0.0,
-     "low": -0.032603141691782134,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {
-      "above bowl": 0.027,
-      "drainer": 0.023,
-      "above mug": 0.024,
-      "placemat": 0.041
-     }
-    }
-   ],
-   [
-    14,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    15,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    16,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    17,
-    "layout",
-    "no non-overlapping layout"
-   ]
-  ],
-  "secs": 251
+  "secs": 59
  },
  {
   "scene": 3,
   "room": "kitchen",
   "ok": true,
-  "attempts": 1,
+  "attempts": 2,
   "tasks": [
    {
-    "name": "S03_put_the_tomato_sauce_in_the_bottom_drawer_and_put_the_orange_juice_in_the_tray",
-    "language": "put the tomato sauce in the bottom drawer and put the orange juice in the tray",
-    "bddl_file": "S03_put_the_tomato_sauce_in_the_bottom_drawer_and_put_the_orange_juice_in_the_tray.bddl",
-    "init_file": "S03_put_the_tomato_sauce_in_the_bottom_drawer_and_put_the_orange_juice_in_the_tray.pruned_init",
+    "name": "S03_put_the_bbq_sauce_in_the_bottom_drawer_and_put_the_ketchup_in_front_of_the_plate",
+    "language": "put the bbq sauce in the bottom drawer and put the ketchup in front of the plate",
+    "bddl_file": "S03_put_the_bbq_sauce_in_the_bottom_drawer_and_put_the_ketchup_in_front_of_the_plate.bddl",
+    "init_file": "S03_put_the_bbq_sauce_in_the_bottom_drawer_and_put_the_ketchup_in_front_of_the_plate.pruned_init",
     "scene": 3,
     "room": "kitchen",
     "kind": 2,
     "steps": [
      [
-      "tomato sauce",
+      "bbq sauce",
       "drawer",
       "in the bottom drawer"
      ],
      [
-      "orange juice",
-      "tray",
-      "in the tray"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.005,
-     "reach_m": {
-      "above tomato sauce": 0.025,
-      "drawer": 0.03,
-      "above orange juice": 0.023,
-      "tray": 0.023
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "cabinet": [
-    -0.312,
-    -0.391,
-    3.142
-   ],
-   "tray": [
-    -0.08,
-    0.133,
-    0.0
-   ],
-   "tomato sauce": [
-    -0.308,
-    0.161,
-    0.0
-   ],
-   "orange juice": [
-    -0.133,
-    -0.143,
-    0.0
-   ]
-  },
-  "classes": {
-   "cabinet": "white_cabinet",
-   "orange juice": "orange_juice",
-   "tomato sauce": "tomato_sauce",
-   "tray": "wooden_tray"
-  },
-  "log": [],
-  "secs": 69
- },
- {
-  "scene": 4,
-  "room": "kitchen",
-  "ok": true,
-  "attempts": 4,
-  "tasks": [
-   {
-    "name": "S04_put_the_chocolate_pudding_in_the_bowl",
-    "language": "put the chocolate pudding in the bowl",
-    "bddl_file": "S04_put_the_chocolate_pudding_in_the_bowl.bddl",
-    "init_file": "S04_put_the_chocolate_pudding_in_the_bowl.pruned_init",
-    "scene": 4,
-    "room": "kitchen",
-    "kind": 1,
-    "steps": [
-     [
-      "chocolate pudding",
-      "bowl",
-      "in the bowl"
+      "ketchup",
+      "beside",
+      "in front of the plate"
      ]
     ],
     "artic": null,
@@ -384,21 +267,166 @@
      "drift_m": 0.0,
      "min_height_m": -0.003,
      "reach_m": {
-      "above chocolate pudding": 0.029,
-      "bowl": 0.023
+      "above bbq sauce": 0.024,
+      "drawer": 0.026,
+      "above ketchup": 0.028,
+      "beside": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S04_put_the_ramekin_in_the_right_side_of_the_drainer",
-    "language": "put the ramekin in the right side of the drainer",
-    "bddl_file": "S04_put_the_ramekin_in_the_right_side_of_the_drainer.bddl",
-    "init_file": "S04_put_the_ramekin_in_the_right_side_of_the_drainer.pruned_init",
+    "name": "S03_put_the_cream_cheese_on_the_plate_and_put_the_wine_bottle_on_the_cabinet",
+    "language": "put the cream cheese on the plate and put the wine bottle on the cabinet",
+    "bddl_file": "S03_put_the_cream_cheese_on_the_plate_and_put_the_wine_bottle_on_the_cabinet.bddl",
+    "init_file": "S03_put_the_cream_cheese_on_the_plate_and_put_the_wine_bottle_on_the_cabinet.pruned_init",
+    "scene": 3,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "cream cheese",
+      "plate",
+      "on the plate"
+     ],
+     [
+      "wine bottle",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.003,
+     "reach_m": {
+      "above cream cheese": 0.023,
+      "plate": 0.023,
+      "above wine bottle": 0.023,
+      "cabinet top": 0.023
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "cabinet": [
+    -0.192,
+    0.391,
+    0.0
+   ],
+   "plate": [
+    -0.071,
+    -0.021,
+    0.0
+   ],
+   "cream cheese": [
+    -0.219,
+    -0.329,
+    0.0
+   ],
+   "ketchup": [
+    -0.061,
+    -0.222,
+    0.0
+   ],
+   "bbq sauce": [
+    0.015,
+    0.114,
+    0.0
+   ],
+   "wine bottle": [
+    0.042,
+    0.192,
+    0.0
+   ]
+  },
+  "classes": {
+   "bbq sauce": "bbq_sauce",
+   "cabinet": "white_cabinet",
+   "cream cheese": "cream_cheese",
+   "ketchup": "ketchup",
+   "plate": "plate",
+   "wine bottle": "wine_bottle"
+  },
+  "log": [
+   [
+    0,
+    "layout",
+    "no non-overlapping layout"
+   ]
+  ],
+  "secs": 126
+ },
+ {
+  "scene": 4,
+  "room": "kitchen",
+  "ok": true,
+  "attempts": 2,
+  "tasks": [
+   {
+    "name": "S04_put_the_macaroni_on_the_cabinet",
+    "language": "put the macaroni on the cabinet",
+    "bddl_file": "S04_put_the_macaroni_on_the_cabinet.bddl",
+    "init_file": "S04_put_the_macaroni_on_the_cabinet.pruned_init",
     "scene": 4,
     "room": "kitchen",
     "kind": 1,
     "steps": [
+     [
+      "macaroni",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.004,
+     "reach_m": {
+      "above macaroni": 0.026,
+      "cabinet top": 0.029
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S04_turn_on_the_faucet",
+    "language": "turn on the faucet",
+    "bddl_file": "S04_turn_on_the_faucet.bddl",
+    "init_file": "S04_turn_on_the_faucet.pruned_init",
+    "scene": 4,
+    "room": "kitchen",
+    "kind": 1,
+    "steps": [],
+    "artic": "faucet",
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.004,
+     "reach_m": {
+      "faucet": 0.021
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   },
+   {
+    "name": "S04_put_the_alphabet_soup_in_the_top_drawer_and_put_the_ramekin_in_the_right_side_of_the_drainer",
+    "language": "put the alphabet soup in the top drawer and put the ramekin in the right side of the drainer",
+    "bddl_file": "S04_put_the_alphabet_soup_in_the_top_drawer_and_put_the_ramekin_in_the_right_side_of_the_drainer.bddl",
+    "init_file": "S04_put_the_alphabet_soup_in_the_top_drawer_and_put_the_ramekin_in_the_right_side_of_the_drainer.pruned_init",
+    "scene": 4,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "alphabet soup",
+      "drawer",
+      "in the top drawer"
+     ],
      [
       "ramekin",
       "drainer",
@@ -408,165 +436,93 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.003,
+     "min_height_m": -0.004,
      "reach_m": {
-      "above ramekin": 0.025,
-      "drainer": 0.024
+      "above alphabet soup": 0.03,
+      "drawer": 0.024,
+      "above ramekin": 0.024,
+      "drainer": 0.022
      },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S04_put_the_milk_in_the_tray_and_put_the_wine_bottle_on_the_cabinet",
-    "language": "put the milk in the tray and put the wine bottle on the cabinet",
-    "bddl_file": "S04_put_the_milk_in_the_tray_and_put_the_wine_bottle_on_the_cabinet.bddl",
-    "init_file": "S04_put_the_milk_in_the_tray_and_put_the_wine_bottle_on_the_cabinet.pruned_init",
-    "scene": 4,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "milk",
-      "tray",
-      "in the tray"
-     ],
-     [
-      "wine bottle",
-      "cabinet top",
-      "on the cabinet"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.003,
-     "reach_m": {
-      "above milk": 0.025,
-      "tray": 0.024,
-      "above wine bottle": 0.025,
-      "cabinet top": 0.027
-     },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
    "cabinet": [
-    -0.252,
-    -0.391,
-    3.142
+    -0.292,
+    0.391,
+    0.0
    ],
-   "tray": [
-    -0.08,
-    0.113,
+   "faucet": [
+    -0.014,
+    0.21,
     0.0
    ],
    "drainer": [
-    -0.26,
-    -0.13,
-    1.571
-   ],
-   "bowl": [
-    0.014,
-    -0.176,
+    -0.1,
+    -0.11,
     0.0
    ],
    "ramekin": [
-    -0.215,
-    0.275,
+    -0.276,
+    -0.285,
     0.0
    ],
-   "chocolate pudding": [
-    0.06,
-    -0.027,
+   "macaroni": [
+    -0.287,
+    -0.008,
     0.0
    ],
-   "milk": [
-    -0.073,
-    -0.324,
-    0.0
-   ],
-   "wine bottle": [
-    -0.098,
-    -0.028,
+   "alphabet soup": [
+    0.012,
+    -0.278,
     0.0
    ]
   },
   "classes": {
-   "bowl": "akita_black_bowl",
+   "alphabet soup": "alphabet_soup",
    "cabinet": "wooden_cabinet",
-   "chocolate pudding": "chocolate_pudding",
    "drainer": "bowl_drainer",
-   "milk": "milk",
-   "ramekin": "glazed_rim_porcelain_ramekin",
-   "tray": "wooden_tray",
-   "wine bottle": "wine_bottle"
+   "faucet": "faucet",
+   "macaroni": "macaroni_and_cheese",
+   "ramekin": "glazed_rim_porcelain_ramekin"
   },
   "log": [
    [
     0,
-    "put the chocolate pudding in the bowl",
+    "put the macaroni on the cabinet",
     {
-     "drift": 2.8189256484623115e-15,
-     "low": -0.0026072886421317776,
+     "drift": 1.6289053439422219e-15,
+     "low": -0.004237494667114539,
      "start_success": false,
      "forced": false,
-     "view": true,
-     "reach": {
-      "above chocolate pudding": 0.052,
-      "bowl": 0.025
-     }
-    }
-   ],
-   [
-    1,
-    "put the chocolate pudding in the bowl",
-    {
-     "drift": 0.0,
-     "low": -0.0026072886421317776,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {
-      "above chocolate pudding": 0.153,
-      "bowl": 0.024
-     }
-    }
-   ],
-   [
-    2,
-    "put the chocolate pudding in the bowl",
-    {
-     "drift": 1.0,
-     "low": -0.5824568679706068,
-     "start_success": false,
-     "forced": false,
-     "view": true,
+     "view": false,
      "reach": {}
     }
    ]
   ],
-  "secs": 255
+  "secs": 176
  },
  {
   "scene": 5,
   "room": "kitchen",
   "ok": true,
-  "attempts": 2,
+  "attempts": 17,
   "tasks": [
    {
-    "name": "S05_put_the_orange_juice_to_the_right_of_the_plate",
-    "language": "put the orange juice to the right of the plate",
-    "bddl_file": "S05_put_the_orange_juice_to_the_right_of_the_plate.bddl",
-    "init_file": "S05_put_the_orange_juice_to_the_right_of_the_plate.pruned_init",
+    "name": "S05_put_the_popcorn_in_the_bowl",
+    "language": "put the popcorn in the bowl",
+    "bddl_file": "S05_put_the_popcorn_in_the_bowl.bddl",
+    "init_file": "S05_put_the_popcorn_in_the_bowl.pruned_init",
     "scene": 5,
     "room": "kitchen",
     "kind": 1,
     "steps": [
      [
-      "orange juice",
-      "beside",
-      "to the right of the plate"
+      "popcorn",
+      "bowl",
+      "in the bowl"
      ]
     ],
     "artic": null,
@@ -574,17 +530,18 @@
      "drift_m": 0.0,
      "min_height_m": -0.005,
      "reach_m": {
-      "above orange juice": 0.027,
-      "beside": 0.03
+      "above popcorn": 0.026,
+      "bowl": 0.023
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_chocolate_pudding_on_the_plate",
-    "language": "put the tomato sauce in the fridge and put the chocolate pudding on the plate",
-    "bddl_file": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_chocolate_pudding_on_the_plate.bddl",
-    "init_file": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_chocolate_pudding_on_the_plate.pruned_init",
+    "name": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_bowl_in_the_left_side_of_the_drainer",
+    "language": "put the tomato sauce in the fridge and put the bowl in the left side of the drainer",
+    "bddl_file": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_bowl_in_the_left_side_of_the_drainer.bddl",
+    "init_file": "S05_put_the_tomato_sauce_in_the_fridge_and_put_the_bowl_in_the_left_side_of_the_drainer.pruned_init",
     "scene": 5,
     "room": "kitchen",
     "kind": 2,
@@ -595,9 +552,9 @@
       "in the fridge"
      ],
      [
-      "chocolate pudding",
-      "plate",
-      "on the plate"
+      "bowl",
+      "drainer",
+      "in the left side of the drainer"
      ]
     ],
     "artic": null,
@@ -605,122 +562,249 @@
      "drift_m": 0.0,
      "min_height_m": -0.005,
      "reach_m": {
-      "above tomato sauce": 0.023,
-      "fridge opening": 0.029,
-      "above chocolate pudding": 0.029,
-      "plate": 0.023
+      "above tomato sauce": 0.027,
+      "fridge opening": 0.025,
+      "above bowl": 0.028,
+      "drainer": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "2/3"
     }
    }
   ],
   "layout": {
    "fridge": [
-    -0.059,
-    0.397,
-    0.0
+    -0.199,
+    -0.397,
+    3.142
    ],
-   "plate": [
-    -0.011,
-    -0.161,
-    0.0
+   "drainer": [
+    0.02,
+    0.09,
+    1.571
    ],
-   "chocolate pudding": [
-    -0.26,
-    0.113,
+   "bowl": [
+    -0.206,
+    0.084,
     0.0
    ],
    "tomato sauce": [
-    -0.228,
-    -0.299,
+    -0.288,
+    0.221,
     0.0
    ],
-   "orange juice": [
-    -0.293,
-    0.277,
+   "popcorn": [
+    -0.049,
+    -0.169,
     0.0
    ]
   },
   "classes": {
-   "chocolate pudding": "chocolate_pudding",
+   "bowl": "akita_black_bowl",
+   "drainer": "bowl_drainer",
    "fridge": "short_fridge",
-   "orange juice": "orange_juice",
-   "plate": "plate",
+   "popcorn": "popcorn",
    "tomato sauce": "tomato_sauce"
   },
   "log": [
    [
-    0,
-    "layout",
-    "no non-overlapping layout"
+    11,
+    "put the tomato sauce in the fridge and put the bowl in the left side of the drainer",
+    "expert 0/3"
+   ],
+   [
+    12,
+    "put the tomato sauce in the fridge and put the bowl in the left side of the drainer",
+    "expert 0/3"
+   ],
+   [
+    13,
+    "put the popcorn in the bowl",
+    {
+     "drift": 2.2487262639618315e-15,
+     "low": -0.902394171198558,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {}
+    }
+   ],
+   [
+    14,
+    "put the tomato sauce in the fridge and put the bowl in the left side of the drainer",
+    "expert 0/3"
+   ],
+   [
+    15,
+    "put the tomato sauce in the fridge and put the bowl in the left side of the drainer",
+    "expert 1/3"
    ]
   ],
-  "secs": 94
+  "secs": 418
  },
  {
   "scene": 6,
   "room": "kitchen",
   "ok": true,
-  "attempts": 9,
+  "attempts": 3,
   "tasks": [
    {
-    "name": "S06_put_the_bbq_sauce_in_the_top_drawer",
-    "language": "put the bbq sauce in the top drawer",
-    "bddl_file": "S06_put_the_bbq_sauce_in_the_top_drawer.bddl",
-    "init_file": "S06_put_the_bbq_sauce_in_the_top_drawer.pruned_init",
+    "name": "S06_put_the_book_on_the_cabinet_and_put_the_moka_pot_in_the_tray",
+    "language": "put the book on the cabinet and put the moka pot in the tray",
+    "bddl_file": "S06_put_the_book_on_the_cabinet_and_put_the_moka_pot_in_the_tray.bddl",
+    "init_file": "S06_put_the_book_on_the_cabinet_and_put_the_moka_pot_in_the_tray.pruned_init",
     "scene": 6,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "book",
+      "cabinet top",
+      "on the cabinet"
+     ],
+     [
+      "moka pot",
+      "tray",
+      "in the tray"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.003,
+     "reach_m": {
+      "above book": 0.022,
+      "cabinet top": 0.028,
+      "above moka pot": 0.026,
+      "tray": 0.027
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   }
+  ],
+  "layout": {
+   "cabinet": [
+    -0.272,
+    -0.391,
+    3.142
+   ],
+   "tray": [
+    -0.12,
+    0.233,
+    0.0
+   ],
+   "moka pot": [
+    -0.28,
+    -0.096,
+    0.0
+   ],
+   "book": [
+    -0.025,
+    0.045,
+    0.0
+   ]
+  },
+  "classes": {
+   "book": "black_book",
+   "cabinet": "wooden_cabinet",
+   "moka pot": "moka_pot",
+   "tray": "wooden_tray"
+  },
+  "log": [
+   [
+    0,
+    "put the book on the cabinet and put the moka pot in the tray",
+    {
+     "drift": 0.0,
+     "low": -0.002586208943078261,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    1,
+    "put the book on the cabinet and put the moka pot in the tray",
+    {
+     "drift": 1.0408340855860843e-16,
+     "low": -0.00258620894307815,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ]
+  ],
+  "secs": 61
+ },
+ {
+  "scene": 7,
+  "room": "kitchen",
+  "ok": true,
+  "attempts": 11,
+  "tasks": [
+   {
+    "name": "S07_put_the_tomato_sauce_in_the_middle_drawer",
+    "language": "put the tomato sauce in the middle drawer",
+    "bddl_file": "S07_put_the_tomato_sauce_in_the_middle_drawer.bddl",
+    "init_file": "S07_put_the_tomato_sauce_in_the_middle_drawer.pruned_init",
+    "scene": 7,
     "room": "kitchen",
     "kind": 1,
     "steps": [
      [
-      "bbq sauce",
+      "tomato sauce",
       "drawer",
-      "in the top drawer"
+      "in the middle drawer"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.003,
+     "min_height_m": -0.005,
      "reach_m": {
-      "above bbq sauce": 0.024,
-      "drawer": 0.027
+      "above tomato sauce": 0.027,
+      "drawer": 0.026
      },
-     "init_tries": 50
+     "init_tries": 51,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S06_put_the_wine_bottle_in_the_fridge",
-    "language": "put the wine bottle in the fridge",
-    "bddl_file": "S06_put_the_wine_bottle_in_the_fridge.bddl",
-    "init_file": "S06_put_the_wine_bottle_in_the_fridge.pruned_init",
-    "scene": 6,
+    "name": "S07_put_the_macaroni_in_the_microwave_and_close_it",
+    "language": "put the macaroni in the microwave and close it",
+    "bddl_file": "S07_put_the_macaroni_in_the_microwave_and_close_it.bddl",
+    "init_file": "S07_put_the_macaroni_in_the_microwave_and_close_it.pruned_init",
+    "scene": 7,
     "room": "kitchen",
-    "kind": 1,
+    "kind": 2,
     "steps": [
      [
-      "wine bottle",
-      "fridge",
-      "in the fridge"
+      "macaroni",
+      "microwave",
+      "in the microwave"
      ]
     ],
-    "artic": null,
+    "artic": "microwave",
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.003,
+     "min_height_m": -0.005,
      "reach_m": {
-      "above wine bottle": 0.028,
-      "fridge opening": 0.029
+      "above macaroni": 0.026,
+      "microwave opening": 0.024
      },
-     "init_tries": 50
+     "init_tries": 52,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S06_put_the_salad_dressing_on_the_cabinet_and_put_the_macaroni_in_the_microwave",
-    "language": "put the salad dressing on the cabinet and put the macaroni in the microwave",
-    "bddl_file": "S06_put_the_salad_dressing_on_the_cabinet_and_put_the_macaroni_in_the_microwave.bddl",
-    "init_file": "S06_put_the_salad_dressing_on_the_cabinet_and_put_the_macaroni_in_the_microwave.pruned_init",
-    "scene": 6,
+    "name": "S07_put_the_salad_dressing_on_the_cabinet_and_put_the_ramekin_on_the_placemat",
+    "language": "put the salad dressing on the cabinet and put the ramekin on the placemat",
+    "bddl_file": "S07_put_the_salad_dressing_on_the_cabinet_and_put_the_ramekin_on_the_placemat.bddl",
+    "init_file": "S07_put_the_salad_dressing_on_the_cabinet_and_put_the_ramekin_on_the_placemat.pruned_init",
+    "scene": 7,
     "room": "kitchen",
     "kind": 2,
     "steps": [
@@ -730,93 +814,84 @@
       "on the cabinet"
      ],
      [
-      "macaroni",
-      "microwave",
-      "in the microwave"
+      "ramekin",
+      "placemat",
+      "on the placemat"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.003,
+     "min_height_m": -0.005,
      "reach_m": {
-      "above salad dressing": 0.025,
-      "cabinet top": 0.026,
-      "above macaroni": 0.027,
-      "microwave opening": 0.027
+      "above salad dressing": 0.026,
+      "cabinet top": 0.028,
+      "above ramekin": 0.027,
+      "placemat": 0.027
      },
-     "init_tries": 50
+     "init_tries": 51,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
    "microwave": [
-    -0.268,
+    -0.208,
     0.412,
     0.0
    ],
    "cabinet": [
-    -0.252,
+    -0.292,
     -0.391,
     3.142
    ],
-   "fridge": [
-    0.021,
-    0.397,
+   "placemat": [
+    -0.04,
+    -0.15,
+    1.571
+   ],
+   "ramekin": [
+    0.025,
+    0.115,
     0.0
    ],
    "macaroni": [
-    -0.067,
-    -0.248,
+    0.073,
+    -0.028,
+    0.0
+   ],
+   "tomato sauce": [
+    -0.208,
+    -0.039,
     0.0
    ],
    "salad dressing": [
-    -0.062,
-    -0.063,
-    0.0
-   ],
-   "bbq sauce": [
-    0.075,
-    -0.306,
-    0.0
-   ],
-   "wine bottle": [
-    -0.138,
-    -0.048,
+    -0.002,
+    0.297,
     0.0
    ]
   },
   "classes": {
-   "bbq sauce": "bbq_sauce",
    "cabinet": "wooden_cabinet",
-   "fridge": "short_fridge",
    "macaroni": "macaroni_and_cheese",
    "microwave": "microwave",
+   "placemat": "dining_set_group",
+   "ramekin": "glazed_rim_porcelain_ramekin",
    "salad dressing": "salad_dressing",
-   "wine bottle": "wine_bottle"
+   "tomato sauce": "tomato_sauce"
   },
   "log": [
    [
-    3,
-    "put the salad dressing on the cabinet and put the macaroni in the microwave",
+    5,
+    "put the salad dressing on the cabinet and put the ramekin on the placemat",
     {
-     "drift": 1.0,
-     "low": -0.002517303991490416,
+     "drift": 1.6896206656014101e-15,
+     "low": -0.004667130382987494,
      "start_success": false,
      "forced": false,
-     "view": true,
+     "view": false,
      "reach": {}
     }
-   ],
-   [
-    4,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    5,
-    "layout",
-    "no non-overlapping layout"
    ],
    [
     6,
@@ -825,10 +900,27 @@
    ],
    [
     7,
-    "put the salad dressing on the cabinet and put the macaroni in the microwave",
+    "put the salad dressing on the cabinet and put the ramekin on the placemat",
     {
-     "drift": 6.938893903907228e-15,
-     "low": -0.002517303991490416,
+     "drift": 1.7496550317114955e-15,
+     "low": -0.004667130382987383,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    8,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    9,
+    "put the salad dressing on the cabinet and put the ramekin on the placemat",
+    {
+     "drift": 1.0547118733938987e-15,
+     "low": -0.004667130382987494,
      "start_success": false,
      "forced": false,
      "view": false,
@@ -836,27 +928,207 @@
     }
    ]
   ],
-  "secs": 232
+  "secs": 310
  },
  {
-  "scene": 7,
+  "scene": 8,
   "room": "kitchen",
   "ok": true,
-  "attempts": 18,
+  "attempts": 5,
   "tasks": [
    {
-    "name": "S07_put_the_cookies_on_the_plate",
-    "language": "put the cookies on the plate",
-    "bddl_file": "S07_put_the_cookies_on_the_plate.bddl",
-    "init_file": "S07_put_the_cookies_on_the_plate.pruned_init",
-    "scene": 7,
+    "name": "S08_put_the_orange_juice_to_the_right_of_the_bowl",
+    "language": "put the orange juice to the right of the bowl",
+    "bddl_file": "S08_put_the_orange_juice_to_the_right_of_the_bowl.bddl",
+    "init_file": "S08_put_the_orange_juice_to_the_right_of_the_bowl.pruned_init",
+    "scene": 8,
     "room": "kitchen",
     "kind": 1,
     "steps": [
      [
-      "cookies",
-      "plate",
-      "on the plate"
+      "orange juice",
+      "beside",
+      "to the right of the bowl"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.003,
+     "reach_m": {
+      "above orange juice": 0.027,
+      "beside": 0.024
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S08_put_the_ramekin_in_the_bowl",
+    "language": "put the ramekin in the bowl",
+    "bddl_file": "S08_put_the_ramekin_in_the_bowl.bddl",
+    "init_file": "S08_put_the_ramekin_in_the_bowl.pruned_init",
+    "scene": 8,
+    "room": "kitchen",
+    "kind": 1,
+    "steps": [
+     [
+      "ramekin",
+      "bowl",
+      "in the bowl"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.003,
+     "reach_m": {
+      "above ramekin": 0.03,
+      "bowl": 0.028
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S08_put_the_bowl_in_the_microwave_and_put_the_butter_on_the_cabinet",
+    "language": "put the bowl in the microwave and put the butter on the cabinet",
+    "bddl_file": "S08_put_the_bowl_in_the_microwave_and_put_the_butter_on_the_cabinet.bddl",
+    "init_file": "S08_put_the_bowl_in_the_microwave_and_put_the_butter_on_the_cabinet.pruned_init",
+    "scene": 8,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "bowl",
+      "microwave",
+      "in the microwave"
+     ],
+     [
+      "butter",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.003,
+     "reach_m": {
+      "above bowl": 0.03,
+      "microwave opening": 0.024,
+      "above butter": 0.03,
+      "cabinet top": 0.029
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   }
+  ],
+  "layout": {
+   "cabinet": [
+    -0.172,
+    -0.391,
+    3.142
+   ],
+   "microwave": [
+    -0.208,
+    0.412,
+    0.0
+   ],
+   "bowl": [
+    -0.246,
+    -0.196,
+    0.0
+   ],
+   "ramekin": [
+    -0.095,
+    -0.005,
+    0.0
+   ],
+   "butter": [
+    0.038,
+    -0.07,
+    0.0
+   ],
+   "orange juice": [
+    0.047,
+    -0.263,
+    0.0
+   ]
+  },
+  "classes": {
+   "bowl": "akita_black_bowl",
+   "butter": "butter",
+   "cabinet": "wooden_cabinet",
+   "microwave": "microwave",
+   "orange juice": "orange_juice",
+   "ramekin": "glazed_rim_porcelain_ramekin"
+  },
+  "log": [
+   [
+    0,
+    "put the bowl in the microwave and put the butter on the cabinet",
+    {
+     "drift": 0.0,
+     "low": -0.0028077126930423635,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    1,
+    "put the bowl in the microwave and put the butter on the cabinet",
+    {
+     "drift": 7.152448122690996e-15,
+     "low": -0.0028077126930423635,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    2,
+    "put the bowl in the microwave and put the butter on the cabinet",
+    "expert 0/3"
+   ],
+   [
+    3,
+    "put the bowl in the microwave and put the butter on the cabinet",
+    {
+     "drift": 0.0,
+     "low": -0.0028077126930423635,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ]
+  ],
+  "secs": 287
+ },
+ {
+  "scene": 9,
+  "room": "kitchen",
+  "ok": true,
+  "attempts": 9,
+  "tasks": [
+   {
+    "name": "S09_lift_the_alphabet_soup",
+    "language": "lift the alphabet soup",
+    "bddl_file": "S09_lift_the_alphabet_soup.bddl",
+    "init_file": "S09_lift_the_alphabet_soup.pruned_init",
+    "scene": 9,
+    "room": "kitchen",
+    "kind": 1,
+    "steps": [
+     [
+      "alphabet soup",
+      "lift",
+      "lift"
      ]
     ],
     "artic": null,
@@ -864,18 +1136,18 @@
      "drift_m": 0.0,
      "min_height_m": -0.004,
      "reach_m": {
-      "above cookies": 0.029,
-      "plate": 0.024
+      "above alphabet soup": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S07_open_the_fridge_and_put_the_ketchup_in_it",
-    "language": "open the fridge and put the ketchup in it",
-    "bddl_file": "S07_open_the_fridge_and_put_the_ketchup_in_it.bddl",
-    "init_file": "S07_open_the_fridge_and_put_the_ketchup_in_it.pruned_init",
-    "scene": 7,
+    "name": "S09_put_the_ketchup_in_the_fridge_and_put_the_macaroni_in_the_tray",
+    "language": "put the ketchup in the fridge and put the macaroni in the tray",
+    "bddl_file": "S09_put_the_ketchup_in_the_fridge_and_put_the_macaroni_in_the_tray.bddl",
+    "init_file": "S09_put_the_ketchup_in_the_fridge_and_put_the_macaroni_in_the_tray.pruned_init",
+    "scene": 9,
     "room": "kitchen",
     "kind": 2,
     "steps": [
@@ -883,35 +1155,9 @@
       "ketchup",
       "fridge",
       "in the fridge"
-     ]
-    ],
-    "artic": "fridge",
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.004,
-     "reach_m": {
-      "above ketchup": 0.023,
-      "fridge opening": 0.043
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S07_put_the_popcorn_in_the_microwave_and_put_the_mug_in_the_tray",
-    "language": "put the popcorn in the microwave and put the mug in the tray",
-    "bddl_file": "S07_put_the_popcorn_in_the_microwave_and_put_the_mug_in_the_tray.bddl",
-    "init_file": "S07_put_the_popcorn_in_the_microwave_and_put_the_mug_in_the_tray.pruned_init",
-    "scene": 7,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "popcorn",
-      "microwave",
-      "in the microwave"
      ],
      [
-      "mug",
+      "macaroni",
       "tray",
       "in the tray"
      ]
@@ -921,778 +1167,129 @@
      "drift_m": 0.0,
      "min_height_m": -0.004,
      "reach_m": {
-      "above popcorn": 0.029,
-      "microwave opening": 0.029,
-      "above mug": 0.027,
+      "above ketchup": 0.027,
+      "fridge opening": 0.029,
+      "above macaroni": 0.023,
       "tray": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S09_turn_on_the_stove_and_put_the_cream_cheese_in_the_pan",
+    "language": "turn on the stove and put the cream cheese in the pan",
+    "bddl_file": "S09_turn_on_the_stove_and_put_the_cream_cheese_in_the_pan.bddl",
+    "init_file": "S09_turn_on_the_stove_and_put_the_cream_cheese_in_the_pan.pruned_init",
+    "scene": 9,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "cream cheese",
+      "pan",
+      "in the pan"
+     ]
+    ],
+    "artic": "stove",
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.004,
+     "reach_m": {
+      "above cream cheese": 0.026,
+      "pan": 0.03
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
    "fridge": [
-    -0.319,
-    -0.397,
-    3.142
-   ],
-   "microwave": [
-    -0.068,
-    0.412,
+    0.041,
+    0.397,
     0.0
    ],
    "tray": [
-    0.02,
-    -0.047,
-    0.0
-   ],
-   "mug": [
-    0.01,
-    -0.28,
-    0.0
-   ],
-   "plate": [
-    -0.131,
-    -0.221,
-    0.0
-   ],
-   "cookies": [
-    -0.299,
-    0.041,
-    0.0
-   ],
-   "popcorn": [
-    -0.289,
-    0.171,
-    0.0
-   ],
-   "ketchup": [
-    -0.201,
-    0.038,
-    0.0
-   ]
-  },
-  "classes": {
-   "cookies": "cookies",
-   "fridge": "short_fridge",
-   "ketchup": "ketchup",
-   "microwave": "microwave",
-   "mug": "white_yellow_mug",
-   "plate": "plate",
-   "popcorn": "popcorn",
-   "tray": "wooden_tray"
-  },
-  "log": [
-   [
-    12,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    13,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    14,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    15,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    16,
-    "layout",
-    "no non-overlapping layout"
-   ]
-  ],
-  "secs": 181
- },
- {
-  "scene": 8,
-  "room": "study",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S08_lift_the_salad_dressing",
-    "language": "lift the salad dressing",
-    "bddl_file": "S08_lift_the_salad_dressing.bddl",
-    "init_file": "S08_lift_the_salad_dressing.pruned_init",
-    "scene": 8,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "salad dressing",
-      "lift",
-      "lift"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above salad dressing": 0.026
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S08_put_the_mug_on_the_shelf",
-    "language": "put the mug on the shelf",
-    "bddl_file": "S08_put_the_mug_on_the_shelf.bddl",
-    "init_file": "S08_put_the_mug_on_the_shelf.pruned_init",
-    "scene": 8,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "mug",
-      "shelf",
-      "on the shelf"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above mug": 0.024,
-      "shelf": 0.028
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S08_put_the_cookies_on_the_storage_box_and_put_the_ramekin_in_the_left_of_the_caddy",
-    "language": "put the cookies on the storage box and put the ramekin in the left of the caddy",
-    "bddl_file": "S08_put_the_cookies_on_the_storage_box_and_put_the_ramekin_in_the_left_of_the_caddy.bddl",
-    "init_file": "S08_put_the_cookies_on_the_storage_box_and_put_the_ramekin_in_the_left_of_the_caddy.pruned_init",
-    "scene": 8,
-    "room": "study",
-    "kind": 2,
-    "steps": [
-     [
-      "cookies",
-      "storage box",
-      "on the storage box"
-     ],
-     [
-      "ramekin",
-      "caddy",
-      "in the left of the caddy"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above cookies": 0.03,
-      "storage box": 0.027,
-      "above ramekin": 0.029,
-      "caddy": 0.026
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "shelf": [
-    -0.144,
-    0.376,
-    0.0
-   ],
-   "caddy": [
-    -0.085,
-    0.03,
-    3.142
-   ],
-   "storage box": [
-    0.098,
-    -0.239,
-    1.571
-   ],
-   "mug": [
-    0.11,
-    -0.08,
-    0.0
-   ],
-   "ramekin": [
-    0.104,
-    0.255,
-    0.0
-   ],
-   "cookies": [
-    -0.218,
-    -0.259,
-    0.0
-   ],
-   "salad dressing": [
-    -0.262,
-    0.177,
-    0.0
-   ]
-  },
-  "classes": {
-   "caddy": "desk_caddy",
-   "cookies": "cookies",
-   "mug": "white_yellow_mug",
-   "ramekin": "glazed_rim_porcelain_ramekin",
-   "salad dressing": "salad_dressing",
-   "shelf": "wooden_two_layer_shelf",
-   "storage box": "white_storage_box"
-  },
-  "log": [],
-  "secs": 203
- },
- {
-  "scene": 9,
-  "room": "study",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S09_put_the_butter_in_the_right_of_the_caddy",
-    "language": "put the butter in the right of the caddy",
-    "bddl_file": "S09_put_the_butter_in_the_right_of_the_caddy.bddl",
-    "init_file": "S09_put_the_butter_in_the_right_of_the_caddy.pruned_init",
-    "scene": 9,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "butter",
-      "caddy",
-      "in the right of the caddy"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": 0.0,
-     "reach_m": {
-      "above butter": 0.027,
-      "caddy": 0.026
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S09_put_the_cream_cheese_in_the_bookcase",
-    "language": "put the cream cheese in the bookcase",
-    "bddl_file": "S09_put_the_cream_cheese_in_the_bookcase.bddl",
-    "init_file": "S09_put_the_cream_cheese_in_the_bookcase.pruned_init",
-    "scene": 9,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "cream cheese",
-      "bookcase",
-      "in the bookcase"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": 0.0,
-     "reach_m": {
-      "above cream cheese": 0.025,
-      "bookcase opening": 0.028
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S09_put_the_ketchup_on_the_shelf",
-    "language": "put the ketchup on the shelf",
-    "bddl_file": "S09_put_the_ketchup_on_the_shelf.bddl",
-    "init_file": "S09_put_the_ketchup_on_the_shelf.pruned_init",
-    "scene": 9,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "ketchup",
-      "shelf",
-      "on the shelf"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": 0.0,
-     "reach_m": {
-      "above ketchup": 0.025,
-      "shelf": 0.028
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "bookcase": [
-    0.068,
-    0.376,
-    0.0
-   ],
-   "shelf": [
-    -0.124,
-    -0.376,
-    3.142
-   ],
-   "caddy": [
-    -0.2,
-    -0.134,
-    1.571
-   ],
-   "cream cheese": [
-    0.12,
-    0.172,
-    0.0
-   ],
-   "butter": [
-    0.038,
-    0.07,
-    0.0
-   ],
-   "ketchup": [
-    0.138,
-    -0.242,
-    0.0
-   ]
-  },
-  "classes": {
-   "bookcase": "wooden_shelf",
-   "butter": "butter",
-   "caddy": "desk_caddy",
-   "cream cheese": "cream_cheese",
-   "ketchup": "ketchup",
-   "shelf": "wooden_two_layer_shelf"
-  },
-  "log": [],
-  "secs": 181
- },
- {
-  "scene": 10,
-  "room": "study",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S10_put_the_cream_cheese_in_the_bowl",
-    "language": "put the cream cheese in the bowl",
-    "bddl_file": "S10_put_the_cream_cheese_in_the_bowl.bddl",
-    "init_file": "S10_put_the_cream_cheese_in_the_bowl.pruned_init",
-    "scene": 10,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "cream cheese",
-      "bowl",
-      "in the bowl"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.0,
-     "reach_m": {
-      "above cream cheese": 0.023,
-      "bowl": 0.027
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S10_put_the_popcorn_in_the_bookcase",
-    "language": "put the popcorn in the bookcase",
-    "bddl_file": "S10_put_the_popcorn_in_the_bookcase.bddl",
-    "init_file": "S10_put_the_popcorn_in_the_bookcase.pruned_init",
-    "scene": 10,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "popcorn",
-      "bookcase",
-      "in the bookcase"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.0,
-     "reach_m": {
-      "above popcorn": 0.024,
-      "bookcase opening": 0.03
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "bookcase": [
-    -0.032,
-    0.376,
-    0.0
-   ],
-   "bowl": [
-    -0.047,
-    -0.156,
-    0.0
-   ],
-   "cream cheese": [
-    -0.06,
-    0.152,
-    0.0
-   ],
-   "popcorn": [
-    -0.049,
-    0.031,
-    0.0
-   ]
-  },
-  "classes": {
-   "bookcase": "wooden_shelf",
-   "bowl": "akita_black_bowl",
-   "cream cheese": "cream_cheese",
-   "popcorn": "popcorn"
-  },
-  "log": [],
-  "secs": 135
- },
- {
-  "scene": 11,
-  "room": "study",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S11_lift_the_moka_pot",
-    "language": "lift the moka pot",
-    "bddl_file": "S11_lift_the_moka_pot.bddl",
-    "init_file": "S11_lift_the_moka_pot.pruned_init",
-    "scene": 11,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "moka pot",
-      "lift",
-      "lift"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.0,
-     "reach_m": {
-      "above moka pot": 0.029
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S11_put_the_chocolate_pudding_in_the_bookcase",
-    "language": "put the chocolate pudding in the bookcase",
-    "bddl_file": "S11_put_the_chocolate_pudding_in_the_bookcase.bddl",
-    "init_file": "S11_put_the_chocolate_pudding_in_the_bookcase.pruned_init",
-    "scene": 11,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "chocolate pudding",
-      "bookcase",
-      "in the bookcase"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.0,
-     "reach_m": {
-      "above chocolate pudding": 0.029,
-      "bookcase opening": 0.024
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S11_put_the_bbq_sauce_on_the_cabinet_and_put_the_cream_cheese_in_the_right_of_the_caddy",
-    "language": "put the bbq sauce on the cabinet and put the cream cheese in the right of the caddy",
-    "bddl_file": "S11_put_the_bbq_sauce_on_the_cabinet_and_put_the_cream_cheese_in_the_right_of_the_caddy.bddl",
-    "init_file": "S11_put_the_bbq_sauce_on_the_cabinet_and_put_the_cream_cheese_in_the_right_of_the_caddy.pruned_init",
-    "scene": 11,
-    "room": "study",
-    "kind": 2,
-    "steps": [
-     [
-      "bbq sauce",
-      "cabinet top",
-      "on the cabinet"
-     ],
-     [
-      "cream cheese",
-      "caddy",
-      "in the right of the caddy"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.0,
-     "reach_m": {
-      "above bbq sauce": 0.026,
-      "cabinet top": 0.028,
-      "above cream cheese": 0.028,
-      "caddy": 0.029
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "cabinet": [
-    -0.193,
-    0.391,
-    0.0
-   ],
-   "bookcase": [
-    -0.112,
-    -0.376,
-    3.142
-   ],
-   "caddy": [
-    0.055,
-    -0.03,
-    3.142
-   ],
-   "moka pot": [
-    -0.16,
-    0.164,
-    0.0
-   ],
-   "cream cheese": [
-    0.12,
-    0.272,
-    0.0
-   ],
-   "chocolate pudding": [
-    -0.16,
-    -0.047,
-    0.0
-   ],
-   "bbq sauce": [
-    0.094,
-    -0.306,
-    0.0
-   ]
-  },
-  "classes": {
-   "bbq sauce": "bbq_sauce",
-   "bookcase": "wooden_shelf",
-   "cabinet": "white_cabinet",
-   "caddy": "desk_caddy",
-   "chocolate pudding": "chocolate_pudding",
-   "cream cheese": "cream_cheese",
-   "moka pot": "moka_pot"
-  },
-  "log": [],
-  "secs": 211
- },
- {
-  "scene": 12,
-  "room": "study",
-  "ok": true,
-  "attempts": 17,
-  "tasks": [
-   {
-    "name": "S12_put_the_chocolate_pudding_in_the_left_of_the_caddy",
-    "language": "put the chocolate pudding in the left of the caddy",
-    "bddl_file": "S12_put_the_chocolate_pudding_in_the_left_of_the_caddy.bddl",
-    "init_file": "S12_put_the_chocolate_pudding_in_the_left_of_the_caddy.pruned_init",
-    "scene": 12,
-    "room": "study",
-    "kind": 1,
-    "steps": [
-     [
-      "chocolate pudding",
-      "caddy",
-      "in the left of the caddy"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above chocolate pudding": 0.027,
-      "caddy": 0.022
-     },
-     "init_tries": 52
-    }
-   },
-   {
-    "name": "S12_put_the_alphabet_soup_on_the_storage_box_and_put_the_moka_pot_in_front_of_the_plate",
-    "language": "put the alphabet soup on the storage box and put the moka pot in front of the plate",
-    "bddl_file": "S12_put_the_alphabet_soup_on_the_storage_box_and_put_the_moka_pot_in_front_of_the_plate.bddl",
-    "init_file": "S12_put_the_alphabet_soup_on_the_storage_box_and_put_the_moka_pot_in_front_of_the_plate.pruned_init",
-    "scene": 12,
-    "room": "study",
-    "kind": 2,
-    "steps": [
-     [
-      "alphabet soup",
-      "storage box",
-      "on the storage box"
-     ],
-     [
-      "moka pot",
-      "beside",
-      "in front of the plate"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above alphabet soup": 0.027,
-      "storage box": 0.029,
-      "above moka pot": 0.029,
-      "beside": 0.023
-     },
-     "init_tries": 56
-    }
-   },
-   {
-    "name": "S12_put_the_popcorn_on_the_plate_and_put_the_book_on_the_cabinet",
-    "language": "put the popcorn on the plate and put the book on the cabinet",
-    "bddl_file": "S12_put_the_popcorn_on_the_plate_and_put_the_book_on_the_cabinet.bddl",
-    "init_file": "S12_put_the_popcorn_on_the_plate_and_put_the_book_on_the_cabinet.pruned_init",
-    "scene": 12,
-    "room": "study",
-    "kind": 2,
-    "steps": [
-     [
-      "popcorn",
-      "plate",
-      "on the plate"
-     ],
-     [
-      "book",
-      "cabinet top",
-      "on the cabinet"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.002,
-     "reach_m": {
-      "above popcorn": 0.026,
-      "plate": 0.025,
-      "above book": 0.022,
-      "cabinet top": 0.03
-     },
-     "init_tries": 53
-    }
-   }
-  ],
-  "layout": {
-   "cabinet": [
-    -0.153,
-    -0.391,
-    3.142
-   ],
-   "caddy": [
-    0.075,
-    0.01,
-    3.142
-   ],
-   "moka pot": [
-    -0.239,
-    0.264,
-    0.0
-   ],
-   "storage box": [
-    -0.109,
-    0.249,
-    0.0
-   ],
-   "plate": [
-    -0.211,
-    0.059,
-    0.0
-   ],
-   "book": [
-    0.074,
-    -0.295,
-    0.0
-   ],
-   "chocolate pudding": [
     -0.1,
-    -0.127,
+    -0.186,
+    0.0
+   ],
+   "stove": [
+    -0.24,
+    0.19,
+    1.571
+   ],
+   "macaroni": [
+    -0.107,
+    0.072,
+    0.0
+   ],
+   "cream cheese": [
+    -0.28,
+    -0.329,
     0.0
    ],
    "alphabet soup": [
-    -0.049,
+    -0.128,
     -0.038,
     0.0
    ],
-   "popcorn": [
-    -0.169,
-    -0.189,
+   "ketchup": [
+    -0.301,
+    -0.062,
+    0.0
+   ],
+   "frying pan": [
+    -0.24,
+    0.19,
     0.0
    ]
   },
   "classes": {
    "alphabet soup": "alphabet_soup",
-   "book": "yellow_book",
-   "cabinet": "white_cabinet",
-   "caddy": "desk_caddy",
-   "chocolate pudding": "chocolate_pudding",
-   "moka pot": "moka_pot",
-   "plate": "plate",
-   "popcorn": "popcorn",
-   "storage box": "white_storage_box"
+   "cream cheese": "cream_cheese",
+   "fridge": "short_fridge",
+   "frying pan": "chefmate_8_frypan",
+   "ketchup": "ketchup",
+   "macaroni": "macaroni_and_cheese",
+   "stove": "flat_stove",
+   "tray": "wooden_tray"
   },
   "log": [
    [
-    11,
+    3,
     "layout",
     "no non-overlapping layout"
    ],
    [
-    12,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    13,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    14,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    15,
-    "put the chocolate pudding in the left of the caddy",
+    4,
+    "turn on the stove and put the cream cheese in the pan",
     {
-     "drift": 4.819661020294401,
-     "low": -0.8997872052073743,
+     "drift": 1.6514567491299204e-15,
+     "low": -0.004237494667114539,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    5,
+    "put the ketchup in the fridge and put the macaroni in the tray",
+    "expert 0/3"
+   ],
+   [
+    6,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    7,
+    "lift the alphabet soup",
+    {
+     "drift": 1.0,
+     "low": -0.9094105427057643,
      "start_success": false,
      "forced": false,
      "view": true,
@@ -1700,20 +1297,47 @@
     }
    ]
   ],
-  "secs": 266
+  "secs": 278
  },
  {
-  "scene": 13,
+  "scene": 10,
   "room": "study",
   "ok": true,
-  "attempts": 10,
+  "attempts": 12,
   "tasks": [
    {
-    "name": "S13_put_the_book_in_the_bottom_drawer_and_put_the_milk_on_the_shelf",
-    "language": "put the book in the bottom drawer and put the milk on the shelf",
-    "bddl_file": "S13_put_the_book_in_the_bottom_drawer_and_put_the_milk_on_the_shelf.bddl",
-    "init_file": "S13_put_the_book_in_the_bottom_drawer_and_put_the_milk_on_the_shelf.pruned_init",
-    "scene": 13,
+    "name": "S10_put_the_milk_on_the_cabinet",
+    "language": "put the milk on the cabinet",
+    "bddl_file": "S10_put_the_milk_on_the_cabinet.bddl",
+    "init_file": "S10_put_the_milk_on_the_cabinet.pruned_init",
+    "scene": 10,
+    "room": "study",
+    "kind": 1,
+    "steps": [
+     [
+      "milk",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above milk": 0.026,
+      "cabinet top": 0.025
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S10_put_the_book_in_the_bottom_drawer_and_put_the_orange_juice_on_the_shelf",
+    "language": "put the book in the bottom drawer and put the orange juice on the shelf",
+    "bddl_file": "S10_put_the_book_in_the_bottom_drawer_and_put_the_orange_juice_on_the_shelf.bddl",
+    "init_file": "S10_put_the_book_in_the_bottom_drawer_and_put_the_orange_juice_on_the_shelf.pruned_init",
+    "scene": 10,
     "room": "study",
     "kind": 2,
     "steps": [
@@ -1723,7 +1347,7 @@
       "in the bottom drawer"
      ],
      [
-      "milk",
+      "orange juice",
       "shelf",
       "on the shelf"
      ]
@@ -1731,22 +1355,175 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.008,
+     "min_height_m": -0.001,
      "reach_m": {
-      "above book": 0.024,
-      "drawer": 0.026,
-      "above milk": 0.024,
-      "shelf": 0.025
+      "above book": 0.028,
+      "drawer": 0.028,
+      "above orange juice": 0.028,
+      "shelf": 0.026
      },
-     "init_tries": 51
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "cabinet": [
+    -0.233,
+    0.391,
+    0.0
+   ],
+   "shelf": [
+    -0.144,
+    -0.376,
+    3.142
+   ],
+   "book": [
+    -0.166,
+    -0.055,
+    0.0
+   ],
+   "orange juice": [
+    0.106,
+    -0.083,
+    0.0
+   ],
+   "milk": [
+    -0.254,
+    -0.163,
+    0.0
+   ]
+  },
+  "classes": {
+   "book": "yellow_book",
+   "cabinet": "white_cabinet",
+   "milk": "milk",
+   "orange juice": "orange_juice",
+   "shelf": "wooden_two_layer_shelf"
+  },
+  "log": [
+   [
+    6,
+    "put the milk on the cabinet",
+    {
+     "drift": 3.5493527563892463e-15,
+     "low": -0.0006632570903359891,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    7,
+    "put the book in the bottom drawer and put the orange juice on the shelf",
+    "expert 1/3"
+   ],
+   [
+    8,
+    "put the milk on the cabinet",
+    {
+     "drift": 3.469446951953614e-15,
+     "low": -0.0006632570903359891,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    9,
+    "put the book in the bottom drawer and put the orange juice on the shelf",
+    {
+     "drift": 0.0,
+     "low": -0.0006632570903359891,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    10,
+    "put the milk on the cabinet",
+    {
+     "drift": 6.938893903907228e-15,
+     "low": -0.0006632570903359891,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ]
+  ],
+  "secs": 191
+ },
+ {
+  "scene": 11,
+  "room": "study",
+  "ok": true,
+  "attempts": 6,
+  "tasks": [
+   {
+    "name": "S11_put_the_cookies_in_the_middle_drawer",
+    "language": "put the cookies in the middle drawer",
+    "bddl_file": "S11_put_the_cookies_in_the_middle_drawer.bddl",
+    "init_file": "S11_put_the_cookies_in_the_middle_drawer.pruned_init",
+    "scene": 11,
+    "room": "study",
+    "kind": 1,
+    "steps": [
+     [
+      "cookies",
+      "drawer",
+      "in the middle drawer"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above cookies": 0.023,
+      "drawer": 0.027
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
     }
    },
    {
-    "name": "S13_put_the_ketchup_on_the_storage_box_and_put_the_mug_on_the_cabinet",
-    "language": "put the ketchup on the storage box and put the mug on the cabinet",
-    "bddl_file": "S13_put_the_ketchup_on_the_storage_box_and_put_the_mug_on_the_cabinet.bddl",
-    "init_file": "S13_put_the_ketchup_on_the_storage_box_and_put_the_mug_on_the_cabinet.pruned_init",
-    "scene": 13,
+    "name": "S11_put_the_mug_on_the_shelf",
+    "language": "put the mug on the shelf",
+    "bddl_file": "S11_put_the_mug_on_the_shelf.bddl",
+    "init_file": "S11_put_the_mug_on_the_shelf.pruned_init",
+    "scene": 11,
+    "room": "study",
+    "kind": 1,
+    "steps": [
+     [
+      "mug",
+      "shelf",
+      "on the shelf"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above mug": 0.024,
+      "shelf": 0.028
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S11_put_the_ketchup_on_the_storage_box_and_put_the_orange_juice_on_the_cabinet",
+    "language": "put the ketchup on the storage box and put the orange juice on the cabinet",
+    "bddl_file": "S11_put_the_ketchup_on_the_storage_box_and_put_the_orange_juice_on_the_cabinet.bddl",
+    "init_file": "S11_put_the_ketchup_on_the_storage_box_and_put_the_orange_juice_on_the_cabinet.pruned_init",
+    "scene": 11,
     "room": "study",
     "kind": 2,
     "steps": [
@@ -1756,7 +1533,7 @@
       "on the storage box"
      ],
      [
-      "mug",
+      "orange juice",
       "cabinet top",
       "on the cabinet"
      ]
@@ -1764,106 +1541,86 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.008,
+     "min_height_m": -0.002,
      "reach_m": {
-      "above ketchup": 0.028,
-      "storage box": 0.023,
-      "above mug": 0.024,
-      "cabinet top": 0.03
+      "above ketchup": 0.024,
+      "storage box": 0.028,
+      "above orange juice": 0.023,
+      "cabinet top": 0.022
      },
-     "init_tries": 56
+     "init_tries": 50,
+     "expert_ok": "2/3"
     }
    }
   ],
   "layout": {
-   "shelf": [
-    -0.084,
-    0.376,
+   "cabinet": [
+    -0.193,
+    0.391,
     0.0
    ],
-   "cabinet": [
-    -0.133,
-    -0.391,
+   "shelf": [
+    -0.204,
+    -0.376,
     3.142
    ],
    "storage box": [
-    -0.142,
-    0.041,
-    1.571
-   ],
-   "mug": [
-    0.07,
-    0.0,
+    0.031,
+    0.129,
     0.0
    ],
-   "book": [
-    0.014,
-    0.165,
+   "mug": [
+    -0.05,
+    -0.02,
+    0.0
+   ],
+   "cookies": [
+    -0.039,
+    -0.139,
     0.0
    ],
    "ketchup": [
-    -0.022,
-    0.058,
+    0.078,
+    -0.082,
     0.0
    ],
-   "milk": [
-    -0.094,
-    0.157,
+   "orange juice": [
+    0.146,
+    -0.223,
     0.0
    ]
   },
   "classes": {
-   "book": "yellow_book",
    "cabinet": "white_cabinet",
+   "cookies": "cookies",
    "ketchup": "ketchup",
-   "milk": "milk",
-   "mug": "red_coffee_mug",
+   "mug": "white_yellow_mug",
+   "orange juice": "orange_juice",
    "shelf": "wooden_two_layer_shelf",
    "storage box": "white_storage_box"
   },
   "log": [
    [
-    4,
-    "put the book in the bottom drawer and put the milk on the shelf",
-    {
-     "drift": 6.994405055138486e-15,
-     "low": -0.007815279234344552,
-     "start_success": false,
-     "forced": false,
-     "view": false,
-     "reach": {}
-    }
-   ],
-   [
-    5,
-    "put the book in the bottom drawer and put the milk on the shelf",
-    {
-     "drift": 1.0,
-     "low": -0.007815279234344552,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    6,
-    "put the book in the bottom drawer and put the milk on the shelf",
-    {
-     "drift": 1.0,
-     "low": -0.007815279234344663,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    7,
-    "put the ketchup on the storage box and put the mug on the cabinet",
+    0,
+    "put the cookies in the middle drawer",
     {
      "drift": 3.469446951953614e-15,
-     "low": -0.007815279234344552,
+     "low": -0.002195654584990603,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {
+      "above cookies": 0.077,
+      "drawer": 0.028
+     }
+    }
+   ],
+   [
+    1,
+    "put the mug on the shelf",
+    {
+     "drift": 3.0269169999247415e-15,
+     "low": -0.002195654584990603,
      "start_success": false,
      "forced": false,
      "view": false,
@@ -1871,11 +1628,203 @@
     }
    ],
    [
-    8,
-    "put the ketchup on the storage box and put the mug on the cabinet",
+    2,
+    "put the cookies in the middle drawer",
     {
-     "drift": 6.938893903907228e-15,
-     "low": -0.007815279234344552,
+     "drift": 2.063081476116683e-16,
+     "low": -0.002195654584990603,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {
+      "above cookies": 0.051,
+      "drawer": 0.022
+     }
+    }
+   ],
+   [
+    3,
+    "put the ketchup on the storage box and put the orange juice on the cabinet",
+    {
+     "drift": 3.469446951953614e-15,
+     "low": -0.002195654584990603,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    4,
+    "put the cookies in the middle drawer",
+    {
+     "drift": 1.0,
+     "low": -0.003568543703407645,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {}
+    }
+   ]
+  ],
+  "secs": 217
+ },
+ {
+  "scene": 12,
+  "room": "study",
+  "ok": true,
+  "attempts": 23,
+  "tasks": [
+   {
+    "name": "S12_put_the_alphabet_soup_on_the_cabinet",
+    "language": "put the alphabet soup on the cabinet",
+    "bddl_file": "S12_put_the_alphabet_soup_on_the_cabinet.bddl",
+    "init_file": "S12_put_the_alphabet_soup_on_the_cabinet.pruned_init",
+    "scene": 12,
+    "room": "study",
+    "kind": 1,
+    "steps": [
+     [
+      "alphabet soup",
+      "cabinet top",
+      "on the cabinet"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above alphabet soup": 0.023,
+      "cabinet top": 0.023
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S12_put_the_moka_pot_on_the_shelf_and_put_the_butter_in_the_left_of_the_caddy",
+    "language": "put the moka pot on the shelf and put the butter in the left of the caddy",
+    "bddl_file": "S12_put_the_moka_pot_on_the_shelf_and_put_the_butter_in_the_left_of_the_caddy.bddl",
+    "init_file": "S12_put_the_moka_pot_on_the_shelf_and_put_the_butter_in_the_left_of_the_caddy.pruned_init",
+    "scene": 12,
+    "room": "study",
+    "kind": 2,
+    "steps": [
+     [
+      "moka pot",
+      "shelf",
+      "on the shelf"
+     ],
+     [
+      "butter",
+      "caddy",
+      "in the left of the caddy"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above moka pot": 0.029,
+      "shelf": 0.028,
+      "above butter": 0.024,
+      "caddy": 0.023
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "shelf": [
+    -0.144,
+    -0.376,
+    3.142
+   ],
+   "cabinet": [
+    -0.253,
+    0.391,
+    0.0
+   ],
+   "caddy": [
+    -0.005,
+    0.25,
+    3.142
+   ],
+   "moka pot": [
+    -0.18,
+    -0.016,
+    0.0
+   ],
+   "butter": [
+    -0.002,
+    -0.09,
+    0.0
+   ],
+   "alphabet soup": [
+    0.111,
+    -0.058,
+    0.0
+   ]
+  },
+  "classes": {
+   "alphabet soup": "alphabet_soup",
+   "butter": "butter",
+   "cabinet": "wooden_cabinet",
+   "caddy": "desk_caddy",
+   "moka pot": "moka_pot",
+   "shelf": "wooden_two_layer_shelf"
+  },
+  "log": [
+   [
+    17,
+    "put the alphabet soup on the cabinet",
+    {
+     "drift": 5.412337245047638e-16,
+     "low": -0.002064979391585786,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    18,
+    "put the moka pot on the shelf and put the butter in the left of the caddy",
+    "expert 1/3"
+   ],
+   [
+    19,
+    "put the alphabet soup on the cabinet",
+    {
+     "drift": 1.304512053934559e-15,
+     "low": -0.002064979391585786,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    20,
+    "put the moka pot on the shelf and put the butter in the left of the caddy",
+    {
+     "drift": 2.8895890415671624e-15,
+     "low": -0.002064979391585897,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ],
+   [
+    21,
+    "put the alphabet soup on the cabinet",
+    {
+     "drift": 1.8735013540549517e-15,
+     "low": -0.002064979391585897,
      "start_success": false,
      "forced": false,
      "view": false,
@@ -1883,51 +1832,342 @@
     }
    ]
   ],
-  "secs": 201
+  "secs": 255
  },
  {
-  "scene": 14,
-  "room": "living room",
+  "scene": 13,
+  "room": "study",
   "ok": true,
-  "attempts": 4,
+  "attempts": 3,
   "tasks": [
    {
-    "name": "S14_put_the_cream_cheese_in_the_pan",
-    "language": "put the cream cheese in the pan",
-    "bddl_file": "S14_put_the_cream_cheese_in_the_pan.bddl",
-    "init_file": "S14_put_the_cream_cheese_in_the_pan.pruned_init",
-    "scene": 14,
-    "room": "living room",
+    "name": "S13_lift_the_bowl",
+    "language": "lift the bowl",
+    "bddl_file": "S13_lift_the_bowl.bddl",
+    "init_file": "S13_lift_the_bowl.pruned_init",
+    "scene": 13,
+    "room": "study",
     "kind": 1,
     "steps": [
      [
-      "cream cheese",
-      "pan",
-      "in the pan"
+      "bowl",
+      "lift",
+      "lift"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.007,
+     "min_height_m": -0.002,
      "reach_m": {
-      "above cream cheese": 0.025,
-      "pan": 0.027
+      "above bowl": 0.027
      },
-     "init_tries": 54
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S14_put_the_moka_pot_in_the_tray",
-    "language": "put the moka pot in the tray",
-    "bddl_file": "S14_put_the_moka_pot_in_the_tray.bddl",
-    "init_file": "S14_put_the_moka_pot_in_the_tray.pruned_init",
+    "name": "S13_put_the_book_behind_the_bowl_and_put_the_ramekin_on_the_plate",
+    "language": "put the book behind the bowl and put the ramekin on the plate",
+    "bddl_file": "S13_put_the_book_behind_the_bowl_and_put_the_ramekin_on_the_plate.bddl",
+    "init_file": "S13_put_the_book_behind_the_bowl_and_put_the_ramekin_on_the_plate.pruned_init",
+    "scene": 13,
+    "room": "study",
+    "kind": 2,
+    "steps": [
+     [
+      "book",
+      "beside",
+      "behind the bowl"
+     ],
+     [
+      "ramekin",
+      "plate",
+      "on the plate"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above book": 0.027,
+      "beside": 0.028,
+      "above ramekin": 0.024,
+      "plate": 0.03
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S13_put_the_butter_in_the_bowl_and_put_the_tomato_sauce_on_the_storage_box",
+    "language": "put the butter in the bowl and put the tomato sauce on the storage box",
+    "bddl_file": "S13_put_the_butter_in_the_bowl_and_put_the_tomato_sauce_on_the_storage_box.bddl",
+    "init_file": "S13_put_the_butter_in_the_bowl_and_put_the_tomato_sauce_on_the_storage_box.pruned_init",
+    "scene": 13,
+    "room": "study",
+    "kind": 2,
+    "steps": [
+     [
+      "butter",
+      "bowl",
+      "in the bowl"
+     ],
+     [
+      "tomato sauce",
+      "storage box",
+      "on the storage box"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.002,
+     "reach_m": {
+      "above butter": 0.025,
+      "bowl": 0.029,
+      "above tomato sauce": 0.022,
+      "storage box": 0.027
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   }
+  ],
+  "layout": {
+   "storage box": [
+    -0.089,
+    -0.051,
+    0.0
+   ],
+   "plate": [
+    0.049,
+    0.099,
+    0.0
+   ],
+   "book": [
+    -0.046,
+    -0.235,
+    0.0
+   ],
+   "bowl": [
+    -0.127,
+    0.164,
+    0.0
+   ],
+   "ramekin": [
+    0.024,
+    0.295,
+    0.0
+   ],
+   "butter": [
+    -0.242,
+    0.31,
+    0.0
+   ],
+   "tomato sauce": [
+    -0.229,
+    -0.059,
+    0.0
+   ]
+  },
+  "classes": {
+   "book": "yellow_book",
+   "bowl": "white_bowl",
+   "butter": "butter",
+   "plate": "plate",
+   "ramekin": "glazed_rim_porcelain_ramekin",
+   "storage box": "white_storage_box",
+   "tomato sauce": "tomato_sauce"
+  },
+  "log": [
+   [
+    0,
+    "lift the bowl",
+    "expert 0/3"
+   ],
+   [
+    1,
+    "lift the bowl",
+    "expert 1/3"
+   ]
+  ],
+  "secs": 244
+ },
+ {
+  "scene": 14,
+  "room": "study",
+  "ok": true,
+  "attempts": 3,
+  "tasks": [
+   {
+    "name": "S14_put_the_book_on_the_storage_box",
+    "language": "put the book on the storage box",
+    "bddl_file": "S14_put_the_book_on_the_storage_box.bddl",
+    "init_file": "S14_put_the_book_on_the_storage_box.pruned_init",
     "scene": 14,
+    "room": "study",
+    "kind": 1,
+    "steps": [
+     [
+      "book",
+      "storage box",
+      "on the storage box"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.0,
+     "reach_m": {
+      "above book": 0.029,
+      "storage box": 0.022
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   },
+   {
+    "name": "S14_put_the_ketchup_on_the_shelf_and_put_the_cream_cheese_in_the_right_of_the_caddy",
+    "language": "put the ketchup on the shelf and put the cream cheese in the right of the caddy",
+    "bddl_file": "S14_put_the_ketchup_on_the_shelf_and_put_the_cream_cheese_in_the_right_of_the_caddy.bddl",
+    "init_file": "S14_put_the_ketchup_on_the_shelf_and_put_the_cream_cheese_in_the_right_of_the_caddy.pruned_init",
+    "scene": 14,
+    "room": "study",
+    "kind": 2,
+    "steps": [
+     [
+      "ketchup",
+      "shelf",
+      "on the shelf"
+     ],
+     [
+      "cream cheese",
+      "caddy",
+      "in the right of the caddy"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.0,
+     "reach_m": {
+      "above ketchup": 0.025,
+      "shelf": 0.026,
+      "above cream cheese": 0.03,
+      "caddy": 0.024
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "shelf": [
+    -0.204,
+    -0.376,
+    3.142
+   ],
+   "caddy": [
+    -0.165,
+    0.01,
+    3.142
+   ],
+   "storage box": [
+    0.091,
+    -0.171,
+    0.0
+   ],
+   "book": [
+    0.114,
+    0.265,
+    0.0
+   ],
+   "cream cheese": [
+    0.0,
+    -0.048,
+    0.0
+   ],
+   "ketchup": [
+    0.118,
+    0.058,
+    0.0
+   ]
+  },
+  "classes": {
+   "book": "black_book",
+   "caddy": "desk_caddy",
+   "cream cheese": "cream_cheese",
+   "ketchup": "ketchup",
+   "shelf": "wooden_two_layer_shelf",
+   "storage box": "white_storage_box"
+  },
+  "log": [
+   [
+    0,
+    "put the book on the storage box",
+    "expert 1/3"
+   ],
+   [
+    1,
+    "put the ketchup on the shelf and put the cream cheese in the right of the caddy",
+    {
+     "drift": 1.1102230246251565e-16,
+     "low": -0.00044176484168612085,
+     "start_success": false,
+     "forced": false,
+     "view": false,
+     "reach": {}
+    }
+   ]
+  ],
+  "secs": 152
+ },
+ {
+  "scene": 15,
+  "room": "living room",
+  "ok": true,
+  "attempts": 3,
+  "tasks": [
+   {
+    "name": "S15_put_the_bbq_sauce_on_the_lower_shelf",
+    "language": "put the bbq sauce on the lower shelf",
+    "bddl_file": "S15_put_the_bbq_sauce_on_the_lower_shelf.bddl",
+    "init_file": "S15_put_the_bbq_sauce_on_the_lower_shelf.pruned_init",
+    "scene": 15,
     "room": "living room",
     "kind": 1,
     "steps": [
      [
-      "moka pot",
+      "bbq sauce",
+      "shelf",
+      "on the lower shelf"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": 0.0,
+     "reach_m": {
+      "above bbq sauce": 0.029,
+      "shelf opening": 0.027
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   },
+   {
+    "name": "S15_put_the_ramekin_in_the_tray",
+    "language": "put the ramekin in the tray",
+    "bddl_file": "S15_put_the_ramekin_in_the_tray.bddl",
+    "init_file": "S15_put_the_ramekin_in_the_tray.pruned_init",
+    "scene": 15,
+    "room": "living room",
+    "kind": 1,
+    "steps": [
+     [
+      "ramekin",
       "tray",
       "in the tray"
      ]
@@ -1935,50 +2175,51 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.007,
+     "min_height_m": 0.0,
      "reach_m": {
-      "above moka pot": 0.024,
+      "above ramekin": 0.026,
       "tray": 0.029
      },
-     "init_tries": 51
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
-   "frying pan": [
-    -0.08,
-    0.03,
+   "shelf": [
+    -0.124,
+    0.376,
     0.0
    ],
    "tray": [
-    0.04,
-    -0.266,
+    -0.04,
+    -0.246,
     0.0
    ],
-   "moka pot": [
-    0.12,
-    0.084,
+   "ramekin": [
+    0.124,
+    0.175,
     0.0
    ],
-   "cream cheese": [
-    0.14,
-    -0.068,
+   "bbq sauce": [
+    -0.205,
+    0.074,
     0.0
    ]
   },
   "classes": {
-   "cream cheese": "cream_cheese",
-   "frying pan": "chefmate_8_frypan",
-   "moka pot": "moka_pot",
+   "bbq sauce": "bbq_sauce",
+   "ramekin": "glazed_rim_porcelain_ramekin",
+   "shelf": "wooden_two_layer_shelf",
    "tray": "wooden_tray"
   },
   "log": [
    [
     0,
-    "put the cream cheese in the pan",
+    "put the bbq sauce on the lower shelf",
     {
-     "drift": 1.0,
-     "low": -0.459536637500857,
+     "drift": 1.1102230246251565e-13,
+     "low": -0.43651730399149,
      "start_success": false,
      "forced": false,
      "view": true,
@@ -1987,50 +2228,38 @@
    ],
    [
     1,
-    "put the cream cheese in the pan",
+    "put the ramekin in the tray",
     {
-     "drift": 1.0,
-     "low": -0.46375903954850284,
+     "drift": 0.0,
+     "low": 0.00025714010990196545,
      "start_success": false,
      "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    2,
-    "put the cream cheese in the pan",
-    {
-     "drift": 1.0,
-     "low": -0.02699291612654431,
-     "start_success": false,
-     "forced": false,
-     "view": true,
+     "view": false,
      "reach": {}
     }
    ]
   ],
-  "secs": 150
+  "secs": 100
  },
  {
-  "scene": 15,
+  "scene": 16,
   "room": "living room",
   "ok": true,
-  "attempts": 20,
+  "attempts": 1,
   "tasks": [
    {
-    "name": "S15_lift_the_milk",
-    "language": "lift the milk",
-    "bddl_file": "S15_lift_the_milk.bddl",
-    "init_file": "S15_lift_the_milk.pruned_init",
-    "scene": 15,
+    "name": "S16_put_the_cookies_on_the_plate",
+    "language": "put the cookies on the plate",
+    "bddl_file": "S16_put_the_cookies_on_the_plate.bddl",
+    "init_file": "S16_put_the_cookies_on_the_plate.pruned_init",
+    "scene": 16,
     "room": "living room",
     "kind": 1,
     "steps": [
      [
-      "milk",
-      "lift",
-      "lift"
+      "cookies",
+      "plate",
+      "on the plate"
      ]
     ],
     "artic": null,
@@ -2038,20 +2267,54 @@
      "drift_m": 0.0,
      "min_height_m": -0.009,
      "reach_m": {
-      "above milk": 0.025
+      "above cookies": 0.028,
+      "plate": 0.025
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S15_put_the_chocolate_pudding_in_the_basket",
-    "language": "put the chocolate pudding in the basket",
-    "bddl_file": "S15_put_the_chocolate_pudding_in_the_basket.bddl",
-    "init_file": "S15_put_the_chocolate_pudding_in_the_basket.pruned_init",
-    "scene": 15,
+    "name": "S16_put_the_milk_on_the_storage_box",
+    "language": "put the milk on the storage box",
+    "bddl_file": "S16_put_the_milk_on_the_storage_box.bddl",
+    "init_file": "S16_put_the_milk_on_the_storage_box.pruned_init",
+    "scene": 16,
     "room": "living room",
     "kind": 1,
     "steps": [
+     [
+      "milk",
+      "storage box",
+      "on the storage box"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.009,
+     "reach_m": {
+      "above milk": 0.025,
+      "storage box": 0.025
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S16_put_the_mug_on_the_placemat_and_put_the_chocolate_pudding_in_the_basket",
+    "language": "put the mug on the placemat and put the chocolate pudding in the basket",
+    "bddl_file": "S16_put_the_mug_on_the_placemat_and_put_the_chocolate_pudding_in_the_basket.bddl",
+    "init_file": "S16_put_the_mug_on_the_placemat_and_put_the_chocolate_pudding_in_the_basket.pruned_init",
+    "scene": 16,
+    "room": "living room",
+    "kind": 2,
+    "steps": [
+     [
+      "mug",
+      "placemat",
+      "on the placemat"
+     ],
      [
       "chocolate pudding",
       "basket",
@@ -2063,341 +2326,136 @@
      "drift_m": 0.0,
      "min_height_m": -0.009,
      "reach_m": {
-      "above chocolate pudding": 0.024,
-      "basket": 0.027
+      "above mug": 0.024,
+      "placemat": 0.025,
+      "above chocolate pudding": 0.028,
+      "basket": 0.029
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "placemat": [
+    0.0,
+    -0.11,
+    0.0
+   ],
+   "basket": [
+    0.019,
+    0.255,
+    0.0
+   ],
+   "storage box": [
+    0.051,
+    0.089,
+    0.0
+   ],
+   "mug": [
+    -0.15,
+    0.22,
+    0.0
+   ],
+   "plate": [
+    -0.071,
+    -0.281,
+    0.0
+   ],
+   "cookies": [
+    0.161,
+    0.221,
+    0.0
+   ],
+   "chocolate pudding": [
+    -0.1,
+    0.053,
+    0.0
+   ],
+   "milk": [
+    -0.194,
+    -0.103,
+    0.0
+   ]
+  },
+  "classes": {
+   "basket": "basket",
+   "chocolate pudding": "chocolate_pudding",
+   "cookies": "cookies",
+   "milk": "milk",
+   "mug": "red_coffee_mug",
+   "placemat": "dining_set_group",
+   "plate": "plate",
+   "storage box": "white_storage_box"
+  },
+  "log": [],
+  "secs": 236
+ },
+ {
+  "scene": 17,
+  "room": "living room",
+  "ok": true,
+  "attempts": 1,
+  "tasks": [
+   {
+    "name": "S17_put_the_cream_cheese_on_the_storage_box",
+    "language": "put the cream cheese on the storage box",
+    "bddl_file": "S17_put_the_cream_cheese_on_the_storage_box.bddl",
+    "init_file": "S17_put_the_cream_cheese_on_the_storage_box.pruned_init",
+    "scene": 17,
+    "room": "living room",
+    "kind": 1,
+    "steps": [
+     [
+      "cream cheese",
+      "storage box",
+      "on the storage box"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": 0.0,
+     "reach_m": {
+      "above cream cheese": 0.027,
+      "storage box": 0.025
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S15_put_the_book_on_the_storage_box_and_put_the_bbq_sauce_in_the_tray",
-    "language": "put the book on the storage box and put the bbq sauce in the tray",
-    "bddl_file": "S15_put_the_book_on_the_storage_box_and_put_the_bbq_sauce_in_the_tray.bddl",
-    "init_file": "S15_put_the_book_on_the_storage_box_and_put_the_bbq_sauce_in_the_tray.pruned_init",
-    "scene": 15,
+    "name": "S17_put_the_bbq_sauce_in_the_tray_and_put_the_popcorn_in_the_bookcase",
+    "language": "put the bbq sauce in the tray and put the popcorn in the bookcase",
+    "bddl_file": "S17_put_the_bbq_sauce_in_the_tray_and_put_the_popcorn_in_the_bookcase.bddl",
+    "init_file": "S17_put_the_bbq_sauce_in_the_tray_and_put_the_popcorn_in_the_bookcase.pruned_init",
+    "scene": 17,
     "room": "living room",
     "kind": 2,
     "steps": [
      [
-      "book",
-      "storage box",
-      "on the storage box"
-     ],
-     [
       "bbq sauce",
       "tray",
       "in the tray"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.009,
-     "reach_m": {
-      "above book": 0.023,
-      "storage box": 0.025,
-      "above bbq sauce": 0.029,
-      "tray": 0.024
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "tray": [
-    0.0,
-    -0.206,
-    0.0
-   ],
-   "basket": [
-    -0.142,
-    0.135,
-    0.0
-   ],
-   "storage box": [
-    0.131,
-    0.109,
-    0.0
-   ],
-   "book": [
-    0.054,
-    0.265,
-    0.0
-   ],
-   "chocolate pudding": [
-    -0.0,
-    -0.047,
-    0.0
-   ],
-   "milk": [
-    -0.114,
-    0.297,
-    0.0
-   ],
-   "bbq sauce": [
-    -0.205,
-    0.294,
-    0.0
-   ]
-  },
-  "classes": {
-   "basket": "basket",
-   "bbq sauce": "bbq_sauce",
-   "book": "black_book",
-   "chocolate pudding": "chocolate_pudding",
-   "milk": "milk",
-   "storage box": "white_storage_box",
-   "tray": "wooden_tray"
-  },
-  "log": [
-   [
-    14,
-    "lift the milk",
-    {
-     "drift": 1.0,
-     "low": -0.4382472434445275,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    15,
-    "put the chocolate pudding in the basket",
-    {
-     "drift": 1.3877787807814457e-14,
-     "low": -0.009352354195647394,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {
-      "above chocolate pudding": 0.063,
-      "basket": 0.028
-     }
-    }
-   ],
-   [
-    16,
-    "lift the milk",
-    {
-     "drift": 1.0,
-     "low": -0.43593038784347704,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    17,
-    "put the chocolate pudding in the basket",
-    {
-     "drift": 6.938893903907228e-15,
-     "low": -0.009352354195647394,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {
-      "above chocolate pudding": 0.06,
-      "basket": 0.025
-     }
-    }
-   ],
-   [
-    18,
-    "lift the milk",
-    {
-     "drift": 6.668925906876251e-11,
-     "low": -0.43651730399148997,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ]
-  ],
-  "secs": 306
- },
- {
-  "scene": 16,
-  "room": "coffee table",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S16_put_the_milk_on_the_storage_box",
-    "language": "put the milk on the storage box",
-    "bddl_file": "S16_put_the_milk_on_the_storage_box.bddl",
-    "init_file": "S16_put_the_milk_on_the_storage_box.pruned_init",
-    "scene": 16,
-    "room": "coffee table",
-    "kind": 1,
-    "steps": [
-     [
-      "milk",
-      "storage box",
-      "on the storage box"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.01,
-     "reach_m": {
-      "above milk": 0.028,
-      "storage box": 0.028
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S16_put_the_cookies_in_the_basket_and_put_the_orange_juice_on_the_shelf",
-    "language": "put the cookies in the basket and put the orange juice on the shelf",
-    "bddl_file": "S16_put_the_cookies_in_the_basket_and_put_the_orange_juice_on_the_shelf.bddl",
-    "init_file": "S16_put_the_cookies_in_the_basket_and_put_the_orange_juice_on_the_shelf.pruned_init",
-    "scene": 16,
-    "room": "coffee table",
-    "kind": 2,
-    "steps": [
-     [
-      "cookies",
-      "basket",
-      "in the basket"
      ],
      [
-      "orange juice",
-      "shelf",
-      "on the shelf"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.01,
-     "reach_m": {
-      "above cookies": 0.027,
-      "basket": 0.027,
-      "above orange juice": 0.027,
-      "shelf": 0.026
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "shelf": [
-    -0.064,
-    -0.376,
-    3.142
-   ],
-   "basket": [
-    0.079,
-    -0.145,
-    0.0
-   ],
-   "storage box": [
-    -0.122,
-    -0.119,
-    1.571
-   ],
-   "cookies": [
-    -0.059,
-    0.241,
-    0.0
-   ],
-   "orange juice": [
-    -0.054,
-    0.017,
-    0.0
-   ],
-   "milk": [
-    0.166,
-    0.117,
-    0.0
-   ]
-  },
-  "classes": {
-   "basket": "basket",
-   "cookies": "cookies",
-   "milk": "milk",
-   "orange juice": "orange_juice",
-   "shelf": "wooden_two_layer_shelf",
-   "storage box": "white_storage_box"
-  },
-  "log": [],
-  "secs": 144
- },
- {
-  "scene": 17,
-  "room": "coffee table",
-  "ok": true,
-  "attempts": 1,
-  "tasks": [
-   {
-    "name": "S17_put_the_butter_in_the_bookcase_and_put_the_ramekin_on_the_plate",
-    "language": "put the butter in the bookcase and put the ramekin on the plate",
-    "bddl_file": "S17_put_the_butter_in_the_bookcase_and_put_the_ramekin_on_the_plate.bddl",
-    "init_file": "S17_put_the_butter_in_the_bookcase_and_put_the_ramekin_on_the_plate.pruned_init",
-    "scene": 17,
-    "room": "coffee table",
-    "kind": 2,
-    "steps": [
-     [
-      "butter",
+      "popcorn",
       "bookcase",
       "in the bookcase"
-     ],
-     [
-      "ramekin",
-      "plate",
-      "on the plate"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.01,
+     "min_height_m": 0.0,
      "reach_m": {
-      "above butter": 0.022,
-      "bookcase opening": 0.026,
-      "above ramekin": 0.025,
-      "plate": 0.025
+      "above bbq sauce": 0.023,
+      "tray": 0.025,
+      "above popcorn": 0.024,
+      "bookcase opening": 0.026
      },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S17_put_the_tomato_sauce_on_the_storage_box_and_put_the_macaroni_in_the_basket",
-    "language": "put the tomato sauce on the storage box and put the macaroni in the basket",
-    "bddl_file": "S17_put_the_tomato_sauce_on_the_storage_box_and_put_the_macaroni_in_the_basket.bddl",
-    "init_file": "S17_put_the_tomato_sauce_on_the_storage_box_and_put_the_macaroni_in_the_basket.pruned_init",
-    "scene": 17,
-    "room": "coffee table",
-    "kind": 2,
-    "steps": [
-     [
-      "tomato sauce",
-      "storage box",
-      "on the storage box"
-     ],
-     [
-      "macaroni",
-      "basket",
-      "in the basket"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.01,
-     "reach_m": {
-      "above tomato sauce": 0.027,
-      "storage box": 0.028,
-      "above macaroni": 0.027,
-      "basket": 0.03
-     },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
@@ -2407,9 +2465,9 @@
     0.376,
     0.0
    ],
-   "basket": [
-    0.099,
-    0.175,
+   "tray": [
+    0.1,
+    0.173,
     0.0
    ],
    "storage box": [
@@ -2417,62 +2475,50 @@
     -0.211,
     0.0
    ],
-   "plate": [
-    -0.071,
-    0.179,
+   "cream cheese": [
+    0.06,
+    -0.028,
     0.0
    ],
-   "ramekin": [
-    -0.016,
-    -0.065,
-    0.0
-   ],
-   "macaroni": [
-    -0.168,
-    -0.088,
-    0.0
-   ],
-   "butter": [
-    0.158,
-    -0.27,
-    0.0
-   ],
-   "tomato sauce": [
+   "popcorn": [
     0.171,
-    -0.019,
+    -0.069,
+    0.0
+   ],
+   "bbq sauce": [
+    0.114,
+    -0.166,
     0.0
    ]
   },
   "classes": {
-   "basket": "basket",
+   "bbq sauce": "bbq_sauce",
    "bookcase": "wooden_shelf",
-   "butter": "butter",
-   "macaroni": "macaroni_and_cheese",
-   "plate": "plate",
-   "ramekin": "glazed_rim_porcelain_ramekin",
+   "cream cheese": "cream_cheese",
+   "popcorn": "popcorn",
    "storage box": "white_storage_box",
-   "tomato sauce": "tomato_sauce"
+   "tray": "wooden_tray"
   },
   "log": [],
-  "secs": 177
+  "secs": 105
  },
  {
   "scene": 18,
-  "room": "tabletop",
+  "room": "coffee table",
   "ok": true,
   "attempts": 1,
   "tasks": [
    {
-    "name": "S18_lift_the_bowl",
-    "language": "lift the bowl",
-    "bddl_file": "S18_lift_the_bowl.bddl",
-    "init_file": "S18_lift_the_bowl.pruned_init",
+    "name": "S18_lift_the_milk",
+    "language": "lift the milk",
+    "bddl_file": "S18_lift_the_milk.bddl",
+    "init_file": "S18_lift_the_milk.pruned_init",
     "scene": 18,
-    "room": "tabletop",
+    "room": "coffee table",
     "kind": 1,
     "steps": [
      [
-      "bowl",
+      "milk",
       "lift",
       "lift"
      ]
@@ -2480,24 +2526,357 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.003,
+     "min_height_m": -0.001,
      "reach_m": {
-      "above bowl": 0.025
+      "above milk": 0.028
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S18_put_the_orange_juice_on_the_storage_box",
-    "language": "put the orange juice on the storage box",
-    "bddl_file": "S18_put_the_orange_juice_on_the_storage_box.bddl",
-    "init_file": "S18_put_the_orange_juice_on_the_storage_box.pruned_init",
+    "name": "S18_put_the_wine_bottle_on_the_shelf_and_put_the_cookies_on_the_storage_box",
+    "language": "put the wine bottle on the shelf and put the cookies on the storage box",
+    "bddl_file": "S18_put_the_wine_bottle_on_the_shelf_and_put_the_cookies_on_the_storage_box.bddl",
+    "init_file": "S18_put_the_wine_bottle_on_the_shelf_and_put_the_cookies_on_the_storage_box.pruned_init",
     "scene": 18,
+    "room": "coffee table",
+    "kind": 2,
+    "steps": [
+     [
+      "wine bottle",
+      "shelf",
+      "on the shelf"
+     ],
+     [
+      "cookies",
+      "storage box",
+      "on the storage box"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above wine bottle": 0.028,
+      "shelf": 0.024,
+      "above cookies": 0.024,
+      "storage box": 0.028
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "shelf": [
+    -0.064,
+    0.376,
+    0.0
+   ],
+   "storage box": [
+    0.078,
+    0.001,
+    1.571
+   ],
+   "cookies": [
+    -0.039,
+    -0.039,
+    0.0
+   ],
+   "milk": [
+    0.006,
+    -0.223,
+    0.0
+   ],
+   "wine bottle": [
+    -0.178,
+    0.132,
+    0.0
+   ]
+  },
+  "classes": {
+   "cookies": "cookies",
+   "milk": "milk",
+   "shelf": "wooden_two_layer_shelf",
+   "storage box": "white_storage_box",
+   "wine bottle": "wine_bottle"
+  },
+  "log": [],
+  "secs": 122
+ },
+ {
+  "scene": 19,
+  "room": "coffee table",
+  "ok": true,
+  "attempts": 1,
+  "tasks": [
+   {
+    "name": "S19_lift_the_moka_pot",
+    "language": "lift the moka pot",
+    "bddl_file": "S19_lift_the_moka_pot.bddl",
+    "init_file": "S19_lift_the_moka_pot.pruned_init",
+    "scene": 19,
+    "room": "coffee table",
+    "kind": 1,
+    "steps": [
+     [
+      "moka pot",
+      "lift",
+      "lift"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above moka pot": 0.024
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   },
+   {
+    "name": "S19_put_the_chocolate_pudding_in_the_bowl_and_put_the_milk_in_the_tray",
+    "language": "put the chocolate pudding in the bowl and put the milk in the tray",
+    "bddl_file": "S19_put_the_chocolate_pudding_in_the_bowl_and_put_the_milk_in_the_tray.bddl",
+    "init_file": "S19_put_the_chocolate_pudding_in_the_bowl_and_put_the_milk_in_the_tray.pruned_init",
+    "scene": 19,
+    "room": "coffee table",
+    "kind": 2,
+    "steps": [
+     [
+      "chocolate pudding",
+      "bowl",
+      "in the bowl"
+     ],
+     [
+      "milk",
+      "tray",
+      "in the tray"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above chocolate pudding": 0.026,
+      "bowl": 0.024,
+      "above milk": 0.03,
+      "tray": 0.022
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S19_put_the_ramekin_on_the_storage_box_and_put_the_popcorn_on_the_shelf",
+    "language": "put the ramekin on the storage box and put the popcorn on the shelf",
+    "bddl_file": "S19_put_the_ramekin_on_the_storage_box_and_put_the_popcorn_on_the_shelf.bddl",
+    "init_file": "S19_put_the_ramekin_on_the_storage_box_and_put_the_popcorn_on_the_shelf.pruned_init",
+    "scene": 19,
+    "room": "coffee table",
+    "kind": 2,
+    "steps": [
+     [
+      "ramekin",
+      "storage box",
+      "on the storage box"
+     ],
+     [
+      "popcorn",
+      "shelf",
+      "on the shelf"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above ramekin": 0.022,
+      "storage box": 0.029,
+      "above popcorn": 0.026,
+      "shelf": 0.03
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "shelf": [
+    -0.004,
+    -0.376,
+    3.142
+   ],
+   "tray": [
+    0.12,
+    0.113,
+    0.0
+   ],
+   "moka pot": [
+    -0.1,
+    0.064,
+    0.0
+   ],
+   "storage box": [
+    0.118,
+    -0.099,
+    1.571
+   ],
+   "bowl": [
+    -0.087,
+    -0.176,
+    0.0
+   ],
+   "ramekin": [
+    0.164,
+    0.295,
+    0.0
+   ],
+   "chocolate pudding": [
+    -0.0,
+    -0.027,
+    0.0
+   ],
+   "popcorn": [
+    -0.029,
+    0.271,
+    0.0
+   ],
+   "milk": [
+    0.106,
+    -0.223,
+    0.0
+   ]
+  },
+  "classes": {
+   "bowl": "white_bowl",
+   "chocolate pudding": "chocolate_pudding",
+   "milk": "milk",
+   "moka pot": "moka_pot",
+   "popcorn": "popcorn",
+   "ramekin": "glazed_rim_porcelain_ramekin",
+   "shelf": "wooden_two_layer_shelf",
+   "storage box": "white_storage_box",
+   "tray": "wooden_tray"
+  },
+  "log": [],
+  "secs": 279
+ },
+ {
+  "scene": 20,
+  "room": "coffee table",
+  "ok": true,
+  "attempts": 1,
+  "tasks": [
+   {
+    "name": "S20_put_the_macaroni_on_the_shelf",
+    "language": "put the macaroni on the shelf",
+    "bddl_file": "S20_put_the_macaroni_on_the_shelf.bddl",
+    "init_file": "S20_put_the_macaroni_on_the_shelf.pruned_init",
+    "scene": 20,
+    "room": "coffee table",
+    "kind": 1,
+    "steps": [
+     [
+      "macaroni",
+      "shelf",
+      "on the shelf"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": 0.002,
+     "reach_m": {
+      "above macaroni": 0.027,
+      "shelf": 0.03
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S20_put_the_popcorn_on_the_plate",
+    "language": "put the popcorn on the plate",
+    "bddl_file": "S20_put_the_popcorn_on_the_plate.bddl",
+    "init_file": "S20_put_the_popcorn_on_the_plate.pruned_init",
+    "scene": 20,
+    "room": "coffee table",
+    "kind": 1,
+    "steps": [
+     [
+      "popcorn",
+      "plate",
+      "on the plate"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": 0.002,
+     "reach_m": {
+      "above popcorn": 0.022,
+      "plate": 0.025
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   }
+  ],
+  "layout": {
+   "shelf": [
+    0.096,
+    0.376,
+    0.0
+   ],
+   "plate": [
+    0.109,
+    0.179,
+    0.0
+   ],
+   "macaroni": [
+    -0.128,
+    0.112,
+    0.0
+   ],
+   "popcorn": [
+    0.111,
+    -0.169,
+    0.0
+   ]
+  },
+  "classes": {
+   "macaroni": "macaroni_and_cheese",
+   "plate": "plate",
+   "popcorn": "popcorn",
+   "shelf": "wooden_two_layer_shelf"
+  },
+  "log": [],
+  "secs": 136
+ },
+ {
+  "scene": 21,
+  "room": "tabletop",
+  "ok": true,
+  "attempts": 1,
+  "tasks": [
+   {
+    "name": "S21_put_the_chocolate_pudding_on_the_storage_box",
+    "language": "put the chocolate pudding on the storage box",
+    "bddl_file": "S21_put_the_chocolate_pudding_on_the_storage_box.bddl",
+    "init_file": "S21_put_the_chocolate_pudding_on_the_storage_box.pruned_init",
+    "scene": 21,
     "room": "tabletop",
     "kind": 1,
     "steps": [
      [
-      "orange juice",
+      "chocolate pudding",
       "storage box",
       "on the storage box"
      ]
@@ -2507,56 +2886,26 @@
      "drift_m": 0.0,
      "min_height_m": -0.003,
      "reach_m": {
-      "above orange juice": 0.027,
-      "storage box": 0.026
+      "above chocolate pudding": 0.025,
+      "storage box": 0.029
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S18_put_the_ramekin_on_the_placemat",
-    "language": "put the ramekin on the placemat",
-    "bddl_file": "S18_put_the_ramekin_on_the_placemat.bddl",
-    "init_file": "S18_put_the_ramekin_on_the_placemat.pruned_init",
-    "scene": 18,
+    "name": "S21_put_the_cookies_in_the_tray",
+    "language": "put the cookies in the tray",
+    "bddl_file": "S21_put_the_cookies_in_the_tray.bddl",
+    "init_file": "S21_put_the_cookies_in_the_tray.pruned_init",
+    "scene": 21,
     "room": "tabletop",
     "kind": 1,
     "steps": [
      [
-      "ramekin",
-      "placemat",
-      "on the placemat"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.003,
-     "reach_m": {
-      "above ramekin": 0.029,
-      "placemat": 0.024
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S18_put_the_cookies_in_the_bowl_and_put_the_macaroni_in_the_bookcase",
-    "language": "put the cookies in the bowl and put the macaroni in the bookcase",
-    "bddl_file": "S18_put_the_cookies_in_the_bowl_and_put_the_macaroni_in_the_bookcase.bddl",
-    "init_file": "S18_put_the_cookies_in_the_bowl_and_put_the_macaroni_in_the_bookcase.pruned_init",
-    "scene": 18,
-    "room": "tabletop",
-    "kind": 2,
-    "steps": [
-     [
       "cookies",
-      "bowl",
-      "in the bowl"
-     ],
-     [
-      "macaroni",
-      "bookcase",
-      "in the bookcase"
+      "tray",
+      "in the tray"
      ]
     ],
     "artic": null,
@@ -2564,89 +2913,64 @@
      "drift_m": 0.0,
      "min_height_m": -0.003,
      "reach_m": {
-      "above cookies": 0.026,
-      "bowl": 0.027,
-      "above macaroni": 0.025,
-      "bookcase opening": 0.03
+      "above cookies": 0.03,
+      "tray": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
-   "bookcase": [
-    -0.092,
-    0.376,
+   "tray": [
+    -0.06,
+    0.153,
     0.0
-   ],
-   "placemat": [
-    -0.12,
-    -0.19,
-    1.571
    ],
    "storage box": [
-    -0.241,
-    0.121,
+    -0.262,
+    -0.259,
     1.571
    ],
-   "bowl": [
-    -0.287,
-    -0.036,
-    0.0
-   ],
-   "ramekin": [
-    -0.055,
-    0.155,
-    0.0
-   ],
-   "macaroni": [
-    0.013,
-    -0.148,
-    0.0
-   ],
    "cookies": [
-    0.042,
     -0.299,
+    0.261,
     0.0
    ],
-   "orange juice": [
-    -0.133,
-    0.037,
+   "chocolate pudding": [
+    -0.18,
+    -0.087,
     0.0
    ]
   },
   "classes": {
-   "bookcase": "wooden_shelf",
-   "bowl": "akita_black_bowl",
+   "chocolate pudding": "chocolate_pudding",
    "cookies": "cookies",
-   "macaroni": "macaroni_and_cheese",
-   "orange juice": "orange_juice",
-   "placemat": "dining_set_group",
-   "ramekin": "glazed_rim_porcelain_ramekin",
-   "storage box": "white_storage_box"
+   "storage box": "white_storage_box",
+   "tray": "wooden_tray"
   },
   "log": [],
-  "secs": 264
+  "secs": 84
  },
  {
-  "scene": 19,
+  "scene": 22,
   "room": "tabletop",
   "ok": true,
-  "attempts": 1,
+  "attempts": 2,
   "tasks": [
    {
-    "name": "S19_put_the_book_in_the_bookcase",
-    "language": "put the book in the bookcase",
-    "bddl_file": "S19_put_the_book_in_the_bookcase.bddl",
-    "init_file": "S19_put_the_book_in_the_bookcase.pruned_init",
-    "scene": 19,
+    "name": "S22_put_the_butter_in_the_pan",
+    "language": "put the butter in the pan",
+    "bddl_file": "S22_put_the_butter_in_the_pan.bddl",
+    "init_file": "S22_put_the_butter_in_the_pan.pruned_init",
+    "scene": 22,
     "room": "tabletop",
     "kind": 1,
     "steps": [
      [
-      "book",
-      "bookcase",
-      "in the bookcase"
+      "butter",
+      "pan",
+      "in the pan"
      ]
     ],
     "artic": null,
@@ -2654,44 +2978,19 @@
      "drift_m": 0.0,
      "min_height_m": -0.012,
      "reach_m": {
-      "above book": 0.029,
-      "bookcase opening": 0.031
+      "above butter": 0.025,
+      "pan": 0.029
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S19_put_the_wine_bottle_in_front_of_the_basket",
-    "language": "put the wine bottle in front of the basket",
-    "bddl_file": "S19_put_the_wine_bottle_in_front_of_the_basket.bddl",
-    "init_file": "S19_put_the_wine_bottle_in_front_of_the_basket.pruned_init",
-    "scene": 19,
-    "room": "tabletop",
-    "kind": 1,
-    "steps": [
-     [
-      "wine bottle",
-      "beside",
-      "in front of the basket"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.012,
-     "reach_m": {
-      "above wine bottle": 0.027,
-      "beside": 0.024
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S19_put_the_bbq_sauce_in_the_basket_and_put_the_alphabet_soup_on_the_shelf",
-    "language": "put the bbq sauce in the basket and put the alphabet soup on the shelf",
-    "bddl_file": "S19_put_the_bbq_sauce_in_the_basket_and_put_the_alphabet_soup_on_the_shelf.bddl",
-    "init_file": "S19_put_the_bbq_sauce_in_the_basket_and_put_the_alphabet_soup_on_the_shelf.pruned_init",
-    "scene": 19,
+    "name": "S22_put_the_bbq_sauce_in_the_basket_and_put_the_cream_cheese_in_the_bowl",
+    "language": "put the bbq sauce in the basket and put the cream cheese in the bowl",
+    "bddl_file": "S22_put_the_bbq_sauce_in_the_basket_and_put_the_cream_cheese_in_the_bowl.bddl",
+    "init_file": "S22_put_the_bbq_sauce_in_the_basket_and_put_the_cream_cheese_in_the_bowl.pruned_init",
+    "scene": 22,
     "room": "tabletop",
     "kind": 2,
     "steps": [
@@ -2701,9 +3000,9 @@
       "in the basket"
      ],
      [
-      "alphabet soup",
-      "shelf",
-      "on the shelf"
+      "cream cheese",
+      "bowl",
+      "in the bowl"
      ]
     ],
     "artic": null,
@@ -2711,326 +3010,138 @@
      "drift_m": 0.0,
      "min_height_m": -0.012,
      "reach_m": {
-      "above bbq sauce": 0.021,
-      "basket": 0.022,
-      "above alphabet soup": 0.028,
-      "shelf": 0.023
+      "above bbq sauce": 0.023,
+      "basket": 0.023,
+      "above cream cheese": 0.024,
+      "bowl": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "2/3"
     }
    }
   ],
   "layout": {
-   "shelf": [
-    -0.104,
-    -0.376,
-    3.142
-   ],
-   "bookcase": [
-    -0.192,
-    0.376,
+   "frying pan": [
+    -0.26,
+    -0.01,
     0.0
    ],
    "basket": [
-    -0.062,
-    0.115,
-    0.0
-   ],
-   "book": [
-    -0.145,
-    -0.115,
-    0.0
-   ],
-   "alphabet soup": [
-    -0.008,
-    -0.198,
-    0.0
-   ],
-   "bbq sauce": [
-    -0.305,
-    -0.006,
-    0.0
-   ],
-   "wine bottle": [
-    0.042,
-    -0.048,
-    0.0
-   ]
-  },
-  "classes": {
-   "alphabet soup": "alphabet_soup",
-   "basket": "basket",
-   "bbq sauce": "bbq_sauce",
-   "book": "yellow_book",
-   "bookcase": "wooden_shelf",
-   "shelf": "wooden_two_layer_shelf",
-   "wine bottle": "wine_bottle"
-  },
-  "log": [],
-  "secs": 187
- },
- {
-  "scene": 20,
-  "room": "tabletop",
-  "ok": true,
-  "attempts": 2,
-  "tasks": [
-   {
-    "name": "S20_put_the_plate_on_the_placemat_and_put_the_wine_bottle_on_the_shelf",
-    "language": "put the plate on the placemat and put the wine bottle on the shelf",
-    "bddl_file": "S20_put_the_plate_on_the_placemat_and_put_the_wine_bottle_on_the_shelf.bddl",
-    "init_file": "S20_put_the_plate_on_the_placemat_and_put_the_wine_bottle_on_the_shelf.pruned_init",
-    "scene": 20,
-    "room": "tabletop",
-    "kind": 2,
-    "steps": [
-     [
-      "plate",
-      "placemat",
-      "on the placemat"
-     ],
-     [
-      "wine bottle",
-      "shelf",
-      "on the shelf"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.001,
-     "reach_m": {
-      "above plate": 0.024,
-      "placemat": 0.025,
-      "above wine bottle": 0.022,
-      "shelf": 0.024
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "shelf": [
-    -0.264,
-    0.376,
-    0.0
-   ],
-   "placemat": [
-    -0.02,
-    -0.03,
-    1.571
-   ],
-   "plate": [
-    -0.251,
-    0.179,
-    0.0
-   ],
-   "wine bottle": [
-    -0.078,
-    -0.248,
-    0.0
-   ]
-  },
-  "classes": {
-   "placemat": "dining_set_group",
-   "plate": "plate",
-   "shelf": "wooden_two_layer_shelf",
-   "wine bottle": "wine_bottle"
-  },
-  "log": [
-   [
-    0,
-    "put the plate on the placemat and put the wine bottle on the shelf",
-    {
-     "drift": 3.122502256758253e-17,
-     "low": -0.0014568679706069565,
-     "start_success": false,
-     "forced": false,
-     "view": false,
-     "reach": {}
-    }
-   ]
-  ],
-  "secs": 63
- },
- {
-  "scene": 21,
-  "room": "kitchen",
-  "ok": true,
-  "attempts": 4,
-  "tasks": [
-   {
-    "name": "S21_put_the_bowl_in_the_microwave_and_close_it",
-    "language": "put the bowl in the microwave and close it",
-    "bddl_file": "S21_put_the_bowl_in_the_microwave_and_close_it.bddl",
-    "init_file": "S21_put_the_bowl_in_the_microwave_and_close_it.pruned_init",
-    "scene": 21,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "bowl",
-      "microwave",
-      "in the microwave"
-     ]
-    ],
-    "artic": "microwave",
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.004,
-     "reach_m": {
-      "above bowl": 0.027,
-      "microwave opening": 0.025
-     },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S21_put_the_butter_in_the_bowl_and_put_the_alphabet_soup_on_the_cabinet",
-    "language": "put the butter in the bowl and put the alphabet soup on the cabinet",
-    "bddl_file": "S21_put_the_butter_in_the_bowl_and_put_the_alphabet_soup_on_the_cabinet.bddl",
-    "init_file": "S21_put_the_butter_in_the_bowl_and_put_the_alphabet_soup_on_the_cabinet.pruned_init",
-    "scene": 21,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "butter",
-      "bowl",
-      "in the bowl"
-     ],
-     [
-      "alphabet soup",
-      "cabinet top",
-      "on the cabinet"
-     ]
-    ],
-    "artic": null,
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.004,
-     "reach_m": {
-      "above butter": 0.028,
-      "bowl": 0.027,
-      "above alphabet soup": 0.03,
-      "cabinet top": 0.029
-     },
-     "init_tries": 50
-    }
-   }
-  ],
-  "layout": {
-   "microwave": [
-    -0.248,
-    -0.412,
-    3.142
-   ],
-   "cabinet": [
-    -0.132,
-    0.391,
+    -0.002,
+    0.075,
     0.0
    ],
    "bowl": [
-    -0.046,
-    0.184,
+    -0.066,
+    0.264,
+    0.0
+   ],
+   "cream cheese": [
+    -0.119,
+    -0.228,
     0.0
    ],
    "butter": [
-    -0.002,
-    -0.15,
+    -0.282,
+    -0.29,
     0.0
    ],
-   "alphabet soup": [
-    -0.148,
-    0.162,
+   "bbq sauce": [
+    -0.085,
+    -0.166,
     0.0
    ]
   },
   "classes": {
-   "alphabet soup": "alphabet_soup",
-   "bowl": "white_bowl",
+   "basket": "basket",
+   "bbq sauce": "bbq_sauce",
+   "bowl": "akita_black_bowl",
    "butter": "butter",
-   "cabinet": "white_cabinet",
-   "microwave": "microwave"
+   "cream cheese": "cream_cheese",
+   "frying pan": "chefmate_8_frypan"
   },
   "log": [
    [
     0,
-    "put the bowl in the microwave and close it",
-    {
-     "drift": 1.0,
-     "low": -0.014097219264647465,
-     "start_success": false,
-     "forced": false,
-     "view": true,
-     "reach": {}
-    }
-   ],
-   [
-    1,
-    "put the butter in the bowl and put the alphabet soup on the cabinet",
-    {
-     "drift": 0.0,
-     "low": -0.004237494667114539,
-     "start_success": false,
-     "forced": false,
-     "view": false,
-     "reach": {}
-    }
-   ],
-   [
-    2,
-    "put the butter in the bowl and put the alphabet soup on the cabinet",
-    {
-     "drift": 0.0,
-     "low": -0.004237494667114539,
-     "start_success": false,
-     "forced": false,
-     "view": false,
-     "reach": {}
-    }
+    "put the bbq sauce in the basket and put the cream cheese in the bowl",
+    "expert 1/3"
    ]
   ],
-  "secs": 155
+  "secs": 193
  },
  {
-  "scene": 22,
+  "scene": 23,
   "room": "tabletop",
   "ok": true,
-  "attempts": 1,
+  "attempts": 39,
   "tasks": [
    {
-    "name": "S22_open_the_middle_drawer_and_put_the_alphabet_soup_in_it",
-    "language": "open the middle drawer and put the alphabet soup in it",
-    "bddl_file": "S22_open_the_middle_drawer_and_put_the_alphabet_soup_in_it.bddl",
-    "init_file": "S22_open_the_middle_drawer_and_put_the_alphabet_soup_in_it.pruned_init",
-    "scene": 22,
+    "name": "S23_put_the_orange_juice_in_the_tray",
+    "language": "put the orange juice in the tray",
+    "bddl_file": "S23_put_the_orange_juice_in_the_tray.bddl",
+    "init_file": "S23_put_the_orange_juice_in_the_tray.pruned_init",
+    "scene": 23,
+    "room": "tabletop",
+    "kind": 1,
+    "steps": [
+     [
+      "orange juice",
+      "tray",
+      "in the tray"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.012,
+     "reach_m": {
+      "above orange juice": 0.028,
+      "tray": 0.022
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   },
+   {
+    "name": "S23_put_the_macaroni_in_the_basket_and_put_the_moka_pot_to_the_right_of_the_plate",
+    "language": "put the macaroni in the basket and put the moka pot to the right of the plate",
+    "bddl_file": "S23_put_the_macaroni_in_the_basket_and_put_the_moka_pot_to_the_right_of_the_plate.bddl",
+    "init_file": "S23_put_the_macaroni_in_the_basket_and_put_the_moka_pot_to_the_right_of_the_plate.pruned_init",
+    "scene": 23,
     "room": "tabletop",
     "kind": 2,
     "steps": [
      [
-      "alphabet soup",
-      "drawer",
-      "in the middle drawer"
+      "macaroni",
+      "basket",
+      "in the basket"
+     ],
+     [
+      "moka pot",
+      "beside",
+      "to the right of the plate"
      ]
     ],
-    "artic": "drawer",
+    "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.005,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above alphabet soup": 0.025,
-      "drawer front": 0.024
+      "above macaroni": 0.022,
+      "basket": 0.022,
+      "above moka pot": 0.026,
+      "beside": 0.029
      },
-     "init_tries": 50
+     "init_tries": 51,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S22_put_the_tomato_sauce_on_the_shelf_and_put_the_moka_pot_on_the_cabinet",
-    "language": "put the tomato sauce on the shelf and put the moka pot on the cabinet",
-    "bddl_file": "S22_put_the_tomato_sauce_on_the_shelf_and_put_the_moka_pot_on_the_cabinet.bddl",
-    "init_file": "S22_put_the_tomato_sauce_on_the_shelf_and_put_the_moka_pot_on_the_cabinet.pruned_init",
-    "scene": 22,
+    "name": "S23_put_the_tomato_sauce_on_the_shelf_and_put_the_chocolate_pudding_on_the_plate",
+    "language": "put the tomato sauce on the shelf and put the chocolate pudding on the plate",
+    "bddl_file": "S23_put_the_tomato_sauce_on_the_shelf_and_put_the_chocolate_pudding_on_the_plate.bddl",
+    "init_file": "S23_put_the_tomato_sauce_on_the_shelf_and_put_the_chocolate_pudding_on_the_plate.pruned_init",
+    "scene": 23,
     "room": "tabletop",
     "kind": 2,
     "steps": [
@@ -3040,75 +3151,126 @@
       "on the shelf"
      ],
      [
-      "moka pot",
-      "cabinet top",
-      "on the cabinet"
+      "chocolate pudding",
+      "plate",
+      "on the plate"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.005,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above tomato sauce": 0.027,
-      "shelf": 0.028,
-      "above moka pot": 0.026,
-      "cabinet top": 0.024
+      "above tomato sauce": 0.03,
+      "shelf": 0.026,
+      "above chocolate pudding": 0.024,
+      "plate": 0.026
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
-   "cabinet": [
-    -0.212,
-    -0.391,
-    3.142
-   ],
    "shelf": [
-    -0.084,
+    -0.104,
     0.376,
     0.0
    ],
+   "tray": [
+    -0.26,
+    -0.027,
+    0.0
+   ],
+   "basket": [
+    -0.062,
+    -0.245,
+    0.0
+   ],
    "moka pot": [
-    0.001,
-    -0.216,
+    -0.199,
+    -0.236,
+    0.0
+   ],
+   "plate": [
+    0.029,
+    -0.041,
+    0.0
+   ],
+   "macaroni": [
+    -0.107,
+    0.192,
+    0.0
+   ],
+   "chocolate pudding": [
+    -0.22,
+    0.173,
     0.0
    ],
    "tomato sauce": [
-    -0.188,
-    -0.039,
+    -0.308,
+    -0.159,
     0.0
    ],
-   "alphabet soup": [
-    -0.068,
-    0.062,
+   "orange juice": [
+    -0.053,
+    0.137,
     0.0
    ]
   },
   "classes": {
-   "alphabet soup": "alphabet_soup",
-   "cabinet": "wooden_cabinet",
+   "basket": "basket",
+   "chocolate pudding": "chocolate_pudding",
+   "macaroni": "macaroni_and_cheese",
    "moka pot": "moka_pot",
+   "orange juice": "orange_juice",
+   "plate": "plate",
    "shelf": "wooden_two_layer_shelf",
-   "tomato sauce": "tomato_sauce"
+   "tomato sauce": "tomato_sauce",
+   "tray": "wooden_tray"
   },
-  "log": [],
-  "secs": 117
+  "log": [
+   [
+    33,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    34,
+    "put the tomato sauce on the shelf and put the chocolate pudding on the plate",
+    "expert 0/3"
+   ],
+   [
+    35,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    36,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    37,
+    "layout",
+    "no non-overlapping layout"
+   ]
+  ],
+  "secs": 361
  },
  {
-  "scene": 23,
-  "room": "living room",
+  "scene": 24,
+  "room": "tabletop",
   "ok": true,
-  "attempts": 15,
+  "attempts": 2,
   "tasks": [
    {
-    "name": "S23_put_the_popcorn_in_the_basket",
+    "name": "S24_put_the_popcorn_in_the_basket",
     "language": "put the popcorn in the basket",
-    "bddl_file": "S23_put_the_popcorn_in_the_basket.bddl",
-    "init_file": "S23_put_the_popcorn_in_the_basket.pruned_init",
-    "scene": 23,
-    "room": "living room",
+    "bddl_file": "S24_put_the_popcorn_in_the_basket.bddl",
+    "init_file": "S24_put_the_popcorn_in_the_basket.pruned_init",
+    "scene": 24,
+    "room": "tabletop",
     "kind": 1,
     "steps": [
      [
@@ -3120,250 +3282,244 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.03,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above popcorn": 0.028,
-      "basket": 0.024
+      "above popcorn": 0.026,
+      "basket": 0.027
      },
-     "init_tries": 51
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S23_put_the_mug_in_the_bookcase_and_put_the_frying_pan_to_the_right_of_the_basket",
-    "language": "put the mug in the bookcase and put the frying pan to the right of the basket",
-    "bddl_file": "S23_put_the_mug_in_the_bookcase_and_put_the_frying_pan_to_the_right_of_the_basket.bddl",
-    "init_file": "S23_put_the_mug_in_the_bookcase_and_put_the_frying_pan_to_the_right_of_the_basket.pruned_init",
-    "scene": 23,
-    "room": "living room",
+    "name": "S24_put_the_wine_bottle_to_the_left_of_the_basket_and_put_the_chocolate_pudding_in_the_left_of_the_caddy",
+    "language": "put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy",
+    "bddl_file": "S24_put_the_wine_bottle_to_the_left_of_the_basket_and_put_the_chocolate_pudding_in_the_left_of_the_caddy.bddl",
+    "init_file": "S24_put_the_wine_bottle_to_the_left_of_the_basket_and_put_the_chocolate_pudding_in_the_left_of_the_caddy.pruned_init",
+    "scene": 24,
+    "room": "tabletop",
     "kind": 2,
     "steps": [
      [
-      "mug",
-      "bookcase",
-      "in the bookcase"
+      "wine bottle",
+      "beside",
+      "to the left of the basket"
      ],
      [
-      "frying pan",
-      "beside",
-      "to the right of the basket"
+      "chocolate pudding",
+      "caddy",
+      "in the left of the caddy"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.03,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above mug": 0.028,
-      "bookcase opening": 0.029,
-      "above frying pan": 0.027,
-      "beside": 0.029
+      "above wine bottle": 0.024,
+      "beside": 0.029,
+      "above chocolate pudding": 0.03,
+      "caddy": 0.028
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
-   "bookcase": [
-    0.088,
-    -0.376,
-    3.142
-   ],
-   "frying pan": [
-    0.1,
-    0.21,
-    0.0
+   "caddy": [
+    -0.04,
+    0.246,
+    1.571
    ],
    "basket": [
-    -0.102,
-    0.035,
+    -0.042,
+    -0.105,
     0.0
    ],
-   "mug": [
-    -0.05,
-    -0.14,
+   "chocolate pudding": [
+    -0.28,
+    -0.027,
     0.0
    ],
    "popcorn": [
-    -0.129,
-    -0.329,
+    -0.109,
+    0.111,
+    0.0
+   ],
+   "wine bottle": [
+    -0.298,
+    0.232,
     0.0
    ]
   },
   "classes": {
    "basket": "basket",
-   "bookcase": "wooden_shelf",
-   "frying pan": "chefmate_8_frypan",
-   "mug": "porcelain_mug",
-   "popcorn": "popcorn"
+   "caddy": "desk_caddy",
+   "chocolate pudding": "chocolate_pudding",
+   "popcorn": "popcorn",
+   "wine bottle": "wine_bottle"
   },
   "log": [
    [
-    9,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    10,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    11,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    12,
-    "layout",
-    "no non-overlapping layout"
-   ],
-   [
-    13,
-    "layout",
-    "no non-overlapping layout"
+    0,
+    "put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy",
+    {
+     "drift": 0.0,
+     "low": -0.012126986942515239,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {
+      "above wine bottle": 0.028,
+      "beside": 0.022,
+      "above chocolate pudding": 0.073,
+      "caddy": 0.024
+     }
+    }
    ]
   ],
-  "secs": 118
+  "secs": 149
  },
  {
-  "scene": 24,
+  "scene": 25,
   "room": "floor",
   "ok": true,
-  "attempts": 1,
+  "attempts": 2,
   "tasks": [
    {
-    "name": "S24_put_the_cream_cheese_on_the_plate_and_put_the_macaroni_in_the_tray",
-    "language": "put the cream cheese on the plate and put the macaroni in the tray",
-    "bddl_file": "S24_put_the_cream_cheese_on_the_plate_and_put_the_macaroni_in_the_tray.bddl",
-    "init_file": "S24_put_the_cream_cheese_on_the_plate_and_put_the_macaroni_in_the_tray.pruned_init",
-    "scene": 24,
+    "name": "S25_put_the_cookies_in_the_basket",
+    "language": "put the cookies in the basket",
+    "bddl_file": "S25_put_the_cookies_in_the_basket.bddl",
+    "init_file": "S25_put_the_cookies_in_the_basket.pruned_init",
+    "scene": 25,
     "room": "floor",
-    "kind": 2,
+    "kind": 1,
     "steps": [
      [
-      "cream cheese",
-      "plate",
-      "on the plate"
-     ],
-     [
-      "macaroni",
-      "tray",
-      "in the tray"
+      "cookies",
+      "basket",
+      "in the basket"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.002,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above cream cheese": 0.024,
-      "plate": 0.028,
-      "above macaroni": 0.024,
-      "tray": 0.024
+      "above cookies": 0.025,
+      "basket": 0.028
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    },
    {
-    "name": "S24_put_the_popcorn_in_the_bowl_and_put_the_ketchup_behind_the_plate",
-    "language": "put the popcorn in the bowl and put the ketchup behind the plate",
-    "bddl_file": "S24_put_the_popcorn_in_the_bowl_and_put_the_ketchup_behind_the_plate.bddl",
-    "init_file": "S24_put_the_popcorn_in_the_bowl_and_put_the_ketchup_behind_the_plate.pruned_init",
-    "scene": 24,
+    "name": "S25_put_the_mug_in_the_tray_and_put_the_alphabet_soup_on_the_storage_box",
+    "language": "put the mug in the tray and put the alphabet soup on the storage box",
+    "bddl_file": "S25_put_the_mug_in_the_tray_and_put_the_alphabet_soup_on_the_storage_box.bddl",
+    "init_file": "S25_put_the_mug_in_the_tray_and_put_the_alphabet_soup_on_the_storage_box.pruned_init",
+    "scene": 25,
     "room": "floor",
     "kind": 2,
     "steps": [
      [
-      "popcorn",
-      "bowl",
-      "in the bowl"
+      "mug",
+      "tray",
+      "in the tray"
      ],
      [
-      "ketchup",
-      "beside",
-      "behind the plate"
+      "alphabet soup",
+      "storage box",
+      "on the storage box"
      ]
     ],
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.002,
+     "min_height_m": -0.012,
      "reach_m": {
-      "above popcorn": 0.023,
-      "bowl": 0.024,
-      "above ketchup": 0.022,
-      "beside": 0.024
+      "above mug": 0.029,
+      "tray": 0.026,
+      "above alphabet soup": 0.023,
+      "storage box": 0.025
      },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "3/3"
     }
    }
   ],
   "layout": {
    "tray": [
-    -0.02,
-    0.033,
+    -0.1,
+    -0.027,
     0.0
    ],
-   "plate": [
-    -0.011,
-    -0.261,
+   "basket": [
+    0.018,
+    0.175,
     0.0
    ],
-   "bowl": [
-    -0.127,
-    0.244,
+   "storage box": [
+    -0.249,
+    0.269,
     0.0
    ],
-   "macaroni": [
-    -0.007,
+   "mug": [
+    -0.23,
+    -0.28,
+    0.0
+   ],
+   "cookies": [
+    -0.058,
+    -0.199,
+    0.0
+   ],
+   "alphabet soup": [
     -0.128,
-    0.0
-   ],
-   "cream cheese": [
-    -0.139,
-    -0.188,
-    0.0
-   ],
-   "popcorn": [
-    0.031,
-    0.171,
-    0.0
-   ],
-   "ketchup": [
-    -0.281,
-    -0.122,
+    0.162,
     0.0
    ]
   },
   "classes": {
-   "bowl": "akita_black_bowl",
-   "cream cheese": "cream_cheese",
-   "ketchup": "ketchup",
-   "macaroni": "macaroni_and_cheese",
-   "plate": "plate",
-   "popcorn": "popcorn",
+   "alphabet soup": "alphabet_soup",
+   "basket": "basket",
+   "cookies": "cookies",
+   "mug": "red_coffee_mug",
+   "storage box": "white_storage_box",
    "tray": "wooden_tray"
   },
-  "log": [],
-  "secs": 128
+  "log": [
+   [
+    0,
+    "put the mug in the tray and put the alphabet soup on the storage box",
+    "expert 1/3"
+   ]
+  ],
+  "secs": 169
  },
  {
-  "scene": 25,
+  "scene": 26,
   "room": "kitchen",
   "ok": true,
-  "attempts": 1,
+  "attempts": 7,
   "tasks": [
    {
-    "name": "S25_put_the_ramekin_in_the_microwave",
-    "language": "put the ramekin in the microwave",
-    "bddl_file": "S25_put_the_ramekin_in_the_microwave.bddl",
-    "init_file": "S25_put_the_ramekin_in_the_microwave.pruned_init",
-    "scene": 25,
+    "name": "S26_put_the_mug_to_the_left_of_the_plate_and_put_the_popcorn_in_the_microwave",
+    "language": "put the mug to the left of the plate and put the popcorn in the microwave",
+    "bddl_file": "S26_put_the_mug_to_the_left_of_the_plate_and_put_the_popcorn_in_the_microwave.bddl",
+    "init_file": "S26_put_the_mug_to_the_left_of_the_plate_and_put_the_popcorn_in_the_microwave.pruned_init",
+    "scene": 26,
     "room": "kitchen",
-    "kind": 1,
+    "kind": 2,
     "steps": [
      [
-      "ramekin",
+      "mug",
+      "beside",
+      "to the left of the plate"
+     ],
+     [
+      "popcorn",
       "microwave",
       "in the microwave"
      ]
@@ -3371,76 +3527,183 @@
     "artic": null,
     "validation": {
      "drift_m": 0.0,
-     "min_height_m": -0.001,
+     "min_height_m": -0.004,
      "reach_m": {
-      "above ramekin": 0.029,
-      "microwave opening": 0.029
+      "above mug": 0.024,
+      "beside": 0.022,
+      "above popcorn": 0.029,
+      "microwave opening": 0.024
      },
-     "init_tries": 50
-    }
-   },
-   {
-    "name": "S25_turn_on_the_stove_and_put_the_butter_in_the_pan",
-    "language": "turn on the stove and put the butter in the pan",
-    "bddl_file": "S25_turn_on_the_stove_and_put_the_butter_in_the_pan.bddl",
-    "init_file": "S25_turn_on_the_stove_and_put_the_butter_in_the_pan.pruned_init",
-    "scene": 25,
-    "room": "kitchen",
-    "kind": 2,
-    "steps": [
-     [
-      "butter",
-      "pan",
-      "in the pan"
-     ]
-    ],
-    "artic": "stove",
-    "validation": {
-     "drift_m": 0.0,
-     "min_height_m": -0.001,
-     "reach_m": {
-      "above butter": 0.027,
-      "pan": 0.028
-     },
-     "init_tries": 50
+     "init_tries": 50,
+     "expert_ok": "2/3"
     }
    }
   ],
   "layout": {
    "microwave": [
-    -0.088,
+    -0.208,
     0.412,
     0.0
    ],
-   "stove": [
-    -0.0,
-    -0.175,
+   "mug": [
+    -0.25,
+    -0.2,
     0.0
    ],
-   "ramekin": [
-    -0.276,
-    -0.225,
+   "plate": [
+    -0.091,
+    -0.121,
     0.0
    ],
-   "butter": [
-    -0.262,
-    0.03,
-    0.0
-   ],
-   "frying pan": [
-    -0.0,
-    -0.175,
+   "popcorn": [
+    0.011,
+    0.051,
     0.0
    ]
   },
   "classes": {
-   "butter": "butter",
-   "frying pan": "chefmate_8_frypan",
    "microwave": "microwave",
-   "ramekin": "glazed_rim_porcelain_ramekin",
-   "stove": "flat_stove"
+   "mug": "white_yellow_mug",
+   "plate": "plate",
+   "popcorn": "popcorn"
   },
-  "log": [],
-  "secs": 90
+  "log": [
+   [
+    1,
+    "put the mug to the left of the plate and put the popcorn in the microwave",
+    "expert 0/3"
+   ],
+   [
+    2,
+    "layout",
+    "no non-overlapping layout"
+   ],
+   [
+    3,
+    "put the mug to the left of the plate and put the popcorn in the microwave",
+    {
+     "drift": 1.0,
+     "low": -0.004327470178351223,
+     "start_success": false,
+     "forced": false,
+     "view": true,
+     "reach": {}
+    }
+   ],
+   [
+    4,
+    "put the mug to the left of the plate and put the popcorn in the microwave",
+    "expert 0/3"
+   ],
+   [
+    5,
+    "layout",
+    "no non-overlapping layout"
+   ]
+  ],
+  "secs": 115
+ },
+ {
+  "scene": 27,
+  "room": "kitchen",
+  "ok": true,
+  "attempts": 3,
+  "tasks": [
+   {
+    "name": "S27_put_the_wine_bottle_in_the_fridge",
+    "language": "put the wine bottle in the fridge",
+    "bddl_file": "S27_put_the_wine_bottle_in_the_fridge.bddl",
+    "init_file": "S27_put_the_wine_bottle_in_the_fridge.pruned_init",
+    "scene": 27,
+    "room": "kitchen",
+    "kind": 1,
+    "steps": [
+     [
+      "wine bottle",
+      "fridge",
+      "in the fridge"
+     ]
+    ],
+    "artic": null,
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above wine bottle": 0.023,
+      "fridge opening": 0.027
+     },
+     "init_tries": 50,
+     "expert_ok": "3/3"
+    }
+   },
+   {
+    "name": "S27_open_the_top_drawer_and_put_the_popcorn_in_it",
+    "language": "open the top drawer and put the popcorn in it",
+    "bddl_file": "S27_open_the_top_drawer_and_put_the_popcorn_in_it.bddl",
+    "init_file": "S27_open_the_top_drawer_and_put_the_popcorn_in_it.pruned_init",
+    "scene": 27,
+    "room": "kitchen",
+    "kind": 2,
+    "steps": [
+     [
+      "popcorn",
+      "drawer",
+      "in the top drawer"
+     ]
+    ],
+    "artic": "drawer",
+    "validation": {
+     "drift_m": 0.0,
+     "min_height_m": -0.001,
+     "reach_m": {
+      "above popcorn": 0.029,
+      "drawer front": 0.029
+     },
+     "init_tries": 50,
+     "expert_ok": "2/3"
+    }
+   }
+  ],
+  "layout": {
+   "fridge": [
+    -0.259,
+    -0.397,
+    3.142
+   ],
+   "cabinet": [
+    0.008,
+    0.391,
+    0.0
+   ],
+   "popcorn": [
+    0.051,
+    -0.229,
+    0.0
+   ],
+   "wine bottle": [
+    -0.118,
+    -0.268,
+    0.0
+   ]
+  },
+  "classes": {
+   "cabinet": "white_cabinet",
+   "fridge": "short_fridge",
+   "popcorn": "popcorn",
+   "wine bottle": "wine_bottle"
+  },
+  "log": [
+   [
+    0,
+    "put the wine bottle in the fridge",
+    "expert 1/3"
+   ],
+   [
+    1,
+    "open the top drawer and put the popcorn in it",
+    "expert 1/3"
+   ]
+  ],
+  "secs": 132
  }
 ]

@@ -1,0 +1,82 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the wine bottle in the fridge)
+    (:regions
+      (white_cabinet_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0025 0.3805 0.0175 0.4005)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (short_fridge_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2690 -0.4065 -0.2490 -0.3865)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (0.0360 -0.2440 0.0660 -0.2140)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wine_bottle_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1330 -0.2830 -0.1030 -0.2530)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (middle_region
+          (:target short_fridge_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    white_cabinet_1 - white_cabinet
+    short_fridge_1 - short_fridge
+  )
+
+  (:objects
+    popcorn_1 - popcorn
+    wine_bottle_1 - wine_bottle
+  )
+
+  (:obj_of_interest
+    short_fridge_1
+    wine_bottle_1
+  )
+
+  (:init
+    (On white_cabinet_1 kitchen_table_white_cabinet_init_region)
+    (On short_fridge_1 kitchen_table_short_fridge_init_region)
+    (On popcorn_1 kitchen_table_popcorn_init_region)
+    (On wine_bottle_1 kitchen_table_wine_bottle_init_region)
+    (Open short_fridge_1)
+  )
+
+  (:goal
+    (And (In wine_bottle_1 short_fridge_1_middle_region))
+  )
+
+)

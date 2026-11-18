@@ -1,0 +1,86 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the book on the cabinet and put the moka pot in the tray)
+    (:regions
+      (black_book_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.0405 0.0295 -0.0105 0.0595)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_cabinet_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2825 -0.4005 -0.2625 -0.3805)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2945 -0.1110 -0.2645 -0.0810)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1350 0.2185 -0.1050 0.2485)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_cabinet_1)
+      )
+      (contain_region
+          (:target wooden_tray_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    wooden_cabinet_1 - wooden_cabinet
+  )
+
+  (:objects
+    black_book_1 - black_book
+    moka_pot_1 - moka_pot
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    black_book_1
+    moka_pot_1
+    wooden_cabinet_1
+    wooden_tray_1
+  )
+
+  (:init
+    (On black_book_1 kitchen_table_black_book_init_region)
+    (On wooden_cabinet_1 kitchen_table_wooden_cabinet_init_region)
+    (On moka_pot_1 kitchen_table_moka_pot_init_region)
+    (On wooden_tray_1 kitchen_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (On black_book_1 wooden_cabinet_1_top_side) (In moka_pot_1 wooden_tray_1_contain_region))
+  )
+
+)

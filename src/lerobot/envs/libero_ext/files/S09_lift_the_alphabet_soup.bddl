@@ -1,0 +1,121 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language lift the alphabet soup)
+    (:regions
+      (alphabet_soup_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1435 -0.0535 -0.1135 -0.0235)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cream_cheese_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2945 -0.3435 -0.2645 -0.3135)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (short_fridge_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (0.0310 0.3865 0.0510 0.4065)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (ketchup_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.3165 -0.0770 -0.2865 -0.0470)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (macaroni_and_cheese_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1225 0.0570 -0.0925 0.0870)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (flat_stove_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2500 0.1800 -0.2300 0.2000)
+            )
+          )
+          (:yaw_rotation (
+              (1.5708 1.5708)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1150 -0.2015 -0.0850 -0.1715)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cook_region
+          (:target flat_stove_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    short_fridge_1 - short_fridge
+    flat_stove_1 - flat_stove
+  )
+
+  (:objects
+    alphabet_soup_1 - alphabet_soup
+    cream_cheese_1 - cream_cheese
+    chefmate_8_frypan_1 - chefmate_8_frypan
+    ketchup_1 - ketchup
+    macaroni_and_cheese_1 - macaroni_and_cheese
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    alphabet_soup_1
+  )
+
+  (:init
+    (On alphabet_soup_1 kitchen_table_alphabet_soup_init_region)
+    (On cream_cheese_1 kitchen_table_cream_cheese_init_region)
+    (On short_fridge_1 kitchen_table_short_fridge_init_region)
+    (On chefmate_8_frypan_1 flat_stove_1_cook_region)
+    (On ketchup_1 kitchen_table_ketchup_init_region)
+    (On macaroni_and_cheese_1 kitchen_table_macaroni_and_cheese_init_region)
+    (On flat_stove_1 kitchen_table_flat_stove_init_region)
+    (On wooden_tray_1 kitchen_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (Lifted alphabet_soup_1))
+  )
+
+)

@@ -1,0 +1,112 @@
+(define (problem LIBERO_Living_Room_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the bbq sauce in the tray and put the popcorn in the bookcase)
+    (:regions
+      (bbq_sauce_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0995 -0.1815 0.1295 -0.1515)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_shelf_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.2020 0.3655 -0.1820 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cream_cheese_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0455 -0.0435 0.0755 -0.0135)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.1560 -0.0840 0.1860 -0.0540)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target living_room_table)
+          (:ranges (
+              (-0.0990 -0.2215 -0.0790 -0.2015)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_tray_init_region
+          (:target living_room_table)
+          (:ranges (
+              (0.0850 0.1585 0.1150 0.1885)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (contain_region
+          (:target wooden_tray_1)
+      )
+      (middle_region
+          (:target wooden_shelf_1)
+      )
+    )
+
+  (:fixtures
+    living_room_table - living_room_table
+    wooden_shelf_1 - wooden_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    bbq_sauce_1 - bbq_sauce
+    cream_cheese_1 - cream_cheese
+    popcorn_1 - popcorn
+    wooden_tray_1 - wooden_tray
+  )
+
+  (:obj_of_interest
+    bbq_sauce_1
+    popcorn_1
+    wooden_shelf_1
+    wooden_tray_1
+  )
+
+  (:init
+    (On bbq_sauce_1 living_room_table_bbq_sauce_init_region)
+    (On wooden_shelf_1 living_room_table_wooden_shelf_init_region)
+    (On cream_cheese_1 living_room_table_cream_cheese_init_region)
+    (On popcorn_1 living_room_table_popcorn_init_region)
+    (On white_storage_box_1 living_room_table_white_storage_box_init_region)
+    (On wooden_tray_1 living_room_table_wooden_tray_init_region)
+  )
+
+  (:goal
+    (And (In bbq_sauce_1 wooden_tray_1_contain_region) (In popcorn_1 wooden_shelf_1_middle_region))
+  )
+
+)

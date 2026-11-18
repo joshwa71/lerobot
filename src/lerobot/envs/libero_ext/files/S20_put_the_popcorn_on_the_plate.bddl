@@ -1,0 +1,78 @@
+(define (problem LIBERO_Coffee_Table_Manipulation)
+  (:domain robosuite)
+  (:language put the popcorn on the plate)
+    (:regions
+      (macaroni_and_cheese_init_region
+          (:target coffee_table)
+          (:ranges (
+              (-0.1425 0.0970 -0.1125 0.1270)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.0940 0.1640 0.1240 0.1940)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (popcorn_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.0960 -0.1840 0.1260 -0.1540)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target coffee_table)
+          (:ranges (
+              (0.0860 0.3655 0.1060 0.3855)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+    )
+
+  (:fixtures
+    coffee_table - coffee_table
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+  )
+
+  (:objects
+    macaroni_and_cheese_1 - macaroni_and_cheese
+    plate_1 - plate
+    popcorn_1 - popcorn
+  )
+
+  (:obj_of_interest
+    plate_1
+    popcorn_1
+  )
+
+  (:init
+    (On macaroni_and_cheese_1 coffee_table_macaroni_and_cheese_init_region)
+    (On plate_1 coffee_table_plate_init_region)
+    (On popcorn_1 coffee_table_popcorn_init_region)
+    (On wooden_two_layer_shelf_1 coffee_table_wooden_two_layer_shelf_init_region)
+  )
+
+  (:goal
+    (And (On popcorn_1 plate_1))
+  )
+
+)

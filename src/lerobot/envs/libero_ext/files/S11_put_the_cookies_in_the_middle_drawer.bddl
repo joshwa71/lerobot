@@ -1,0 +1,121 @@
+(define (problem LIBERO_Study_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the cookies in the middle drawer)
+    (:regions
+      (white_cabinet_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2025 0.3805 -0.1825 0.4005)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (cookies_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0535 -0.1540 -0.0235 -0.1240)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (ketchup_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0635 -0.0970 0.0935 -0.0670)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (white_yellow_mug_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.0650 -0.0350 -0.0350 -0.0050)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (orange_juice_init_region
+          (:target study_table)
+          (:ranges (
+              (0.1315 -0.2385 0.1615 -0.2085)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (wooden_two_layer_shelf_init_region
+          (:target study_table)
+          (:ranges (
+              (-0.2140 -0.3855 -0.1940 -0.3655)
+            )
+          )
+          (:yaw_rotation (
+              (3.1416 3.1416)
+            )
+          )
+      )
+      (white_storage_box_init_region
+          (:target study_table)
+          (:ranges (
+              (0.0210 0.1185 0.0410 0.1385)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (middle_region
+          (:target white_cabinet_1)
+      )
+    )
+
+  (:fixtures
+    study_table - study_table
+    white_cabinet_1 - white_cabinet
+    wooden_two_layer_shelf_1 - wooden_two_layer_shelf
+    white_storage_box_1 - white_storage_box
+  )
+
+  (:objects
+    cookies_1 - cookies
+    ketchup_1 - ketchup
+    white_yellow_mug_1 - white_yellow_mug
+    orange_juice_1 - orange_juice
+  )
+
+  (:obj_of_interest
+    cookies_1
+    white_cabinet_1
+  )
+
+  (:init
+    (On white_cabinet_1 study_table_white_cabinet_init_region)
+    (On cookies_1 study_table_cookies_init_region)
+    (On ketchup_1 study_table_ketchup_init_region)
+    (On white_yellow_mug_1 study_table_white_yellow_mug_init_region)
+    (On orange_juice_1 study_table_orange_juice_init_region)
+    (On wooden_two_layer_shelf_1 study_table_wooden_two_layer_shelf_init_region)
+    (On white_storage_box_1 study_table_white_storage_box_init_region)
+    (Open white_cabinet_1_middle_region)
+  )
+
+  (:goal
+    (And (In cookies_1 white_cabinet_1_middle_region))
+  )
+
+)

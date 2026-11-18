@@ -1,0 +1,84 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language put the butter on the plate and put the salad dressing in the fridge)
+    (:regions
+      (butter_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2170 0.3150 -0.1870 0.3450)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (short_fridge_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (0.0310 0.3865 0.0510 0.4065)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (plate_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1660 0.0840 -0.1360 0.1140)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (salad_dressing_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.2170 -0.1385 -0.1870 -0.1085)
+            )
+          )
+          (:yaw_rotation (
+              (0.0000 0.0000)
+            )
+          )
+      )
+      (middle_region
+          (:target short_fridge_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    short_fridge_1 - short_fridge
+  )
+
+  (:objects
+    butter_1 - butter
+    plate_1 - plate
+    salad_dressing_1 - salad_dressing
+  )
+
+  (:obj_of_interest
+    butter_1
+    plate_1
+    salad_dressing_1
+    short_fridge_1
+  )
+
+  (:init
+    (On butter_1 kitchen_table_butter_init_region)
+    (On short_fridge_1 kitchen_table_short_fridge_init_region)
+    (On plate_1 kitchen_table_plate_init_region)
+    (On salad_dressing_1 kitchen_table_salad_dressing_init_region)
+    (Open short_fridge_1)
+  )
+
+  (:goal
+    (And (On butter_1 plate_1) (In salad_dressing_1 short_fridge_1_middle_region))
+  )
+
+)
