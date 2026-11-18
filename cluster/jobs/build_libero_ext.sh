@@ -21,7 +21,7 @@ set -euo pipefail
 source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
 D=$HF_LEROBOT_HOME
-LEARN_TASKS=${LEARN_TASKS:-0,12,34,45}
+LEARN_TASKS=${LEARN_TASKS:-0,31,42,59}
 echo "== $(hostname) $(date) job=$JOB_ID slots=$NSLOTS CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
 cd "$REPO/scripts/datasets"
 git log -1 --format='== repo %h %s'
