@@ -469,3 +469,21 @@ Insertion through a side opening (bookcase, fridge, microwave) is the expert's w
   - task_index = suite order;
   - quantile stats added.
 - States re-read from the saved positions differ from the recorded ones by < 1 mm. robosuite caches observations a few physics substeps before the end of each control step, and the recorded state is that cached value, as evaluation sees it.
+
+**Demos generated (18 Nov 26):**
+- 3,000 successful episodes, 50 per task; 942 of them from widened starts with DART noise.
+- 652k frames. Mean length 217 steps, longest 489, against the 520-step evaluation limit.
+- The expert succeeded on 76% of attempts overall.
+- Weakest tasks (successes / attempts):
+  - book on the cabinet + moka pot in the tray, 50/173 (failed picks of the book and moka pot);
+  - cookies in the middle drawer, 50/171;
+  - lift the moka pot, 50/147;
+  - macaroni in the basket + moka pot right of the plate, 50/103;
+  - book in the bottom drawer + orange juice on the shelf, 50/101.
+- The demos are in `outputs/libero_ext_demos` (152 MB) and `/SAN/.../data/libero_ext_demos`.
+- Rendering into `data/libero_ext` and `data/libero_ext_learn4` is submitted (`cluster/jobs/build_libero_ext.sh`).
+
+**Next: learnability check** (`configs/ext_learn_spec_r128.sh`, once `libero_ext_learn4` exists):
+- LoRA specialists with the libero_10 recipe on suite tasks 0, 31, 42 and 59: cookies in the bowl; ketchup on the shelf + cream cheese in the caddy; chocolate pudding in the bowl + milk in the tray; open the top drawer and put the popcorn in it.
+- Each specialist is evaluated on its own task.
+- The zero-shot floor of the libero_90 base on all 60 tasks (`configs/ext_zeroshot.sh`, 5 episodes each) is submitted.
