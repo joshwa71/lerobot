@@ -486,4 +486,7 @@ Insertion through a side opening (bookcase, fridge, microwave) is the expert's w
 **Next: learnability check** (`configs/ext_learn_spec_r128.sh`, once `libero_ext_learn4` exists):
 - LoRA specialists with the libero_10 recipe on suite tasks 0, 31, 42 and 59: cookies in the bowl; ketchup on the shelf + cream cheese in the caddy; chocolate pudding in the bowl + milk in the tray; open the top drawer and put the popcorn in it.
 - Each specialist is evaluated on its own task.
-- The zero-shot floor of the libero_90 base on all 60 tasks (`configs/ext_zeroshot.sh`, 5 episodes each) is submitted.
+- **Zero-shot floor** of the SmolVLA libero_90 base on all 60 tasks (`configs/ext_zeroshot.sh`; 5 episodes each, one seed, 10 actions executed per chunk): **1.0%** mean.
+  - Only two tasks succeed at all: "turn on the faucet" 2/5 and "lift the alphabet soup" 1/5.
+  - The other 58 tasks are 0/5.
+  - The tasks are new to the pretrained model, as intended.
