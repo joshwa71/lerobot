@@ -1,0 +1,4220 @@
+[
+ {
+  "obj": "macaroni",
+  "dest": "basket",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   140,
+   133,
+   156,
+   126,
+   109,
+   127,
+   146,
+   144,
+   131
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   128,
+   117,
+   113,
+   97,
+   100,
+   98,
+   92,
+   90,
+   120
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "cookies",
+  "dest": "basket",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick cookies": 3
+  },
+  "lens": [
+   95,
+   103,
+   114,
+   130,
+   139,
+   138
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "basket",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   118,
+   110,
+   112,
+   122,
+   119,
+   129,
+   115,
+   111
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "basket",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   116,
+   119,
+   119,
+   105,
+   108,
+   114,
+   108,
+   110,
+   113
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "basket",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick bbq sauce": 1
+  },
+  "lens": [
+   105,
+   111,
+   146,
+   128,
+   145,
+   123,
+   116,
+   108
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "mug",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 4,
+  "n": 5,
+  "why": {
+   "pick mug": 1,
+   "error: IndexError: index 100 is out of bounds for axis 0 with size 100": 1
+  },
+  "lens": [
+   87,
+   82,
+   138,
+   117
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "milk",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   128,
+   143,
+   116,
+   120,
+   120,
+   121,
+   121,
+   113,
+   124
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "placed orange juice tray": 2
+  },
+  "lens": [
+   134,
+   142,
+   156,
+   150,
+   110,
+   120,
+   125
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   117,
+   113,
+   137,
+   104,
+   91,
+   102,
+   131,
+   133,
+   146
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cookies",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   143,
+   131,
+   160,
+   118,
+   122,
+   108,
+   109,
+   107,
+   127
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   115,
+   116,
+   105,
+   124,
+   118,
+   120,
+   108,
+   119,
+   136
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   106,
+   102,
+   109,
+   128,
+   92,
+   128,
+   318,
+   112
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "butter",
+  "dest": "caddy",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   118,
+   116,
+   135,
+   107,
+   122,
+   120,
+   162,
+   159,
+   167
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "caddy",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   128,
+   149,
+   125,
+   128,
+   139,
+   156,
+   120,
+   130,
+   149
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "tray",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick moka pot": 4
+  },
+  "lens": [
+   130,
+   120,
+   130,
+   117,
+   270
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "butter",
+  "dest": "caddy",
+  "v": 3,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   196,
+   179,
+   202,
+   174,
+   178,
+   195,
+   160,
+   155,
+   153
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "caddy",
+  "v": 3,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   115,
+   118,
+   120,
+   166,
+   168,
+   153,
+   139,
+   156,
+   148
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "caddy",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick ramekin": 1
+  },
+  "lens": [
+   133,
+   132,
+   129,
+   120,
+   169,
+   114,
+   106,
+   121
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "caddy",
+  "v": 3,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   135,
+   136,
+   166,
+   121,
+   122,
+   121,
+   144,
+   130,
+   130
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "caddy",
+  "v": 3,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   222,
+   172,
+   183,
+   154,
+   164,
+   153,
+   141,
+   144,
+   153
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "caddy",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   173,
+   173,
+   186,
+   149,
+   147,
+   143,
+   125,
+   141,
+   146
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "bowl",
+  "dest": "drainer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick bowl": 3
+  },
+  "lens": [
+   107,
+   215,
+   103,
+   135,
+   112,
+   156
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bowl",
+  "dest": "drainer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 4,
+  "n": 9,
+  "why": {
+   "pick bowl": 5
+  },
+  "lens": [
+   232,
+   173,
+   137,
+   177
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drainer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   143,
+   134,
+   140,
+   113,
+   120,
+   119,
+   108,
+   99,
+   110
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drainer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   118,
+   116,
+   139,
+   118,
+   122,
+   128,
+   100,
+   98,
+   114
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick cream cheese": 3
+  },
+  "lens": [
+   101,
+   98,
+   117,
+   107,
+   100,
+   101
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   130,
+   136,
+   120,
+   139,
+   143,
+   145,
+   131,
+   126,
+   128
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   132,
+   149,
+   135,
+   130,
+   114,
+   132,
+   119,
+   102,
+   98
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cookies",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "pick cookies": 2
+  },
+  "lens": [
+   184,
+   209,
+   238,
+   108,
+   131,
+   137,
+   201
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cookies",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   135,
+   135,
+   134,
+   135,
+   131,
+   123,
+   105,
+   105,
+   102
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cookies",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "placed cookies drawer": 1
+  },
+  "lens": [
+   119,
+   94,
+   123,
+   109,
+   127,
+   120,
+   125,
+   127
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   129,
+   125,
+   119,
+   99,
+   114,
+   106,
+   120,
+   120,
+   116
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   128,
+   125,
+   141,
+   135,
+   166,
+   155,
+   137,
+   135,
+   131
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   120,
+   90,
+   105,
+   125,
+   117,
+   121,
+   111,
+   134,
+   111
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   131,
+   141,
+   132,
+   126,
+   150,
+   141,
+   151,
+   146,
+   155
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   144,
+   144,
+   152,
+   127,
+   133,
+   126,
+   139,
+   138,
+   141
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   151,
+   144,
+   143,
+   147,
+   160,
+   148,
+   124,
+   124,
+   119
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   140,
+   154,
+   209,
+   121,
+   137,
+   146,
+   133,
+   151,
+   164
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   133,
+   117,
+   120,
+   147,
+   144,
+   140,
+   117,
+   126,
+   122
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   123,
+   125,
+   110,
+   140,
+   138,
+   163,
+   144,
+   147,
+   139
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "book",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "pick book": 2
+  },
+  "lens": [
+   110,
+   131,
+   109,
+   117,
+   133,
+   151,
+   153
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   158,
+   166,
+   173,
+   150,
+   161,
+   158,
+   125,
+   127,
+   121
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "book",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick book": 4
+  },
+  "lens": [
+   117,
+   133,
+   155,
+   153,
+   115
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   108,
+   126,
+   125,
+   111,
+   113,
+   150,
+   145,
+   148,
+   156
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   142,
+   116,
+   140,
+   130,
+   136,
+   135,
+   115,
+   141,
+   109
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   118,
+   121,
+   118,
+   144,
+   142,
+   163,
+   120,
+   128,
+   120
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   107,
+   179,
+   127,
+   131,
+   128,
+   157,
+   109,
+   103,
+   118
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   132,
+   123,
+   119,
+   170,
+   131,
+   123,
+   118,
+   135,
+   127
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "mug",
+  "dest": "drawer",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "pick mug": 2
+  },
+  "lens": [
+   114,
+   113,
+   125,
+   172,
+   128,
+   135,
+   146
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "mug",
+  "dest": "drawer",
+  "v": 2,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   148,
+   132,
+   149,
+   178,
+   107,
+   147,
+   138,
+   144
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "mug",
+  "dest": "drawer",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   103,
+   115,
+   108,
+   205,
+   211,
+   120,
+   172,
+   124
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bowl",
+  "dest": "microwave",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick bowl": 4
+  },
+  "lens": [
+   235,
+   258,
+   214,
+   247,
+   157
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "microwave",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted popcorn microwave": 3
+  },
+  "lens": [
+   158,
+   153,
+   168,
+   213,
+   166,
+   164
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "microwave",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted macaroni microwave": 3
+  },
+  "lens": [
+   164,
+   164,
+   176,
+   185,
+   185,
+   191
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "microwave",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "pick ramekin": 3,
+   "inserted ramekin microwave": 4
+  },
+  "lens": [
+   151,
+   169
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick orange juice": 6
+  },
+  "lens": [
+   159,
+   154,
+   165
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "milk",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "inserted milk fridge": 1
+  },
+  "lens": [
+   164,
+   162,
+   161,
+   180,
+   180,
+   186,
+   170,
+   160
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "butter",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "inserted butter fridge": 5,
+   "pick butter": 1
+  },
+  "lens": [
+   189,
+   164,
+   248
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "inserted ketchup fridge": 1
+  },
+  "lens": [
+   172,
+   182,
+   181,
+   172,
+   166,
+   174,
+   186,
+   195
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "inserted bbq sauce fridge": 1
+  },
+  "lens": [
+   208,
+   208,
+   195,
+   174,
+   172,
+   153,
+   164,
+   153
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "inserted cream cheese fridge": 7
+  },
+  "lens": [
+   177,
+   193
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "salad dressing",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "inserted salad dressing fridge": 4
+  },
+  "lens": [
+   199,
+   203,
+   188,
+   177,
+   187
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "inserted chocolate pudding fridge": 6
+  },
+  "lens": [
+   216,
+   173,
+   177
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick tomato sauce": 3
+  },
+  "lens": [
+   156,
+   165,
+   161,
+   160,
+   193,
+   192
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "fridge",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick wine bottle": 3
+  },
+  "lens": [
+   168,
+   150,
+   172,
+   154,
+   172,
+   164
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick ramekin": 1
+  },
+  "lens": [
+   189,
+   129,
+   140,
+   124,
+   123,
+   164,
+   109,
+   110
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "mug",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick mug": 3
+  },
+  "lens": [
+   133,
+   144,
+   137,
+   128,
+   128,
+   150
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "mug",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 1,
+  "n": 9,
+  "why": {
+   "inserted mug shelf": 8
+  },
+  "lens": [
+   155
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "inserted ramekin shelf": 2
+  },
+  "lens": [
+   134,
+   128,
+   228,
+   225,
+   247,
+   152,
+   163
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick moka pot": 3,
+   "placed moka pot shelf": 1
+  },
+  "lens": [
+   201,
+   198,
+   216,
+   157,
+   140
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   119,
+   127,
+   120,
+   109,
+   105,
+   111,
+   116,
+   122,
+   127
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   134,
+   145,
+   146,
+   160,
+   158,
+   181,
+   158,
+   172,
+   160
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   159,
+   162,
+   149,
+   140,
+   131,
+   149,
+   155,
+   141,
+   186
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   180,
+   173,
+   177,
+   172,
+   181,
+   177,
+   170,
+   182,
+   201
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   144,
+   144,
+   159,
+   168,
+   153,
+   139,
+   143,
+   150
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   187,
+   164,
+   174,
+   170,
+   168,
+   177,
+   146,
+   143,
+   142
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "cookies",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   127,
+   130,
+   130,
+   126,
+   129,
+   137,
+   139,
+   136,
+   124
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "cookies",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "inserted cookies shelf": 2
+  },
+  "lens": [
+   144,
+   190,
+   181,
+   173,
+   153,
+   166,
+   162
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick macaroni": 1
+  },
+  "lens": [
+   122,
+   115,
+   139,
+   105,
+   120,
+   109,
+   160,
+   183
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   114,
+   115,
+   115,
+   157,
+   164,
+   163,
+   115,
+   113,
+   201
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "inserted macaroni shelf": 3,
+   "pick macaroni": 1
+  },
+  "lens": [
+   139,
+   145,
+   153,
+   163,
+   161
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted popcorn shelf": 3
+  },
+  "lens": [
+   167,
+   155,
+   163,
+   177,
+   164,
+   168
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "milk",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "placed milk shelf": 1
+  },
+  "lens": [
+   141,
+   146,
+   144,
+   153,
+   148,
+   148,
+   134,
+   134
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   163,
+   163,
+   166,
+   114,
+   105,
+   114,
+   145,
+   138,
+   149
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   147,
+   141,
+   155,
+   122,
+   126,
+   121,
+   135,
+   140,
+   138
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   133,
+   129,
+   133,
+   118,
+   127,
+   139,
+   126,
+   136,
+   122
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted bbq sauce shelf": 3
+  },
+  "lens": [
+   165,
+   159,
+   166,
+   185,
+   185,
+   186
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 6,
+  "why": {
+   "error: IndexError: index 92 is out of bounds for axis 0 with size 92": 1
+  },
+  "lens": [
+   148,
+   160,
+   168,
+   118,
+   124,
+   122
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "butter",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   168,
+   158,
+   170,
+   137,
+   140,
+   139,
+   106,
+   112,
+   115
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "shelf",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 5,
+  "why": {
+   "error: IndexError: index 91 is out of bounds for axis 0 with size 90": 1
+  },
+  "lens": [
+   151,
+   150,
+   152,
+   130,
+   131
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "butter",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "inserted butter shelf": 2
+  },
+  "lens": [
+   165,
+   175,
+   173,
+   171,
+   161,
+   169,
+   182
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "book",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted book bookcase": 4,
+   "pick book": 5
+  },
+  "lens": [],
+  "room": "study"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "inserted cream cheese shelf": 4
+  },
+  "lens": [
+   236,
+   310,
+   302,
+   272,
+   293
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "shelf",
+  "v": 1,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted chocolate pudding shelf": 2,
+   "pick chocolate pudding": 1
+  },
+  "lens": [
+   186,
+   191,
+   210,
+   207,
+   413,
+   165
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "mug",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted mug bookcase": 8,
+   "pick mug": 1
+  },
+  "lens": [],
+  "room": "floor"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted ramekin bookcase": 8,
+   "pick ramekin": 1
+  },
+  "lens": [],
+  "room": "living room"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted macaroni bookcase": 9
+  },
+  "lens": [],
+  "room": "tabletop"
+ },
+ {
+  "obj": "butter",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 1,
+  "n": 9,
+  "why": {
+   "inserted butter bookcase": 8
+  },
+  "lens": [
+   221
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "cookies",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 1,
+  "n": 9,
+  "why": {
+   "inserted cookies bookcase": 8
+  },
+  "lens": [
+   170
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "inserted popcorn bookcase": 3
+  },
+  "lens": [
+   149,
+   159,
+   133,
+   134,
+   149,
+   151
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted cream cheese bookcase": 9
+  },
+  "lens": [],
+  "room": "living room"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "bookcase",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "inserted chocolate pudding bookcase": 6,
+   "pick chocolate pudding": 3
+  },
+  "lens": [],
+  "room": "coffee table"
+ },
+ {
+  "obj": "butter",
+  "dest": "pan",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "placed butter pan": 1,
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   198,
+   135,
+   128,
+   140,
+   133,
+   151,
+   132
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "pan",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "error ValueError": 1
+  },
+  "lens": [
+   94,
+   105,
+   123,
+   117,
+   123,
+   148,
+   134,
+   153
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "butter",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 2
+  },
+  "lens": [
+   137,
+   125,
+   135,
+   126,
+   130,
+   117,
+   137
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   105,
+   113,
+   108,
+   94,
+   103,
+   103,
+   116,
+   114,
+   123
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   136,
+   136,
+   153,
+   95,
+   114,
+   112,
+   98,
+   88,
+   96
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   124,
+   119,
+   126,
+   134,
+   123,
+   120,
+   133,
+   131,
+   140
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "cookies",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   104,
+   114,
+   101,
+   132,
+   141,
+   138,
+   74,
+   87,
+   96
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "bowl",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   125,
+   120,
+   119,
+   125,
+   114,
+   108,
+   85,
+   86,
+   97
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   119,
+   114,
+   128,
+   113,
+   101,
+   187,
+   126,
+   99,
+   105
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "butter",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   130,
+   139,
+   154,
+   91,
+   103,
+   95,
+   117,
+   115,
+   142
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   95,
+   110,
+   104,
+   121,
+   107,
+   114,
+   117,
+   126,
+   121
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   111,
+   97,
+   102,
+   122,
+   136,
+   131,
+   134,
+   125,
+   134
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cookies",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   157,
+   153,
+   153,
+   109,
+   110,
+   122,
+   118,
+   126,
+   114
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "plate",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   126,
+   118,
+   117,
+   126,
+   108,
+   136,
+   121,
+   126,
+   123
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "book",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick book": 4
+  },
+  "lens": [
+   131,
+   143,
+   140,
+   138,
+   137
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "mug",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick mug": 1
+  },
+  "lens": [
+   216,
+   194,
+   171,
+   205,
+   138,
+   134,
+   128,
+   145
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 4,
+  "n": 9,
+  "why": {
+   "pick moka pot": 5
+  },
+  "lens": [
+   218,
+   191,
+   179,
+   121
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   129,
+   234,
+   152,
+   145,
+   162,
+   126,
+   123,
+   136
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   156,
+   125,
+   152,
+   160,
+   173,
+   168,
+   178,
+   172
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   160,
+   127,
+   137,
+   155,
+   136,
+   144,
+   140,
+   140,
+   154
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   122,
+   120,
+   232,
+   121,
+   109,
+   124,
+   127,
+   124,
+   140
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cookies",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   121,
+   127,
+   132,
+   154,
+   140,
+   160,
+   117,
+   122,
+   135
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "pick popcorn": 2
+  },
+  "lens": [
+   132,
+   130,
+   171,
+   125,
+   126,
+   114,
+   119
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "butter",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   177,
+   169,
+   176,
+   133,
+   146,
+   145,
+   146,
+   137,
+   147
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   148,
+   147,
+   154,
+   122,
+   124,
+   125,
+   141,
+   145,
+   160
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   121,
+   122,
+   122,
+   127,
+   127,
+   141,
+   115,
+   116,
+   131
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "milk",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "placed milk cabinet top": 3
+  },
+  "lens": [
+   111,
+   115,
+   136,
+   145,
+   164,
+   166
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "placed orange juice cabinet top": 1
+  },
+  "lens": [
+   136,
+   131,
+   247,
+   126,
+   109,
+   128,
+   127,
+   134
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   140,
+   141,
+   158,
+   114,
+   114,
+   116,
+   128,
+   118,
+   111
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "salad dressing",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   158,
+   139,
+   151,
+   123,
+   116,
+   128,
+   140,
+   155,
+   138
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   152,
+   161,
+   168,
+   134,
+   134,
+   128,
+   115,
+   113,
+   132
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "cabinet top",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   266,
+   258,
+   282,
+   115,
+   120,
+   119,
+   110,
+   130,
+   134
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "mug",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick mug": 1
+  },
+  "lens": [
+   130,
+   135,
+   132,
+   281,
+   146,
+   106,
+   118,
+   98
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "book",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick book": 3
+  },
+  "lens": [
+   140,
+   158,
+   97,
+   92,
+   116,
+   111
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   104,
+   120,
+   116,
+   109,
+   116,
+   124,
+   144,
+   134,
+   135
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "pick moka pot": 7
+  },
+  "lens": [
+   146,
+   185
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "bowl",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick bowl": 6
+  },
+  "lens": [
+   98,
+   110,
+   191
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick alphabet soup": 1
+  },
+  "lens": [
+   134,
+   138,
+   124,
+   127,
+   126,
+   128,
+   127,
+   157
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   107,
+   104,
+   112,
+   109,
+   121,
+   140,
+   135,
+   104,
+   129
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "butter",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   146,
+   146,
+   159,
+   105,
+   99,
+   113,
+   132,
+   123,
+   128
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   99,
+   100,
+   104,
+   121,
+   116,
+   132,
+   104,
+   115,
+   111
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "chocolate pudding",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   157,
+   149,
+   149,
+   115,
+   117,
+   119,
+   134,
+   130,
+   138
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   100,
+   104,
+   108,
+   127,
+   133,
+   151,
+   119,
+   117,
+   124
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cookies",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick cookies": 3
+  },
+  "lens": [
+   132,
+   135,
+   136,
+   110,
+   106,
+   111
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "milk",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick milk": 3
+  },
+  "lens": [
+   112,
+   106,
+   108,
+   119,
+   124,
+   127
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   119,
+   106,
+   119,
+   143,
+   131,
+   143,
+   107,
+   124,
+   102
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "storage box",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   114,
+   104,
+   119,
+   111,
+   116,
+   113,
+   105,
+   105,
+   117
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "plate",
+  "dest": "placemat",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick plate": 6
+  },
+  "lens": [
+   125,
+   147,
+   115
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "mug",
+  "dest": "placemat",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "placed mug placemat": 1,
+   "pick mug": 2
+  },
+  "lens": [
+   100,
+   88,
+   242,
+   113,
+   107,
+   102
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "bowl",
+  "dest": "placemat",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick bowl": 6
+  },
+  "lens": [
+   98,
+   243,
+   97
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "placemat",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   329,
+   111,
+   113,
+   99,
+   91,
+   101,
+   127,
+   121,
+   121
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "mug",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 8,
+  "n": 9,
+  "why": {
+   "pick mug": 1
+  },
+  "lens": [
+   55,
+   55,
+   58,
+   137,
+   158,
+   56,
+   55,
+   53
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "book",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 4,
+  "n": 9,
+  "why": {
+   "pick book": 5
+  },
+  "lens": [
+   57,
+   58,
+   63,
+   48
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "bowl",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick bowl": 4
+  },
+  "lens": [
+   57,
+   106,
+   79,
+   126,
+   61
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   58,
+   45,
+   49,
+   54,
+   63,
+   59,
+   58,
+   60,
+   49
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   64,
+   53,
+   72,
+   68,
+   75,
+   81,
+   48,
+   50,
+   49
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "milk",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   62,
+   45,
+   61,
+   44,
+   59,
+   54,
+   44,
+   42,
+   56
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 3,
+  "why": {
+   "error: IndexError: index 96 is out of bounds for axis 0 with size 96": 1
+  },
+  "lens": [
+   52,
+   50,
+   68
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   59,
+   73,
+   60,
+   85,
+   54,
+   58,
+   66,
+   68,
+   70
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "salad dressing",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick salad dressing": 6
+  },
+  "lens": [
+   74,
+   44,
+   59
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick moka pot": 3
+  },
+  "lens": [
+   69,
+   69,
+   65,
+   62,
+   63,
+   80
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cookies",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   52,
+   51,
+   50,
+   52,
+   51,
+   57,
+   61,
+   63,
+   67
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "lift",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   60,
+   61,
+   65,
+   64,
+   67,
+   58,
+   59,
+   63,
+   64
+  ],
+  "room": "coffee table"
+ },
+ {
+  "obj": "mug",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 6,
+  "n": 9,
+  "why": {
+   "pick mug": 3
+  },
+  "lens": [
+   95,
+   84,
+   83,
+   100,
+   168,
+   100
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "frying pan",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "pick frying pan": 7
+  },
+  "lens": [
+   92,
+   114
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "book",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick book": 4
+  },
+  "lens": [
+   138,
+   145,
+   93,
+   138,
+   130
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   161,
+   102,
+   114,
+   93,
+   90,
+   126,
+   147,
+   146,
+   143
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "wine bottle",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   61,
+   85,
+   56,
+   107,
+   86,
+   101,
+   99,
+   101,
+   75
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "moka pot",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick moka pot": 4
+  },
+  "lens": [
+   146,
+   167,
+   225,
+   144,
+   176
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   100,
+   97,
+   101,
+   94,
+   83,
+   95,
+   115,
+   124,
+   105
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   121,
+   134,
+   128,
+   124,
+   113,
+   133,
+   129,
+   107,
+   117
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "ketchup",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   120,
+   127,
+   120,
+   115,
+   122,
+   131,
+   120,
+   136,
+   126
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   100,
+   118,
+   105,
+   102,
+   102,
+   129,
+   100,
+   95,
+   115
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "milk",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   119,
+   117,
+   117,
+   113,
+   124,
+   124,
+   114,
+   122,
+   116
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "salad dressing",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 3,
+  "n": 9,
+  "why": {
+   "pick salad dressing": 6
+  },
+  "lens": [
+   141,
+   131,
+   133
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": "butter",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   110,
+   106,
+   110,
+   125,
+   132,
+   121,
+   90,
+   82,
+   85
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "orange juice",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   110,
+   126,
+   135,
+   113,
+   130,
+   121,
+   106,
+   106,
+   97
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   87,
+   83,
+   92,
+   100,
+   112,
+   103,
+   125,
+   108,
+   127
+  ],
+  "room": "living room"
+ },
+ {
+  "obj": null,
+  "dest": null,
+  "v": null,
+  "artic": "faucet",
+  "artic_variant": null,
+  "ok": 2,
+  "n": 2,
+  "why": {
+   "error: ValueError: max() iterable argument is empty": 1
+  },
+  "lens": [
+   46,
+   46
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cookies",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   100,
+   106,
+   90,
+   131,
+   139,
+   139,
+   93,
+   94,
+   98
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   129,
+   108,
+   126,
+   145,
+   154,
+   156,
+   90,
+   116,
+   110
+  ],
+  "room": "tabletop"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "beside",
+  "v": 0,
+  "artic": null,
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   115,
+   105,
+   114,
+   124,
+   129,
+   138,
+   119,
+   127,
+   119
+  ],
+  "room": "floor"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "microwave",
+  "v": null,
+  "artic": "microwave",
+  "artic_variant": null,
+  "ok": 1,
+  "n": 9,
+  "why": {
+   "inserted popcorn microwave": 8
+  },
+  "lens": [
+   294
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "macaroni",
+  "dest": "microwave",
+  "v": null,
+  "artic": "microwave",
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "microwave not closed": 4
+  },
+  "lens": [
+   430,
+   432,
+   280,
+   283,
+   290
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "alphabet soup",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "drawer not opened": 4
+  },
+  "lens": [
+   292,
+   308,
+   310,
+   290,
+   295
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bowl",
+  "dest": "microwave",
+  "v": null,
+  "artic": "microwave",
+  "artic_variant": null,
+  "ok": 0,
+  "n": 9,
+  "why": {
+   "pick bowl": 4,
+   "inserted bowl microwave": 2,
+   "microwave not closed": 3
+  },
+  "lens": [],
+  "room": "kitchen"
+ },
+ {
+  "obj": "bbq sauce",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "drawer not opened": 2
+  },
+  "lens": [
+   278,
+   269,
+   310,
+   314,
+   283,
+   285,
+   297
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "microwave",
+  "v": null,
+  "artic": "microwave",
+  "artic_variant": null,
+  "ok": 1,
+  "n": 9,
+  "why": {
+   "microwave not closed": 7,
+   "inserted ramekin microwave": 1
+  },
+  "lens": [
+   394
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "book",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "drawer not opened": 5,
+   "pick book": 2
+  },
+  "lens": [
+   304,
+   287
+  ],
+  "room": "study"
+ },
+ {
+  "obj": "cookies",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 4,
+  "n": 9,
+  "why": {
+   "drawer not opened": 4,
+   "could not reach the drop point": 1
+  },
+  "lens": [
+   283,
+   344,
+   296,
+   296
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 2,
+  "n": 9,
+  "why": {
+   "drawer not opened": 5,
+   "pick cream cheese": 1,
+   "goal false at the end": 1
+  },
+  "lens": [
+   273,
+   274
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "popcorn",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "drawer not opened": 2
+  },
+  "lens": [
+   258,
+   284,
+   332,
+   322,
+   408,
+   270,
+   277
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "mug",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 4,
+  "n": 9,
+  "why": {
+   "drawer not opened": 3,
+   "placed mug drawer": 2
+  },
+  "lens": [
+   333,
+   325,
+   287,
+   282
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "ramekin",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "drawer not opened": 2
+  },
+  "lens": [
+   274,
+   401,
+   272,
+   262,
+   270,
+   266,
+   268
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "butter",
+  "dest": "pan",
+  "v": null,
+  "artic": "stove",
+  "artic_variant": null,
+  "ok": 5,
+  "n": 9,
+  "why": {
+   "pick butter": 3,
+   "stove knob not turned": 1
+  },
+  "lens": [
+   202,
+   210,
+   233,
+   221,
+   225
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "cream cheese",
+  "dest": "pan",
+  "v": null,
+  "artic": "stove",
+  "artic_variant": null,
+  "ok": 9,
+  "n": 9,
+  "why": {},
+  "lens": [
+   230,
+   193,
+   191,
+   172,
+   197,
+   182,
+   179,
+   191,
+   189
+  ],
+  "room": "kitchen"
+ },
+ {
+  "obj": "tomato sauce",
+  "dest": "drawer",
+  "v": null,
+  "artic": "drawer",
+  "artic_variant": "top",
+  "ok": 7,
+  "n": 9,
+  "why": {
+   "drawer not opened": 2
+  },
+  "lens": [
+   298,
+   294,
+   303,
+   367,
+   339,
+   303,
+   404
+  ],
+  "room": "kitchen"
+ }
+]

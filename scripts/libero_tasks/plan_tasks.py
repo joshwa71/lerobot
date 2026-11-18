@@ -339,12 +339,12 @@ SEEN = {
     ("orange juice", "basket"),
 }
 
-# Tasks with an open / close / turn step: one per fixture (the fixture counts as object and destination).
+# Tasks with an open / close / turn step: one per fixture (the fixture counts as object and destination). No fridge
+# opening: the short fridge's door is flush with its body and has no handle a gripper can hold (dataset_gen.md §3).
 # (template, fixture, scene items, destination of the paired placing step or None). The drawer, microwave and
 # stove steps are themselves in LIBERO-90, so they only appear paired with a new placing step.
 ARTIC = [
     ("turn on the faucet", "faucet", ["faucet"], None),
-    ("open the fridge and put the {o} in it", "fridge", ["fridge"], "fridge"),
     ("put the {o} in the microwave and close it", "microwave", ["microwave"], "microwave"),
     ("open the {p} drawer and put the {o} in it", "drawer", ["cabinet"], "drawer"),
     ("turn on the stove and put the {o} in the pan", "stove", ["stove", "frying pan"], "pan"),
@@ -376,14 +376,14 @@ STOP = {
     "is",
 }
 MULTI = sorted([k for k in OBJECTS if " " in k] + ["storage box"], key=len, reverse=True)
-N_SINGLE, N_DOUBLE, N_SCENES, MIN_SCENE, MAX_SCENE = 30, 30, 20, 2, 4
+N_SINGLE, N_DOUBLE, N_SCENES, MIN_SCENE, MAX_SCENE = 30, 30, 25, 2, 3
 MAX_LARGE, MAX_SMALL = 3, 7
 DEST_CAP = {
     "lift": 4,
     "beside": 6,
     "fridge": 5,
 }  # lift, beside: weak motions, kept rare; fridge: kitchen-only
-DEFAULT_DEST_CAP, OBJ_CAP = 7, 7
+DEFAULT_DEST_CAP, OBJ_CAP = 9, 7
 
 
 def tokens(text):
@@ -447,12 +447,53 @@ if _os.path.exists(_PAIRING):
     CANDS = [c for c in CANDS if c in OK_VARIANTS]
 
 
+# Expert demonstrability results (pair_expert.py): keep only pairings, variants and open/close/turn placing objects
+# that the scripted expert achieves in at least EXPERT_MIN of its test episodes.
+_EXPERT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pairing_expert.json")
+# EXPERT_MIN is 5 of 9 test episodes: at 6 of 9, too few pairings remain for 60 tasks under the separation rule
+# (each destination's usable objects run out). Only successful episodes are kept, so a lower rate costs
+# generation time, and the suite build still requires 2 of 3 expert successes per task in its layout.
+# Open/close/turn templates: EXPERT_MIN_ARTIC (keeps the microwave template, whose best object succeeds 5 in 9).
+EXPERT_MIN, EXPERT_MIN_ARTIC = 0.55, 0.5
+EXPERT_OK, ARTIC_OK = None, None
+if _os.path.exists(_EXPERT):
+    EXPERT_OK, ARTIC_OK = set(), set()
+    for _r in _json.loads(Path(_EXPERT).read_text()):
+        if not _r["n"]:
+            continue
+        if _r["artic"]:
+            if _r["ok"] / _r["n"] >= EXPERT_MIN_ARTIC:
+                ARTIC_OK.add((_r["artic"], _r["obj"]))
+        elif _r["ok"] / _r["n"] >= EXPERT_MIN:
+            EXPERT_OK.add((_r["obj"], _r["dest"], _r["v"]))
+
+
 def ok_variants(o, d):
-    return (
+    vs = (
         OK_VARIANTS[(o, d)]
         if OK_VARIANTS is not None and (o, d) in OK_VARIANTS
         else list(range(len(DESTS[d][0])))
     )
+    if EXPERT_OK is not None:
+        # beside was tested on one variant (a table region works for every reference and relation)
+        vs = [v for v in vs if (o, d, 0 if d == "beside" else v) in EXPERT_OK]
+    return vs
+
+
+if EXPERT_OK is not None:
+    CANDS = [c for c in CANDS if ok_variants(*c)]
+
+
+def artic_objects(i):
+    """Objects the placing step of open/close/turn template i may use (the drawer template: top drawer only, where
+    the hand pulling the handle stays clear of the table)."""
+    _, fixture, _, dest = ARTIC[i]
+    objs = sorted({o for o, d in CANDS if d == dest} or set(DESTS[dest][1]))
+    if ARTIC_OK is not None:
+        objs = [o for o in objs if (fixture, o) in ARTIC_OK]
+    if dest == "drawer":
+        objs = [o for o in objs if 0 in ok_variants(o, dest)]
+    return objs
 
 
 # ---------------------------------------------------------------- construction
@@ -495,21 +536,20 @@ def build(rng):
         if dest is None:
             add(Task(1, [], [], artic=i))
             continue
+        objs = artic_objects(i)
+        if not objs:
+            continue  # nothing the expert can demonstrate with this template
         for _ in range(200):
-            o = rng.choice([o for o, d in CANDS if d == dest] or DESTS[dest][1])
-            p = (
-                rng.choice([["top", "middle", "bottom"][v] for v in ok_variants(o, dest)])
-                if dest == "drawer"
-                else None
-            )
+            o = rng.choice(objs)
+            p = "top" if dest == "drawer" else None
             t = Task(2, [(o, dest)], [p], artic=i)
             if fits(t):
                 add(t)
                 break
         else:
             return None
-    n_single_art = sum(1 for a in ARTIC if a[3] is None)
-    for _ in range(N_DOUBLE - (len(ARTIC) - n_single_art)):  # two-step tasks are harder to place: first
+    n_single_art = sum(1 for t in tasks if t.kind == 1)
+    for _ in range(N_DOUBLE - (len(tasks) - n_single_art)):  # two-step tasks are harder to place: first
         for _ in range(400):
             c1 = weighted_choice(rng, [c for c in CANDS if c[1] != "lift"], step_weight)
             v1 = variant(c1[0], c1[1], {c1[0]})
@@ -556,13 +596,8 @@ def alternatives(t):
     if t.artic is not None:
         dest = ARTIC[t.artic][3]
         if dest is not None:
-            for o in {o for o, d in CANDS if d == dest}:
-                for p in (
-                    [["top", "middle", "bottom"][v] for v in ok_variants(o, dest)]
-                    if dest == "drawer"
-                    else [None]
-                ):
-                    out.append(Task(2, [(o, dest)], [p], artic=t.artic))
+            for o in artic_objects(t.artic):
+                out.append(Task(2, [(o, dest)], ["top" if dest == "drawer" else None], artic=t.artic))
         return out
     for k in range(len(t.steps)):
         other = t.steps[1 - k] if t.kind == 2 else None
@@ -740,15 +775,23 @@ def group(tasks, rng, iters=200000):
 
 
 # ---------------------------------------------------------------- report
-def room_for(items, living_rooms):
+def room_for(items, living_rooms, table_goal=False):
+    """table_goal: some task's goal is a region of the table itself (beside, placemat). LIBERO's coffee-table
+    arena puts such regions at floor height (its _load_sites_in_arena omits the table's z offset), so those goals
+    can never hold there; on the floor arena they fail for flat objects (a ramekin: its origin sits below the
+    region). Such scenes take the living room or tabletop arena. Scenes whose items suit no single room (e.g. a
+    caddy with a basket) take the neutral tabletop arena."""
     th = scene_themes(items)
     if K in th and (th == {K} or items & {"fridge", "microwave", "stove", "faucet", "drainer", "frying pan"}):
         return "kitchen"
     if S in th and (th == {S} or items & {"caddy", "book"}):
         return "study"
     if LV in th:
-        return next(living_rooms)
-    return "kitchen" if K in th else ("study" if S in th else "mixed")
+        room = next(living_rooms)
+        while table_goal and room in ("coffee table", "floor"):
+            room = next(living_rooms)
+        return room
+    return "kitchen" if K in th else ("study" if S in th else "tabletop")
 
 
 def report(tasks, scenes, out_path, args, rooms=None, ids=None, header=None):
@@ -764,7 +807,14 @@ def report(tasks, scenes, out_path, args, rooms=None, ids=None, header=None):
         oc.update(t.objs)
     if rooms is None:
         living_rooms = itertools.cycle(["living room", "coffee table", "tabletop", "floor"])
-        rooms = [room_for(set().union(*(tasks[i].items for i in m)), living_rooms) for m in scenes]
+        rooms = [
+            room_for(
+                set().union(*(tasks[i].items for i in m)),
+                living_rooms,
+                table_goal=any(d in ("beside", "placemat") for i in m for _, d in tasks[i].steps),
+            )
+            for m in scenes
+        ]
     ids = ids or list(range(1, len(scenes) + 1))
     rank = {
         r: k
@@ -914,16 +964,13 @@ def main():
     if args.from_json:
         tasks, scenes, rooms, ids = from_plan(args.from_json)
         args.json = None
-        n_split = sum(
-            1 for sc in _json.loads(Path(args.from_json).read_text())["scenes"] if sc.get("split_from")
-        )
+        seed = _json.loads(Path(args.from_json).read_text())["seed"]
         header = (
-            "Generated by `scripts/libero_tasks/plan_tasks.py --seed 41 --restarts 400`, then adjusted while "
-            f"building the suite (18 Nov 26): {n_split} crowded scenes were split in two "
-            "(`split_scenes.py`; S21-S25) and two scenes changed room (S20 floor -> tabletop, S22 study -> "
-            "tabletop). Scene numbers match the task names in `src/lerobot/envs/libero_ext/suite.json`. "
-            "Rules and reasoning: `dataset_gen.md` §2; validation: `dataset_gen_build.md`. Objects are named "
-            "by kind; the build picks one LIBERO model per kind."
+            f"Generated by `scripts/libero_tasks/plan_tasks.py --seed {seed} --restarts 400` (18 Nov 26) from the "
+            "pairings the scripted expert can demonstrate (`pairing_expert.json`; `dataset_gen.md` §3b). Scene "
+            "numbers match the task names in `src/lerobot/envs/libero_ext/suite.json`. Rules and reasoning: "
+            "`dataset_gen.md` §2; validation: `dataset_gen_build.md`. Objects are named by kind; the build picks "
+            "one LIBERO model per kind."
         )
         report(tasks, scenes, args.out, args, rooms=rooms, ids=ids, header=header)
         return

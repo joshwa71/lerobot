@@ -76,7 +76,7 @@ def one(job):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--only", default=None, help="comma-separated destination kinds")
     a = ap.parse_args()
     jobs = []

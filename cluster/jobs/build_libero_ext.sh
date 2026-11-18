@@ -1,0 +1,44 @@
+#!/bin/bash
+# Render the libero_ext expert demos into a LeRobot dataset (scripts/datasets/build_libero_ext.py):
+#   $HF_LEROBOT_HOME/libero_ext_demos  (npz per task, from scripts/libero_tasks/generate_demos.py on the desk PC)
+#   -> $HF_LEROBOT_HOME/libero_ext     (libero_10's format: two 256x256 cameras, 8-D state, 7-D action)
+# Needs a GPU for EGL rendering. The per-task datasets are built on node scratch and synced to
+# $HF_LEROBOT_HOME/_build/libero_ext every 30 min and on exit, so a re-submitted job skips the tasks already
+# built; the aggregate is made on scratch, copied to /SAN and renamed into place. Exclude the bad nodes
+# (CLAUDE.md 9.4 rule 9):
+#   qsub -l 'h=!(dip-207-1*|dip-207-2*)' cluster/jobs/build_libero_ext.sh
+#$ -S /bin/bash
+#$ -N build_libero_ext
+#$ -l tmem=12G,h_vmem=12G,h_rt=12:00:00,tscratch=200G
+#$ -l gpu=true,gpu_type=(a10|a100|a100_80|a40|a6000|h100|l4|l40s|rtx3090|rtx4070ti|rtx4090|rtx6000ada)
+#$ -pe smp 6
+#$ -R y
+#$ -j y
+#$ -o /SAN/vision/jo71_vla_wd/logs/
+set -euo pipefail
+source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
+D=$HF_LEROBOT_HOME
+echo "== $(hostname) $(date) job=$JOB_ID slots=$NSLOTS CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+cd "$REPO/scripts/datasets"
+git log -1 --format='== repo %h %s'
+if [ -f "$D/libero_ext/meta/info.json" ]; then
+    echo "== $D/libero_ext already exists; nothing to do"
+    exit 0
+fi
+scratch_setup
+DEMOS=$(scratch_copy "$D/libero_ext_demos")
+scratch_outputs "$D/_build/libero_ext"
+mkdir -p "$SCRATCH_OUT"
+WORK=$SCRATCH_OUT/tasks
+echo "== per-task datasets $(date)"
+timeout -s ABRT 8h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage tasks --demos "$DEMOS" \
+    --work "$WORK" --out "$SCRATCH/libero_ext" --workers 4
+scratch_outputs_close  # all per-task datasets on /SAN before scratch copies are dropped
+echo "== aggregate + stats $(date)"
+timeout -s ABRT 3h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage aggregate --demos "$DEMOS" \
+    --work "$WORK" --out "$SCRATCH/libero_ext" --drop-work --stats-workers 4
+echo "== copy to /SAN $(date)"
+timeout 4h rsync -a --timeout=600 "$SCRATCH/libero_ext/" "$D/.libero_ext.tmp/"
+mv -T "$D/.libero_ext.tmp" "$D/libero_ext"
+echo "== done $(date): $D/libero_ext"

@@ -352,3 +352,111 @@ Once a layout passes, each task gets 50 start states from settled resets that pa
 - scripted primitives driven by privileged state;
 - RL on privileged state, with a sparse reward from the success predicate or a shaped one, then recorded rollouts;
 - a few teleoperated demonstrations expanded MimicGen-style.
+
+**Decision (18 Nov 26): a scripted expert on privileged state.** RL would need a shaped reward per task (as much work as a script), runs at about 1,000 simulator steps/s on the CPU, and gives jerky motion. Teleoperation costs hours of Josh's time. Reasons in full in the chat of 18 Nov 26.
+
+**Variety.** LIBERO's start states vary very little: across our 50 stored states, each object moves within a 2–3 cm box, no object rotates, and the robot always starts in the same pose. In LIBERO's own data the variety comes from the human operator. Near-identical demos would make each task cheaper to store, and so overstate capacity. Variety therefore comes from three places:
+- **The expert's parameters,** drawn per episode: speed, approach and transport heights, grasp point and orientation, release height, pauses, and the order of a two-step task's independent steps.
+- **DART-style noise:** the executed action is perturbed, and the recorded label is the expert's action from the state actually reached.
+- **Wider training starts:** objects nudged a further ±2 cm, round ones turned, the arm's joints jittered by ±0.03 rad. Evaluation keeps the stored states.
+
+**Pilot (18 Nov 26).** `scripts/libero_tasks/expert.py` holds the expert; `pilot_expert.py` runs it from fresh resets, with half the episodes using widened starts and noise.
+- **How it works.** The plan comes from the task's steps. The expert picks with a top-down grasp: across the body for boxes, bottles and cans, or on the rim for mugs, bowls, ramekins and plates. Among candidate grasp directions (8) or rim points (12) it chooses one whose gripper model (fingers and a 21 × 6 cm hand) clears every other object's collision geometry. It carries the object above everything along its path. At the drop point it picks a clear hand orientation and the lowest clear release height, and aims the object's origin, not the hand, at the target. It releases there or retries; it never drops the object elsewhere.
+- **Insertion** (microwave, fridge, bookcase): the expert grips with the fingers parallel to the fixture's face, turns the wrist, pitches the hand to point into the opening, slides the object in at the region's height, then backs out.
+- **Bugs found on the way:**
+  - robosuite's grasp check misses real grasps; a grasp now counts if the object rose with the gripper;
+  - the hand's 21 cm width hit neighbouring objects, so grasps are now chosen for clearance;
+  - a bottle caught the cabinet edge in transport, so transport now clears obstacles by 6 cm;
+  - rim-held mugs were placed 5 cm off target, so the expert now aims the object rather than the hand.
+- **Success rates** (16 episodes each, the last run):
+
+  | Rate | Tasks |
+  |---|---|
+  | 100% | cookies on the plate, ketchup on the shelf, lift the milk, wine bottle in front of the basket, popcorn in the basket, mug on the shelf, ramekin in the drainer, wine bottle in the fridge, popcorn in the bookcase |
+  | 88–94% | ramekin on the placemat, BBQ sauce in the top drawer |
+  | 62% | milk in the tray + wine bottle on the cabinet (two-step) |
+
+  Earlier runs of 8–12 episodes: chocolate pudding in the bowl 92%; bowl in the drainer + mug on the placemat 58%, mostly out of steps; ramekin in the microwave 38%; chocolate pudding in the bookcase 25%; cream cheese, book and mug into the bookcase 0%. Only successful episodes are kept, so rates above about 30% are usable; whether an insertion works depends on the object.
+- **Variety against libero_10's human demos** (same statistics on both):
+
+  | Statistic | libero_10, human (10 two-step tasks) | Scripted pilot (12 tasks) |
+  |---|---|---|
+  | Episode-length coefficient of variation | 0.10 | 0.13 |
+  | End-effector path spread at matched task phase | 6.0 cm | 5.1 cm |
+  | Std of first-grasp time (fraction of the episode) | 0.031 | 0.040 |
+
+  The scripted demos are as varied as the human ones. Their mean length is 217 steps against 272, as expected with mostly single-step tasks.
+- **Not done yet** (as of the pilot; see §3b):
+  - routines for the five open/close/turn tasks;
+  - a systematic demonstrability test of every pairing;
+  - the SmolVLA learnability check.
+
+## 3b. Open/close/turn routines, demonstrability test, replan (18 Nov 26)
+
+**Open/close/turn routines** (`expert.py`):
+- **Faucet lever and microwave door:** a closed-loop push. Every step, the closed gripper aims 3 cm ahead, along the part's motion, of its contact point on the part, wherever the part has actually got to (open-loop arcs stalled or kept pushing after the goal). Doors are pushed 4 cm below their top edge, so the hand body passes over it. The push continues until the goal has held for 6 steps, because a door slammed shut bounces open.
+- **Stove:** grip the knob's raised ridge from above and turn the wrist.
+- **Drawer:** the hand turned horizontal (fingers above and below the handle bar), a 20 cm pull, and a second grip and pull if the drawer stops short of open.
+- **Episodes end at the first step where the goal holds,** as LIBERO's evaluation episodes do. A shut microwave door springs back ~0.01 rad once released, so the goal holds only while the gripper is still pressing.
+- **Pilot:** faucet 10/10 (58 steps); stove knob 3/3; microwave door 5/5 once pressing continued until shut; drawer 8/12 in fresh layouts.
+
+**Changes to the task set:**
+- **"Open the fridge" is dropped.** The short fridge's door is flush with its body: no handle a gripper can hold, and only 5 mm of overhang to pinch. Dragging its top edge by friction was the only thing that moved it, and unreliably. The fridge stays as a destination, with its door open at the start.
+- **Drawer opening uses the top drawer only.** The horizontal hand reaches ~10 cm below the handle; at the middle drawer (11 cm above the table) it knocked over objects standing in front of the cabinet. Fixtures the robot opens or closes itself get a larger clear strip in front: cabinet 28 cm, microwave 22 cm (was 17 and 18 cm).
+- **LIBERO bug:** the coffee-table arena puts table regions at floor height (its `_load_sites_in_arena` omits the table's z offset), so a "beside" or placemat goal can never hold there. On the floor arena such goals fail for flat objects (a ramekin's origin sits below the region). Scenes with such goals now take the living room or tabletop arena; scenes whose items suit no single room take the tabletop arena.
+
+**Other expert changes:**
+- **Grasps use the local width:** the parts of the object between the finger pads at that height, with the open fingers clear of the object's own handle or spout, instead of the whole bounding box. The moka pot, whose handle and spout make its box 15 cm wide, became graspable at its 6.6 cm base.
+- **A rim grasp counts as held at a finger gap of 2 mm or more** (was 6 mm; a bowl's wall is ~4 mm thick).
+- **Speed:**
+  - a move gives up when blocked (no progress for 15 steps) instead of spending its whole step allowance;
+  - shorter waits;
+  - speed drawn from 0.8–1.0 (was 0.7–1.0).
+
+  One two-step task went from ~470 to ~395 steps.
+
+**Demonstrability test** (`pair_expert.py`):
+- **What it covers:** every pairing that passed the physical test (§2b), and each open/close/turn template with each object its placing step may use.
+- **Setup:** small scenes with only the items the task needs, laid out at random by the builder's sampler, in the room the planner would give them. Each pairing gets 3 layouts × 3 episodes, one in three widened with DART noise.
+- **Results** (200 pairings, 1,776 episodes): 169 pairings kept, at a threshold of ≥ 5/9 episodes for placements and ≥ 1/2 for templates.
+
+| Destination | Kept | Not kept (successes / 9) |
+|---|---|---|
+| basket, bowl, caddy, drawer (open), pan, plate, tray | all (5, 6, 8, 26, 2, 6, 9) | — |
+| beside | 16/18 | frying pan 2, salad dressing 3 |
+| cabinet top | 17/18 | moka pot 4 |
+| shelf | 27/28 | mug on the lower shelf 1 |
+| storage box | 13/15 | moka pot 2, bowl 3 |
+| lift | 10/12 | book 4, salad dressing 3 |
+| fridge | 6/10 | orange juice 3, butter 3, cream cheese 2, chocolate pudding 3 |
+| microwave | 3/4 | ramekin 2 |
+| drainer | 3/4 | bowl (right side) 4 |
+| placemat | 2/4 | plate 3, bowl 3 |
+| bookcase | 1/9 | all but popcorn: 0–1 |
+| open the top drawer and put X in it | 5/9 | book 2, cookies 4, cream cheese 2, mug 4 |
+| put X in the microwave and close it | 1/4 | popcorn 1, bowl 0, ramekin 1 (macaroni kept, 5/9) |
+| turn on the stove and put X in the pan | 2/2 | — |
+| turn on the faucet | 1/1 | — |
+
+Insertion through a side opening (bookcase, fridge, microwave) is the expert's weak point. The bookcase works only for the popcorn box.
+
+**Replan** (`plan_tasks.py --seed 4`):
+- **Same rules as §2:** 60 tasks, 30 single-step and 30 two-step, no two tasks sharing both an object and a destination, and four open/close/turn tasks (faucet, microwave, drawer, stove).
+- **Kept pairings only, and the 5/9 threshold.** At 6/9, too few pairings remain: several destinations have only 1–2 usable objects, and the planner found no complete task set.
+- **The cap on tasks per destination is raised from 7 to 9.** The common destinations (shelf, cabinet top, storage box, tray) have the spare objects.
+- **25 scenes of 2–3 tasks,** planned directly rather than split after building.
+- **Checks:** no instruction pair shares more than 2 content words (11 pairs share 2), and 12.9% of task pairs share a destination.
+- The task list is in `dataset_gen_tasks.md`.
+
+**Rebuild:**
+- `build_suite.py` adds an expert check to each candidate layout: the expert must succeed in 2 of 3 episodes of every task of the scene, or the layout is rejected.
+- Results: see `dataset_gen_build.md`.
+
+**Data pipeline:**
+- `generate_demos.py` (desk PC, no rendering) runs the expert from fresh and widened starts until 50 successes per task. Per episode it saves the simulator positions before each action, the 8-D state, the expert's action (the label) and the executed action. That is about 100 MB for the whole suite.
+- `scripts/datasets/build_libero_ext.py` (cluster GPU node, `cluster/jobs/build_libero_ext.sh`) sets each saved state, reads the environment's own camera observations at 256 × 256 and writes a LeRobot v3.0 dataset in libero_10's format:
+  - images rotated 180°, state 8-D, action 7-D;
+  - fps 10;
+  - task_index = suite order;
+  - quantile stats added.
+- States re-read from the saved positions differ from the recorded ones by < 1 mm. robosuite caches observations a few physics substeps before the end of each control step, and the recorded state is that cached value, as evaluation sees it.

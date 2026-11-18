@@ -42,6 +42,27 @@ EXT = os.path.join(ROOT, "src", "lerobot", "envs", "libero_ext")
 FILES = os.path.join(EXT, "files")
 REPORT = os.path.join(ROOT, "projects", "dataset_gen_build.md")
 DRIFT_TOL, REACH_TOL = 0.01, 0.05
+# Expert check of an accepted layout (dataset_gen.md §3): the scripted expert must succeed in EXPERT_MIN_OK of
+# EXPERT_EPISODES episodes of every task, from fresh resets, or the layout is rejected.
+EXPERT_EPISODES, EXPERT_MIN_OK = 3, 2
+
+
+def expert_check(path, scene, task, seed):
+    """Successes of the scripted expert on one task of a laid-out scene."""
+    import expert as ex
+
+    env = sl.make_env(path)
+    rng = np.random.default_rng(seed)
+    task_x = {"steps": [list(s) for s in task["steps"]], "artic": task["artic"]}
+    ok = 0
+    for _ in range(EXPERT_EPISODES):
+        sl.stable_reset(env)
+        try:
+            ok += int(ex.Expert(env, task_x, scene.cls, rng).run()[0])
+        except Exception:  # noqa: BLE001
+            pass
+    env.close()
+    return ok
 
 
 def task_name(sid, language):
@@ -184,6 +205,7 @@ def build_scene(args):
                 opens.add("cabinet" if dest == "drawer" else dest)
         if t["artic"] in ("drawer", "microwave", "fridge"):
             opens.add("cabinet" if t["artic"] == "drawer" else t["artic"])
+    work = {("cabinet" if t["artic"] == "drawer" else t["artic"]) for t in tasks if t["artic"] in ("drawer", "microwave")}
     reserve = []
     for t in tasks:
         for obj, dest, phrase in t["steps"]:
@@ -197,7 +219,7 @@ def build_scene(args):
     for attempt in range(tries):
         rng = random.Random(1000 * sid + attempt)
         scene = sl.Scene(sid, room, kinds, rng, variant=attempt // 10)
-        if not sl.sample_layout(scene, kinds, reserve, rng, opens=opens):
+        if not sl.sample_layout(scene, kinds, reserve, rng, opens=opens, work=work):
             log.append((attempt, "layout", "no non-overlapping layout"))
             continue
         ok_all, dets = True, []
@@ -219,6 +241,16 @@ def build_scene(args):
                 ok_all = False
                 log.append((attempt, t["language"], {k: v for k, v in det.items() if k != "trace"}))
                 break
+        if not ok_all:
+            continue
+        for k, t in enumerate(tasks):
+            path = os.path.join(tmpdir, task_name(sid, t["language"]) + ".bddl")
+            n_ok = expert_check(path, scene, t, 1000 * sid + 10 * attempt + k)
+            if n_ok < EXPERT_MIN_OK:
+                ok_all = False
+                log.append((attempt, t["language"], f"expert {n_ok}/{EXPERT_EPISODES}"))
+                break
+            dets[k]["expert"] = n_ok
         if not ok_all:
             continue
         # accepted: start states, final files
@@ -254,6 +286,7 @@ def build_scene(args):
                         "min_height_m": round(det["low"], 3),
                         "reach_m": det["reach"],
                         "init_tries": n_tries,
+                        "expert_ok": f"{det.get('expert')}/{EXPERT_EPISODES}",
                     },
                 }
             )
@@ -319,7 +352,7 @@ def contact_sheet(suite, out_png, size=224, cols=6):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenes", default=None, help="comma-separated scene ids (default: all)")
-    ap.add_argument("--workers", type=int, default=10)
+    ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--tries", type=int, default=40)
     ap.add_argument("--init", type=int, default=50)
     ap.add_argument("--sheet", default=None, help="write a contact sheet PNG of first start states here")
@@ -354,7 +387,8 @@ def main():
         f"Built by `scripts/libero_tasks/build_suite.py` from `scripts/libero_tasks/plan.json` (planner seed "
         f"{plan['seed']}). Checks per task: stable settled resets (drift < {DRIFT_TOL * 100:.0f} cm), goal false "
         f"at start, forced goal reached without interpenetration, objects in the agentview image, end effector "
-        f"within {REACH_TOL * 100:.0f} cm of each approach point. {a.init} start states per task.",
+        f"within {REACH_TOL * 100:.0f} cm of each approach point, and the scripted expert succeeding in at least "
+        f"{EXPERT_MIN_OK} of {EXPERT_EPISODES} episodes. {a.init} start states per task.",
         "",
         f"**{len(suite['tasks'])} tasks in {sum(r['ok'] for r in allres)} of {len(allres)} scenes built.**",
         "",
@@ -373,7 +407,7 @@ def main():
                 reach = ", ".join(f"{k} {x * 100:.1f}" for k, x in v["reach_m"].items())
                 lines.append(
                     f"- {t['language']}: drift {v['drift_m'] * 100:.2f} cm; reach (cm) {reach}; "
-                    f"{v['init_tries']} resets for the start states"
+                    f"{v['init_tries']} resets for the start states; expert {v.get('expert_ok', '-')}"
                 )
         if r["log"]:
             lines.append("")

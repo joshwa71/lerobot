@@ -172,16 +172,19 @@ class Scene:
 # Depth kept free in front of a fixture whose door or drawers some task of the scene uses (open at the start or
 # opened during the task): drawers pull out ~15 cm; the fridge and microwave doors swing through ~20 cm.
 CLEARANCE = {"cabinet": 0.17, "fridge": 0.22, "microwave": 0.18}
+# Larger strips where the robot itself opens or closes the fixture: the expert pulls a drawer with its hand turned
+# horizontal (fingers above and below the handle), and the hand reaches ~10 cm below the handle and ~25 cm out
+WORK_CLEARANCE = {"cabinet": 0.28, "microwave": 0.22}
 FACE_Y = 0.28  # |y| of a side fixture's front face: its opening and the inner part of its top stay in view
 
 
-def sample_layout(scene, kinds, reserve_beside, rng, opens=()):
+def sample_layout(scene, kinds, reserve_beside, rng, opens=(), work=()):
     """Place every item without overlap inside the arena's layout bounds (item centres; extents may overhang by
     a few cm). Front-facing fixtures go to the table's sides and face the centre, as in LIBERO, with a clearance
     strip kept free in front for doors and drawers. Other items, largest first, take the first free spot of a
     shuffled 2 cm grid. A frying pan in a scene with a stove sits on the stove (scene.pan_on_stove). reserve_beside
     lists (ref kind, direction) whose beside-region must stay free; opens lists the fixtures whose doors or
-    drawers are used (they get CLEARANCE). Side fixtures sit outside the reach bounds, front face at |y| = FACE_Y.
+    drawers are used (they get CLEARANCE; work lists those the robot opens or closes itself: WORK_CLEARANCE). Side fixtures sit outside the reach bounds, front face at |y| = FACE_Y.
     Returns True on success."""
     (x0, x1), (y0, y1) = scene.xb, scene.yb
     boxes = []  # (cx, cy, hx, hy)
@@ -208,6 +211,8 @@ def sample_layout(scene, kinds, reserve_beside, rng, opens=()):
             if free(cx, cy, hx, hy):
                 boxes.append((cx, cy, hx, hy))
                 c = CLEARANCE.get(k, 0.0) if k in opens else 0.0
+                if k in work:
+                    c = max(c, WORK_CLEARANCE.get(k, 0.0))
                 if c:
                     boxes.append((cx, cy - s * (hy + c / 2), hx, c / 2))
                 scene.pos[k] = (float(cx), float(cy), yaw)
