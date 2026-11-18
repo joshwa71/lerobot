@@ -15,6 +15,7 @@ makes three additions to hf-libero at runtime, without changing the package:
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -27,14 +28,26 @@ LIFT_CLEARANCE = 0.06  # m between the object's lowest point and the work surfac
 FAUCET_ON, FAUCET_OFF = 0.6, 0.1  # |lever angle| in rad
 
 _registered = False
-_geom_cache: dict = {}
+_geom_cache: OrderedDict = OrderedDict()  # id(model) -> (model, {object name: (geoms, bodies)})
+_GEOM_CACHE_MODELS = 4
 
 
 def _object_geoms(env, name: str) -> tuple[np.ndarray, set]:
-    """Geoms of an object's body subtree (cached per model), and the set of its body ids."""
+    """Geoms of an object's body subtree (cached per model), and the set of its body ids.
+
+    The cache holds a reference to each model it has entries for, so a model's id cannot be reused by another
+    model while its entries exist (keyed by id alone, a closed env's entries were served to the next env's model,
+    which then read another scene's geom ids). Only the last few models are kept."""
     model = env.sim.model._model
-    key = (id(model), name)
-    if key not in _geom_cache:
+    entry = _geom_cache.get(id(model))
+    if entry is None or entry[0] is not model:
+        entry = (model, {})
+        _geom_cache[id(model)] = entry
+        while len(_geom_cache) > _GEOM_CACHE_MODELS:
+            _geom_cache.popitem(last=False)
+    _geom_cache.move_to_end(id(model))
+    per_model = entry[1]
+    if name not in per_model:
         root = env.obj_body_id[name]
         bodies = set()
         for b in range(model.nbody):
@@ -44,8 +57,8 @@ def _object_geoms(env, name: str) -> tuple[np.ndarray, set]:
             if p == root:
                 bodies.add(b)
         geoms = np.array([g for g in range(model.ngeom) if model.geom_bodyid[g] in bodies], dtype=int)
-        _geom_cache[key] = (geoms, bodies)
-    return _geom_cache[key]
+        per_model[name] = (geoms, bodies)
+    return per_model[name]
 
 
 def lowest_point(env, name: str) -> float:
