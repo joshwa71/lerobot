@@ -533,4 +533,19 @@ On libero_10 the same recipe reaches ~85% on two-step human demos. The 60-task m
   - Every recorded label is the expert's action from the state reached: on to the real grasp with the gripper open. Then the expert opens and grasps properly.
   - 12–25 of each task's 50 demos contain such a miss.
 
-**Retests**, same recipe and tasks: `configs/ext_learn_spec_r128_v2.sh` and `_v3.sh`, on `libero_ext_learn4_v2` / `_v3`. Results to follow.
+**Retests**, same recipe and tasks: `configs/ext_learn_spec_r128_v2.sh` and `_v3.sh`, on `libero_ext_learn4_v2` / `_v3`. Success over 25 episodes × 2 seeds (1000 / 2000):
+
+| Task | Original | v2 | v3 |
+|---|---|---|---|
+| 0: cookies in the bowl | 98 | **100** (100 / 100) | 96 (92 / 100) |
+| 31: ketchup on the shelf + cream cheese in the caddy | 2 | **70** (72 / 68) | 64 (68 / 60) |
+| 42: pudding in the bowl + milk in the tray | 40 | **50** (48 / 52) | 16 (12 / 20) |
+| 59: open the top drawer + popcorn in it | 6 | 10 (16 / 4) | **28** (36 / 20) |
+| Mean | 36.5 | **57.5** | 51.0 |
+
+- **Making the discrete choices deterministic (v2) is the main effect:** task 31 goes from 2 to 70, and the mean from 36.5 to 57.5.
+- **Recovery data and the narrower slide (v3) are mixed.**
+  - Tasks 0 and 31 do not move beyond the noise (~±10 points at 50 episodes).
+  - The drawer rises from 10 to 28, likely from the short-of-the-handle misses.
+  - Task 42 falls from 50 to 16. A likely cause is the "too high" misses: on the short pudding box, closing on nothing ~2 cm above it looks much like a real grasp, and its labels say "open and go down", which could teach the policy to let go of good grasps.
+- **Still below libero_10 specialist level (~85):** task 42 (50) and the drawer (28 at best).
