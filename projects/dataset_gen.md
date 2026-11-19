@@ -495,3 +495,42 @@ Insertion through a side opening (bookcase, fridge, microwave) is the expert's w
   - Only two tasks succeed at all: "turn on the faucet" 2/5 and "lift the alphabet soup" 1/5.
   - The other 58 tasks are 0/5.
   - The tasks are new to the pretrained model, as intended.
+
+## 3c. Learnability failure and the data fixes (19 Nov 26)
+
+**The check.** LoRA r128 specialists, with the libero_10 recipe (5k steps from the SmolVLA libero_90 base), on four tasks; 25 episodes × 2 seeds each.
+
+| Task | Success |
+|---|---|
+| 0: cookies in the bowl (one step) | 98 |
+| 31: ketchup on the shelf + cream cheese in the caddy | 2 |
+| 42: pudding in the bowl + milk in the tray | 40 |
+| 59: open the top drawer + popcorn in it | 6 |
+
+On libero_10 the same recipe reaches ~85% on two-step human demos. The 60-task memory run (`cell_s2_ext60_rand1`, research_log2 Entry 5) was stopped after 7 tasks.
+
+**Diagnosis.** Rollouts with videos and per-step goal predicates (`diagnose_rollouts.py`), reviewed by a subagent against the expert demos.
+- **Every failure runs the full 520 steps.** Expert demos take 90–115 steps (task 0) and 260–320 (the others), so this is not a step limit.
+- **The demos were multimodal in their discrete choices**, and the one task the policy learned was the one whose 50 demos all do the same thing.
+  - Two-step tasks in a random order: 23/27 on task 31, 21/22 on task 42.
+  - Grasp chosen at random among the clear ones: first-grasp wrist yaw over six modes, −68° to +90°, on task 31; 0° or 90° on task 42; within ±3° on task 0.
+  - Also: the faucet pushed either way, and the stove knob turned before or after the placing step.
+  - The policy dithered: in task 31 its first grasp landed between the two objects.
+- **No recoveries in the demos.** The policy closes 1–3 cm off the expert's grasp: sideways on the cookie box, ~2 cm too high on the pudding and milk, 4–6 cm short of the drawer handle. The expert's grasps almost never fail (49/50 single grasps on task 0), so the demos hold no recoveries. After a miss the policy carries an empty hand to the destination, or loops close/open in place while drifting.
+- **Smaller issues:**
+  - The grasp point slid along the object at random, up to 0.6 of the free length.
+  - In scene S19 (coffee table) the tray sometimes jumps 8–23 cm on its own at t ≈ 25–30 (5 of 50 demos), with the arm 15 cm away. This is a physics glitch, still to fix.
+
+**Fixes** (`expert.py`):
+- **v2: discrete choices made the same way in every episode.**
+  - Two-step tasks in the instruction's order; on the stove task, the knob first.
+  - The clear grasp needing the least wrist rotation.
+  - The faucet pushed one way.
+
+  Continuous variety stays: speed, heights, release height, pauses, DART noise, widened starts. Regenerated demos are unimodal: one order, first-grasp yaw within ±4°.
+- **v3: v2 plus recovery data, and a narrower grasp slide (0–0.25).**
+  - A quarter of first grasp attempts and first drawer-handle grabs are executed wrong on purpose: closing 1.5–2.5 cm too high, beside the object, or 3–5 cm short of the handle.
+  - Every recorded label is the expert's action from the state reached: on to the real grasp with the gripper open. Then the expert opens and grasps properly.
+  - 12–25 of each task's 50 demos contain such a miss.
+
+**Retests**, same recipe and tasks: `configs/ext_learn_spec_r128_v2.sh` and `_v3.sh`, on `libero_ext_learn4_v2` / `_v3`. Results to follow.
