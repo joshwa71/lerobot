@@ -414,6 +414,10 @@ Just-trained mean 77.2. On the same five tasks: memory 85.0 (both runs), special
 
 Rollout evaluation follows training, from the boundary checkpoints, per the Paper 1 plan: the just-trained task at every boundary, and the full retention row every fifth task (25 episodes × 4 paired seeds, 10 actions per chunk).
 
+**Code.** The run's Python is at `caef6ed`. That commit fixes a crash of the in-run loss eval found by `smoke_ext60`: usage diagnostics in eval mode mixed CPU indices with stale GPU weights. The job log's header shows `c6fd236`, which is read when the job starts; the fixed source was compiled by the run's own import at 00:44 on 19 Nov.
+
+The loss eval costs ~27 s per seen task per boundary, ~14 h over the run on top of ~100 h of training.
+
 **Pre-registered reads.**
 - **Acquisition.** If the memory has room for 60 tasks, the just-trained task's success stays near the ten-task diagonal (86.5) throughout; its own-task loss right after training stays flat in K. A fall in either with K, at the fixed 5,000-step budget, is the saturation signal item 2 calibrates.
 - **Retention.** On libero_10, earlier tasks lost ~5 points whether 5 or 10 tasks followed. If that holds, the final row's mean over earlier tasks sits within ~5 points of their just-trained mean. In loss terms, drift (own-task loss from just-trained to final) grows with the number of tasks trained after (pi05 ten-task mean +28.5%).
