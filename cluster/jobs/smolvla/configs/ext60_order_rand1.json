@@ -1,0 +1,548 @@
+{
+ "seed": 1,
+ "method": "random.Random(1).shuffle(list(range(60)))",
+ "order": [
+  26,
+  59,
+  23,
+  9,
+  2,
+  5,
+  18,
+  43,
+  47,
+  22,
+  57,
+  25,
+  19,
+  10,
+  3,
+  11,
+  29,
+  37,
+  15,
+  35,
+  52,
+  53,
+  40,
+  45,
+  34,
+  21,
+  12,
+  50,
+  58,
+  33,
+  39,
+  32,
+  42,
+  20,
+  44,
+  14,
+  17,
+  49,
+  0,
+  38,
+  27,
+  46,
+  1,
+  56,
+  6,
+  13,
+  24,
+  41,
+  30,
+  28,
+  55,
+  31,
+  7,
+  16,
+  4,
+  48,
+  51,
+  54,
+  36,
+  8
+ ],
+ "tasks": [
+  {
+   "position": 1,
+   "task_index": 26,
+   "scene": 12,
+   "room": "study",
+   "kind": 2,
+   "language": "put the moka pot on the shelf and put the butter in the left of the caddy"
+  },
+  {
+   "position": 2,
+   "task_index": 59,
+   "scene": 27,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "open the top drawer and put the popcorn in it"
+  },
+  {
+   "position": 3,
+   "task_index": 23,
+   "scene": 11,
+   "room": "study",
+   "kind": 1,
+   "language": "put the mug on the shelf"
+  },
+  {
+   "position": 4,
+   "task_index": 9,
+   "scene": 5,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the tomato sauce in the fridge and put the bowl in the left side of the drainer"
+  },
+  {
+   "position": 5,
+   "task_index": 2,
+   "scene": 2,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the butter on the plate and put the salad dressing in the fridge"
+  },
+  {
+   "position": 6,
+   "task_index": 5,
+   "scene": 4,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the macaroni on the cabinet"
+  },
+  {
+   "position": 7,
+   "task_index": 18,
+   "scene": 9,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the ketchup in the fridge and put the macaroni in the tray"
+  },
+  {
+   "position": 8,
+   "task_index": 43,
+   "scene": 19,
+   "room": "coffee table",
+   "kind": 2,
+   "language": "put the ramekin on the storage box and put the popcorn on the shelf"
+  },
+  {
+   "position": 9,
+   "task_index": 47,
+   "scene": 21,
+   "room": "tabletop",
+   "kind": 1,
+   "language": "put the cookies in the tray"
+  },
+  {
+   "position": 10,
+   "task_index": 22,
+   "scene": 11,
+   "room": "study",
+   "kind": 1,
+   "language": "put the cookies in the middle drawer"
+  },
+  {
+   "position": 11,
+   "task_index": 57,
+   "scene": 26,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the mug to the left of the plate and put the popcorn in the microwave"
+  },
+  {
+   "position": 12,
+   "task_index": 25,
+   "scene": 12,
+   "room": "study",
+   "kind": 1,
+   "language": "put the alphabet soup on the cabinet"
+  },
+  {
+   "position": 13,
+   "task_index": 19,
+   "scene": 9,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "turn on the stove and put the cream cheese in the pan"
+  },
+  {
+   "position": 14,
+   "task_index": 10,
+   "scene": 6,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the book on the cabinet and put the moka pot in the tray"
+  },
+  {
+   "position": 15,
+   "task_index": 3,
+   "scene": 3,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the bbq sauce in the bottom drawer and put the ketchup in front of the plate"
+  },
+  {
+   "position": 16,
+   "task_index": 11,
+   "scene": 7,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the tomato sauce in the middle drawer"
+  },
+  {
+   "position": 17,
+   "task_index": 29,
+   "scene": 13,
+   "room": "study",
+   "kind": 2,
+   "language": "put the butter in the bowl and put the tomato sauce on the storage box"
+  },
+  {
+   "position": 18,
+   "task_index": 37,
+   "scene": 17,
+   "room": "living room",
+   "kind": 1,
+   "language": "put the cream cheese on the storage box"
+  },
+  {
+   "position": 19,
+   "task_index": 15,
+   "scene": 8,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the ramekin in the bowl"
+  },
+  {
+   "position": 20,
+   "task_index": 35,
+   "scene": 16,
+   "room": "living room",
+   "kind": 1,
+   "language": "put the milk on the storage box"
+  },
+  {
+   "position": 21,
+   "task_index": 52,
+   "scene": 23,
+   "room": "tabletop",
+   "kind": 2,
+   "language": "put the tomato sauce on the shelf and put the chocolate pudding on the plate"
+  },
+  {
+   "position": 22,
+   "task_index": 53,
+   "scene": 24,
+   "room": "tabletop",
+   "kind": 1,
+   "language": "put the popcorn in the basket"
+  },
+  {
+   "position": 23,
+   "task_index": 40,
+   "scene": 18,
+   "room": "coffee table",
+   "kind": 2,
+   "language": "put the wine bottle on the shelf and put the cookies on the storage box"
+  },
+  {
+   "position": 24,
+   "task_index": 45,
+   "scene": 20,
+   "room": "coffee table",
+   "kind": 1,
+   "language": "put the popcorn on the plate"
+  },
+  {
+   "position": 25,
+   "task_index": 34,
+   "scene": 16,
+   "room": "living room",
+   "kind": 1,
+   "language": "put the cookies on the plate"
+  },
+  {
+   "position": 26,
+   "task_index": 21,
+   "scene": 10,
+   "room": "study",
+   "kind": 2,
+   "language": "put the book in the bottom drawer and put the orange juice on the shelf"
+  },
+  {
+   "position": 27,
+   "task_index": 12,
+   "scene": 7,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the macaroni in the microwave and close it"
+  },
+  {
+   "position": 28,
+   "task_index": 50,
+   "scene": 23,
+   "room": "tabletop",
+   "kind": 1,
+   "language": "put the orange juice in the tray"
+  },
+  {
+   "position": 29,
+   "task_index": 58,
+   "scene": 27,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the wine bottle in the fridge"
+  },
+  {
+   "position": 30,
+   "task_index": 33,
+   "scene": 15,
+   "room": "living room",
+   "kind": 1,
+   "language": "put the ramekin in the tray"
+  },
+  {
+   "position": 31,
+   "task_index": 39,
+   "scene": 18,
+   "room": "coffee table",
+   "kind": 1,
+   "language": "lift the milk"
+  },
+  {
+   "position": 32,
+   "task_index": 32,
+   "scene": 15,
+   "room": "living room",
+   "kind": 1,
+   "language": "put the bbq sauce on the lower shelf"
+  },
+  {
+   "position": 33,
+   "task_index": 42,
+   "scene": 19,
+   "room": "coffee table",
+   "kind": 2,
+   "language": "put the chocolate pudding in the bowl and put the milk in the tray"
+  },
+  {
+   "position": 34,
+   "task_index": 20,
+   "scene": 10,
+   "room": "study",
+   "kind": 1,
+   "language": "put the milk on the cabinet"
+  },
+  {
+   "position": 35,
+   "task_index": 44,
+   "scene": 20,
+   "room": "coffee table",
+   "kind": 1,
+   "language": "put the macaroni on the shelf"
+  },
+  {
+   "position": 36,
+   "task_index": 14,
+   "scene": 8,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the orange juice to the right of the bowl"
+  },
+  {
+   "position": 37,
+   "task_index": 17,
+   "scene": 9,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "lift the alphabet soup"
+  },
+  {
+   "position": 38,
+   "task_index": 49,
+   "scene": 22,
+   "room": "tabletop",
+   "kind": 2,
+   "language": "put the bbq sauce in the basket and put the cream cheese in the bowl"
+  },
+  {
+   "position": 39,
+   "task_index": 0,
+   "scene": 1,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the cookies in the bowl"
+  },
+  {
+   "position": 40,
+   "task_index": 38,
+   "scene": 17,
+   "room": "living room",
+   "kind": 2,
+   "language": "put the bbq sauce in the tray and put the popcorn in the bookcase"
+  },
+  {
+   "position": 41,
+   "task_index": 27,
+   "scene": 13,
+   "room": "study",
+   "kind": 1,
+   "language": "lift the bowl"
+  },
+  {
+   "position": 42,
+   "task_index": 46,
+   "scene": 21,
+   "room": "tabletop",
+   "kind": 1,
+   "language": "put the chocolate pudding on the storage box"
+  },
+  {
+   "position": 43,
+   "task_index": 1,
+   "scene": 1,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the bbq sauce in the fridge and put the mug on the cabinet"
+  },
+  {
+   "position": 44,
+   "task_index": 56,
+   "scene": 25,
+   "room": "floor",
+   "kind": 2,
+   "language": "put the mug in the tray and put the alphabet soup on the storage box"
+  },
+  {
+   "position": 45,
+   "task_index": 6,
+   "scene": 4,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "turn on the faucet"
+  },
+  {
+   "position": 46,
+   "task_index": 13,
+   "scene": 7,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the salad dressing on the cabinet and put the ramekin on the placemat"
+  },
+  {
+   "position": 47,
+   "task_index": 24,
+   "scene": 11,
+   "room": "study",
+   "kind": 2,
+   "language": "put the ketchup on the storage box and put the orange juice on the cabinet"
+  },
+  {
+   "position": 48,
+   "task_index": 41,
+   "scene": 19,
+   "room": "coffee table",
+   "kind": 1,
+   "language": "lift the moka pot"
+  },
+  {
+   "position": 49,
+   "task_index": 30,
+   "scene": 14,
+   "room": "study",
+   "kind": 1,
+   "language": "put the book on the storage box"
+  },
+  {
+   "position": 50,
+   "task_index": 28,
+   "scene": 13,
+   "room": "study",
+   "kind": 2,
+   "language": "put the book behind the bowl and put the ramekin on the plate"
+  },
+  {
+   "position": 51,
+   "task_index": 55,
+   "scene": 25,
+   "room": "floor",
+   "kind": 1,
+   "language": "put the cookies in the basket"
+  },
+  {
+   "position": 52,
+   "task_index": 31,
+   "scene": 14,
+   "room": "study",
+   "kind": 2,
+   "language": "put the ketchup on the shelf and put the cream cheese in the right of the caddy"
+  },
+  {
+   "position": 53,
+   "task_index": 7,
+   "scene": 4,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the alphabet soup in the top drawer and put the ramekin in the right side of the drainer"
+  },
+  {
+   "position": 54,
+   "task_index": 16,
+   "scene": 8,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the bowl in the microwave and put the butter on the cabinet"
+  },
+  {
+   "position": 55,
+   "task_index": 4,
+   "scene": 3,
+   "room": "kitchen",
+   "kind": 2,
+   "language": "put the cream cheese on the plate and put the wine bottle on the cabinet"
+  },
+  {
+   "position": 56,
+   "task_index": 48,
+   "scene": 22,
+   "room": "tabletop",
+   "kind": 1,
+   "language": "put the butter in the pan"
+  },
+  {
+   "position": 57,
+   "task_index": 51,
+   "scene": 23,
+   "room": "tabletop",
+   "kind": 2,
+   "language": "put the macaroni in the basket and put the moka pot to the right of the plate"
+  },
+  {
+   "position": 58,
+   "task_index": 54,
+   "scene": 24,
+   "room": "tabletop",
+   "kind": 2,
+   "language": "put the wine bottle to the left of the basket and put the chocolate pudding in the left of the caddy"
+  },
+  {
+   "position": 59,
+   "task_index": 36,
+   "scene": 16,
+   "room": "living room",
+   "kind": 2,
+   "language": "put the mug on the placemat and put the chocolate pudding in the basket"
+  },
+  {
+   "position": 60,
+   "task_index": 8,
+   "scene": 5,
+   "room": "kitchen",
+   "kind": 1,
+   "language": "put the popcorn in the bowl"
+  }
+ ]
+}

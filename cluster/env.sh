@@ -88,11 +88,14 @@ scratch_setup() {
 # The sync never deletes on /SAN (unlike the old scripts' rsync --delete, which a resumed job whose
 # scratch lacked earlier checkpoints would have wiped). Sets SCRATCH_OUT. Call it directly, not in
 # $(...): a subshell would hide the sync state from the exit trap.
+# Optional: SCRATCH_OUT_FILTER=(rsync filter args) limits the copy-in (e.g. a long sequential run copies in only
+# its last checkpoint, not every boundary checkpoint on /SAN).
 scratch_outputs() {
     _OUT_DEST=$1
     _OUT=$SCRATCH/outputs/$(basename "$1")
     if [ -d "$_OUT_DEST" ]; then
-        timeout 60m rsync -a --exclude '.*.tmp' "$_OUT_DEST/" "$_OUT/" >&2 || { echo "scratch_outputs: copy-in of $_OUT_DEST failed" >&2; return 1; }
+        timeout 60m rsync -a --exclude '.*.tmp' ${SCRATCH_OUT_FILTER[@]+"${SCRATCH_OUT_FILTER[@]}"} "$_OUT_DEST/" "$_OUT/" >&2 \
+            || { echo "scratch_outputs: copy-in of $_OUT_DEST failed" >&2; return 1; }
     fi
     # don't create $_OUT for a new run: lerobot-train refuses to start fresh in an existing dir
     mkdir -p "$_OUT_DEST" "$(dirname "$_OUT")"

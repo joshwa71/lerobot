@@ -397,3 +397,28 @@ Just-trained mean 77.2. On the same five tasks: memory 85.0 (both runs), special
   - Multitask LoRA (72.2) is 7.4 points below the joint fine-tune, not just below it (pi05: 2.6 below). Its weakest cells are e0 (52) and e8 (49), and its training loss ended at 0.062, against the joint fine-tune's 0.04.
   - Order on SmolVLA: specialists 84–86, memory's final row 81.7, joint fine-tune 79.6, multitask LoRA 72.2.
 - **The leak on the oldest tasks does not grow with more tasks.** Earlier tasks lose −5.0 points on average at five tasks and −5.3 at ten. It is uneven: e4 −20 and e7 −16 at ten tasks, the rest within ±7. e4's drop replicates across the two runs (−9 and −18 at row 5); e6's five-task drop does not (−11 and −3).
+
+---
+## Entry 5 - 19 Nov 26 (sixty new tasks in a random order: the first scaled sequence)
+
+**Why.** Paper 1 item 1: scale the sequence from 10 to 30–60 tasks and measure acquisition, retention and the protected-slot statistics as functions of the number of tasks K. On pi05, unrelated cores overlap at ~0.024 per pair, so the share of a new task's reads outside every earlier core should fall as ~(1 − 0.024)^(K−1): 0.80 at K = 10, 0.30 at K = 50. The point where the write rule stops finding unprotected slots has never been measured.
+
+**Tasks.** libero_ext: 60 new tasks in 27 scenes built in the LIBERO simulator, 30 single-step and 30 two-step, 50 scripted-expert demos each (`dataset_gen.md` §2–3b). The libero_90 base scores 1.0% on them zero-shot (only "turn on the faucet" 2/5 and "lift the alphabet soup" 1/5 above zero), so nearly all later success is adaptation.
+
+**Run `cell_s2_ext60_rand1`.** The ten-task run's settings (`cell_s2_seq10`) except:
+- **Same starting point:** cell_s2_seq5's A-phase, i.e. the separation-2 router warm-up with its values filled on libero_90.
+- **Data:** libero_ext; 5,000 steps per task, 300,000 in all.
+- **Order:** a random permutation of the 60 tasks, `random.Random(1).shuffle(list(range(60)))`, recorded with the task names in `cluster/jobs/smolvla/configs/ext60_order_rand1.json`. It happens to hold 15 two-step tasks in each half.
+- **In-run loss matrix:** after every task, the paired-noise flow-matching MSE on every task seen so far (16 batches of 16 per task, frames and noise seeded per task). This is the pi05 instrument, computed on the live policy rather than reloaded checkpoints.
+- **Logging:** every 100 steps; per-task slot reads and updates (`memory_by_task/`); and the protection store and IDF at every boundary (`sequential_state.pt`). Every boundary checkpoint is kept, for rollout evaluation afterwards.
+
+Rollout evaluation follows training, from the boundary checkpoints, per the Paper 1 plan: the just-trained task at every boundary, and the full retention row every fifth task (25 episodes × 4 paired seeds, 10 actions per chunk).
+
+**Pre-registered reads.**
+- **Acquisition.** If the memory has room for 60 tasks, the just-trained task's success stays near the ten-task diagonal (86.5) throughout; its own-task loss right after training stays flat in K. A fall in either with K, at the fixed 5,000-step budget, is the saturation signal item 2 calibrates.
+- **Retention.** On libero_10, earlier tasks lost ~5 points whether 5 or 10 tasks followed. If that holds, the final row's mean over earlier tasks sits within ~5 points of their just-trained mean. In loss terms, drift (own-task loss from just-trained to final) grows with the number of tasks trained after (pi05 ten-task mean +28.5%).
+- **Protection statistics** (computed afterwards from `memory_by_task/` and `sequential_state.pt`):
+  - the protected fraction rises with K;
+  - ω_K, the share of task K's read mass outside every earlier core, falls roughly as (1 − overlap)^(K−1).
+  The K at which acquisition starts to fall, set against ω_K and the protected fraction there, is the first estimate of the detector threshold.
+- **Task order.** A single random order cannot separate the effect of K from that of particular tasks. The scenes share fixtures, so related tasks are scattered through the sequence. A grouped order is the planned second run.

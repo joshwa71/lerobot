@@ -75,6 +75,23 @@ json.dump(c, open(p, "w"), indent=2)' "$1/adapter_config.json" "$base"
     POLICY_ARGS+=(--policy.use_peft=true)
 }
 
+# Every 10 min, delete from scratch the boundary checkpoints (other than `last`) that /SAN already holds complete
+# and identical (sequential_state.pt present, nothing left to transfer). The outputs sync never deletes on /SAN,
+# so this only frees scratch: a 60-task run writes 60 boundary checkpoints of ~6.6 GB.
+prune_synced_checkpoints() {  # <scratch checkpoints dir> <SAN checkpoints dir>
+    local cur d n
+    while sleep 600; do
+        cur=$(readlink "$1/last" 2>/dev/null) || continue
+        for d in "$1"/[0-9]*; do
+            [ -d "$d" ] || continue
+            n=$(basename "$d")
+            [ "$n" != "$cur" ] && [ -f "$d/sequential_state.pt" ] && [ -f "$2/$n/sequential_state.pt" ] || continue
+            [ -z "$(timeout 10m rsync -a --dry-run --itemize-changes "$d/" "$2/$n/" 2>&1)" ] || continue
+            rm -rf "$d" && echo "[$(date '+%F %T')] pruned checkpoint $n from scratch (complete on /SAN)" >&2
+        done
+    done
+}
+
 # lerobot-train stage: fresh from <init> (checkpoint dir or hub id), or resumed from its own last checkpoint
 train_stage() {  # <stage> <dataset> <steps> <init> [lerobot-train args...]
     local stage=$1 dataset=$2 steps=$3 init=$4 data args; shift 4
@@ -146,7 +163,12 @@ seq)
     cd "$SCRATCH"
     data=$(scratch_copy "$HF_LEROBOT_HOME/$SEQ_DATASET")
     scratch_hub_models "$VLM"
+    # resuming needs only the last boundary checkpoint; the earlier ones stay on /SAN
+    last=$(readlink "$RUNS/seq/checkpoints/last" 2>/dev/null || true)
+    SCRATCH_OUT_FILTER=(--include=/checkpoints/ --include=/checkpoints/last ${last:+"--include=/checkpoints/$last/***"} --exclude='/checkpoints/*')
     scratch_outputs "$RUNS/seq"
+    unset SCRATCH_OUT_FILTER
+    prune_synced_checkpoints "$SCRATCH_OUT/checkpoints" "$RUNS/seq/checkpoints" &
     if [ -f "$SCRATCH_OUT/checkpoints/last/sequential_state.pt" ]; then
         echo "== resuming seq after step $(readlink "$SCRATCH_OUT/checkpoints/last")"
         peft_args "$SCRATCH_OUT/checkpoints/last/pretrained_model"
