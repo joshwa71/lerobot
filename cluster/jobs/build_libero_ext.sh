@@ -9,6 +9,10 @@
 #   qsub -l 'h=!(dip-207-1*|dip-207-2*)' cluster/jobs/build_libero_ext.sh
 # Also writes $HF_LEROBOT_HOME/libero_ext_learn4: suite tasks LEARN_TASKS only (task_index 0-3), for the
 # learnability check (configs/ext_learn_spec_r128.sh), copied to /SAN before the full dataset.
+# Versions: V=<suffix> reads libero_ext_demos$V and writes libero_ext$V / libero_ext_learn4$V (build dir
+# _build/libero_ext$V); SUBSET_ONLY=1 renders only the demos present (e.g. just LEARN_TASKS) and stops after the
+# subset. E.g. a learnability retest of new demos:
+#   qsub -l 'h=!(...)' -v V=_v2,SUBSET_ONLY=1 cluster/jobs/build_libero_ext.sh
 #$ -S /bin/bash
 #$ -N build_libero_ext
 # One gpu.q slot (each slot is a GPU there, so -pe smp N would need N free GPUs on one host); the render
@@ -23,38 +27,44 @@ source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
 D=$HF_LEROBOT_HOME
 LEARN_TASKS=${LEARN_TASKS:-0,31,42,59}
+V=${V:-}
+SUBSET_ONLY=${SUBSET_ONLY:-0}
+FULL=libero_ext$V LEARN=libero_ext_learn4$V
+PARTIAL=()
+[ "$SUBSET_ONLY" = 1 ] && PARTIAL=(--partial)
 echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-} nproc=$(nproc)"
 cd "$REPO/scripts/datasets"
 git log -1 --format='== repo %h %s'
-if [ -f "$D/libero_ext/meta/info.json" ] && [ -f "$D/libero_ext_learn4/meta/info.json" ]; then
-    echo "== $D/libero_ext and libero_ext_learn4 already exist; nothing to do"
+if [ -f "$D/$LEARN/meta/info.json" ] && { [ "$SUBSET_ONLY" = 1 ] || [ -f "$D/$FULL/meta/info.json" ]; }; then
+    echo "== $D/$FULL and $LEARN already exist; nothing to do"
     exit 0
 fi
 scratch_setup
-DEMOS=$(scratch_copy "$D/libero_ext_demos")
-scratch_outputs "$D/_build/libero_ext"
+DEMOS=$(scratch_copy "$D/libero_ext_demos$V")
+scratch_outputs "$D/_build/libero_ext$V"
 mkdir -p "$SCRATCH_OUT"
 WORK=$SCRATCH_OUT/tasks
 echo "== per-task datasets $(date)"
 timeout -s ABRT 8h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage tasks --demos "$DEMOS" \
-    --work "$WORK" --out "$SCRATCH/libero_ext" --workers 3
+    --work "$WORK" --out "$SCRATCH/$FULL" --workers 3 ${PARTIAL[@]+"${PARTIAL[@]}"}
 scratch_outputs_close  # all per-task datasets on /SAN before scratch copies are dropped
-if [ ! -f "$D/libero_ext_learn4/meta/info.json" ]; then
+if [ ! -f "$D/$LEARN/meta/info.json" ]; then
     echo "== learnability subset (suite tasks $LEARN_TASKS) $(date)"
     timeout -s ABRT 1h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage subset --subset "$LEARN_TASKS" \
-        --repo-id libero_ext_learn4 --demos "$DEMOS" --work "$WORK" --out "$SCRATCH/libero_ext_learn4" --stats-workers 4
-    timeout 2h rsync -a --timeout=600 "$SCRATCH/libero_ext_learn4/" "$D/.libero_ext_learn4.tmp/"
-    mv -T "$D/.libero_ext_learn4.tmp" "$D/libero_ext_learn4"
-    rm -rf "$SCRATCH/libero_ext_learn4"
+        --repo-id "$LEARN" --demos "$DEMOS" --work "$WORK" --out "$SCRATCH/$LEARN" --stats-workers 4 \
+        ${PARTIAL[@]+"${PARTIAL[@]}"}
+    timeout 2h rsync -a --timeout=600 "$SCRATCH/$LEARN/" "$D/.$LEARN.tmp/"
+    mv -T "$D/.$LEARN.tmp" "$D/$LEARN"
+    rm -rf "$SCRATCH/$LEARN"
 fi
-if [ -f "$D/libero_ext/meta/info.json" ]; then
-    echo "== $D/libero_ext already exists; done"
+if [ "$SUBSET_ONLY" = 1 ] || [ -f "$D/$FULL/meta/info.json" ]; then
+    echo "== done $(date)"
     exit 0
 fi
 echo "== aggregate + stats $(date)"
 timeout -s ABRT 3h "$REPO/cluster/bin/ctr" python build_libero_ext.py --stage aggregate --demos "$DEMOS" \
-    --work "$WORK" --out "$SCRATCH/libero_ext" --drop-work --stats-workers 4
+    --work "$WORK" --out "$SCRATCH/$FULL" --drop-work --stats-workers 4
 echo "== copy to /SAN $(date)"
-timeout 4h rsync -a --timeout=600 "$SCRATCH/libero_ext/" "$D/.libero_ext.tmp/"
-mv -T "$D/.libero_ext.tmp" "$D/libero_ext"
-echo "== done $(date): $D/libero_ext"
+timeout 4h rsync -a --timeout=600 "$SCRATCH/$FULL/" "$D/.$FULL.tmp/"
+mv -T "$D/.$FULL.tmp" "$D/$FULL"
+echo "== done $(date): $D/$FULL"

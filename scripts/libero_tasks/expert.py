@@ -6,8 +6,9 @@ open or close the gripper, wait); each stage's target is computed from the curre
 Actions are LIBERO's: OSC_POSE deltas (action 1 commands 5 cm or 0.5 rad) plus the gripper (-1 open, +1 close).
 
 Variety, so that 50 demos of a task are not near-copies (dataset_gen.md, §3):
-  - expert parameters drawn per episode: speed, approach and transport heights, grasp offsets, release height,
-    pauses, and the order of a two-step task's independent steps;
+  - expert parameters drawn per episode: speed, approach and transport heights, grasp offsets, release height and
+    pauses (continuous only: discrete choices, such as step order or which of several grasps, are made the same
+    way in every episode, or the policy gets several modes it cannot choose between; dataset_gen.md §3c);
   - DART-style noise: the executed action is perturbed, the recorded label is the expert's action from the state
     actually reached (so the data contains corrections);
   - wider starts: after a reset, objects are nudged and round ones turned, and the arm's joints jittered.
@@ -249,9 +250,11 @@ def body_grasp(parts, d, along, s_a, z_tip):
     return None
 
 
-def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None):
-    """The clearest top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 1 cm or
-    more, a random one (variety); otherwise the one with the most clearance."""
+def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=None):
+    """A top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 5 mm or more, the one
+    needing the least wrist rotation from rot_now (consistent demos: a random choice among clear grasps gave the
+    data several grasp orientations per task, which the policy could not commit to; dataset_gen.md §3c);
+    otherwise the one with the most clearance."""
     obs = obstacles(e, {inst, *exclude_extra})
     cands = grasp_candidates(e, inst, cls, rng, p)
     if want_dir is not None:  # e.g. fingers parallel to a fixture's face, for a sideways insertion
@@ -260,6 +263,12 @@ def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None):
     if not scored:
         return None
     good = [x for x in scored if x[0] >= 0.005]
+    if good and rot_now is not None:
+        def turn(x):
+            r = nearest_equiv(down_rot(x[2]), rot_now)
+            return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ rot_now.T))))
+
+        good.sort(key=turn)
     c, pt, d, top = good[0] if good else max(scored, key=lambda x: x[0])
     return pt, d, top, c
 
@@ -291,10 +300,8 @@ class Expert:
             "grasp_depth": rng.uniform(0.025, 0.04),
             "pause": int(rng.integers(0, 4)),
         }
-        steps = [tuple(s) for s in task["steps"]]
-        if len(steps) == 2 and not task.get("artic") and rng.random() < 0.5:
-            steps = steps[::-1]  # independent steps: either order
-        self.steps = steps
+        # the instruction's order (a random order made two modes the policy could not choose between; §3c)
+        self.steps = [tuple(s) for s in task["steps"]]
         self.labels, self.executed, self.eef = [], [], []
         self.why = ""  # failure reason, for diagnostics
         self.stop_at_success = True
@@ -367,7 +374,8 @@ class Expert:
         inst = f"{self.cls[kind]}_1"
         for _ in range(tries):
             low0 = obj_box(self.e, inst)[0][2]
-            spec = grasp_spec(self.e, inst, self.cls[kind], self.rng, self.p, want_dir=want_dir)
+            spec = grasp_spec(self.e, inst, self.cls[kind], self.rng, self.p, want_dir=want_dir,
+                              rot_now=self.eef_rot())
             if spec is None:
                 return None
             pt, d, top, _ = spec
@@ -713,14 +721,14 @@ class Expert:
         art = self.task["artic"]
         place = self.steps[0] if self.steps else None
         if art == "faucet":
-            ok = self.swing("faucet", lambda q: abs(q) > 0.8, increase=bool(self.rng.random() < 0.5),
+            ok = self.swing("faucet", lambda q: abs(q) > 0.8, increase=True,  # one way, not either (§3c)
                             frac=self.rng.uniform(0.5, 0.65), mode="push")
             if not ok:
                 self.why = "faucet not turned"
             return ok
         if art == "stove":
             on = self._fixture_state("stove", "turnon")
-            first = self.rng.random() < 0.5
+            first = True  # the instruction's order: turn on the stove, then the placing step (§3c)
             if first and not self.twist_knob("stove", on):
                 self.why = "stove knob not turned"
                 return False
