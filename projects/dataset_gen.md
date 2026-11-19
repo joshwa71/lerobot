@@ -481,9 +481,14 @@ Insertion through a side opening (bookcase, fridge, microwave) is the expert's w
   - macaroni in the basket + moka pot right of the plate, 50/103;
   - book in the bottom drawer + orange juice on the shelf, 50/101.
 - The demos are in `outputs/libero_ext_demos` (152 MB) and `/SAN/.../data/libero_ext_demos`.
-- Rendering into `data/libero_ext` and `data/libero_ext_learn4` is submitted (`cluster/jobs/build_libero_ext.sh`).
 
-**Next: learnability check** (`configs/ext_learn_spec_r128.sh`, once `libero_ext_learn4` exists):
+**Datasets built (18 Nov 26, `cluster/jobs/build_libero_ext.sh`, repo `69e2da0`):**
+- **`data/libero_ext`:** 3,000 episodes, 652,137 frames, 60 tasks, 68 GB, quantile stats included.
+- **`data/libero_ext_learn4`:** suite tasks 0, 31, 42 and 59 as task_index 0–3; 200 episodes, 49,928 frames, 5 GB.
+- States re-read from the saved positions differ from the recorded (cached) ones by at most 1.07 cm, on task 59, the drawer opening. That is under the 2 cm bar for a model mismatch.
+- The per-task datasets the build resumes from are in `data/_build/libero_ext` (68 GB), and are redundant now.
+
+**Learnability check** (`configs/ext_learn_spec_r128.sh`, submitted 19 Nov 26):
 - LoRA specialists with the libero_10 recipe on suite tasks 0, 31, 42 and 59: cookies in the bowl; ketchup on the shelf + cream cheese in the caddy; chocolate pudding in the bowl + milk in the tray; open the top drawer and put the popcorn in it.
 - Each specialist is evaluated on its own task.
 - **Zero-shot floor** of the SmolVLA libero_90 base on all 60 tasks (`configs/ext_zeroshot.sh`; 5 episodes each, one seed, 10 actions executed per chunk): **1.0%** mean.
