@@ -26,8 +26,9 @@ cp "$CONFIG" "$RUNS/config.sh"
 stages=("$@")
 [ ${#stages[@]} -gt 0 ] || stages=(stage1 warmup audit aphase seq tri)
 hold=${HOLD_JID:-}
-# Nodes to avoid (CLAUDE.md 9.4 rule 9): dip-207-1 froze on /SAN reads; dip-207-2 GPU 6 failed or hung LIBERO evals
-EXCLUDE_HOSTS=${EXCLUDE_HOSTS:-dip-207-1*|dip-207-2*}
+# Nodes to avoid (CLAUDE.md 9.4 rule 9): dip-207-1 froze on /SAN reads; dip-207-2 GPU 6 failed or hung LIBERO evals;
+# strangepork-205-1 has a broken /scratch0 (19 Nov 26: "mkdir: cannot create directory /scratch0: File exists")
+EXCLUDE_HOSTS=${EXCLUDE_HOSTS:-dip-207-1*|dip-207-2*|strangepork-205-1*}
 for st in "${stages[@]}"; do
     res_var=RES_${st^^}
     res=${!res_var}
