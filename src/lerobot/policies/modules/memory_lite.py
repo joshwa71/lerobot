@@ -2709,8 +2709,10 @@ def aggregate_memory_losses(
             routing_global_entropies.append(mem.last_routing_global_entropy)
             loss_dict[f"{prefix}routing_global_entropy_L{li}"] = mem.last_routing_global_entropy
 
-        # --- usage logging ---
-        if log_usage and getattr(mem, "last_indices", None) is not None:
+        # --- usage logging (training only: in eval mode the module records last_indices on the CPU and leaves
+        # last_weights from the last training step, so the two would not match; e.g. the sequential trainer's
+        # --eval.type=loss runs the forward in eval mode) ---
+        if log_usage and mem.training and getattr(mem, "last_indices", None) is not None:
             idx = mem.last_indices
             unique_count = torch.unique(idx).numel()
             frac = float(unique_count) / float(mem.size)
