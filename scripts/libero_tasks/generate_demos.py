@@ -72,11 +72,11 @@ def run_task(job):
         qpos, states = [], []
         orig = exp._step
 
-        def step(label, orig=orig, qpos=qpos, states=states, exp=exp):
+        def step(label, executed=None, orig=orig, qpos=qpos, states=states, exp=exp):
             if len(exp.labels) < exp.max_len:  # (else orig raises OutOfTime without stepping)
                 qpos.append(e.sim.data.qpos.copy())
                 states.append(state8(exp.obs()))
-            orig(label)
+            orig(label, executed)
 
         exp._step = step
         try:

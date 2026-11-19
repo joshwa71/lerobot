@@ -27,6 +27,10 @@ ROUND = {"akita_black_bowl", "white_bowl", "glazed_rim_porcelain_ramekin", "plat
 RIM = {"porcelain_mug", "red_coffee_mug", "white_yellow_mug", "akita_black_bowl", "white_bowl",
        "glazed_rim_porcelain_ramekin", "plate"}
 MAX_OPEN = 0.075  # widest object the Panda gripper can close on, m
+# Recovery data (dataset_gen.md §3c): the scripted expert's grasps almost never fail, so its demos held no
+# recoveries, and a policy that closed 1-3 cm off a grasp carried an empty hand on or looped. This share of first
+# attempts is executed wrong on purpose (labels: the expert's action from each state reached).
+P_MISS = 0.25
 
 
 # ---------------------------------------------------------------- geometry
@@ -296,7 +300,7 @@ class Expert:
             "transport": rng.uniform(0.12, 0.22),
             "release": rng.uniform(0.008, 0.025),
             "retreat": rng.uniform(0.06, 0.12),
-            "grasp_slide": rng.uniform(0.0, 0.6),
+            "grasp_slide": rng.uniform(0.0, 0.25),  # was 0.6: a spread grasp point blurred where the policy grasped
             "grasp_depth": rng.uniform(0.025, 0.04),
             "pause": int(rng.integers(0, 4)),
         }
@@ -305,6 +309,7 @@ class Expert:
         self.labels, self.executed, self.eef = [], [], []
         self.why = ""  # failure reason, for diagnostics
         self.stop_at_success = True
+        self.p_miss = P_MISS  # chance that a pick's (or a drawer pull's) first attempt is a deliberate miss
 
     # ---- low level
     def obs(self):
@@ -328,12 +333,17 @@ class Expert:
         return np.clip(a, -1, 1), np.linalg.norm(target_pos - pos), (
             np.linalg.norm(tu.quat2axisangle(tu.mat2quat(target_rot @ rot.T))) if target_rot is not None else 0.0)
 
-    def _step(self, label):
+    def _step(self, label, executed=None):
+        """Record label (the expert's action from this state) and send executed: the label plus DART noise by
+        default, or a given action (a deliberate miss, whose labels still say what the expert would do)."""
         if len(self.labels) >= self.max_len:
             raise OutOfTime
-        a = label.copy()
-        if self.dart > 0:
-            a[:6] = np.clip(a[:6] + self.rng.normal(0, self.dart, 6) * np.array([1, 1, 1, 0.5, 0.5, 0.5]), -1, 1)
+        if executed is not None:
+            a = np.asarray(executed, float).copy()
+        else:
+            a = label.copy()
+            if self.dart > 0:
+                a[:6] = np.clip(a[:6] + self.rng.normal(0, self.dart, 6) * np.array([1, 1, 1, 0.5, 0.5, 0.5]), -1, 1)
         self.labels.append(label)
         self.executed.append(a)
         self.eef.append(self.obs()["robot0_eef_pos"].copy())
@@ -355,6 +365,33 @@ class Expert:
             self._step(a)
         return False
 
+    def move_dual(self, true_pos, exec_pos, rot, grip_label, grip_exec, tol=0.008, max_steps=80, speed=None):
+        """Send the arm to exec_pos while recording, at every step, the expert's action towards true_pos (with
+        grip_label): DART-style recovery data, where the executed motion goes wrong and the labels say what the
+        expert would do from each state actually reached. Ends when exec_pos is reached or the arm is blocked."""
+        speed = min(self.p["speed"], 0.6) if speed is None else speed
+        errs = []
+        for _ in range(max_steps):
+            a_exec, dpos, _ = self._act(exec_pos, rot, grip_exec, speed)
+            if dpos < tol:
+                return True
+            errs.append(dpos)
+            if len(errs) > 15 and errs[-16] - errs[-1] < 0.002:
+                return False
+            a_label, _, _ = self._act(true_pos, rot, grip_label, speed)
+            self._step(a_label, executed=a_exec)
+        return False
+
+    def missed_grasp(self, true_pt, miss_pt, rot, n_close=7):
+        """A deliberate miss: go to miss_pt instead of true_pt and close there, then open again. Every label is the
+        expert's action from the state reached: on to true_pt with the gripper open."""
+        self.move_dual(true_pt, miss_pt, rot, -1.0, -1.0)
+        for _ in range(n_close):
+            a_label, _, _ = self._act(true_pt, rot, -1.0, min(self.p["speed"], 0.6))
+            a_exec, _, _ = self._act(miss_pt, rot, 1.0, min(self.p["speed"], 0.6))
+            self._step(a_label, executed=a_exec)
+        self.hold(6, -1.0)  # the expert's own recovery from here on: open (labels = executed)
+
     def hold(self, n, grip):
         o = self.obs()
         pos, rot = o["robot0_eef_pos"].copy(), tu.quat2mat(o["robot0_eef_quat"])
@@ -372,7 +409,7 @@ class Expert:
     # ---- primitives
     def pick(self, kind, tries=3, want_dir=None):
         inst = f"{self.cls[kind]}_1"
-        for _ in range(tries):
+        for try_ in range(tries):
             low0 = obj_box(self.e, inst)[0][2]
             spec = grasp_spec(self.e, inst, self.cls[kind], self.rng, self.p, want_dir=want_dir,
                               rot_now=self.eef_rot())
@@ -383,6 +420,21 @@ class Expert:
             above = np.array([pt[0], pt[1], top + self.p["approach"]])
             self.move(above, rot, -1.0, tol=0.015)
             self.hold(self.p["pause"], -1.0)
+            if try_ == 0 and self.rng.random() < self.p_miss:
+                # recovery data (dataset_gen.md §3c): close too high, or beside the object along the fingers'
+                # width, then open, rise 4 cm and grasp properly
+                lo, hi = obj_box(self.e, inst)
+                along = np.array([-d[1], d[0]])
+                if self.rng.random() < 0.5:
+                    miss = pt + np.array([0.0, 0.0, self.rng.uniform(0.015, 0.025)])
+                else:
+                    half = (abs(along[0]) * (hi[0] - lo[0]) + abs(along[1]) * (hi[1] - lo[1])) / 2
+                    off = min(half + self.rng.uniform(0.01, 0.02), 0.04) * self.rng.choice([-1.0, 1.0])
+                    miss = pt + np.append(along * off, 0.0)
+                self.missed_grasp(pt, miss, rot)
+                here = self.obs()["robot0_eef_pos"]
+                self.move(here + np.array([0, 0, 0.04]), rot, -1.0, tol=0.012)
+                self.move(np.array([pt[0], pt[1], pt[2] + 0.04]), rot, -1.0, tol=0.012)
             self.move(pt, rot, -1.0, tol=0.006, speed=min(self.p["speed"], 0.6))
             self.hold(7, 1.0)
             lift = np.array([pt[0], pt[1], top + self.p["approach"]])
@@ -690,8 +742,12 @@ class Expert:
             h = self._handle(body, out)
             pre = h + np.append(out * 0.12, 0.0)
             grasp = h + np.append(out * 0.005, 0.0)
-            for _ in range(2):
+            for k in range(2):
                 self.move(pre, rot_h, -1.0, tol=0.01, rot_tol=0.05, max_steps=160)
+                if attempt == 0 and k == 0 and self.rng.random() < self.p_miss:
+                    # recovery data: close 3-5 cm short of the handle, open, then grasp it (labels: on to the handle)
+                    short = grasp + np.append(out * self.rng.uniform(0.03, 0.05), 0.0)
+                    self.missed_grasp(grasp, short, rot_h)
                 self.move(grasp, rot_h, -1.0, tol=0.006, rot_tol=0.06, speed=0.4)
                 self.hold(8, 1.0)
                 f = self.obs()["robot0_gripper_qpos"]

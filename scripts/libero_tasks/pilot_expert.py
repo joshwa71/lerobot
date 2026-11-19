@@ -50,8 +50,8 @@ def run_task(args):
         frames = []
         orig = exp._step
 
-        def step_and_grab(label):
-            orig(label)
+        def step_and_grab(label, executed=None):
+            orig(label, executed)
             frames.append(venv.env.sim.render(camera_name="agentview", height=256, width=256)[::-1, ::-1])
 
         exp._step = step_and_grab
