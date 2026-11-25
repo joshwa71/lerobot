@@ -274,8 +274,6 @@ def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=No
     scored = [(clearance(pt, d, pt[2], obs), pt, d, top) for pt, d, top in cands]
     if not scored:
         return None
-    good = [x for x in scored if x[0] >= 0.01]  # 1 cm: at 5 mm the hand body still brushed neighbours (§3d)
-
     def turn(x):
         if rot_now is None:
             return 0.0
@@ -285,8 +283,14 @@ def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=No
     def off_ref(x):  # how far the closing direction is from the reference, modulo 180 degrees (a grasp = its flip)
         return 0.0 if ref_dir is None else round(1.0 - abs(float(np.dot(x[2], ref_dir))), 3)
 
+    # clear: 1 cm (at 5 mm the hand body still brushed neighbours, §3d), but 5 mm for the reference direction, so
+    # that the task's grasp is kept in more layouts (task 52: the reference was clear by 1 cm in only half)
+    good = [x for x in scored if x[0] >= (0.005 if ref_dir is not None and off_ref(x) < 0.03 else 0.01)]
+    if not good:  # nothing clear: the grasps within 5 mm of the most clearance, the reference first
+        top_c = max(x[0] for x in scored)
+        good = [x for x in scored if x[0] >= top_c - 0.005]
     good.sort(key=lambda x: (off_ref(x), turn(x)))
-    c, pt, d, top = good[0] if good else max(scored, key=lambda x: x[0])
+    c, pt, d, top = good[0]
     return pt, d, top, c
 
 
@@ -299,12 +303,14 @@ def pick_want_dir(dest, phrase):
 
 def grasp_reference(env, task, classes, rng, n=20):
     """The task's grasp orientation, fixed for all its episodes. For each object the task picks: the closing
-    direction (world frame, in the candidates' 22.5-degree steps) that is clear by 1 cm in the most of n fresh
-    layouts, ties going to the least wrist rotation from the home pose.
+    direction (world frame, in the candidates' 22.5-degree steps) that is clear by 5 mm (grasp_spec's bar for the
+    reference) in the most of n fresh layouts, ties going to the least wrist rotation from the home pose; if no
+    direction is ever clear, the one that most often has the most clearance (task 51's macaroni: no reference made
+    its grasp flip between two directions).
     Returns {kind: {"deg": direction in [0, 180), "clear_in": layouts where it is clear, "of": n}}."""
     e = env.env
     p = {"grasp_slide": 0.0, "grasp_depth": 0.03}
-    counts = {}
+    clear_n, best_n = {}, {}
     home = None
     for _ in range(n):
         sl.stable_reset(env)
@@ -319,20 +325,30 @@ def grasp_reference(env, task, classes, rng, n=20):
             cands = grasp_candidates(e, inst, classes[kind], rng, p)
             if want is not None:
                 cands = [c for c in cands if abs(np.dot(c[1], want)) > 0.9] or cands
-            clear = {round(math.degrees(math.atan2(d[1], d[0])) / 22.5) % 8
-                     for pt, d, top in cands if clearance(pt, d, pt[2], obs) >= 0.01}
-            for b in clear:
-                counts.setdefault(kind, {}).setdefault(b, 0)
-                counts[kind][b] += 1
-    ref = {}
-    for kind, c in counts.items():
-        def turn(b):
-            a = math.radians(b * 22.5)
-            r = nearest_equiv(down_rot(np.array([math.cos(a), math.sin(a)])), home)
-            return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ home.T))))
+            by_dir = {}
+            for pt, d, top in cands:
+                b = round(math.degrees(math.atan2(d[1], d[0])) / 22.5) % 8
+                by_dir[b] = max(by_dir.get(b, -1.0), clearance(pt, d, pt[2], obs))
+            if not by_dir:
+                continue
+            for b, c in by_dir.items():
+                if c >= 0.005:
+                    clear_n.setdefault(kind, {}).setdefault(b, 0)
+                    clear_n[kind][b] += 1
+            b = max(by_dir, key=by_dir.get)
+            best_n.setdefault(kind, {}).setdefault(b, 0)
+            best_n[kind][b] += 1
 
+    def turn(b):
+        a = math.radians(b * 22.5)
+        r = nearest_equiv(down_rot(np.array([math.cos(a), math.sin(a)])), home)
+        return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ home.T))))
+
+    ref = {}
+    for kind in best_n:
+        c = clear_n.get(kind) or best_n[kind]
         best = min(c, key=lambda b: (-c[b], turn(b)))
-        ref[kind] = {"deg": best * 22.5, "clear_in": c[best], "of": n}
+        ref[kind] = {"deg": best * 22.5, "clear_in": clear_n.get(kind, {}).get(best, 0), "of": n}
     return ref
 
 
@@ -550,21 +566,27 @@ class Expert:
                     break
         z_tr = max(eef[2], surface_z + hang + 0.06, sz + hang + self.p["transport"], tallest + hang + 0.06)
         self.move(np.array([eef[0], eef[1], z_tr]), rot, 1.0, tol=0.02)
-        # at the drop point: a hand orientation and the lowest release height with the hand body clear
+        # at the drop point: a hand orientation and the lowest release height with the hand body clear. The hand
+        # keeps its orientation (or turns least) unless that costs more than 4 cm of release height: taking the
+        # lowest release first made the turn flip from layout to layout (task 8: three modes; dataset_gen.md §3d)
         release_z = surface_z + hang + self.p["release"] + release_extra
         obs = obstacles(self.e, {inst})
         fwd = rot[:, 1][:2]  # current closing direction
-        best = None
+        opts = []
         for k in range(8):
             a = math.atan2(fwd[1], fwd[0]) + k * math.pi / 8
             dvec = np.array([math.cos(a), math.sin(a)])
             turn = min(k, 8 - k)
             for dz in np.arange(0.0, 0.12, 0.01):
                 if clearance(drop_xy, dvec, release_z + dz, obs, fingers=False) >= 0.004:
-                    key = (dz, turn, k)  # ties (a turn either way) always go the same way: no random modes
-                    if best is None or key < best[0]:
-                        best = (key, dvec, release_z + dz)
+                    opts.append((float(dz), turn, k, dvec))
                     break
+        best = None
+        if opts:
+            low = min(o[0] for o in opts)
+            # ties (a turn either way) always go the same way (smaller k): no random modes
+            dz, turn, k, dvec = min(opts, key=lambda o: (o[0] > low + 0.04 + 1e-6, o[1], o[0], o[2]))
+            best = ((dz, turn, k), dvec, release_z + dz)
         rot_drop = rot if best is None else nearest_equiv(down_rot(best[1]), rot)
         release_z = release_z if best is None else best[2]
         # aim the object (its body origin, which the goal checks use), not the hand: the held object sits off
