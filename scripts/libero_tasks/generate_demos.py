@@ -4,7 +4,16 @@
 For each task: episodes from fresh resets (LIBERO's own start-state variation: objects anywhere in their init
 regions, the arm at home; not the stored evaluation start states), two in three plain and one in three with DART
 noise (the recorded action is the expert's label, the executed one carries the noise), kept only if they succeed, until --demos successes or --max-tries episodes. Episodes end at the first
-step where the goal holds, as LIBERO's evaluation episodes do. One compressed npz per task in --out:
+step where the goal holds, as LIBERO's evaluation episodes do.
+
+One mode per task (dataset_gen.md §3c-3d): demos that differ in a discrete choice (which way the hand is turned to
+grasp or release) give the policy modes it cannot choose between. The task's grasp orientation is fixed before its
+episodes (expert.grasp_reference), and each successful episode's mode signature (yaw_signature: the wrist yaw at
+each change of hand orientation between gripper events) is compared with the others': only episodes in the most
+common mode are kept. meta records the share of successes in that mode before filtering (mode_share; below ~0.9
+means the expert still makes the choice inconsistently, worth a look).
+
+One compressed npz per task in --out:
 
   qpos_k      T x nq float64   simulator positions before each action (the renderer sets these to draw frames)
   state_k     T x 8  float32   [eef pos, eef axis-angle, gripper qpos], as LeRobot's LIBERO processor builds it
@@ -12,7 +21,8 @@ step where the goal holds, as LIBERO's evaluation episodes do. One compressed np
   executed_k  T x 7  float32   what was sent (label plus DART noise)
   init_k      full flattened simulator state at t=0 (for replay checks)
   wide_k      1 if the episode had DART noise (the name is historical: it once also meant a widened start)
-  meta        json: task index, name, language, bddl file, nq, joint names, success counts
+  meta        json: task index, name, language, bddl file, nq, joint names, success counts, grasp_ref, mode_share,
+              mode (the kept signature, degrees)
 
 Images are rendered on a cluster GPU node from qpos (scripts/datasets/build_libero_ext.py). Resumes: tasks whose
 npz already holds --demos episodes are skipped.
@@ -46,6 +56,41 @@ def state8(obs):
     ).astype(np.float32)
 
 
+YAW_TOL = 20.0  # degrees: two episodes are in the same mode if every hand orientation differs by less than this
+
+
+def yaw_signature(state, action):
+    """The episode's discrete hand-orientation choices: the wrist yaw (degrees from the start pose, about world z)
+    at each gripper close or open, with consecutive events within 15 degrees merged (a retry or a deliberate
+    handle miss at the same orientation is not a new choice)."""
+    from robosuite.utils import transform_utils as tu
+
+    r0 = tu.quat2mat(tu.axisangle2quat(state[0, 3:6]))
+    g = action[:, 6] > 0
+    events = [0] + [t for t in range(1, len(g)) if g[t] != g[t - 1]]
+    sig = []
+    for t in events[1:]:
+        r = tu.quat2mat(tu.axisangle2quat(state[t, 3:6])) @ r0.T
+        y = float(np.degrees(np.arctan2(r[1, 0], r[0, 0])))
+        if not sig or abs((y - sig[-1] + 180) % 360 - 180) >= 15.0:
+            sig.append(y)
+    return sig
+
+
+def same_mode(a, b):
+    return len(a) == len(b) and all(abs((x - y + 180) % 360 - 180) < YAW_TOL for x, y in zip(a, b, strict=True))
+
+
+def dominant(sigs):
+    """Indices of the episodes in the most common mode (the signature with the most episodes within YAW_TOL)."""
+    best = []
+    for s in sigs:
+        members = [j for j, t in enumerate(sigs) if same_mode(s, t)]
+        if len(members) > len(best):
+            best = members
+    return best
+
+
 def run_task(job):
     idx, task, classes, out_dir, n_demos, max_tries, seed = job
     path = Path(out_dir) / f"{idx:02d}_{task['name'][:80]}.npz"
@@ -58,16 +103,18 @@ def run_task(job):
     env = sl.make_env(str(EXT / "files" / task["bddl_file"]))
     e = env.env
     m = e.sim.model._model
-    arrays, why = {}, {}
-    k = tries = n_wide = 0
-    while k < n_demos and tries < max_tries:
+    grasp_ref = ex.grasp_reference(env, task, classes, np.random.default_rng(seed + 1))
+    episodes, why = [], {}  # every success: (arrays, signature)
+    tries = 0
+    keep = []
+    while len(keep) < n_demos and tries < max_tries:
         tries += 1
         # start states as LIBERO's: the suite's own reset (objects anywhere in their ~3 cm init regions, the arm at
         # its home pose); no widened starts. One episode in three carries DART noise on the executed actions.
         wide = tries % 3 == 0
         sl.stable_reset(env)
         init = e.sim.get_state().flatten().copy()
-        exp = ex.Expert(env, task, classes, rng, dart_sigma=0.15 if wide else 0.0)
+        exp = ex.Expert(env, task, classes, rng, dart_sigma=0.15 if wide else 0.0, grasp_ref=grasp_ref)
         qpos, states = [], []
         orig = exp._step
 
@@ -89,15 +136,24 @@ def run_task(job):
             why[exp.why[:50]] = why.get(exp.why[:50], 0) + 1
             continue
         assert len(qpos) == len(exp.labels) == len(exp.executed)
-        arrays[f"qpos_{k}"] = np.array(qpos)
-        arrays[f"state_{k}"] = np.array(states, dtype=np.float32)
-        arrays[f"action_{k}"] = np.array(exp.labels, dtype=np.float32)
-        arrays[f"executed_{k}"] = np.array(exp.executed, dtype=np.float32)
-        arrays[f"init_{k}"] = init
-        arrays[f"wide_{k}"] = np.array(int(wide))
-        n_wide += int(wide)
-        k += 1
+        ep = {
+            "qpos": np.array(qpos),
+            "state": np.array(states, dtype=np.float32),
+            "action": np.array(exp.labels, dtype=np.float32),
+            "executed": np.array(exp.executed, dtype=np.float32),
+            "init": init,
+            "wide": np.array(int(wide)),
+        }
+        episodes.append((ep, yaw_signature(ep["state"], ep["action"])))
+        keep = dominant([sig for _, sig in episodes])
     env.close()
+    keep = keep[:n_demos]
+    arrays = {}
+    for k, j in enumerate(keep):
+        for name, val in episodes[j][0].items():
+            arrays[f"{name}_{k}"] = val
+    k = len(keep)
+    n_wide = sum(int(episodes[j][0]["wide"]) for j in keep)
     meta = {
         "task_index": idx,
         "name": task["name"],
@@ -108,6 +164,10 @@ def run_task(job):
         "n_demos": k,
         "tries": tries,
         "n_wide": n_wide,
+        "n_success": len(episodes),
+        "mode_share": round(len(dominant([sig for _, sig in episodes])) / max(1, len(episodes)), 3),
+        "mode": [round(y) for y in episodes[keep[0]][1]] if keep else [],
+        "grasp_ref": grasp_ref,
         "fail_reasons": why,
         "lengths": [int(len(arrays[f"action_{j}"])) for j in range(k)],
         "secs": round(time.time() - t0),
@@ -143,7 +203,7 @@ def main():
             if meta:
                 ln = meta["lengths"]
                 extra = (f"  len {np.mean(ln):.0f} (max {max(ln) if ln else 0})  {meta['secs']}s  "
-                         f"{meta['fail_reasons'] or ''}")
+                         f"mode {meta['mode_share']:.2f} {meta['mode']}  {meta['fail_reasons'] or ''}")
             print(f"{idx:2d} {res:>8s}  {lang}{extra}", flush=True)
 
 

@@ -62,9 +62,14 @@ def down_rot(close_dir):
 
 
 def nearest_equiv(rot_target, rot_now):
-    """The target, or the target turned 180 degrees about its z axis (same grasp), whichever is closer."""
+    """The target, or the target turned 180 degrees about its z axis (same grasp), whichever is closer. In a near
+    tie (a turn of ~90 degrees either way) the hand always turns the same way (anticlockwise about world z), so the
+    choice does not flip on numerical noise from one episode to the next (dataset_gen.md §3d)."""
     flip = rot_target @ np.diag([-1.0, -1.0, 1.0])
-    err = [np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ rot_now.T))) for r in (rot_target, flip)]
+    rel = [tu.quat2axisangle(tu.mat2quat(r @ rot_now.T)) for r in (rot_target, flip)]
+    err = [float(np.linalg.norm(x)) for x in rel]
+    if abs(err[0] - err[1]) < 0.2:
+        return rot_target if rel[0][2] >= rel[1][2] else flip
     return rot_target if err[0] <= err[1] else flip
 
 
@@ -255,11 +260,13 @@ def body_grasp(parts, d, along, s_a, z_tip):
     return None
 
 
-def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=None):
-    """A top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 1 cm or more, the one
-    needing the least wrist rotation from rot_now (consistent demos: a random choice among clear grasps gave the
-    data several grasp orientations per task, which the policy could not commit to; dataset_gen.md §3c);
-    otherwise the one with the most clearance."""
+def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=None, ref_dir=None):
+    """A top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 1 cm or more: the one
+    closest to the task's reference closing direction ref_dir (grasp_reference), then the one needing the least
+    wrist rotation from rot_now; otherwise the one with the most clearance.
+    Consistent demos need both rules: a random choice among clear grasps gave the data several grasp orientations
+    per task (dataset_gen.md §3c), and "least rotation" alone still flipped from layout to layout when the
+    no-rotation grasp's clearance sat near the 1 cm bar (task 11: 36 / 14 demos; §3d)."""
     obs = obstacles(e, {inst, *exclude_extra})
     cands = grasp_candidates(e, inst, cls, rng, p)
     if want_dir is not None:  # e.g. fingers parallel to a fixture's face, for a sideways insertion
@@ -268,14 +275,65 @@ def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=No
     if not scored:
         return None
     good = [x for x in scored if x[0] >= 0.01]  # 1 cm: at 5 mm the hand body still brushed neighbours (§3d)
-    if good and rot_now is not None:
-        def turn(x):
-            r = nearest_equiv(down_rot(x[2]), rot_now)
-            return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ rot_now.T))))
 
-        good.sort(key=turn)
+    def turn(x):
+        if rot_now is None:
+            return 0.0
+        r = nearest_equiv(down_rot(x[2]), rot_now)
+        return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ rot_now.T))))
+
+    def off_ref(x):  # how far the closing direction is from the reference, modulo 180 degrees (a grasp = its flip)
+        return 0.0 if ref_dir is None else round(1.0 - abs(float(np.dot(x[2], ref_dir))), 3)
+
+    good.sort(key=lambda x: (off_ref(x), turn(x)))
     c, pt, d, top = good[0] if good else max(scored, key=lambda x: x[0])
     return pt, d, top, c
+
+
+def pick_want_dir(dest, phrase):
+    """The fingers' closing direction a placement needs: along x for a sideways insertion, else None."""
+    if dest in ("microwave", "fridge", "bookcase") or (dest == "shelf" and "lower" in phrase):
+        return np.array([1.0, 0.0])
+    return None
+
+
+def grasp_reference(env, task, classes, rng, n=20):
+    """The task's grasp orientation, fixed for all its episodes. For each object the task picks: the closing
+    direction (world frame, in the candidates' 22.5-degree steps) that is clear by 1 cm in the most of n fresh
+    layouts, ties going to the least wrist rotation from the home pose.
+    Returns {kind: {"deg": direction in [0, 180), "clear_in": layouts where it is clear, "of": n}}."""
+    e = env.env
+    p = {"grasp_slide": 0.0, "grasp_depth": 0.03}
+    counts = {}
+    home = None
+    for _ in range(n):
+        sl.stable_reset(env)
+        if home is None:
+            home = tu.quat2mat(e._get_observations()["robot0_eef_quat"])
+        for kind, dest, phrase in task["steps"]:
+            if kind not in classes:
+                continue
+            inst = f"{classes[kind]}_1"
+            want = pick_want_dir(dest, phrase)
+            obs = obstacles(e, {inst})
+            cands = grasp_candidates(e, inst, classes[kind], rng, p)
+            if want is not None:
+                cands = [c for c in cands if abs(np.dot(c[1], want)) > 0.9] or cands
+            clear = {round(math.degrees(math.atan2(d[1], d[0])) / 22.5) % 8
+                     for pt, d, top in cands if clearance(pt, d, pt[2], obs) >= 0.01}
+            for b in clear:
+                counts.setdefault(kind, {}).setdefault(b, 0)
+                counts[kind][b] += 1
+    ref = {}
+    for kind, c in counts.items():
+        def turn(b):
+            a = math.radians(b * 22.5)
+            r = nearest_equiv(down_rot(np.array([math.cos(a), math.sin(a)])), home)
+            return float(np.linalg.norm(tu.quat2axisangle(tu.mat2quat(r @ home.T))))
+
+        best = min(c, key=lambda b: (-c[b], turn(b)))
+        ref[kind] = {"deg": best * 22.5, "clear_in": c[best], "of": n}
+    return ref
 
 
 # ---------------------------------------------------------------- expert
@@ -290,8 +348,10 @@ class Success(Exception):
 class Expert:
     """Generates one episode's actions for a libero_ext task on a (ControlEnv) env."""
 
-    def __init__(self, env, task, scene_classes, rng, dart_sigma=0.0, max_len=500):
+    def __init__(self, env, task, scene_classes, rng, dart_sigma=0.0, max_len=500, grasp_ref=None):
         self.env, self.e, self.task, self.rng = env, env.env, task, rng
+        # the task's grasp orientation per object kind (grasp_reference): {kind: {"deg": ...}}; None: least rotation
+        self.grasp_ref = grasp_ref or {}
         self.max_len = max_len
         self.cls = scene_classes  # object kind -> LIBERO class (from build_results.json)
         self.dart = dart_sigma
@@ -425,8 +485,11 @@ class Expert:
         inst = f"{self.cls[kind]}_1"
         for try_ in range(tries):
             low0 = obj_box(self.e, inst)[0][2]
+            ref = self.grasp_ref.get(kind)
+            ref_dir = None if ref is None else np.array([math.cos(math.radians(ref["deg"])),
+                                                         math.sin(math.radians(ref["deg"]))])
             spec = grasp_spec(self.e, inst, self.cls[kind], self.rng, self.p, want_dir=want_dir,
-                              rot_now=self.eef_rot())
+                              rot_now=self.eef_rot(), ref_dir=ref_dir)
             if spec is None:
                 return None
             pt, d, top, _ = spec
@@ -498,7 +561,7 @@ class Expert:
             turn = min(k, 8 - k)
             for dz in np.arange(0.0, 0.12, 0.01):
                 if clearance(drop_xy, dvec, release_z + dz, obs, fingers=False) >= 0.004:
-                    key = (dz, turn + self.rng.uniform(0, 0.5))
+                    key = (dz, turn, k)  # ties (a turn either way) always go the same way: no random modes
                     if best is None or key < best[0]:
                         best = (key, dvec, release_z + dz)
                     break
@@ -837,8 +900,8 @@ class Expert:
         return False
 
     def run_step(self, kind, dest, phrase):
-        if dest in ("microwave", "fridge", "bookcase") or (dest == "shelf" and "lower" in phrase):
-            inst = self.pick(kind, want_dir=np.array([1.0, 0.0]))
+        if pick_want_dir(dest, phrase) is not None:
+            inst = self.pick(kind, want_dir=pick_want_dir(dest, phrase))
             if inst is None:
                 self.why = f"pick {kind}"
                 return False
