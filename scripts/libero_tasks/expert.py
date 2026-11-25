@@ -326,7 +326,7 @@ def grasp_reference(env, task, classes, rng, n=20):
             if want is not None:
                 cands = [c for c in cands if abs(np.dot(c[1], want)) > 0.9] or cands
             by_dir = {}
-            for pt, d, top in cands:
+            for pt, d, _top in cands:
                 b = round(math.degrees(math.atan2(d[1], d[0])) / 22.5) % 8
                 by_dir[b] = max(by_dir.get(b, -1.0), clearance(pt, d, pt[2], obs))
             if not by_dir:
