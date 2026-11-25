@@ -12,7 +12,7 @@
 # Versions: V=<suffix> reads libero_ext_demos$V and writes libero_ext$V / libero_ext_learn4$V (build dir
 # _build/libero_ext$V); SUBSET_ONLY=1 renders only the demos present (e.g. just LEARN_TASKS) and stops after the
 # subset (named LEARN_NAME$V, default libero_ext_learn4$V). E.g. a learnability retest of new demos:
-#   qsub -l 'h=!(...)' -v V=_v2,SUBSET_ONLY=1 cluster/jobs/build_libero_ext.sh
+#   qsub -l 'h=!(...)' -v V=_v2,SUBSET_ONLY=1,LEARN_TASKS=0:31:42:59 cluster/jobs/build_libero_ext.sh
 #$ -S /bin/bash
 #$ -N build_libero_ext
 # One gpu.q slot (each slot is a GPU there, so -pe smp N would need N free GPUs on one host); the render
@@ -26,7 +26,10 @@ set -euo pipefail
 source /SAN/vision/jo71_vla_wd/lerobot/cluster/env.sh
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONFAULTHANDLER=1
 D=$HF_LEROBOT_HOME
-LEARN_TASKS=${LEARN_TASKS:-0,31,42,59}
+# a list passed through `qsub -v` must use ':' (qsub splits -v on commas: 25 Nov 26 a comma list arrived as its
+# first entry alone)
+LEARN_TASKS=${LEARN_TASKS:-0:31:42:59}
+LEARN_TASKS=${LEARN_TASKS//:/,}
 V=${V:-}
 SUBSET_ONLY=${SUBSET_ONLY:-0}
 FULL=libero_ext$V LEARN=${LEARN_NAME:-libero_ext_learn4}$V
