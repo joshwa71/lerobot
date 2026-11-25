@@ -549,3 +549,44 @@ On libero_10 the same recipe reaches ~85% on two-step human demos. The 60-task m
   - The drawer rises from 10 to 28, likely from the short-of-the-handle misses.
   - Task 42 falls from 50 to 16. A likely cause is the "too high" misses: on the short pudding box, closing on nothing ~2 cm above it looks much like a real grasp, and its labels say "open and go down", which could teach the policy to let go of good grasps.
 - **Still below libero_10 specialist level (~85):** task 42 (50) and the drawer (28 at best).
+
+## 3d. Expert v4 and a 12-task learnability panel (25 Nov 26)
+
+**Correction to §3c's rollout diagnosis.** `diagnose_rollouts.py` gave the policy the task's file name (`S19_put_the_…`) as its instruction instead of the instruction itself, which handicapped every rollout it made:
+- **Unaffected:** the demo statistics behind §3c's main finding (random step order and grasp choice), and every success rate in §3c's tables, all of which come from the cluster's eval script.
+- **Overstated:** the account of how the policy failed, in particular "closes 1–3 cm off and never recovers", which motivated v3's recovery data. Fixed in `6776ca99`. With the instruction, local rollouts match the cluster's evals: v2 task 42 6/10 (cluster 50%); v2 task 59 1/10 (10%); v3 task 59 4/10 (28%).
+
+**Remaining failure modes**, from the corrected rollouts:
+- **Task 42 (crowded coffee-table scene S19, 9 items):** sometimes the pudding is never placed; more often the milk fails. The milk stands next to the storage box, the policy retries over it, then drifts away.
+- **Task 59 (drawer):**
+  - In about half the episodes the hand turns horizontal and faces the cabinet, but hovers without moving in to the handle. Three near-identical handles are in the wrist camera's view.
+  - When the drawer is open, the popcorn placement fails about a third of the time.
+  - The v3 handle recoveries help, consistently: drawer opened in 6/10 against 4/10.
+- **The S19 tray "glitch" is the expert, not physics.** With the robot still, the tray never moves. Its 8–23 cm flips come from a finger clipping its rim while the hand drops diagonally from the start pose to its first approach point.
+
+**v4** (`expert.py`, `generate_demos.py`):
+- v2's deterministic discrete choices.
+- Deliberate misses only for the drawer handle (25% of first grabs); grasp misses on objects are off.
+- The approach to a grasp passes above everything on the way: the tray flips are gone, and a 2 cm tilt remains in 1 of 30 episodes.
+- Clear grasps need 1 cm of clearance, not 5 mm.
+- The narrower grasp slide (0–0.25).
+- LIBERO-like start states: the suite's own reset, with objects anywhere in their ~3 cm init regions and the arm at home. No widened starts; DART noise stays on one episode in three.
+
+**Panel.** LoRA r128 specialists, with the libero_10 recipe, on twelve tasks covering every task type:
+
+| Task | Type |
+|---|---|
+| 6: turn on the faucet | lever push |
+| 11: tomato sauce in the middle drawer | placement into an open drawer |
+| 12: macaroni in the microwave and close it | sideways insertion + door push |
+| 19: turn on the stove and cream cheese in the pan | knob twist + placement |
+| 27: lift the bowl | rim grasp |
+| 32: bbq sauce on the lower shelf | sideways insertion |
+| 38: bbq sauce in the tray + popcorn in the bookcase | two steps, bookcase insertion |
+| 42: pudding in the bowl + milk in the tray | two steps, crowded coffee table |
+| 54: wine bottle left of the basket + pudding in the caddy | two steps, beside + caddy |
+| 56: mug in the tray + alphabet soup on the storage box | two steps, floor scene |
+| 58: wine bottle in the fridge | sideways insertion |
+| 59: open the top drawer and popcorn in it | drawer pull + placement |
+
+The expert succeeded on 71–100% of attempts on these tasks; 50 demos each.
