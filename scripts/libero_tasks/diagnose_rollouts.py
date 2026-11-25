@@ -69,7 +69,7 @@ def main(cfg: EvalPipelineConfig):
                 policy.reset()
                 obs, _ = venv.reset(seed=seeds)
                 inner = [e._env for e in venv.envs]
-                lang = venv.envs[0].task
+                lang = venv.envs[0].task_description
                 n = venv.num_envs
                 done = np.zeros(n, bool)
                 success = np.zeros(n, bool)
@@ -86,7 +86,7 @@ def main(cfg: EvalPipelineConfig):
                                 wr = obs["pixels"]["image2"][i][::-1, ::-1]
                                 frames[i].append(np.concatenate([img, wr], axis=1))
                     o = preprocess_observation(obs)
-                    o["task"] = list(venv.call("task"))
+                    o["task"] = list(venv.call("task_description"))  # the instruction (as lerobot-eval's rollout)
                     o = env_preprocessor(o)
                     o = preprocessor(o)
                     with torch.inference_mode():

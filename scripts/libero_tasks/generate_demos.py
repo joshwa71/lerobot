@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """Expert demonstrations for the libero_ext suite (projects/dataset_gen.md, §3), without images.
 
-For each task: episodes from fresh resets (not the evaluation start states), two in three plain and one in three
-with a widened start and DART noise (the recorded action is the expert's label, the executed one carries the
-noise), kept only if they succeed, until --demos successes or --max-tries episodes. Episodes end at the first
+For each task: episodes from fresh resets (LIBERO's own start-state variation: objects anywhere in their init
+regions, the arm at home; not the stored evaluation start states), two in three plain and one in three with DART
+noise (the recorded action is the expert's label, the executed one carries the noise), kept only if they succeed, until --demos successes or --max-tries episodes. Episodes end at the first
 step where the goal holds, as LIBERO's evaluation episodes do. One compressed npz per task in --out:
 
   qpos_k      T x nq float64   simulator positions before each action (the renderer sets these to draw frames)
@@ -11,7 +11,7 @@ step where the goal holds, as LIBERO's evaluation episodes do. One compressed np
   action_k    T x 7  float32   the expert's action (the training label)
   executed_k  T x 7  float32   what was sent (label plus DART noise)
   init_k      full flattened simulator state at t=0 (for replay checks)
-  wide_k      1 if the episode started widened (and had DART noise)
+  wide_k      1 if the episode had DART noise (the name is historical: it once also meant a widened start)
   meta        json: task index, name, language, bddl file, nq, joint names, success counts
 
 Images are rendered on a cluster GPU node from qpos (scripts/datasets/build_libero_ext.py). Resumes: tasks whose
@@ -62,11 +62,10 @@ def run_task(job):
     k = tries = n_wide = 0
     while k < n_demos and tries < max_tries:
         tries += 1
+        # start states as LIBERO's: the suite's own reset (objects anywhere in their ~3 cm init regions, the arm at
+        # its home pose); no widened starts. One episode in three carries DART noise on the executed actions.
         wide = tries % 3 == 0
         sl.stable_reset(env)
-        if wide and not ex.widen_start(env, rng):
-            sl.stable_reset(env)
-            wide = False
         init = e.sim.get_state().flatten().copy()
         exp = ex.Expert(env, task, classes, rng, dart_sigma=0.15 if wide else 0.0)
         qpos, states = [], []

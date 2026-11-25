@@ -27,10 +27,11 @@ ROUND = {"akita_black_bowl", "white_bowl", "glazed_rim_porcelain_ramekin", "plat
 RIM = {"porcelain_mug", "red_coffee_mug", "white_yellow_mug", "akita_black_bowl", "white_bowl",
        "glazed_rim_porcelain_ramekin", "plate"}
 MAX_OPEN = 0.075  # widest object the Panda gripper can close on, m
-# Recovery data (dataset_gen.md §3c): the scripted expert's grasps almost never fail, so its demos held no
-# recoveries, and a policy that closed 1-3 cm off a grasp carried an empty hand on or looped. This share of first
-# attempts is executed wrong on purpose (labels: the expert's action from each state reached).
-P_MISS = 0.25
+# Recovery data (dataset_gen.md §3c): first attempts executed wrong on purpose (labels: the expert's action from
+# each state reached). The learnability retest kept it only for the drawer handle (10 -> 28%); deliberate grasp
+# misses on objects cost the pudding/milk task 50 -> 16%, so they are off.
+P_MISS_GRASP = 0.0
+P_MISS_HANDLE = 0.25
 
 
 # ---------------------------------------------------------------- geometry
@@ -255,7 +256,7 @@ def body_grasp(parts, d, along, s_a, z_tip):
 
 
 def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=None):
-    """A top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 5 mm or more, the one
+    """A top-down grasp: (point, closing direction, top z, clearance). Among grasps clear by 1 cm or more, the one
     needing the least wrist rotation from rot_now (consistent demos: a random choice among clear grasps gave the
     data several grasp orientations per task, which the policy could not commit to; dataset_gen.md §3c);
     otherwise the one with the most clearance."""
@@ -266,7 +267,7 @@ def grasp_spec(e, inst, cls, rng, p, exclude_extra=(), want_dir=None, rot_now=No
     scored = [(clearance(pt, d, pt[2], obs), pt, d, top) for pt, d, top in cands]
     if not scored:
         return None
-    good = [x for x in scored if x[0] >= 0.005]
+    good = [x for x in scored if x[0] >= 0.01]  # 1 cm: at 5 mm the hand body still brushed neighbours (§3d)
     if good and rot_now is not None:
         def turn(x):
             r = nearest_equiv(down_rot(x[2]), rot_now)
@@ -309,7 +310,8 @@ class Expert:
         self.labels, self.executed, self.eef = [], [], []
         self.why = ""  # failure reason, for diagnostics
         self.stop_at_success = True
-        self.p_miss = P_MISS  # chance that a pick's (or a drawer pull's) first attempt is a deliberate miss
+        self.p_miss = P_MISS_GRASP  # chance that a pick's first attempt is a deliberate miss
+        self.p_miss_handle = P_MISS_HANDLE  # the same for the drawer handle
 
     # ---- low level
     def obs(self):
@@ -407,6 +409,18 @@ class Expert:
         return bool(self.e._check_grasp(gripper=self.e.robots[0].gripper, object_geoms=obj))
 
     # ---- primitives
+    def corridor_top(self, start_xy, end_xy, exclude, margin=0.06):
+        """Highest top of any obstacle whose box (grown by margin) meets the straight path start -> end in xy."""
+        start, end = np.asarray(start_xy, float), np.asarray(end_xy, float)
+        top = sl.surface_z_of(self.e)
+        for lo, hi in obstacles(self.e, set(exclude)):
+            for t in np.linspace(0, 1, 16):
+                q = start + t * (end - start)
+                if lo[0] - margin <= q[0] <= hi[0] + margin and lo[1] - margin <= q[1] <= hi[1] + margin:
+                    top = max(top, float(hi[2]))
+                    break
+        return top
+
     def pick(self, kind, tries=3, want_dir=None):
         inst = f"{self.cls[kind]}_1"
         for try_ in range(tries):
@@ -418,6 +432,14 @@ class Expert:
             pt, d, top, _ = spec
             rot = nearest_equiv(down_rot(d), self.eef_rot())
             above = np.array([pt[0], pt[1], top + self.p["approach"]])
+            # reach the approach point over everything on the way: a diagonal drop from the start pose clipped a
+            # tray's rim with a finger and flipped it (S19, dataset_gen.md §3d)
+            here = self.obs()["robot0_eef_pos"]
+            z_safe = self.corridor_top(here[:2], pt[:2], {inst}) + 0.06
+            if here[2] < z_safe or above[2] < z_safe:
+                z_pass = max(z_safe, above[2])
+                self.move(np.array([here[0], here[1], max(here[2], z_pass)]), rot, -1.0, tol=0.02)
+                self.move(np.array([pt[0], pt[1], z_pass]), rot, -1.0, tol=0.015)
             self.move(above, rot, -1.0, tol=0.015)
             self.hold(self.p["pause"], -1.0)
             if try_ == 0 and self.rng.random() < self.p_miss:
@@ -744,7 +766,7 @@ class Expert:
             grasp = h + np.append(out * 0.005, 0.0)
             for k in range(2):
                 self.move(pre, rot_h, -1.0, tol=0.01, rot_tol=0.05, max_steps=160)
-                if attempt == 0 and k == 0 and self.rng.random() < self.p_miss:
+                if attempt == 0 and k == 0 and self.rng.random() < self.p_miss_handle:
                     # recovery data: close 3-5 cm short of the handle, open, then grasp it (labels: on to the handle)
                     short = grasp + np.append(out * self.rng.uniform(0.03, 0.05), 0.0)
                     self.missed_grasp(grasp, short, rot_h)

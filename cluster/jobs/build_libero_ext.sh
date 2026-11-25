@@ -11,7 +11,7 @@
 # learnability check (configs/ext_learn_spec_r128.sh), copied to /SAN before the full dataset.
 # Versions: V=<suffix> reads libero_ext_demos$V and writes libero_ext$V / libero_ext_learn4$V (build dir
 # _build/libero_ext$V); SUBSET_ONLY=1 renders only the demos present (e.g. just LEARN_TASKS) and stops after the
-# subset. E.g. a learnability retest of new demos:
+# subset (named LEARN_NAME$V, default libero_ext_learn4$V). E.g. a learnability retest of new demos:
 #   qsub -l 'h=!(...)' -v V=_v2,SUBSET_ONLY=1 cluster/jobs/build_libero_ext.sh
 #$ -S /bin/bash
 #$ -N build_libero_ext
@@ -29,7 +29,7 @@ D=$HF_LEROBOT_HOME
 LEARN_TASKS=${LEARN_TASKS:-0,31,42,59}
 V=${V:-}
 SUBSET_ONLY=${SUBSET_ONLY:-0}
-FULL=libero_ext$V LEARN=libero_ext_learn4$V
+FULL=libero_ext$V LEARN=${LEARN_NAME:-libero_ext_learn4}$V
 PARTIAL=()
 [ "$SUBSET_ONLY" = 1 ] && PARTIAL=(--partial)
 echo "== $(hostname) $(date) job=$JOB_ID CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-} nproc=$(nproc)"
