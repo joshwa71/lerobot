@@ -654,6 +654,7 @@ Eight tasks reach 62–96, including every sideways insertion and three of the f
    - Task 56 rises above 0 (start fixed). If it stays below 40, scene S25 (tasks 55 and 56, the only floor scene) moves to a table arena and its two tasks are regenerated.
    - Task 59 (drawer opening, the only such task) may just need more training: on v4 its specialist's loss was still falling steeply at 5k steps (0.13, after a spike to about 0.29 at 3k; 0.01–0.09 for the others).
      - A second arm trains it for 15k steps (`configs/ext_panel_spec_r128_v6_t59long.sh`).
+     - *Correction (26 Nov 26).* At LR 1e-3 that arm diverged at about 1.2k steps: the loss went from 0.22 to 1.33 and never came back below 1.0, and the gradient norm reached 235 by 5k. On the 15k schedule the LR was still 9e-4 there. It was stopped and rerun at LR 3e-4 → 3e-5 over the same 15k steps (`configs/ext_panel_spec_r128_v6_t59long_lr3e4.sh`).
      - If it reaches 40 or more there, it is a hard but learnable task and stays.
      - If it stays below 40 at 15k, it is replaced by a placement task from the kept pairings.
    - The other eight hold at 60 or more.
