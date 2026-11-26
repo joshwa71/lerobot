@@ -652,7 +652,10 @@ Eight tasks reach 62–96, including every sideways insertion and three of the f
 3. **v6 panel** (`configs/ext_panel_spec_r128_v6.sh`): the same 12 specialists, recipe and evaluation. Pre-registered reads:
    - Tasks 11 and 38 rise to at least 60 (one mode).
    - Task 56 rises above 0 (start fixed). If it stays below 40, scene S25 (tasks 55 and 56, the only floor scene) moves to a table arena and its two tasks are regenerated.
-   - Task 59 (drawer opening, the only such task): if it stays below 40, it is replaced by a placement task from the kept pairings.
+   - Task 59 (drawer opening, the only such task) may just need more training: on v4 its specialist's loss was still falling steeply at 5k steps (0.13, after a spike to about 0.29 at 3k; 0.01–0.09 for the others).
+     - A second arm trains it for 15k steps (`configs/ext_panel_spec_r128_v6_t59long.sh`).
+     - If it reaches 40 or more there, it is a hard but learnable task and stays.
+     - If it stays below 40 at 15k, it is replaced by a placement task from the kept pairings.
    - The other eight hold at 60 or more.
    - **Go criterion:** go on to the 60-task run if the panel mean is at least about 70 and no kept task is below 40.
 4. **Replace v1 everywhere:**
