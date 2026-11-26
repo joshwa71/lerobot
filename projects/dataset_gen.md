@@ -590,3 +590,76 @@ On libero_10 the same recipe reaches ~85% on two-step human demos. The 60-task m
 | 59: open the top drawer and popcorn in it | drawer pull + placement |
 
 The expert succeeded on 71–100% of attempts on these tasks; 50 demos each.
+
+**Panel results** (`configs/ext_panel_spec_r128_v4.sh`, 25–26 Nov 26). Success over 25 episodes × 2 seeds (1000 / 2000). The first subset build contained only task 6, because `qsub -v` splits a value on its commas. The job was resubmitted with a ':'-separated list (`2afe2f04`), which cost about 1 h 20 min.
+
+| Task | Type | 1000 / 2000 | Mean | v2 / v3 (§3c) |
+|---|---|---|---|---|
+| 6: turn on the faucet | lever push | 88 / 96 | 92 | |
+| 11: tomato sauce in the middle drawer | placement into an open drawer | 16 / 8 | **12** | |
+| 12: macaroni in the microwave and close it | sideways insertion + door push | 72 / 80 | 76 | |
+| 19: turn on the stove + cream cheese in the pan | knob twist + placement | 72 / 68 | 70 | |
+| 27: lift the bowl | rim grasp | 96 / 84 | 90 | |
+| 32: bbq sauce on the lower shelf | sideways insertion | 92 / 100 | 96 | |
+| 38: bbq sauce in the tray + popcorn in the bookcase | two steps, bookcase insertion | 28 / 32 | **30** | |
+| 42: pudding in the bowl + milk in the tray | two steps, crowded coffee table | 64 / 60 | 62 | 50 / 16 |
+| 54: wine bottle left of the basket + pudding in the caddy | two steps, beside + caddy | 68 / 56 | 62 | |
+| 56: mug in the tray + alphabet soup on the storage box | two steps, floor scene | 0 / 0 | **0** | |
+| 58: wine bottle in the fridge | sideways insertion | 96 / 80 | 88 | |
+| 59: open the top drawer + popcorn in it | drawer pull + placement | 8 / 8 | **8** | 10 / 28 |
+| Mean | | | 57.2 | |
+
+Eight tasks reach 62–96, including every sideways insertion and three of the four open/close/turn tasks. Four are far below.
+
+**Diagnosis of the four below 60.** Local rollouts (10 episodes, with the cluster's evaluation settings) and open-loop checks of the specialists.
+- **Tasks 11 and 38: two grasp modes were left in the demos.** A mode audit (`audit_demos.py`, below) flags three panel tasks.
+  - **Task 11:** 36 demos grasp the sauce with the wrist turned 90° first; 14 grasp it unturned and turn 70–90° later, either way.
+    - Cause: the tomato sauce is nearly square (6.3 × 6.2 cm), so both grasps fit. "The least rotation among grasps clear by 1 cm" flipped with the layout, because the unturned grasp's clearance ranged from −0.9 to +1.3 cm.
+    - The policy never goes down to the sauce. It closes the gripper 9–45 times in the air, turns the wrist part way, and hovers at the drawer empty-handed (1/10 locally).
+  - **Task 38:** the popcorn grasp turned the wrist −90° in 39 demos and +90° in 11, a near-tie decided by numerical noise.
+    - The tray step succeeded in 10/10 rollouts.
+    - In 4 of the 7 failures the popcorn grasp missed: the finger gap 10 steps after closing was 0.8–2.2 cm, against 6.2 cm when the box is held.
+    - In the other 3, the box was held but not inserted into the bookcase.
+  - **Task 42** (a 37 / 10 split with the same cause) reached 62 regardless.
+- **Task 56: the demos did not start as an evaluation does.**
+  - lerobot's `LiberoEnv.reset` ends with 10 no-op steps that command the gripper open. robosuite integrates the gripper command from zero after a reset, so an evaluation's first frame shows the fingers at 0.039.
+  - Every demo's first frame showed 0.040, because the demos were recorded straight after the settle. An opening of 0.039 is also what the fingers show just after a release.
+  - In S25 the tray lies right below the home pose, so after the mug is placed the scene looks much like the start. The specialist used the fingers to tell the two apart.
+    - **Open loop**, at demo start states placed in the evaluation env: without the no-op steps the specialist predicts the demos' first move (y −0.79 to −0.92). With them it predicts the opposite (+0.64 to +0.81), towards the alphabet soup. Swapping in the training frame's wrist image alone restores −0.83; the agentview, the state and the instruction are already identical.
+    - **Rollouts:** every episode goes to the soup first (0/10). Without the no-op steps the mug is the first target in 9 of 10, but its rim grasp closes about 2 cm too high and still 0/10 succeed. The floor arena puts the objects farther from both cameras than a table does.
+  - The mismatch is in the first frame of every task. Its effect on the other tasks is not known.
+- **Task 59: drawer opening stays weak.**
+  - The drawer opened in 5–6 of 10 rollouts, and the popcorn placement failed after most openings (4/10 locally, 8% on the cluster).
+  - This specialist's training loss ended at 0.12–0.14, against 0.01–0.09 for the others.
+- **Not a cause: image size.** lerobot's LIBERO env renders at 360 × 360 by default, and the dataset is 256 × 256, as libero_10's is. Evaluating at 256 did not change task 56's first move.
+
+**Expert v5** (`expert.py`, `generate_demos.py`, `audit_demos.py`):
+- **A grasp orientation per task, fixed before its episodes.** For each object the task picks, it is the closing direction clear by 5 mm in most of 20 fresh layouts. When no direction is ever clear, it is the one that most often has the most clearance. The grasp choice prefers it, accepting 5 mm of clearance for it and 1 cm for any other.
+- **Turns:**
+  - a wrist turn of about 90°, which could go either way, always goes anticlockwise;
+  - at the drop, the hand keeps its orientation unless that costs more than 4 cm of release height. Choosing the lowest release first had flipped the turn with the layout (task 8: three modes).
+- **A mode filter.** Each episode's signature is the wrist yaw at each change of hand orientation between gripper events. Only episodes in the most common mode are kept, and the share of successes in that mode before filtering is recorded.
+- **On all 60 tasks** (3,000 demos, 684k frames, expert success 76%): the most common mode held at least 95% of successes on 49 tasks and at least 80% on 58. The lowest were task 16 (61%) and task 23 (73%). After filtering, every task's 50 demos are in one mode.
+
+**v6 data: v5 plus demos that start as an evaluation does.**
+- `generate_demos.py` reproduces `LiberoEnv.reset`: a fresh reset, the start state, then 10 unrecorded no-op steps. The first state's gripper is now 0.0388.
+- The v5 render (`libero_ext_v5`, 26 Nov) predates this fix and is superseded.
+
+## 3e. Plan: v6 for all 60 tasks, then the 60-task run (26 Nov 26)
+
+1. **Generate and validate v6 locally:** 60 tasks × 50 demos. Check the mode shares (any task below 0.8 gets a look), the first-frame gripper (0.0388) and the lengths (under 520 steps).
+2. **Render on the cluster** (`build_libero_ext.sh`, `V=_v6 LEARN_NAME=libero_ext_panel LEARN_TASKS=6:11:12:19:27:32:38:42:54:56:58:59`): `libero_ext_v6` plus the 12-task `libero_ext_panel_v6`, about 5 h.
+3. **v6 panel** (`configs/ext_panel_spec_r128_v6.sh`): the same 12 specialists, recipe and evaluation. Pre-registered reads:
+   - Tasks 11 and 38 rise to at least 60 (one mode).
+   - Task 56 rises above 0 (start fixed). If it stays below 40, scene S25 (tasks 55 and 56, the only floor scene) moves to a table arena and its two tasks are regenerated.
+   - Task 59 (drawer opening, the only such task): if it stays below 40, it is replaced by a placement task from the kept pairings.
+   - The other eight hold at 60 or more.
+   - **Go criterion:** go on to the 60-task run if the panel mean is at least about 70 and no kept task is below 40.
+4. **Replace v1 everywhere:**
+   - `libero_ext_v6` becomes the suite's dataset on the cluster. v1 is already deleted there and on the desk PC.
+   - On the Backup drive, `libero_generated/libero_ext` (v1, 68 GB) and `libero_ext_demos` are replaced by v6: cluster → desk PC → Backup in the background, about 4–5 h. The README is updated.
+   - The v4 and v5 datasets, build directories, demos and specialist checkpoints are removed.
+5. **Restart the 60-task memory run** under a new NAME (`cell_s2_ext60v6_rand1`) on `libero_ext_v6`, with the same random task order (`ext60_order_rand1.json`).
+   - A smoke test comes first (`smoke_ext60` on v6).
+   - research_log2 Entry 5 gets a dated note.
+   - Evaluation stays at lerobot's 360 × 360 default, as in every panel so far.
