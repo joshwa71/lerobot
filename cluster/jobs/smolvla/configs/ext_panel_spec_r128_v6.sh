@@ -11,4 +11,4 @@ NAME=ext_panel_spec_r128_v6
 SEQ_DATASET=libero_ext_panel_v6
 SEQ_TASKS='[0,1,2,3,4,5,6,7,8,9,10,11]'
 DS_TO_ENV='{"0":6,"1":11,"2":12,"3":19,"4":27,"5":32,"6":38,"7":42,"8":54,"9":56,"10":58,"11":59}'
-SPEC_GROUP=2
+SPEC_GROUP=4   # 3 jobs of 4 specialists (~5 h each): fewer, longer jobs schedule better (CLAUDE.md §9.1)
