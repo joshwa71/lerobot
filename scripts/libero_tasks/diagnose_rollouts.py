@@ -29,6 +29,10 @@ from lerobot.utils.random_utils import set_seed
 
 OUT = Path(os.environ.get("DIAG_OUT", "outputs/analysis/diag"))
 N_EPISODES = int(os.environ.get("DIAG_EPISODES", "10"))
+# LiberoEnv's no-op steps after each reset (10 by default, gripper commanded open). Demos recorded without them
+# start with the gripper never actuated (0.040 vs 0.039 after the wait), a cue some policies read as "a step has
+# just ended" (dataset_gen.md §3d); DIAG_WAIT=0 reproduces such demos' start.
+WAIT = os.environ.get("DIAG_WAIT")
 
 
 def goal_status(inner):
@@ -66,6 +70,9 @@ def main(cfg: EvalPipelineConfig):
             n_batches = (N_EPISODES + venv.num_envs - 1) // venv.num_envs
             for b in range(n_batches):
                 seeds = [cfg.seed + b * venv.num_envs + i for i in range(venv.num_envs)]
+                if WAIT is not None:
+                    for sub in venv.envs:
+                        sub.num_steps_wait = int(WAIT)
                 policy.reset()
                 obs, _ = venv.reset(seed=seeds)
                 inner = [e._env for e in venv.envs]

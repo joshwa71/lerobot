@@ -57,6 +57,7 @@ def state8(obs):
 
 
 YAW_TOL = 20.0  # degrees: two episodes are in the same mode if every hand orientation differs by less than this
+EVAL_WAIT_STEPS = 10  # lerobot's LiberoEnv: no-op steps after each reset (num_steps_wait)
 
 
 def yaw_signature(state, action):
@@ -114,6 +115,15 @@ def run_task(job):
         wide = tries % 3 == 0
         sl.stable_reset(env)
         init = e.sim.get_state().flatten().copy()
+        # start exactly as an evaluation episode does (lerobot's LiberoEnv.reset): a fresh reset, the start state,
+        # then 10 unrecorded no-op steps with the gripper commanded open. robosuite integrates the gripper command
+        # from zero after a reset, so without this every demo's first frame showed the fingers at 0.040, where an
+        # evaluation starts at 0.039, the opening they also have just after a release; the task 56 specialist took
+        # the evaluation's start for "the first step is done" and went straight to the second object (§3d).
+        env.reset()
+        env.set_init_state(init)
+        for _ in range(EVAL_WAIT_STEPS):
+            env.step(np.array(sl.NOOP, dtype=float))
         exp = ex.Expert(env, task, classes, rng, dart_sigma=0.15 if wide else 0.0, grasp_ref=grasp_ref)
         qpos, states = [], []
         orig = exp._step
