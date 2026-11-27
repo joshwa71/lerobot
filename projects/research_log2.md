@@ -426,6 +426,14 @@ The loss eval costs ~27 s per seen task per boundary, ~14 h over the run on top 
 - Every other setting is unchanged, the task order included.
 - Task 59 (open the top drawer and put the popcorn in it) comes second in the order. Expect it to stay weak: its specialist reaches 18 at 5k steps and 52 at 15k.
 
+*Update (27 Nov 26, later): 20 tasks first.*
+- Before it trained, the 60-task run was replaced by its first 20 tasks, `cell_s2_ext20v6_rand1`. This gives a K = 20 point (double the ten-task runs) at a third of the cost, so the setup can be iterated on before committing to 60.
+- **Settings:** identical to the 60-task run. It uses the full libero_ext_v6, so the normalisation stats match. It is exactly the 60-task run's first third: 9 one-step and 11 two-step tasks from 17 of the 27 scenes, including the drawer opening (2nd) and the stove (13th).
+- **Evaluation:**
+  - **In training:** after each task, besides the loss matrix, 20 rollouts of the just-trained task (seed 1000), as an in-run check of acquisition.
+  - **Afterwards:** the full retention triangle from the boundary checkpoints. Every row is scored on every task seen so far, 25 episodes × 4 paired seeds, with one job per seed (stage `triseed`) running alongside training.
+- The pre-registered reads above apply for K ≤ 20.
+
 **Pre-registered reads.**
 - **Acquisition.** If the memory has room for 60 tasks, the just-trained task's success stays near the ten-task diagonal (86.5) throughout; its own-task loss right after training stays flat in K. A fall in either with K, at the fixed 5,000-step budget, is the saturation signal item 2 calibrates.
 - **Retention.** On libero_10, earlier tasks lost ~5 points whether 5 or 10 tasks followed. If that holds, the final row's mean over earlier tasks sits within ~5 points of their just-trained mean. In loss terms, drift (own-task loss from just-trained to final) grows with the number of tasks trained after (pi05 ten-task mean +28.5%).
