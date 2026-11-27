@@ -89,6 +89,12 @@ class SequentialOnlineConfig(TrainPipelineConfig):
     # eval round instead of every round.
     eval_final_episodes: int = 0
 
+    # Rollouts of the just-trained task only, after each task: this many episodes from cfg.seed on that task's env,
+    # alongside the loss eval (--eval.type=loss). Needs --env.* (only the run's envs: pass --env.task_ids). 0 = off.
+    # A cheap in-run check that each task is acquired; the full retention triangle is evaluated from the boundary
+    # checkpoints by separate jobs (cluster/jobs/smolvla run_stage.sh, stage triseed).
+    current_task_rollout_episodes: int = 0
+
     # When true, use TF-only slot masking (no IDF stats required).
     # If enabled, this overrides TF-IDF behavior.
     tf_only: bool = False
@@ -2296,7 +2302,7 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
     eval_envs_all = None
     env_preprocessor = None
     env_postprocessor = None
-    if cfg.env is not None and cfg.eval.type == "env":
+    if cfg.env is not None and (cfg.eval.type == "env" or cfg.current_task_rollout_episodes > 0):
         if is_main:
             logging.info("Creating eval envs")
         eval_envs_all = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
@@ -2845,6 +2851,42 @@ def sequential_train(cfg: SequentialOnlineConfig, accelerator: Accelerator | Non
                             plt.close(fig)
                         except Exception as e:
                             logging.warning(f"Failed to log cumulative eval bar chart: {e}")
+
+        # Rollouts of the just-trained task only (--current_task_rollout_episodes), whatever eval ran above
+        if cfg.current_task_rollout_episodes > 0 and eval_envs_all is not None:
+            env_tid = ds_to_env.get(dataset_task_id, dataset_task_id)
+            cur_envs = _subset_envs(eval_envs_all, cfg.env.task, [env_tid])
+            with torch.no_grad(), accelerator.autocast():
+                cur_info = eval_policy_all(
+                    envs=cur_envs,
+                    policy=accelerator.unwrap_model(policy),
+                    env_preprocessor=env_preprocessor,
+                    env_postprocessor=env_postprocessor,
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    n_episodes=cfg.current_task_rollout_episodes,
+                    videos_dir=None,
+                    max_episodes_rendered=0,
+                    start_seed=cfg.seed,
+                    max_parallel_tasks=cfg.env.max_parallel_tasks,
+                )
+            if is_main:
+                cur_pc = float((cur_info.get("overall") or {}).get("pc_success", float("nan")))
+                logging.info(colored(
+                    f"Current-task rollout | task_pos={task_pos} dataset_task={dataset_task_id} env_task={env_tid} "
+                    f"episodes={cfg.current_task_rollout_episodes} seed={cfg.seed} pc_success={cur_pc:.1f}", "green"))
+                successes = []
+                for entry in cur_info.get("per_task") or []:
+                    successes += [bool(s) for s in (entry.get("metrics") or {}).get("successes", [])]
+                rec = {"task_pos": task_pos, "dataset_task": int(dataset_task_id), "env_task": int(env_tid),
+                       "step": int(global_step), "seed": int(cfg.seed),
+                       "episodes": int(cfg.current_task_rollout_episodes), "pc_success": cur_pc,
+                       "successes": successes}
+                (cfg.output_dir / "eval").mkdir(parents=True, exist_ok=True)
+                with open(cfg.output_dir / "eval" / "current_task_rollouts.jsonl", "a") as f:
+                    f.write(json.dumps(rec) + "\n")
+                if wandb_logger:
+                    wandb_logger.log_dict({"current_task_pc_success": cur_pc}, global_step, mode="eval")
 
         # Persist cross-task state alongside this task's checkpoint. Written at the END of the
         # iteration (after eval) so the file means "task_pos is complete, eval included" — a

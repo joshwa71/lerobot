@@ -4,7 +4,9 @@
 #   cd /SAN/vision/jo71_vla_wd/lerobot && cluster/jobs/smolvla/chain.sh cluster/jobs/smolvla/configs/<name>.sh [stage ...]
 # Stages (default: stage1 warmup audit aphase seq tri). Each is one job held on the previous stage's job(s).
 # tri is the retention triangle, one job per sequential task boundary (row k: the checkpoint after task k on
-# the envs of tasks 1..k, every EVAL_SEEDS seed); its last row is the final evaluation. eval is one job per
+# the envs of tasks 1..k, every EVAL_SEEDS seed); its last row is the final evaluation. triseed is the same
+# triangle as one job per EVAL_SEEDS seed, each running every row and polling for boundaries still training:
+# submit it on its own (`chain.sh <config> triseed`, not after seq in one call) to run alongside seq. eval is one job per
 # EVAL_SEEDS entry on the final checkpoint, or on EVAL_MODEL (e.g. a zero-shot floor). Re-running resumes:
 # complete stages exit at once. Baselines: spec (per-task specialists, SPEC_GROUP tasks per job, env or config), joint (all
 # SEQ_DATASET episodes, then eval with EVAL_FROM=joint); naive sequential is seq with SEQ_INIT and --peft.* args.
@@ -35,10 +37,11 @@ for st in "${stages[@]}"; do
     [ -n "$res" ] || { echo "ERROR: no $res_var in $CONFIG"; exit 1; }
     hrt=$(echo "$res" | grep -o 'h_rt=[0-9:]*' | cut -d= -f2)
     limit=$(( $(echo "$hrt" | awk -F: '{print $1 * 3600 + $2 * 60 + $3}') - RUN_MARGIN_MIN * 60 ))
-    # eval: one job per EVAL_SEEDS entry; tri: one per sequential task boundary (triangle row); spec: one per
-    # SPEC_GROUP SEQ_TASKS entries (default 1; specialists run back to back in a job); else one job
+    # eval, triseed: one job per EVAL_SEEDS entry; tri: one per sequential task boundary (triangle row); spec: one
+    # per SPEC_GROUP SEQ_TASKS entries (default 1; specialists run back to back in a job); else one job
     jobs=("")
     [ "$st" = eval ] && jobs=("${EVAL_SEEDS[@]/#/SEED=}")
+    [ "$st" = triseed ] && jobs=("${EVAL_SEEDS[@]/#/SEED=}")
     [ "$st" = tri ] && jobs=($(seq -f 'BLOCK=%g' 1 $(( $(echo "$SEQ_TASKS" | tr -cd ',' | wc -c) + 1 ))))
     [ "$st" = spec ] && jobs=($(echo "$SEQ_TASKS" | tr -d '[] ' | tr ',' '\n' | xargs -n "${SPEC_GROUP:-1}" | tr ' ' ':' | sed 's/^/TASKS=/'))
     ids=()

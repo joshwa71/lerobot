@@ -223,6 +223,36 @@ tri)
     run_eval "${POLICY_ARGS[@]}" --rename_map="$RENAME" \
         "${EVAL_ARGS[@]}" --env.task_ids="[$(seq_envs "$BLOCK")]"
     ;;
+triseed)
+    # The whole retention triangle for ONE seed (SEED): row b = the checkpoint after sequential task b on the envs of
+    # tasks 1..b, EVAL_ARGS episodes at seed SEED. chain.sh submits one job per EVAL_SEEDS entry, so a triangle is a
+    # few long jobs, not one per row. A job may start while seq is still training: it evaluates the boundaries that
+    # exist and polls for the next (every 10 min, giving up after TRI_WAIT_H hours; resubmit to carry on). Rows resume:
+    # tri/s<SEED>/b<row>.json, one directory per seed so the jobs never write the same files.
+    scratch_setup
+    cd "$SCRATCH"
+    scratch_hub_models "$VLM"
+    scratch_outputs "$RUNS/tri/s$SEED"
+    mkdir -p "$SCRATCH_OUT"
+    for b in $(seq 1 "$n_seq_tasks"); do
+        if [ -f "$SCRATCH_OUT/b$b.json" ]; then echo "== row $b seed $SEED already complete"; continue; fi
+        ck=$RUNS/seq/checkpoints/$(printf '%06d' $((b * SEQ_STEPS_PER_TASK)))
+        waited=0
+        # sequential_state.pt is written (and synced, after pretrained_model/) once the boundary is complete
+        until [ -f "$ck/sequential_state.pt" ]; do
+            [ "$waited" -lt $(( ${TRI_WAIT_H:-8} * 60 )) ] || { echo "ERROR: boundary $b not ready after ${TRI_WAIT_H:-8} h ($ck)"; exit 1; }
+            [ "$waited" -gt 0 ] || echo "== waiting for boundary $b ($ck) $(date)"
+            sleep 600
+            waited=$((waited + 10))
+        done
+        echo "== row $b seed $SEED: start $(date)"
+        rm -rf "$SCRATCH/data/model"  # the previous row's checkpoint
+        peft_args "$(scratch_copy "$ck/pretrained_model" model)"
+        export CAMP_SEEDS=$SEED CAMP_TAG="${NAME}_tri_b${b}_s$SEED" CAMP_OUT="$SCRATCH_OUT/b$b.json"
+        run_eval "${POLICY_ARGS[@]}" --rename_map="$RENAME" "${EVAL_ARGS[@]}" --env.task_ids="[$(seq_envs "$b")]"
+        echo "== row $b seed $SEED: done $(date)"
+    done
+    ;;
 spec)
     # Per-task specialists for the task_index list TASKS (':'-separated, e.g. 0:1:2; or TASK for one), one after
     # another in this job: the sequential trainer on each task alone (SEQ_ARGS, from SEQ_INIT or the stage-1 base),
