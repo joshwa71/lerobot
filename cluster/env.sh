@@ -155,9 +155,12 @@ _scratch_finish() {
 # stalls; prints the scratch path. A stall is no data for 10 min (rsync --timeout), not a wall-clock
 # cap: libero_90 (65 GB) alone takes ~75 min at /SAN's ~15 MB/s. Retries continue where they stopped.
 scratch_copy() {
+    # The copy rate is capped (SCRATCH_BWLIMIT, KB/s; 40000 = ~39 MB/s, 70 GB in ~30 min): on 27 Nov 26 a job
+    # staging libero_ext_v6 (70 GB) read /SAN at ~145 MB/s and was suspended within minutes, most likely for I/O.
     local src=$1 dst=$SCRATCH/data/${2:-$(basename "$1")} try
     for try in 1 2 3; do
-        timeout 4h rsync -a --timeout=600 "$src/" "$dst/" && { echo "$dst"; return 0; }
+        timeout 4h rsync -a --timeout=600 --bwlimit="${SCRATCH_BWLIMIT:-40000}" "$src/" "$dst/" \
+            && { echo "$dst"; return 0; }
         echo "scratch_copy: attempt $try of $src failed or stalled" >&2
     done
     return 1
