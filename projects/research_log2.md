@@ -418,6 +418,14 @@ Rollout evaluation follows training, from the boundary checkpoints, per the Pape
 
 The loss eval costs ~27 s per seen task per boundary, ~14 h over the run on top of ~100 h of training.
 
+*Update (27 Nov 26): restarted on v6 data.*
+- On 21 Nov the run was stopped after 7 of its 60 tasks, because libero_ext v1 failed its learnability check (`dataset_gen.md` §3c).
+- It restarts as `cell_s2_ext60v6_rand1` (`configs/cell_s2_ext60v6_rand1.sh`, smoke-tested by `smoke_ext60_v6.sh`) on libero_ext v6 (§3d–3f).
+  - v6 demos use one hand-orientation mode per task and start exactly as an evaluation episode does.
+  - A 12-task specialist panel scored a mean of 73, against 57 on v4.
+- Every other setting is unchanged, the task order included.
+- Task 59 (open the top drawer and put the popcorn in it) comes second in the order. Expect it to stay weak: its specialist reaches 18 at 5k steps and 52 at 15k.
+
 **Pre-registered reads.**
 - **Acquisition.** If the memory has room for 60 tasks, the just-trained task's success stays near the ten-task diagonal (86.5) throughout; its own-task loss right after training stays flat in K. A fall in either with K, at the fixed 5,000-step budget, is the saturation signal item 2 calibrates.
 - **Retention.** On libero_10, earlier tasks lost ~5 points whether 5 or 10 tasks followed. If that holds, the final row's mean over earlier tasks sits within ~5 points of their just-trained mean. In loss terms, drift (own-task loss from just-trained to final) grows with the number of tasks trained after (pi05 ten-task mean +28.5%).
