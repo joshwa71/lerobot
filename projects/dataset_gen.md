@@ -667,3 +667,39 @@ Eight tasks reach 62–96, including every sideways insertion and three of the f
    - A smoke test comes first (`smoke_ext60` on v6).
    - research_log2 Entry 5 gets a dated note.
    - Evaluation stays at lerobot's 360 × 360 default, as in every panel so far.
+
+## 3f. v6 panel: results and decision (27 Nov 26)
+
+The same 12 specialists, recipe and evaluation as the v4 panel (§3d), on `libero_ext_panel_v6` (`configs/ext_panel_spec_r128_v6.sh`, 3 jobs of 4 specialists). Success is over 25 episodes × seeds 1000 / 2000; the final training loss is at 5k steps.
+
+| Task | Type | v4 | v6 (1000 / 2000) | v6 mean | Final loss |
+|---|---|---|---|---|---|
+| 6: turn on the faucet | lever push | 92 | 92 / 96 | 94 | 0.013 |
+| 11: tomato sauce in the middle drawer | placement into an open drawer | 12 | 100 / 100 | **100** | 0.022 |
+| 12: macaroni in the microwave and close it | sideways insertion + door push | 76 | 44 / 52 | 48 | 0.092 |
+| 19: turn on the stove + cream cheese in the pan | knob twist + placement | 70 | 84 / 68 | 76 | 0.033 |
+| 27: lift the bowl | rim grasp | 90 | 96 / 84 | 90 | 0.017 |
+| 32: bbq sauce on the lower shelf | sideways insertion | 96 | 96 / 88 | 92 | 0.028 |
+| 38: bbq sauce in the tray + popcorn in the bookcase | two steps, bookcase insertion | 30 | 72 / 68 | **70** | 0.038 |
+| 42: pudding in the bowl + milk in the tray | two steps, crowded coffee table | 62 | 68 / 76 | 72 | 0.057 |
+| 54: wine bottle left of the basket + pudding in the caddy | two steps, beside + caddy | 62 | 84 / 72 | 78 | 0.035 |
+| 56: mug in the tray + alphabet soup on the storage box | two steps, floor scene | 0 | 52 / 64 | **58** | 0.042 |
+| 58: wine bottle in the fridge | sideways insertion | 88 | 80 / 84 | 82 | 0.029 |
+| 59: open the top drawer + popcorn in it | drawer pull + placement | 8 | 16 / 20 | 18 | 0.102 |
+| Mean | | 57.2 | | **73.2** | |
+| 59 at 15k steps, LR 3e-4 → 3e-5 (`..._t59long_lr3e4.sh`) | | | 52 / 52 | **52** | 0.020 |
+
+**Reading against §3e's pre-registered reads:**
+- **Tasks 11 and 38 reach at least 60** (100 and 70): one mode per task fixed both.
+- **Task 56 rises above 0** (to 58), which confirms the start-state fix. Scene S25 stays on the floor.
+- **Task 59 is hard but learnable, and stays.**
+  - It scored 18 at 5k steps and 52 at 15k steps with LR 3e-4. The 15k run's loss fell smoothly to 0.020, with the gradient norm around 0.2 throughout.
+  - At LR 1e-3, the 5k specialist spiked again at 3k (loss 0.34) and then recovered, as on v4. The drawer task is sensitive to the learning rate.
+  - Diagnosis of the 5k specialist (10 local rollouts, 2 successes): the drawer opened in 4 of 10 rollouts, and the popcorn went in on 2 of those 4. The first handle grasp lands in the right place but 1–2 cm low. In the failures, the pull slips and the policy re-grasps the handle (19–32 gripper closes per episode, against 4–6 in the successes and 2 in the demos).
+- **Seven of the other eight hold at 60 or more** (72–94). **Task 12 fell from 76 to 48.**
+  - Its demos look like v4's: 63 attempts, one mode at a 0.93 share. Its final loss is similar too (0.092, against 0.08–0.09).
+  - Every rollout grasps the macaroni where the demos do (local rollouts: 6 of 10 succeed). In the failures the macaroni ends up beside the heating region rather than in it.
+  - The insertion is marginal for the expert too, which missed the region on 6 of its 63 attempts. This looks like a precision limit, not a data defect; the v4 76 and the v6 48 bracket it.
+- **The go criterion is met.** The mean is 73.2, against a bar of about 70. No kept task is below 40 at its training budget except task 59, which is kept as a hard task (52 with 3× the steps).
+
+**Decision: go.** v6 becomes the libero_ext dataset. In the 60-task run, task 59 is expected to stay weak at the standard per-task budget.
