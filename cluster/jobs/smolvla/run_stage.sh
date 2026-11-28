@@ -51,6 +51,15 @@ require_train_done() {  # <stage> <steps>
 n_seq_tasks=$(( $(echo "$SEQ_TASKS" | tr -cd ',' | wc -c) + 1 ))
 seq_final=$(printf '%06d' $((n_seq_tasks * SEQ_STEPS_PER_TASK)))
 seq_done() { [ "$(readlink "$RUNS/seq/checkpoints/last")" = "$seq_final" ] && [ -f "$RUNS/seq/checkpoints/last/sequential_state.pt" ]; }
+boundary_ready() {  # <checkpoint dir on /SAN>: the boundary checkpoint has been copied to /SAN in full
+    # `last` there moves only once its target is complete (env.sh), and every earlier checkpoint was synced in full
+    # before that, so the boundary is complete once `last` has reached it. Its own sequential_state.pt is not enough:
+    # rsync sends a directory's files before its subdirectories, so the file lands minutes before pretrained_model/
+    # (28 Nov 26: a triseed row loaded a checkpoint without its model.safetensors).
+    local d=$1 l
+    l=$(readlink "$(dirname "$d")/last" 2>/dev/null) || return 1
+    [[ "$l" =~ ^[0-9]+$ ]] && [ "$((10#$l))" -ge "$((10#$(basename "$d")))" ] && [ -f "$d/sequential_state.pt" ]
+}
 seq_envs() {  # <n>: LIBERO env ids of the first n SEQ_TASKS (through DS_TO_ENV), comma-separated
     local t ids=()
     for t in $(echo "$SEQ_TASKS" | tr -d '[] ' | tr ',' ' ' | cut -d' ' -f1-"$1"); do
@@ -211,8 +220,7 @@ tri)
     # EVAL_ARGS episodes x every EVAL_SEEDS seed (the pi05 instrument: 25 episodes x 4 paired seeds per cell).
     if [ -f "$RUNS/tri/b$BLOCK.json" ]; then echo "== triangle row $BLOCK already complete"; exit 0; fi
     ck=$RUNS/seq/checkpoints/$(printf '%06d' $((BLOCK * SEQ_STEPS_PER_TASK)))
-    # sequential_state.pt is written after the boundary checkpoint, so its presence means the boundary is complete
-    [ -f "$ck/sequential_state.pt" ] || { echo "ERROR: sequential boundary $BLOCK is not complete ($ck)"; exit 1; }
+    boundary_ready "$ck" || { echo "ERROR: sequential boundary $BLOCK is not complete on /SAN ($ck)"; exit 1; }
     scratch_setup
     cd "$SCRATCH"
     peft_args "$(scratch_copy "$ck/pretrained_model" model)"
@@ -238,8 +246,7 @@ triseed)
         if [ -f "$SCRATCH_OUT/b$b.json" ]; then echo "== row $b seed $SEED already complete"; continue; fi
         ck=$RUNS/seq/checkpoints/$(printf '%06d' $((b * SEQ_STEPS_PER_TASK)))
         waited=0
-        # sequential_state.pt is written (and synced, after pretrained_model/) once the boundary is complete
-        until [ -f "$ck/sequential_state.pt" ]; do
+        until boundary_ready "$ck"; do
             [ "$waited" -lt $(( ${TRI_WAIT_H:-8} * 60 )) ] || { echo "ERROR: boundary $b not ready after ${TRI_WAIT_H:-8} h ($ck)"; exit 1; }
             [ "$waited" -gt 0 ] || echo "== waiting for boundary $b ($ck) $(date)"
             sleep 600
